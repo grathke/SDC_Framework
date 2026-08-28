@@ -1,0 +1,21 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net10.0-windows</TargetFramework>
+    <UseWindowsForms>true</UseWindowsForms>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="Microsoft.Data.SqlClient" Version="7.0.2" />
+  </ItemGroup>
+  <ItemGroup>
+    <EmbeddedResource Remove="**/*.resx" />
+  </ItemGroup>
+  <ItemGroup>
+    <Compile Remove="project-backup/**" />
+    <EmbeddedResource Remove="project-backup/**" />
+    <None Remove="project-backup/**" />
+    <Compile Remove="restore-points/**" />
+    <EmbeddedResource Remove="restore-points/**" />
+    <None Remove="restore-points/**" />
+  </ItemGroup>
+</Project>

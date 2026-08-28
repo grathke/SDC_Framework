@@ -1,0 +1,142 @@
+- [x] Verify that the copilot-instructions.md file in the .github directory is created.
+- [x] Clarify Project Requirements
+- [x] Scaffold the Project
+- [x] Customize the Project
+- [x] Install Required Extensions
+- [x] Compile the Project
+- [x] Create and Run Task
+- [x] Launch the Project
+- [x] Ensure Documentation is Complete
+
+Project: VB.NET Windows Forms Hello World
+Files created: `HelloWorld.vbproj`, `Program.vb`, `Form1.vb`, `README.md`.
+
+## Guardrails
+
+## Restore Point Decision Guardrail (Required)
+
+- The user controls explicit restore-point requests.
+- Before a broad, cross-cutting, or high-risk change, use engineering judgment to decide whether a restore point is warranted.
+- If a restore point is warranted, pause before editing and explain why, identify every file in scope, and ask the user for approval.
+- Do not create an additional restore point silently or after a failed change merely because the work became difficult.
+- Prefer the last known-good restore point unless the user approves a new one or the current restore point does not cover the files being changed.
+- After approval, create the restore point before the first substantive edit and report its location.
+
+- Do not change the login screen or the main menu screen unless the user explicitly requests it and explains the reason for the change.
+- If a change to the login screen or main menu is requested, first confirm the intent and describe the expected impact before editing those files.
+- Preserve the current working login behavior and the current menu structure/layout unless the user approves a specific change.
+- Keep any future edits to the login flow and main menu minimal and focused on the requested issue.
+- When working on related features, avoid unnecessary visual or behavioral changes to the login screen and main menu.
+- Do not change database views, view definitions, or view-based logic unless the user explicitly requests it and explains the reason for the change.
+- If a change to a database view is requested, first confirm the intended impact and preserve the existing view contract unless the user approves a specific change.
+
+## Application-Wide Change Gate (Required)
+
+- For any change that affects shared behavior, database schema, permissions, navigation, soft delete, concurrency, saving, or base classes, trace the complete contract before editing.
+- The trace must cover: database schema and migrations; shared base classes; models; data-access methods; adapters; standard pages; one-off pages; and every caller/entry point.
+- Write one falsifiable application-wide hypothesis and one discriminating check before the first substantive edit.
+- Build a behavior matrix before implementation when the change crosses more than one layer. Include create, update, delete, cancel, missing-schema support, conflict/failure, retry, and special-page paths where applicable.
+- Choose one owner for shared behavior. Page code may supply page-specific data but must not create a second implementation of shared policy.
+- After editing, perform a cleanup scan for stale callers, duplicate paths, obsolete validators, model reconstruction paths, and documentation that still describes the old contract.
+- Do not declare a cross-cutting change complete until the application builds, focused checks pass, all affected callers are searched, and the actual user workflow is manually verified.
+- If a special page intentionally does not follow the shared contract, document it explicitly and add a validation check for that exception.
+
+## New Page Regression Guardrail (Required)
+
+- Every new `_B` or `_U` page requires a regression pass before completion.
+- Verify inheritance, naming, constructor context, table and RegistrationID scope, Base_B SQL/`AS PK` behavior, Base_U identity and RowVersion preservation, all callers/action icons, permissions, and missing-schema behavior.
+- Check create, update, delete, cancel, conflict, retry, and special-page paths where applicable.
+- Search for duplicate or page-local paths that bypass shared behavior.
+- Build the project, run focused regression checks, search all affected callers, and manually verify the actual page workflow.
+- Do not declare a new page complete from compilation alone.
+- For every new standard `_B` page, verify the no-row `FW_RoleTables` path against the actual database: opening the page must create the correct `WindowOrPage`, `DB_Table`, friendly alias, session `CreatedBy`, and PK-safe fallback SQL.
+
+## QBE Visibility Guardrail (Required)
+
+- Before the first substantive edit to `01 FW_Base_B.vb`, run the `Create Base_B Restore Point` task. Do not edit Base_B until its timestamped restore point is created.
+- QBE fields must be derived only from visible browse-grid columns after all standard hiding and saved-layout rules have been applied.
+- Internal maintenance aliases, including `PK`, must never appear in the browse grid, QBE, columns manager, or user-facing field lists.
+- A real ID column explicitly selected by page SQL, such as `IssueID`, is distinct from the internal `PK` alias and may appear when visible.
+- For Start Empty pages, where QBE is derived from SQL schema before a grid exists, exclude `PK`, soft-delete fields, and other internal aliases.
+- Any change to Base_B grid/QBE loading must run the browse regression script and manually verify that hiding a browse column also removes it from QBE.
+
+## Copied Page Regression Guardrail (Required)
+
+- A copied page is a new page, not a shortcut.
+- Verify the new file/class name, base inheritance, constructor context, table name, SQL source, registration/user scope, permissions, action handlers, callers, titles, and model paths independently.
+- Remove copied page-specific overrides and stale references unless explicitly required by the new page contract.
+- Run the New Page Regression Guardrail for the copied page.
+- Add a validation check proving the copied page does not inherit from or call the source page.
+
+## Consolidation Guardrail (Required)
+
+- Before implementing any fix or feature, check related files/classes for duplicate or near-duplicate logic.
+- If similar logic exists in 2 or more places, stop and ask: "I found repeated logic in [files]. Do you want me to consolidate into a shared function/class now?"
+- If the user says yes, consolidate first, then apply the requested change.
+- If the user says no, implement the change minimally and explicitly note the duplication risk.
+- Do not introduce a new duplicate path when an existing shared helper/class can be extended.
+- For UI behavior parity across pages/forms, prefer shared controller/helper classes over page-local handlers.
+
+## Existing Owner Gate (Required)
+
+- Before adding any handler, override, callback, helper, or page-local lookup, identify the existing method, command, or control event that owns the requested behavior.
+- If an existing command already performs the requested workflow, invoke that command or its click event. Do not create a second path that repeats permissions, selection, PK resolution, validation, saving, navigation, or refresh behavior.
+- A page-specific override is allowed only when the existing owner cannot satisfy a concrete page contract. State that contract and the reason before editing.
+- For browse pages, double-click must invoke the visible, enabled command that performs the equivalent user action. It must not introduce a separate maintenance-key lookup or maintenance-open path.
+- Before completing a change, search for any new duplicate handler, override, callback, or model reconstruction path and remove it unless the documented exception requires it.
+
+## Action Icon Guardrail (Required)
+
+- Every actionable icon on a dashboard, menu, toolbar, or page must have a unique ActionKey, a registered caption, an icon file, a target page or command, and an explicit click handler.
+- Before adding the icon, verify that the target class and constructor exist and follow the page naming convention (`*_B` for browse pages and `*_U` for maintenance pages).
+- Target page constructors must accept the active `UserContext` or session context and an optional `AccessProfile` when the target uses role-based access.
+- Click handlers must pass the owning page's existing `currentUser` and `accessProfile` to the target page. Do not create the target with a parameterless constructor when that would discard access context.
+- Use this pattern for role-aware pages:
+	`Using page As New Target_B(currentUser, accessProfile)`
+- Decorative or status-only icons are excluded; this guardrail applies only when an icon performs navigation or a command.
+- After adding or changing an actionable icon, search all target-page callers for profile-dropping calls, build the project, open the icon manually, and verify the target title and permission-controlled controls.
+- Update the repository icon catalog in the same change, including ActionKey, placement, target, icon file, visibility rule, and click behavior.
+
+## Security And Access Guardrail (Required)
+
+- UI visibility is not authorization. Every protected command and database write must enforce access at its action or data boundary.
+- Any page opened from a menu or dashboard must receive the active user, role, registration, and access profile context.
+- Role or registration changes must invalidate affected access and metadata caches before another protected action is evaluated.
+- Never use a demo profile, parameterless page constructor, or client-side visibility rule as the only protection for a real database operation.
+
+## Transaction Guardrail (Required)
+
+- Related writes must share one explicit database transaction. This includes parent/child inserts, permission/detail changes, delete plus audit, and multi-table saves.
+- A transaction must commit only after every required write succeeds and must roll back on any failure.
+- Do not report success or close a page before the transaction result is known.
+- Existing immediate-write one-off pages must document each write boundary and must not be silently treated as transactional.
+
+## Save And Model Contract Guardrail (Required)
+
+- Before the first substantive edit to `01 FW_Base_U.vb`, run the `Create Base_U Restore Point` task. Do not edit Base_U until its timestamped restore point is created.
+- Standard `_U` pages must use the shared save result contract and must distinguish success, conflict, deleted record, unavailable concurrency protection, and failure.
+- Record identity, registration context, and concurrency tokens must survive every load, clone, form-bind, validation, and record-rebuild path.
+- Model and data-reader nullability must match the database contract. A nullable database column must map to a nullable model property and safe `DBNull` conversion; never make it required merely because a current page does not display it.
+- Every new-record workflow must load successfully before its first update. In particular, update audit fields may be null until an actual update occurs and must not block maintenance-page loading.
+- A save conflict must keep the page open and require an explicit reload, cancel, or overwrite decision. Never silently apply last-saved-wins.
+- A page must not close until its save has succeeded.
+
+## Soft Delete And Audit Guardrail (Required)
+
+- Delete, restore, normal view, deleted view, and audit behavior must use shared policy helpers.
+- Physical deletion requires an explicit reason and approval; soft-delete-capable tables must use the shared DeletedFlag path.
+- Create, update, delete, restore, permission, and security changes must record actor, timestamp, table, record key, operation, before state, after state, and result.
+- Audit behavior and failure policy must be identified before implementation; do not add an audit call that can leave the business write in an unknown state.
+
+## Destructive Action And Verification Guardrail (Required)
+
+- Delete, remove permission, restore, role changes, schema synchronization, and overwrite-after-conflict require a confirmation that identifies the target and impact.
+- Every cross-cutting change must include a behavior matrix for create, update, delete, cancel, failure, retry, missing schema, and special-page paths where applicable.
+- After editing, search all affected callers and model reconstruction paths, run focused validation, build the project, and manually verify the actual workflow.
+- Do not declare completion from compilation alone when the change affects user-facing behavior or database writes.
+
+## Trigger Phrase
+
+- If the user says "run duplicate check first", treat it as a hard request to run the consolidation guardrail before making changes.
+- On that trigger, check for duplicate or near-duplicate logic first and ask whether to consolidate if repeated logic exists.
+- Before any medium to large change, ask the user if they want me to run the duplicate check first.
