@@ -43,6 +43,30 @@ whether something is expected of them.
 - **"run"** — launch the application, in reply to a `READY TO RUN` marker.
 - **"run duplicate check first"** — apply the Consolidation Guardrail before making changes.
 
+## End Of Day Protection Check (Required)
+
+When the user signals they are finished — "I'm finished for the day", "good night", "that's it for
+today", "signing off", or anything else that plainly means the session is ending — run this check
+before saying goodnight. Do not wait to be asked.
+
+Report only what actually needs attention, in a few lines. If everything is safe, say so in one
+sentence rather than listing checks that passed.
+
+1. **Uncommitted work** — run `git status --short`. If the working tree is dirty, say how many
+   files and offer to commit. Branch first if on the default branch.
+2. **Broken state** — if the last build failed, or a change was left half-finished, say so plainly
+   and name the file. Never end the day implying work is complete when it is not.
+3. **Unverified work** — list anything built but never exercised in the running application, so it
+   is not mistaken for tested.
+4. **Off-machine backup** — while the repository has no remote, commits protect against bad edits
+   but not against losing the machine. Say this once when there is new committed work and no
+   remote; do not repeat it every night.
+5. **Restore points** — only mention these if a broad or high-risk change is planned for next time.
+   They are a pre-change safety net, never an end-of-day ritual.
+
+Ask before committing. Do not commit, push, or create restore points on the strength of a goodnight
+alone.
+
 ## Project
 
 VB.NET Windows Forms line-of-business application targeting `net10.0-windows` (.NET SDK 10 preview).
