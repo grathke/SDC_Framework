@@ -1176,7 +1176,7 @@ Namespace HelloWorld
                                           accessProfile.Can(accessTableName, AccessCapability.ViewOnlyMyRecords)
                 Dim canApplyViewOnlyMyScope = ShouldApplyViewOnlyMyScope(activeSql, registrationId)
                 If canApplyViewOnlyMyScope Then
-                    browseScopePredicate = "UserID = 0 AND UserID = @UserID"
+                    browseScopePredicate = "UserID = @UserID"
                     browseScopeUserId = currentUser.UserId
                 ElseIf viewOnlyMyRequested Then
                     If Not viewOnlyMyWarningShown Then
@@ -1209,10 +1209,12 @@ Namespace HelloWorld
                 ApplyPkColumnHiding(browseGrid)
                 HideRegistrationIdColumn(browseGrid)
                 HideSoftDeleteColumns(browseGrid)
+                HideInvisibleRoleFieldColumns(browseGrid)
                 ApplyColumnVisibilityMap(existingVisibility)
                 ApplyPkColumnHiding(browseGrid)
                 HideRegistrationIdColumn(browseGrid)
                 HideSoftDeleteColumns(browseGrid)
+                HideInvisibleRoleFieldColumns(browseGrid)
                 EnsureAtLeastOneManageableVisibleColumn()
                 UpdateMaintenanceKeyAvailability()
                 GridColumnsManager.FitVisibleColumnsToAvailableWidth(browseGrid)
@@ -1283,12 +1285,16 @@ Namespace HelloWorld
                     ApplyPkColumnHiding(browseGrid)
                     HideRegistrationIdColumn(browseGrid)
                     HideSoftDeleteColumns(browseGrid)
+                    HideInvisibleRoleFieldColumns(browseGrid)
+                HideInvisibleRoleFieldColumns(browseGrid)
                     EnsureAtLeastOneManageableVisibleColumn()
                     GridColumnsManager.FitVisibleColumnsToAvailableWidth(browseGrid)
                     TryApplyLayoutSnapshotJson(layoutJson)
                     ApplyPkColumnHiding(browseGrid)
                     HideRegistrationIdColumn(browseGrid)
                     HideSoftDeleteColumns(browseGrid)
+                    HideInvisibleRoleFieldColumns(browseGrid)
+                HideInvisibleRoleFieldColumns(browseGrid)
                     RefreshColumnsManagerFromGrid()
                     PopulateQbeFromGridColumns()
                     lastVisibleColumnsSignature = BuildVisibleColumnsSignature()
@@ -1445,6 +1451,7 @@ Namespace HelloWorld
             ApplyPkColumnHiding(browseGrid)
             HideRegistrationIdColumn(browseGrid)
             HideSoftDeleteColumns(browseGrid)
+            HideInvisibleRoleFieldColumns(browseGrid)
             EnsureAtLeastOneManageableVisibleColumn()
             RefreshColumnsManagerFromGrid()
             PopulateQbeFromGridColumns()
@@ -1711,6 +1718,7 @@ Namespace HelloWorld
                 ApplyPkColumnHiding(browseGrid)
                 HideRegistrationIdColumn(browseGrid)
                 HideSoftDeleteColumns(browseGrid)
+                HideInvisibleRoleFieldColumns(browseGrid)
                 lastVisibleColumnsSignature = BuildVisibleColumnsSignature()
                 lastAppliedSqlSignature = NormalizeSql(GetActiveBaseSql())
                 If hasBaselineLayoutSnapshot Then
@@ -2362,6 +2370,41 @@ Namespace HelloWorld
             Return
         End Sub
 
+        ''' <summary>
+        ''' Hides columns whose field is flagged Make_Invisible in FW_RoleFields, so one
+        ''' field-level setting hides it on both the browse grid and the maintenance page.
+        ''' QBE follows automatically, since it derives from visible columns.
+        ''' </summary>
+        Protected Overridable Sub HideInvisibleRoleFieldColumns(grid As DataGridView)
+            If grid Is Nothing OrElse grid.Columns Is Nothing OrElse grid.Columns.Count = 0 Then
+                Return
+            End If
+
+            Dim session = SessionState.Current
+            If Not session.HasValue Then Return
+
+            Dim roleId = session.Value.RoleID
+            Dim registrationId = session.Value.RegistrationID
+            Dim tableName = ResolveCurrentRoleFieldTableName()
+            If roleId <= 0 OrElse registrationId <= 0 OrElse String.IsNullOrWhiteSpace(tableName) Then
+                Return
+            End If
+
+            Dim invisibleFields = DataAccess.GetPageInitMetadata(roleId, registrationId, tableName).InvisibleFields
+            If invisibleFields Is Nothing OrElse invisibleFields.Count = 0 Then Return
+
+            For Each col As DataGridViewColumn In grid.Columns
+                If col Is Nothing OrElse Not col.Visible Then
+                    Continue For
+                End If
+
+                Dim columnKey = If(String.IsNullOrWhiteSpace(col.DataPropertyName), col.Name, col.DataPropertyName)
+                If invisibleFields.Contains(columnKey) Then
+                    col.Visible = False
+                End If
+            Next
+        End Sub
+
         Protected Overridable Sub HideSoftDeleteColumns(grid As DataGridView)
             If grid Is Nothing OrElse grid.Columns Is Nothing OrElse grid.Columns.Count = 0 Then
                 Return
@@ -2727,29 +2770,16 @@ Namespace HelloWorld
             Return schema IsNot Nothing AndAlso schema.Columns.Contains("UserID")
         End Function
 
+        ''' <summary>
+        ''' Column headers and page titles are table-derived, so the FW_ prefix is stripped.
+        ''' Formatting itself is owned by DisplayNameFormatter.
+        ''' </summary>
         Protected Overridable Function ToFriendlyCaption(sourceName As String) As String
             If String.IsNullOrWhiteSpace(sourceName) Then
                 Return String.Empty
             End If
 
-            Dim text = sourceName.Trim()
-            If text.StartsWith("FW_", StringComparison.OrdinalIgnoreCase) Then
-                text = text.Substring(3)
-            End If
-
-            text = text.Replace("_", " ")
-            text = Regex.Replace(text, "([A-Z]+)([A-Z][a-z])", "$1 $2")
-            text = Regex.Replace(text, "([a-z0-9])([A-Z])", "$1 $2")
-            text = Regex.Replace(text, "([A-Za-z])([0-9])", "$1 $2")
-            text = Regex.Replace(text, "([0-9])([A-Za-z])", "$1 $2")
-            text = Regex.Replace(text, "\s+", " ").Trim()
-
-            text = text.Replace("E Mail", "Email")
-            text = text.Replace("I D", "ID")
-            text = Globalization.CultureInfo.InvariantCulture.TextInfo.ToTitleCase(text.ToLowerInvariant())
-            text = text.Replace("Id", "ID")
-
-            Return text
+            Return DisplayNameFormatter.ToDisplayName(sourceName, stripFrameworkPrefix:=True)
         End Function
 
         Private Function CaptureGridViewState() As GridViewState

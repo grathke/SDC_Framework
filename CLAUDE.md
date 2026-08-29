@@ -4,7 +4,28 @@ Guidance for Claude Code when working in this repository.
 
 Source of truth note: the guardrails below are copied from `.github/copilot-instructions.md` so both
 Claude Code and GitHub Copilot follow the same rules. If you change a guardrail, change it in **both**
-files.
+files. The Session Protocol section is Claude Code specific and has no Copilot counterpart.
+
+## Session Protocol
+
+Hand-off happens on explicit markers so the user is never left guessing whether work is finished or
+whether something is expected of them.
+
+- **`READY TO RUN`** — end the response with this marker when the change is complete, builds, and is
+  ready for manual testing. Follow it with the exact command to run and the specific things to verify,
+  since the guardrails require manual workflow verification rather than compilation alone. Example:
+
+  ```
+  READY TO RUN — .\run-local.ps1
+  Verify: Department_B opens from the Company dashboard, CRUD buttons match the role,
+  save preserves RowVersion.
+  ```
+
+- **Do not launch the application until the user replies `run`.** They may prefer to run it themselves.
+- **`BLOCKED`** — end with this marker instead when work cannot continue without a decision from the
+  user. State what is needed and what is assumed if they choose nothing.
+- Finish every part of the work that is not blocked before reporting either marker, and say explicitly
+  what was left out and why.
 
 ## Project
 
@@ -19,6 +40,36 @@ Key areas:
 - Entry point and shell: `Program.vb`, `LoginForm.vb`, `MainMenu.vb`.
 - Naming convention: `*_B` = browse page, `*_U` = maintenance page.
 - SQL migrations: `sql/`. Validation and restore-point scripts: `scripts/`.
+
+## Companion Documents
+
+- `FRAMEWORK_NOTES.md` — how the menu shell, browse pages, maintenance pages, required-field
+  styling and layout persistence actually work. Read before changing framework behavior.
+- `ICON_CATALOG.md` — the repository icon catalog required by the Action Icon Guardrail.
+- `BASE_B_QBE_LAYOUT_GUIDE.md`, `COMBO_CHECKLIST.md` — existing area-specific guides.
+- `.github/new-page-request-template.md` and `.github/new-page-request-manual.md` — the page
+  request template and how to interpret a filled-in one.
+
+## Naming Conventions (Required)
+
+- Database tables that belong to the framework are prefixed `FW_`, for example `dbo.FW_Entity`.
+- Pages that belong to the framework are prefixed `FW_`, for example `FW_Registration_B`.
+- Application-specific tables and pages built on top of the framework do **not** take the prefix.
+- `_B` = browse page: a grid listing rows, from which a record is selected to view, edit or delete.
+- `_U` = maintenance page: create, update, read and delete of a single record.
+- `_B` and `_U` pages are normally created as a pair against the same underlying table.
+- Display text is derived from names by `DisplayNameFormatter.ToDisplayName`. Do not add a second
+  formatter; extend the acronym list in `DisplayNameFormatter.vb` instead.
+- Control naming, which the framework depends on to map controls to columns: `Label_<FieldName>`,
+  `TextBox_<FieldName>`, `ComboBox_<FieldName>`, where `<FieldName>` is the database column name.
+
+Known exceptions in the current codebase, to be resolved rather than copied:
+
+- `Entity_B/_U`, `Roles_B/_U`, `Users_AppAdmin_B/_U` and `PageGeneration_B/_U` are framework pages
+  without the `FW_` prefix.
+- Browse-only pages with no `_U` partner: `FW_AuditTrail_B`, `FW_HD_Admin_B`,
+  `FW_HD_AdminDashboard_B`, `FW_UserAccessDiagnostic_B`, `FW_UserAccessExplanation_B`.
+- `FW_HD_Issues_B` and `FW_HD_Issues_Support_B` share a single `FW_HD_Issues_U`.
 
 ## Build, run, validate
 

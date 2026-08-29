@@ -34,6 +34,7 @@ Namespace HelloWorld
             Public Property CrudCaptions As CrudButtonCaptions
             Public Property RoleAccess As RoleTableAccessEntry
             Public Property FieldCaptions As Dictionary(Of String, String)
+            Public Property InvisibleFields As HashSet(Of String)
             Public Property StartEmpty As Boolean
             Public Property RoleTableAlias As String
             Public Property RoleOverrideCaption As String
@@ -42,6 +43,7 @@ Namespace HelloWorld
                 CrudCaptions = CrudButtonCaptions.DefaultCaptions()
                 RoleAccess = New RoleTableAccessEntry()
                 FieldCaptions = New Dictionary(Of String, String)(StringComparer.OrdinalIgnoreCase)
+                InvisibleFields = New HashSet(Of String)(StringComparer.OrdinalIgnoreCase)
                 StartEmpty = False
                 RoleTableAlias = String.Empty
                 RoleOverrideCaption = String.Empty
@@ -191,7 +193,8 @@ Namespace HelloWorld
                     Using cmd As New SqlCommand(
                         "SELECT FieldName, " &
                         "ISNULL(LTRIM(RTRIM(OverrideCaption)), '') AS OverrideCaption, " &
-                        "ISNULL(LTRIM(RTRIM(FriendlyFieldName)), '') AS FriendlyFieldName " &
+                        "ISNULL(LTRIM(RTRIM(FriendlyFieldName)), '') AS FriendlyFieldName, " &
+                        "ISNULL(Make_Invisible, 0) AS Make_Invisible " &
                         "FROM dbo.FW_RoleFields " &
                         "WHERE RoleID = @RoleID AND RegistrationID = @RegID " &
                         "AND UPPER(LTRIM(RTRIM(TableName))) = UPPER(@TableName) " &
@@ -213,6 +216,10 @@ Namespace HelloWorld
 
                                 If caption <> String.Empty Then
                                     result.FieldCaptions(fieldName) = caption
+                                End If
+
+                                If Convert.ToBoolean(reader("Make_Invisible")) Then
+                                    result.InvisibleFields.Add(fieldName)
                                 End If
                             End While
                         End Using
@@ -249,6 +256,7 @@ Namespace HelloWorld
                     .CanExpandQbe = source.RoleAccess.CanExpandQbe
                 },
                 .FieldCaptions = CloneCaptionMap(source.FieldCaptions),
+                .InvisibleFields = New HashSet(Of String)(source.InvisibleFields, StringComparer.OrdinalIgnoreCase),
                 .StartEmpty = source.StartEmpty,
                 .RoleTableAlias = source.RoleTableAlias,
                 .RoleOverrideCaption = source.RoleOverrideCaption
@@ -5738,7 +5746,8 @@ Namespace HelloWorld
             Return normalized
         End Function
 
-        Public Shared Sub ApplyControlUpdates(form As System.Windows.Forms.Form, pageName As String)
+        Public Shared Sub ApplyControlUpdates(form As System.Windows.Forms.Form, pageName As String,
+                                              Optional isNewRecord As Boolean = False)
             Try
                 Dim updates = GetControlUpdates(pageName)
                 If updates.Rows.Count = 0 Then Return
@@ -5752,6 +5761,10 @@ Namespace HelloWorld
                         Dim linkedControl = If(row("LinkedControl") Is DBNull.Value, String.Empty, row("LinkedControl").ToString().Trim())
                         Dim isRequired = If(row("IsRequired") Is DBNull.Value, False, CBool(row("IsRequired")))
                         Dim overrideCaption = If(row("OverrideCaption") Is DBNull.Value, String.Empty, row("OverrideCaption").ToString().Trim())
+
+                        ' Field-level permissions from FW_RoleFields. Applied before required
+                        ' styling so a hidden or unreadable field is never left interactive.
+                        ApplyFieldPermissions(form, controlName, linkedControl, row, isNewRecord)
 
                         ' Apply required border and live validation events
                         If isRequired AndAlso Not String.IsNullOrWhiteSpace(controlName) Then
@@ -5859,6 +5872,208 @@ Namespace HelloWorld
                 ' Do not abend the page on outer failure
             End Try
         End Sub
+
+        ''' <summary>
+        ''' Validates every control flagged IsUnique in FW_RoleFields against the underlying table,
+        ''' scoped to the active RegistrationID and excluding the record being edited.
+        ''' Comparison is case-insensitive; blank values are skipped so several optional fields may
+        ''' be left empty. Returns True when all checks pass.
+        ''' </summary>
+        Public Shared Function ValidateUniqueFields(form As System.Windows.Forms.Form,
+                                                    pageName As String,
+                                                    tableName As String,
+                                                    isNewRecord As Boolean,
+                                                    currentRecordKey As String,
+                                                    ByRef errorMessage As String) As Boolean
+            errorMessage = String.Empty
+            Dim failures As New List(Of String)()
+
+            Try
+                Dim normalizedTable = NormalizeTableName(tableName)
+                If String.IsNullOrWhiteSpace(normalizedTable) Then Return True
+
+                Dim updates = GetControlUpdates(pageName)
+                If updates.Rows.Count = 0 Then Return True
+
+                Dim keyColumn = GetPrimaryKeyColumn(normalizedTable)
+                Dim registrationId = If(SessionState.IsActive, SessionState.Current.Value.RegistrationID, 0)
+
+                For Each row As DataRow In updates.Rows
+                    If Not FlagOrDefault(row, "IsUnique", False) Then Continue For
+
+                    Dim controlName = If(row("ControlName") Is DBNull.Value, String.Empty, row("ControlName").ToString().Trim())
+                    If String.IsNullOrWhiteSpace(controlName) Then Continue For
+
+                    Dim matches = form.Controls.Find(controlName, True)
+                    If matches.Length = 0 Then Continue For
+                    Dim ctrl = matches(0)
+
+                    ' A masked field is not being changed, so it cannot introduce a duplicate.
+                    If FieldPermissions.IsMasked(ctrl) Then Continue For
+
+                    Dim value = If(ctrl.Text, String.Empty).Trim()
+                    If value = String.Empty Then Continue For
+
+                    Dim columnName = InferColumnNameFromControl(controlName)
+                    If String.IsNullOrWhiteSpace(columnName) Then Continue For
+
+                    ' Without a key column and a current key there is no way to exclude the record
+                    ' from its own check, which would report every saved value as duplicated.
+                    If Not isNewRecord AndAlso
+                       (String.IsNullOrWhiteSpace(keyColumn) OrElse String.IsNullOrWhiteSpace(currentRecordKey)) Then
+                        Continue For
+                    End If
+
+                    If CountMatchingValues(normalizedTable, columnName, value, registrationId,
+                                           keyColumn, If(isNewRecord, String.Empty, currentRecordKey)) > 0 Then
+                        Dim caption = DisplayNameFormatter.ToDisplayName(columnName)
+                        failures.Add(caption & " must be unique. '" & value & "' is already in use.")
+                    End If
+                Next
+            Catch ex As Exception
+                ' A failed uniqueness lookup must not silently pass the save.
+                failures.Add("Unique validation could not be completed: " & ex.Message)
+            End Try
+
+            If failures.Count = 0 Then Return True
+
+            errorMessage = String.Join(Environment.NewLine, failures)
+            Return False
+        End Function
+
+        Private Shared Function CountMatchingValues(tableName As String,
+                                                    columnName As String,
+                                                    value As String,
+                                                    registrationId As Integer,
+                                                    keyColumn As String,
+                                                    excludeKey As String) As Integer
+            Dim sql As New StringBuilder()
+            sql.Append("SELECT COUNT(1) FROM dbo.[").Append(tableName).Append("] WHERE LOWER(LTRIM(RTRIM([")
+            sql.Append(columnName).Append("]))) = @Value")
+
+            Dim hasDeletedFlag = TableHasColumn(tableName, "DeletedFlag")
+            If hasDeletedFlag Then sql.Append(" AND ISNULL(DeletedFlag, 0) = 0")
+
+            Dim hasRegistration = TableHasColumn(tableName, "RegistrationID")
+            If hasRegistration AndAlso registrationId > 0 Then sql.Append(" AND RegistrationID = @RegistrationID")
+
+            If Not String.IsNullOrWhiteSpace(keyColumn) AndAlso Not String.IsNullOrWhiteSpace(excludeKey) Then
+                sql.Append(" AND CONVERT(nvarchar(64), [").Append(keyColumn).Append("]) <> @ExcludeKey")
+            End If
+
+            Using conn As New SqlConnection(ConnectionString)
+                conn.Open()
+                Using cmd As New SqlCommand(sql.ToString(), conn)
+                    cmd.Parameters.AddWithValue("@Value", value.ToLowerInvariant())
+                    If hasRegistration AndAlso registrationId > 0 Then
+                        cmd.Parameters.AddWithValue("@RegistrationID", registrationId)
+                    End If
+                    If Not String.IsNullOrWhiteSpace(keyColumn) AndAlso Not String.IsNullOrWhiteSpace(excludeKey) Then
+                        cmd.Parameters.AddWithValue("@ExcludeKey", excludeKey)
+                    End If
+                    Return Convert.ToInt32(cmd.ExecuteScalar(), CultureInfo.InvariantCulture)
+                End Using
+            End Using
+        End Function
+
+        Public Shared Function GetPrimaryKeyColumn(tableName As String) As String
+            Dim normalizedTable = NormalizeTableName(tableName)
+            If String.IsNullOrWhiteSpace(normalizedTable) Then Return String.Empty
+
+            Using conn As New SqlConnection(ConnectionString)
+                conn.Open()
+                Using cmd As New SqlCommand(
+                    "SELECT TOP 1 kcu.COLUMN_NAME " &
+                    "FROM INFORMATION_SCHEMA.TABLE_CONSTRAINTS tc " &
+                    "INNER JOIN INFORMATION_SCHEMA.KEY_COLUMN_USAGE kcu " &
+                    "  ON tc.CONSTRAINT_NAME = kcu.CONSTRAINT_NAME " &
+                    "WHERE tc.CONSTRAINT_TYPE = 'PRIMARY KEY' " &
+                    "  AND tc.TABLE_SCHEMA = 'dbo' AND tc.TABLE_NAME = @TableName " &
+                    "ORDER BY kcu.ORDINAL_POSITION", conn)
+                    cmd.Parameters.AddWithValue("@TableName", normalizedTable)
+                    Dim result = cmd.ExecuteScalar()
+                    Return If(result Is Nothing OrElse IsDBNull(result), String.Empty, result.ToString())
+                End Using
+            End Using
+        End Function
+
+        Private Shared Function InferColumnNameFromControl(controlName As String) As String
+            Dim prefixes = New String() {"TextBox_", "ComboBox_", "CheckBox_", "DateTimePicker_",
+                                         "NumericUpDown_", "MaskedTextBox_", "RichTextBox_"}
+            For Each prefix In prefixes
+                If controlName.StartsWith(prefix, StringComparison.OrdinalIgnoreCase) Then
+                    Return controlName.Substring(prefix.Length)
+                End If
+            Next
+            Return String.Empty
+        End Function
+
+        ''' <summary>
+        ''' Applies Make_Invisible, Can_Read, Can_Create and Can_Update from FW_RoleFields to a
+        ''' single control and its Label_ partner. Column-level permissions on FW_RoleDetails
+        ''' govern the CRUD buttons; these govern the individual field.
+        ''' </summary>
+        Private Shared Sub ApplyFieldPermissions(form As System.Windows.Forms.Form,
+                                                 controlName As String,
+                                                 linkedControl As String,
+                                                 row As DataRow,
+                                                 isNewRecord As Boolean)
+            If String.IsNullOrWhiteSpace(controlName) Then Return
+
+            Dim matches = form.Controls.Find(controlName, True)
+            If matches.Length = 0 Then Return
+            Dim ctrl = matches(0)
+
+            Dim label As System.Windows.Forms.Control = Nothing
+            Dim labelName = ResolveLabelNameForControl(controlName, linkedControl)
+            If Not String.IsNullOrWhiteSpace(labelName) Then
+                Dim labelMatches = form.Controls.Find(labelName, True)
+                If labelMatches.Length > 0 Then label = labelMatches(0)
+            End If
+
+            If FlagOrDefault(row, "Make_Invisible", False) Then
+                FieldPermissions.HideField(ctrl, label)
+                Return
+            End If
+
+            ' Can_Read false means the value must not be disclosed. The mask is displayed and the
+            ' real value is preserved by FieldPermissions so the save writes it back unchanged.
+            If Not FlagOrDefault(row, "Can_Read", True) Then
+                FieldPermissions.Mask(ctrl)
+                Return
+            End If
+
+            Dim entryAllowed = If(isNewRecord,
+                                  FlagOrDefault(row, "Can_Create", True),
+                                  FlagOrDefault(row, "Can_Update", True))
+            If Not entryAllowed Then
+                FieldPermissions.SetNoEntry(ctrl)
+            End If
+        End Sub
+
+        ''' <summary>Reads a bit column that may be absent from the result set or null.</summary>
+        Private Shared Function FlagOrDefault(row As DataRow, columnName As String, defaultValue As Boolean) As Boolean
+            If row Is Nothing OrElse Not row.Table.Columns.Contains(columnName) Then Return defaultValue
+            If row(columnName) Is DBNull.Value Then Return defaultValue
+            Return Convert.ToBoolean(row(columnName))
+        End Function
+
+        ''' <summary>
+        ''' Resolves the Label_ partner for a control, following the framework naming convention
+        ''' and falling back to an explicit LinkedControl when one is configured.
+        ''' </summary>
+        Private Shared Function ResolveLabelNameForControl(controlName As String, linkedControl As String) As String
+            Dim prefixes = New String() {"TextBox_", "ComboBox_", "CheckBox_", "DateTimePicker_",
+                                         "NumericUpDown_", "MaskedTextBox_", "RichTextBox_"}
+
+            For Each prefix In prefixes
+                If controlName.StartsWith(prefix, StringComparison.OrdinalIgnoreCase) Then
+                    Return "Label_" & controlName.Substring(prefix.Length)
+                End If
+            Next
+
+            Return If(linkedControl, String.Empty)
+        End Function
 
         Private Shared Function EnsureRequiredMarker(caption As String) As String
             Dim result = If(caption, String.Empty).Trim()

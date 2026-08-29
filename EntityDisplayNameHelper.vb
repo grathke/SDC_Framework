@@ -26,12 +26,12 @@ Namespace HelloWorld
             Return aliasName
         End Function
 
+        ''' <summary>
+        ''' Entity aliases are table-derived, so the FW_ prefix is stripped.
+        ''' Formatting itself is owned by DisplayNameFormatter.
+        ''' </summary>
         Private Function RemoveFrameworkPrefix(value As String) As String
-            If value.StartsWith("FW_", StringComparison.OrdinalIgnoreCase) Then
-                value = value.Substring(3).Trim()
-            End If
-
-            Return Globalization.CultureInfo.InvariantCulture.TextInfo.ToTitleCase(value.ToLowerInvariant())
+            Return DisplayNameFormatter.ToDisplayName(value, stripFrameworkPrefix:=True)
         End Function
 
         Public Function BuildEntityListingTitle(registrationId As Integer,

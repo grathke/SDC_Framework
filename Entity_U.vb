@@ -356,6 +356,10 @@ Namespace HelloWorld
             Return mode = EntityEditMode.ReadMode
         End Function
 
+        Protected Overrides Function IsCreatingNewRecord() As Boolean
+            Return mode = EntityEditMode.CreateMode
+        End Function
+
         Private Shared Function IsApplicationAdminSession() As Boolean
             Return SessionState.IsActive AndAlso SessionState.Current.HasValue AndAlso
                    SessionState.Current.Value.IsApplicationAdminRole

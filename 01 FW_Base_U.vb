@@ -662,6 +662,16 @@ Namespace HelloWorld
             Return False
         End Function
 
+        ''' <summary>
+        ''' True when the page is creating a record rather than editing an existing one.
+        ''' Field-level permissions use this to choose between Can_Create and Can_Update.
+        ''' Override on any page that has a create mode; the default is safe for pages that
+        ''' only ever edit.
+        ''' </summary>
+        Protected Overridable Function IsCreatingNewRecord() As Boolean
+            Return False
+        End Function
+
         Protected Overridable Function GetAdditionalValidationMessageLines() As IEnumerable(Of String)
             Return Array.Empty(Of String)()
         End Function
@@ -721,7 +731,7 @@ Namespace HelloWorld
             BindToFormInternal()
             loading = False
             hasUnsavedChanges = False
-            DataAccess.ApplyControlUpdates(Me, Me.GetType().Name)
+            DataAccess.ApplyControlUpdates(Me, Me.GetType().Name, IsCreatingNewRecord())
             NormalizeTextInputsForSave()
             baselineControlSnapshotJson = CaptureControlSnapshotJson()
             ResetPendingRecordBaseline()
@@ -804,6 +814,18 @@ Namespace HelloWorld
                 End If
             End If
 
+            Dim uniqueErrorMsg As String = String.Empty
+            If Not DataAccess.ValidateUniqueFields(Me,
+                                                   GetPageName(),
+                                                   ResolveTableNameForConstraints(),
+                                                   IsCreatingNewRecord(),
+                                                   ResolveAuditRecordKey(),
+                                                   uniqueErrorMsg) Then
+                If Not String.IsNullOrWhiteSpace(uniqueErrorMsg) Then
+                    validationLines.AddRange(uniqueErrorMsg.Split({Environment.NewLine}, StringSplitOptions.None))
+                End If
+            End If
+
             Dim additionalLines = GetAdditionalValidationMessageLines()
             If additionalLines IsNot Nothing Then
                 For Each line In additionalLines
@@ -830,9 +852,17 @@ Namespace HelloWorld
                 Return False
             End If
 
-            If Not TryBuildRecord() Then
-                Return False
-            End If
+            ' Masked fields display a placeholder, never their value. Restore the real values so
+            ' TryBuildRecord reads what was loaded, then mask again. Without this the mask text
+            ' itself would be written to the database.
+            FieldPermissions.UnmaskForSave(Me)
+            Try
+                If Not TryBuildRecord() Then
+                    Return False
+                End If
+            Finally
+                FieldPermissions.RemaskAfterSave(Me)
+            End Try
 
             Return True
         End Function
@@ -1388,12 +1418,13 @@ Namespace HelloWorld
             Return selectedId
         End Function
 
+        ''' <summary>
+        ''' Control captions are already field names, so the FW_ prefix is not stripped.
+        ''' Formatting itself is owned by DisplayNameFormatter.
+        ''' </summary>
         Protected Shared Function ToPascalCaseDisplay(name As String) As String
             If String.IsNullOrWhiteSpace(name) Then Return name
-            Dim result = System.Text.RegularExpressions.Regex.Replace(name, "([a-z])([A-Z])", "$1 $2")
-            result = System.Text.RegularExpressions.Regex.Replace(result, "([A-Z]+)([A-Z][a-z])", "$1 $2")
-            result = System.Text.RegularExpressions.Regex.Replace(result, "([A-Za-z])([0-9])", "$1 $2")
-            Return result
+            Return DisplayNameFormatter.ToDisplayName(name, stripFrameworkPrefix:=False)
         End Function
 
         Protected Shared Function ParseIntOrZero(value As String) As Integer

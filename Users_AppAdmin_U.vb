@@ -677,6 +677,10 @@ Namespace HelloWorld
             Return mode = UserAdminEditMode.ReadMode
         End Function
 
+        Protected Overrides Function IsCreatingNewRecord() As Boolean
+            Return mode = UserAdminEditMode.CreateMode
+        End Function
+
         Protected Overrides Function ShouldWarnOnCancel() As Boolean
             Return mode = UserAdminEditMode.CreateMode OrElse mode = UserAdminEditMode.UpdateMode
         End Function
