@@ -171,6 +171,30 @@ Do not propagate the unprefixed `PageGeneration_B_U` name.
 - A bare `dotnet run` has no credentials and now stops at startup with a configuration message.
 - Local development target: Server `BEELINK`, Database `WX_Framework`.
 
+## Role Permission Tables
+
+Three levels, each scoped to a role and registration:
+
+| Table | Grain | Drives |
+|---|---|---|
+| `FW_Roles` | role | the role itself |
+| `FW_RoleDetails` | role + **table** | table-level CRUD, folded into `AccessCapability`, drives the `_B` CRUD buttons |
+| `FW_RoleFields` | role + table + **field** | field-level attributes on `_B` columns and `_U` controls |
+
+**The parent link is RoleID + table name, not `RoleDetailID`.** Both tables carry a `RoleDetailID`
+column, but it is populated only on `FW_RoleFields` and is blank on every `FW_RoleDetails` row, so
+joining on it matches nothing. `FW_RoleFields.TableName` matches `FW_RoleDetails.DB_Table` for the
+same `RoleID`. Verified 2026-08-29: zero orphans under that link, against 90 false orphans if
+`RoleDetailID` is used.
+
+Only one foreign key exists across the set, `FK_FW_RoleDetails_FW_RoleSchema`, so none of this is
+enforced by the database. `RegistrationID` and `RoleID` are denormalized onto both child tables and
+can drift from their parent without complaint.
+
+Beware the same-named columns at different grains: `Can_Create` / `Can_Read` / `Can_Update` on
+`FW_RoleDetails` are **table-level** and gate the CRUD buttons; on `FW_RoleFields` they are
+**field-level** and gate an individual control.
+
 ## Override Captions
 
 Captions are role- and registration-specific. A company that calls Gender "Pronoun" changes it
