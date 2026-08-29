@@ -104,7 +104,7 @@ Icon files live in `assets/images/`.
 
 - placement: main ribbon (right, pinned)
 - ActionType: Command / role switcher
-- target: `RoleSelectionForm` plus a `SessionState` role switch
+- target: `FW_RoleSelection` plus a `SessionState` role switch
 - caption source: current session role name, formatted
 - icon file: `users.png`
 - visibility rule: `MenuFormInitializer.vb:125`, always visible (pinned); the selector only opens

@@ -295,7 +295,7 @@ Namespace HelloWorld
             If assignedRoles.Count = 1 Then
                 selectedRole = assignedRoles(0)
             Else
-                Using roleSelector As New RoleSelectionForm(assignedRoles)
+                Using roleSelector As New FW_RoleSelection(assignedRoles)
                     Dim roleResult = roleSelector.ShowDialog(Me)
                     If roleResult <> DialogResult.OK OrElse roleSelector.SelectedRole Is Nothing Then
                         statusLabel.Text = "Role selection cancelled."

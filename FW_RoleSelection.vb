@@ -6,7 +6,7 @@ Imports System.Drawing
 Imports System.Windows.Forms
 
 Namespace HelloWorld
-    Public Class RoleSelectionForm
+    Public Class FW_RoleSelection
         Inherits Form
 
         Private ReadOnly roleList As List(Of UserRoleOption)
@@ -84,7 +84,8 @@ Namespace HelloWorld
 
             AddHandler rolesGrid.SelectionChanged, AddressOf RolesGrid_SelectionChanged
             AddHandler rolesGrid.CellDoubleClick, AddressOf RolesGrid_CellDoubleClick
-            AddHandler Me.Shown, AddressOf RoleSelectionForm_Shown
+            AddHandler rolesGrid.RowPrePaint, AddressOf RolesGrid_RowPrePaint
+            AddHandler Me.Shown, AddressOf FW_RoleSelection_Shown
 
             okButton = New Button() With {
                 .Text = "OK",
@@ -112,7 +113,7 @@ Namespace HelloWorld
             Me.Controls.Add(cancelActionButton)
         End Sub
 
-        Private Sub RoleSelectionForm_Shown(sender As Object, e As EventArgs)
+        Private Sub FW_RoleSelection_Shown(sender As Object, e As EventArgs)
             rolesGrid.ClearSelection()
             rolesGrid.CurrentCell = Nothing
             okButton.Enabled = False
@@ -138,6 +139,15 @@ Namespace HelloWorld
                     Exit For
                 End If
             Next
+        End Sub
+
+        ''' <summary>
+        ''' Suppresses the current-cell focus rectangle. The grid is read-only and selects whole
+        ''' rows, so an outline drawn around one cell only reads as that cell being edited. The
+        ''' row highlight already shows what is selected.
+        ''' </summary>
+        Private Sub RolesGrid_RowPrePaint(sender As Object, e As DataGridViewRowPrePaintEventArgs)
+            e.PaintParts = e.PaintParts And Not DataGridViewPaintParts.Focus
         End Sub
 
         Private Sub RolesGrid_SelectionChanged(sender As Object, e As EventArgs)

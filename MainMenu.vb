@@ -861,7 +861,7 @@ Namespace HelloWorld
                 currentRoleId = activeSession.Value.RoleID
             End If
 
-            Using selector As New RoleSelectionForm(roles, currentRoleId)
+            Using selector As New FW_RoleSelection(roles, currentRoleId)
                 Dim result = selector.ShowDialog(Me)
                 If result <> DialogResult.OK OrElse selector.SelectedRole Is Nothing Then
                     Return
