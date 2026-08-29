@@ -42,6 +42,9 @@ Namespace HelloWorld
         Private tabOrderDownButton As Button
         Private tabOrderSaveButton As Button
         Private tabOrderHideButton As Button
+        Private tabOrderBaselineOrder As List(Of TabOrderManagerItem)
+        Private tabOrderBaselineTabStops As Dictionary(Of Control, Boolean)
+        Private tabOrderCommitInProgress As Boolean
         Private loadingTabOrderManager As Boolean
         Private tabOrderCheckClickIndex As Integer = -1
         Private tabOrderPanelDragging As Boolean
@@ -443,10 +446,12 @@ Namespace HelloWorld
             }
             tabOrderPanel.Location = New Point(ClientSize.Width - tabOrderPanel.Width - 10, 42)
 
-            tabOrderHideButton = New Button() With {.Text = "Close", .Size = New Size(60, 26), .Location = New Point(228, 8), .TabStop = False}
+            ' Up and Down group on the left; OK and Cancel pair on the right with the same 6px gap,
+            ' so the reordering controls read as separate from the accept/discard pair.
             tabOrderUpButton = New Button() With {.Text = "Up", .Size = New Size(60, 26), .Location = New Point(8, 8), .TabStop = False}
             tabOrderDownButton = New Button() With {.Text = "Down", .Size = New Size(60, 26), .Location = New Point(74, 8), .TabStop = False}
-            tabOrderSaveButton = New Button() With {.Text = "Save", .Size = New Size(60, 26), .Location = New Point(140, 8), .TabStop = False}
+            tabOrderSaveButton = New Button() With {.Text = "OK", .Size = New Size(60, 26), .Location = New Point(162, 8), .TabStop = False}
+            tabOrderHideButton = New Button() With {.Text = "Cancel", .Size = New Size(60, 26), .Location = New Point(228, 8), .TabStop = False}
             tabOrderList = New CheckedListBox() With {
                 .Name = "CheckedListBox_TabOrder",
                 .Location = New Point(8, 42),
@@ -496,6 +501,7 @@ Namespace HelloWorld
             Finally
                 loadingTabOrderManager = False
             End Try
+            CaptureTabOrderBaseline()
             UpdateTabOrderManagerButtons()
         End Sub
 
@@ -603,14 +609,62 @@ Namespace HelloWorld
         End Function
 
         Private Sub TabOrderToggleButton_Click(sender As Object, e As EventArgs)
-            tabOrderPanel.Visible = Not tabOrderPanel.Visible
+            If tabOrderPanel.Visible Then
+                RevertTabOrderChanges()
+                tabOrderPanel.Visible = False
+            Else
+                tabOrderPanel.Visible = True
+                CaptureTabOrderBaseline()
+            End If
+
             UpdateTabOrderToggleButton()
             tabOrderPanel.BringToFront()
         End Sub
 
         Private Sub TabOrderHideButton_Click(sender As Object, e As EventArgs)
+            If Not tabOrderCommitInProgress Then RevertTabOrderChanges()
             tabOrderPanel.Visible = False
             UpdateTabOrderToggleButton()
+        End Sub
+
+        ''' <summary>
+        ''' Remembers the row order and each control's TabStop as the panel opens, so closing
+        ''' without OK can put everything back. Ticking a row changes TabStop immediately, while
+        ''' reordering is only written to the controls by OK, so both have to be captured.
+        ''' </summary>
+        Private Sub CaptureTabOrderBaseline()
+            If tabOrderList Is Nothing Then Return
+
+            tabOrderBaselineOrder = tabOrderList.Items.OfType(Of TabOrderManagerItem)().ToList()
+            tabOrderBaselineTabStops = New Dictionary(Of Control, Boolean)()
+
+            For Each item In tabOrderBaselineOrder
+                If item.Control IsNot Nothing Then
+                    tabOrderBaselineTabStops(item.Control) = item.Control.TabStop
+                End If
+            Next
+        End Sub
+
+        Private Sub RevertTabOrderChanges()
+            If tabOrderList Is Nothing OrElse tabOrderBaselineOrder Is Nothing Then Return
+
+            loadingTabOrderManager = True
+            Try
+                tabOrderList.Items.Clear()
+
+                For Each item In tabOrderBaselineOrder
+                    Dim wasTabStop = True
+                    If item.Control IsNot Nothing AndAlso tabOrderBaselineTabStops.TryGetValue(item.Control, wasTabStop) Then
+                        item.Control.TabStop = wasTabStop
+                    End If
+
+                    tabOrderList.SetItemChecked(tabOrderList.Items.Add(item), wasTabStop)
+                Next
+            Finally
+                loadingTabOrderManager = False
+            End Try
+
+            UpdateTabOrderManagerButtons()
         End Sub
 
         Private Sub UpdateTabOrderToggleButton()
@@ -662,12 +716,45 @@ Namespace HelloWorld
 
             Dim updatedBy = If(SessionState.IsActive AndAlso SessionState.Current.HasValue, SessionState.Current.Value.UserID, 0)
             DataAccess.SaveTabOrderSettings(GetPageName(), settings, updatedBy)
-            tabOrderHideButton.PerformClick()
+
+            ' Closing after OK must not undo what OK just applied, and the saved state becomes
+            ' the new baseline for the next time the panel is opened.
+            tabOrderCommitInProgress = True
+            Try
+                tabOrderHideButton.PerformClick()
+            Finally
+                tabOrderCommitInProgress = False
+            End Try
+
+            CaptureTabOrderBaseline()
             MessageBox.Show(Me, "Tab order saved for this page.", "Tab Order", MessageBoxButtons.OK, MessageBoxIcon.Information)
         End Sub
 
         Private Sub TabOrderList_SelectedIndexChanged(sender As Object, e As EventArgs)
             UpdateTabOrderManagerButtons()
+            FocusTabOrderSelection()
+        End Sub
+
+        ''' <summary>
+        ''' Puts the cursor on the field the selected row refers to, so it is obvious which control
+        ''' the row stands for. Browsing the list is not the user filling the form in, so this does
+        ''' not count as visiting a required field.
+        ''' </summary>
+        Private Sub FocusTabOrderSelection()
+            If loadingTabOrderManager Then Return
+
+            Dim item = TryCast(tabOrderList.SelectedItem, TabOrderManagerItem)
+            If item Is Nothing OrElse item.Control Is Nothing Then Return
+            If Not item.Control.Visible OrElse Not item.Control.Enabled Then Return
+
+            suppressRequiredTouch = True
+            Try
+                item.Control.Focus()
+            Catch
+                ' Focus is a convenience; never let it break the tab order manager.
+            Finally
+                suppressRequiredTouch = False
+            End Try
         End Sub
 
         Private Sub TabOrderList_KeyDown(sender As Object, e As KeyEventArgs)
