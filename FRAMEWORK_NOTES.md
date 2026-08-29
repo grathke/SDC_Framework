@@ -34,6 +34,12 @@ is `MainMenu.vb`.
 source (OverrideCaption / Table_Alias / fixed), icon file, display order and left/right section,
 visibility rule, click behavior.
 
+## Form Sizing
+
+Always size forms with `Me.ClientSize`, never `Me.Size`. `ClientSize` is the exact usable area, so
+layout maths works: equal margins means grid right edge + margin = `ClientSize.Width`. Using
+`Me.Size` includes the window chrome and leaves the layout off by the border and title bar.
+
 ## Browse (_B) Page Patterns
 
 - **SQL loading:** the page calls `LoadSqlFromRoleTable()` in the constructor, then the shown
@@ -52,7 +58,12 @@ visibility rule, click behavior.
 - **DataGridView real-time events:** checkboxes use `CurrentCellDirtyStateChanged` + `CommitEdit`;
   text columns use `EditingControlShowing` with `TextChanged` wired on the editing TextBox.
 - **CRUD captions** come from `FW_Registration` (`BTN_Create_Caption`, `BTN_Read_Caption`,
-  `BTN_Update_Caption`, `BTN_Delete_Caption`) and must be applied before user interaction.
+  `BTN_Update_Caption`, `BTN_Delete_Caption`) and must be applied before user interaction — on
+  first open, without needing a combo click. The session carries the active registration's captions
+  for runtime context, but the database stays the source of truth and can refresh them.
+- **`Users_AppAdmin_B` initial load order:** preselect `SessionState.Current.RegistrationID` in the
+  registration combo, resolve the selected registration ID, then apply CRUD captions, then load the
+  grid.
 - **PK contract:** only an explicit SQL alias named `PK` is accepted as the row key. Fallbacks such
   as `ID`, `RoleID`, `UserID` are not used. Resolution and missing-PK warnings are centralized in
   `MaintenanceKeyGuard.vb`; do not duplicate them page-locally.

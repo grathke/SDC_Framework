@@ -26,6 +26,12 @@ whether something is expected of them.
   user. State what is needed and what is assumed if they choose nothing.
 - Finish every part of the work that is not blocked before reporting either marker, and say explicitly
   what was left out and why.
+- Read the full relevant file before changing it. Never apply a generic solution without first
+  understanding the existing code.
+- Before a change that touches multiple files, affects working behavior, or is more than a small
+  targeted edit: describe the plan and get confirmation before proceeding.
+- When something looks wrong, investigate the actual page, control or data first. If it is still
+  unclear, ask. Do not presume intent or build a theory on an unconfirmed premise.
 
 ## Project
 
