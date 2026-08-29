@@ -49,8 +49,10 @@ When the user signals they are finished — "I'm finished for the day", "good ni
 today", "signing off", or anything else that plainly means the session is ending — run this check
 before saying goodnight. Do not wait to be asked.
 
-Report only what actually needs attention, in a few lines. If everything is safe, say so in one
-sentence rather than listing checks that passed.
+Report only what actually needs attention, in a few lines. If nothing needs attention, reply with
+exactly **`Everything Has Been Saved`** and nothing else — no list of checks that passed, no
+summary of the day. Use that phrase only when every item below is genuinely clear; if anything
+needs attention, say what it is instead.
 
 1. **Uncommitted work** — run `git status --short`. If the working tree is dirty, say how many
    files and offer to commit. Branch first if on the default branch.
