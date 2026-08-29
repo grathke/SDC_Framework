@@ -33,6 +33,16 @@ whether something is expected of them.
 - When something looks wrong, investigate the actual page, control or data first. If it is still
   unclear, ask. Do not presume intent or build a theory on an unconfirmed premise.
 
+### Trigger phrases
+
+- **"Make it so"** — proceed with the proposal just made, without restating it or asking again.
+  Treat it as a full go-ahead, including for work that would otherwise wait for confirmation.
+  It does **not** waive the guardrails that require their own approval: database view changes,
+  physical deletes, creating roles or permissions, and restore points still need an explicit ask.
+  If more than one proposal is open, do not guess — list what is pending and ask which one.
+- **"run"** — launch the application, in reply to a `READY TO RUN` marker.
+- **"run duplicate check first"** — apply the Consolidation Guardrail before making changes.
+
 ## Project
 
 VB.NET Windows Forms line-of-business application targeting `net10.0-windows` (.NET SDK 10 preview).
