@@ -5615,15 +5615,24 @@ Namespace HelloWorld
             End Using
         End Sub
 
+        ''' <summary>
+        ''' Field-level control attributes for a page, scoped to the active session's registration
+        ''' and role. FW_RoleFields rows are per role, so without the RoleID filter a field
+        ''' configured for more than one role returns duplicate rows and an arbitrary role wins.
+        ''' See sql\026_control_updates_role_scope.sql.
+        ''' </summary>
         Public Shared Function GetControlUpdates(pageName As String) As DataTable
             Dim registrationId = If(SessionState.IsActive, SessionState.Current.Value.RegistrationID, 0)
+            Dim roleId = If(SessionState.IsActive, SessionState.Current.Value.RoleID, 0)
             Dim table As New DataTable("ControlUpdates")
             Using conn As New SqlConnection(ConnectionString)
                 conn.Open()
                 Using cmd As New SqlCommand(
-                    "SELECT * FROM dbo.vw_FW_ControlUpdates_U WHERE PageName = @PageName AND RegistrationID = @RegistrationID", conn)
+                    "SELECT * FROM dbo.vw_FW_ControlUpdates_U " &
+                    "WHERE PageName = @PageName AND RegistrationID = @RegistrationID AND RoleID = @RoleID", conn)
                     cmd.Parameters.AddWithValue("@PageName", pageName.Trim())
                     cmd.Parameters.AddWithValue("@RegistrationID", registrationId)
+                    cmd.Parameters.AddWithValue("@RoleID", roleId)
                     Using da As New SqlDataAdapter(cmd)
                         da.Fill(table)
                     End Using
