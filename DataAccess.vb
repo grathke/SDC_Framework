@@ -305,11 +305,9 @@ Namespace HelloWorld
                 Return fullConnectionString.Trim()
             End If
 
-            If String.IsNullOrWhiteSpace(Environment.GetEnvironmentVariable("HELLOWORLD_DB_PASSWORD")) Then
-                Dim saved = DatabaseConfigStore.Load()
-                If saved IsNot Nothing AndAlso Not String.IsNullOrWhiteSpace(saved.Password) Then
-                    Return DatabaseConfigStore.BuildConnectionString(saved)
-                End If
+            Dim saved = GetUsableSavedSettings()
+            If saved IsNot Nothing Then
+                Return DatabaseConfigStore.BuildConnectionString(saved)
             End If
 
             Dim server = GetEnvironmentOrDefault("HELLOWORLD_DB_SERVER", "BEELINK")
@@ -342,11 +340,17 @@ Namespace HelloWorld
             End If
 
             If String.IsNullOrWhiteSpace(Environment.GetEnvironmentVariable("HELLOWORLD_DB_PASSWORD")) Then
+                ' Credentials saved through the configuration dialog count as configured, or the
+                ' dialog would reappear on every launch and saving would achieve nothing.
+                If GetUsableSavedSettings() IsNot Nothing Then
+                    Return String.Empty
+                End If
+
                 Return "Database credentials are not configured." & Environment.NewLine &
                        Environment.NewLine &
-                       "Set HELLOWORLD_DB_PASSWORD, or set HELLOWORLD_DB_CONNECTION to a full " &
-                       "connection string. HELLOWORLD_DB_SERVER, HELLOWORLD_DB_USER and " &
-                       "HELLOWORLD_DB_NAME are optional overrides." & Environment.NewLine &
+                       "Enter them here, or set HELLOWORLD_DB_CONNECTION to a full connection " &
+                       "string. HELLOWORLD_DB_SERVER, HELLOWORLD_DB_USER, HELLOWORLD_DB_NAME and " &
+                       "HELLOWORLD_DB_PASSWORD are the individual overrides." & Environment.NewLine &
                        Environment.NewLine &
                        "run-local.ps1 sets these for local development."
             End If
@@ -355,17 +359,61 @@ Namespace HelloWorld
         End Function
 
         ''' <summary>
+        ''' True when the connection details come from the environment rather than from anything
+        ''' the user saved. Those belong to whoever set the machine up, so the application must
+        ''' never offer to replace them - a server that is merely unreachable is not a credentials
+        ''' problem, and a developer running run-local.ps1 should never see a prompt at all.
+        ''' </summary>
+        Public Shared Function IsUsingEnvironmentCredentials() As Boolean
+            Return Not String.IsNullOrWhiteSpace(Environment.GetEnvironmentVariable("HELLOWORLD_DB_CONNECTION")) OrElse
+                   Not String.IsNullOrWhiteSpace(Environment.GetEnvironmentVariable("HELLOWORLD_DB_PASSWORD"))
+        End Function
+
+        ''' <summary>
+        ''' Saved credentials, but only when the environment has not already supplied a password.
+        ''' Single owner of that precedence rule, so the startup check and the connection string
+        ''' cannot disagree about whether the application is configured.
+        ''' </summary>
+        Private Shared Function GetUsableSavedSettings() As DatabaseConfigStore.DatabaseSettings
+            If Not String.IsNullOrWhiteSpace(Environment.GetEnvironmentVariable("HELLOWORLD_DB_PASSWORD")) Then
+                Return Nothing
+            End If
+
+            Dim saved = DatabaseConfigStore.Load()
+            If saved Is Nothing OrElse String.IsNullOrWhiteSpace(saved.Password) Then
+                Return Nothing
+            End If
+
+            Return saved
+        End Function
+
+        ''' <summary>
         ''' Opens the configured connection and runs a trivial query. Returns the failure reason,
         ''' or String.Empty when the database is reachable. Used at startup so credentials that
         ''' stopped working - a password changed on the server, say - lead to the configuration
         ''' dialog rather than an unexplained failure at login.
         ''' </summary>
-        Public Shared Function TestConfiguredConnection() As String
+        Public Shared Function TestConfiguredConnection(Optional timeoutSeconds As Integer = 15) As String
+            Return TestConnection(ConnectionString, timeoutSeconds)
+        End Function
+
+        ''' <summary>
+        ''' Opens a connection and runs a trivial query. This authenticates to SQL Server, not to
+        ''' the application, so it answers "is the database alive and reachable" before anyone has
+        ''' logged in. Returns the failure reason, or String.Empty when the database answered.
+        ''' </summary>
+        Public Shared Function TestConnection(connectionString As String, Optional timeoutSeconds As Integer = 15) As String
+            If String.IsNullOrWhiteSpace(connectionString) Then Return "No connection string is configured."
+
             Try
-                Using conn As New SqlConnection(ConnectionString)
+                Dim builder As New SqlConnectionStringBuilder(connectionString) With {
+                    .ConnectTimeout = Math.Max(1, timeoutSeconds)
+                }
+
+                Using conn As New SqlConnection(builder.ConnectionString)
                     conn.Open()
                     Using cmd As New SqlCommand("SELECT 1", conn)
-                        cmd.CommandTimeout = 15
+                        cmd.CommandTimeout = Math.Max(1, timeoutSeconds)
                         cmd.ExecuteScalar()
                     End Using
                 End Using

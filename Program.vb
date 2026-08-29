@@ -138,14 +138,33 @@ Namespace HelloWorld
                 Return ShowDatabaseConfiguration(configurationError)
             End If
 
-            Dim connectionError = DataAccess.TestConfiguredConnection()
-            If Not String.IsNullOrWhiteSpace(connectionError) Then
-                Log("Database configured but unreachable: " & connectionError)
-                Return ShowDatabaseConfiguration(
-                    "The configured database could not be reached." & Environment.NewLine & connectionError)
+            ' A short probe, so a dead server is reported plainly instead of surfacing as a
+            ' confusing failure on the login screen. Kept brief because it runs on every launch.
+            Dim connectionError = DataAccess.TestConfiguredConnection(5)
+            If String.IsNullOrWhiteSpace(connectionError) Then Return True
+
+            ' An unreachable database is not a credentials problem, so it is never answered with a
+            ' dialog offering to replace credentials that are probably fine. Report it, and let the
+            ' user start the server and retry without relaunching. Credentials are changed
+            ' deliberately, through --configure-db.
+            Log("Database unreachable: " & connectionError)
+
+            Dim message = "The database could not be reached." & Environment.NewLine & Environment.NewLine &
+                          connectionError & Environment.NewLine & Environment.NewLine &
+                          "Start the database and choose Retry."
+
+            If Not DataAccess.IsUsingEnvironmentCredentials() Then
+                message &= Environment.NewLine & Environment.NewLine &
+                           "To change the saved credentials, run the application with --configure-db."
             End If
 
-            Return True
+            If MessageBox.Show(message, "Database Unavailable",
+                               MessageBoxButtons.RetryCancel, MessageBoxIcon.Error) = DialogResult.Retry Then
+                DataAccess.RefreshConnectionString()
+                Return EnsureDatabaseConfigured(args)
+            End If
+
+            Return False
         End Function
 
         Private Function ShowDatabaseConfiguration(reason As String) As Boolean
