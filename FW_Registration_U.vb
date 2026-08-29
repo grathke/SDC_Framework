@@ -27,6 +27,7 @@ Namespace HelloWorld
         Private smartyEmbeddedKeyTextBox As TextBox
         Private smartyUseEmbeddedKeyCheckBox As CheckBox
         Private smartyAddressLookupController As SmartyAddressLookupController
+        Private zipCoderController As ZipCoderController
 
         Private displayDashboardCheckBox As CheckBox
         Private allowMessagingCheckBox As CheckBox
@@ -57,8 +58,9 @@ Namespace HelloWorld
                 cityTextBox,
                 stateTextBox,
                 zipTextBox,
-                Function() IsSessionSmartyEmbeddedLookupEnabled(),
-                Function() GetSessionSmartyEmbeddedKey())
+                Function() SmartyAddressLookupController.IsSessionLookupEnabled(),
+                Function() SmartyAddressLookupController.GetSessionEmbeddedKey())
+            zipCoderController = New ZipCoderController(Me, cityTextBox, stateTextBox, zipTextBox)
         End Sub
 
         Protected Overrides Function OkButtonText() As String
@@ -71,19 +73,6 @@ Namespace HelloWorld
 
         Protected Overrides Function GetTableNameOverride() As String
             Return "FW_Registration"
-        End Function
-
-        Private Shared Function GetSessionSmartyEmbeddedKey() As String
-            If SessionState.IsActive AndAlso SessionState.Current.HasValue Then
-                Return If(SessionState.Current.Value.Smarty_EmbeddedKey, String.Empty).Trim()
-            End If
-
-            Return String.Empty
-        End Function
-
-        Private Shared Function IsSessionSmartyEmbeddedLookupEnabled() As Boolean
-            Return SessionState.IsActive AndAlso SessionState.Current.HasValue AndAlso
-                   SessionState.Current.Value.Smarty_UseEmbeddedKey
         End Function
 
         Protected Overrides Sub BindToFormInternal()

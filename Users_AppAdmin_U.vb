@@ -22,6 +22,7 @@ Namespace HelloWorld
         Private ReadOnly stateTextBox As TextBox
         Private ReadOnly zipTextBox As TextBox
         Private smartyAddressLookupController As SmartyAddressLookupController
+        Private zipCoderController As ZipCoderController
         Private ReadOnly passwordTextBox As TextBox
         Private ReadOnly activeCheckBox As CheckBox
         Private ReadOnly superAdminCheckBox As CheckBox
@@ -31,8 +32,6 @@ Namespace HelloWorld
         Private ReadOnly removeButton As Button
         Private ReadOnly registrationLabel As Label
         Private ReadOnly registrationIdTextBox As TextBox
-        Private isPasswordMaskActive As Boolean = False
-        Private Const ExistingPasswordMask As String = "XXXXX"
 
         <System.ComponentModel.DesignerSerializationVisibility(System.ComponentModel.DesignerSerializationVisibility.Hidden)>
         Public Property UserData As UserAdminRecord
@@ -210,8 +209,9 @@ Namespace HelloWorld
                     cityTextBox,
                     stateTextBox,
                     zipTextBox,
-                    Function() IsSmartyEmbeddedLookupEnabled(),
-                    Function() GetSmartyEmbeddedKey())
+                    Function() SmartyAddressLookupController.IsSessionLookupEnabled(),
+                    Function() SmartyAddressLookupController.GetSessionEmbeddedKey())
+                zipCoderController = New ZipCoderController(Me, cityTextBox, stateTextBox, zipTextBox)
             End If
             ApplyRequiredLabelStyle()
             SetManualTabOrder(firstNameTextBox,
@@ -221,6 +221,7 @@ Namespace HelloWorld
                               cityTextBox,
                               stateTextBox,
                               zipTextBox,
+                              If(zipCoderController Is Nothing, Nothing, zipCoderController.ZipCoderButton_Control),
                               emailTextBox,
                               phoneTextBox,
                               passwordTextBox,
@@ -235,24 +236,19 @@ Namespace HelloWorld
             assignedRolesGrid.TabStop = False
         End Sub
 
+        ''' <summary>
+        ''' This page is laid out in two columns: name and address on the left from x=20, contact
+        ''' details on the right from x=500. Declaring the split lets a hidden left-hand field pull
+        ''' the fields under it up without disturbing Email, Phone and Password.
+        ''' </summary>
+        Protected Overrides Function GetLayoutColumnLefts() As Integer()
+            Return New Integer() {0, 490}
+        End Function
+
         Private Shared Function IsApplicationAdminSession() As Boolean
             Return SessionState.IsActive AndAlso SessionState.Current.HasValue AndAlso
                    SessionState.Current.Value.IsApplicationAdminRole
         End Function
-
-        Private Shared Function GetSmartyEmbeddedKey() As String
-            If SessionState.IsActive AndAlso SessionState.Current.HasValue Then
-                Return If(SessionState.Current.Value.Smarty_EmbeddedKey, String.Empty).Trim()
-            End If
-
-            Return String.Empty
-        End Function
-
-        Private Shared Function IsSmartyEmbeddedLookupEnabled() As Boolean
-            Return SessionState.IsActive AndAlso SessionState.Current.HasValue AndAlso
-                   SessionState.Current.Value.Smarty_UseEmbeddedKey
-        End Function
-
         Private Sub EnsureAddressFieldLabels()
             SetAddressFieldLabel("Label_Address", "Address")
             SetAddressFieldLabel("Label_City", "City")
@@ -727,7 +723,6 @@ Namespace HelloWorld
             AddHandler emailTextBox.TextChanged, AddressOf MarkDirty
             AddHandler phoneTextBox.TextChanged, AddressOf MarkDirty
             AddHandler passwordTextBox.TextChanged, AddressOf MarkDirty
-            AddHandler passwordTextBox.Enter, AddressOf PasswordTextBox_Enter
             AddHandler activeCheckBox.CheckedChanged, AddressOf MarkDirty
         End Sub
 
@@ -763,39 +758,19 @@ Namespace HelloWorld
             Return result & " *"
         End Function
 
+        ''' <summary>
+        ''' An existing user's password is already hashed, so the box shows the same sentinel the
+        ''' database holds in [Password]. Typing over it is what sets a new password; leaving it
+        ''' alone leaves the password untouched. The value is never swapped out on focus, so it
+        ''' survives a tab through the field and the unsaved-changes check stays honest.
+        ''' </summary>
         Private Sub ConfigurePasswordEditorForCurrentUser()
-            If UserData IsNot Nothing AndAlso UserData.UserID > 0 Then
-                ShowExistingPasswordMask()
-                Return
-            End If
-
             loading = True
-            isPasswordMaskActive = False
             passwordTextBox.UseSystemPasswordChar = False
             passwordTextBox.ForeColor = SystemColors.WindowText
-            passwordTextBox.Text = String.Empty
-            loading = False
-        End Sub
-
-        Private Sub ShowExistingPasswordMask()
-            loading = True
-            isPasswordMaskActive = True
-            passwordTextBox.UseSystemPasswordChar = False
-            passwordTextBox.ForeColor = Color.DimGray
-            passwordTextBox.Text = ExistingPasswordMask
-            loading = False
-        End Sub
-
-        Private Sub PasswordTextBox_Enter(sender As Object, e As EventArgs)
-            If Not isPasswordMaskActive Then
-                Return
-            End If
-
-            loading = True
-            isPasswordMaskActive = False
-            passwordTextBox.Text = String.Empty
-            passwordTextBox.UseSystemPasswordChar = False
-            passwordTextBox.ForeColor = SystemColors.WindowText
+            passwordTextBox.Text = If(UserData IsNot Nothing AndAlso UserData.UserID > 0,
+                                      DataAccess.StoredPasswordMask,
+                                      String.Empty)
             loading = False
         End Sub
 
@@ -804,12 +779,10 @@ Namespace HelloWorld
                 Return True
             End If
 
-            If isPasswordMaskActive Then
-                Return True
-            End If
-
+            ' Still holding the sentinel means the password was not retyped. Nothing to hash.
             Dim pendingPassword = If(passwordTextBox.Text, String.Empty).Trim()
-            If pendingPassword = String.Empty Then
+            If pendingPassword = String.Empty OrElse
+               String.Equals(pendingPassword, DataAccess.StoredPasswordMask, StringComparison.Ordinal) Then
                 Return True
             End If
 
@@ -818,7 +791,7 @@ Namespace HelloWorld
                 Return False
             End If
 
-            ShowExistingPasswordMask()
+            ConfigurePasswordEditorForCurrentUser()
             Return True
         End Function
 

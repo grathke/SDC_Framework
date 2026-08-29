@@ -2089,6 +2089,14 @@ Namespace HelloWorld
             Return False
         End Function
 
+        ''' <summary>
+        ''' What is left in dbo.FW_Users.[Password] once the real password has been hashed into
+        ''' PasswordHash. It is a sentinel, not a password: seeing it means "this user has a
+        ''' password set and it has not been retyped". Single owner of the value - the maintenance
+        ''' page shows this same constant rather than inventing its own placeholder.
+        ''' </summary>
+        Public Const StoredPasswordMask As String = "#####"
+
         Public Shared Function ComputePasswordHashForUser(rawPassword As String, userId As Integer) As String
             If userId <= 0 Then
                 Return String.Empty
@@ -2140,7 +2148,7 @@ Namespace HelloWorld
                                 "SET PasswordHash = @PasswordHash, [Password] = @PasswordMask, UpdatedBy = @UpdatedBy, UpdatedOn = GETDATE() " &
                                 "WHERE UserID = @UserID", conn, tx)
                                 saveHashCmd.Parameters.AddWithValue("@PasswordHash", passwordHash)
-                                saveHashCmd.Parameters.AddWithValue("@PasswordMask", "#####")
+                                saveHashCmd.Parameters.AddWithValue("@PasswordMask", StoredPasswordMask)
                                 saveHashCmd.Parameters.AddWithValue("@UpdatedBy", updatedBy)
                                 saveHashCmd.Parameters.AddWithValue("@UserID", userId)
                                 rowsUpdated = saveHashCmd.ExecuteNonQuery()
@@ -5773,10 +5781,12 @@ Namespace HelloWorld
 
                         ' Field-level permissions from FW_RoleFields. Applied before required
                         ' styling so a hidden or unreadable field is never left interactive.
-                        ApplyFieldPermissions(form, controlName, linkedControl, row, isNewRecord)
+                        Dim fieldHidden = ApplyFieldPermissions(form, controlName, linkedControl, row, isNewRecord)
 
-                        ' Apply required border and live validation events
-                        If isRequired AndAlso Not String.IsNullOrWhiteSpace(controlName) Then
+                        ' Apply required border and live validation events. A hidden field is
+                        ' skipped: its border panel would be a stray visible control on a row that
+                        ' otherwise has nothing left on it.
+                        If isRequired AndAlso Not fieldHidden AndAlso Not String.IsNullOrWhiteSpace(controlName) Then
                             If ShouldSkipBrRequiredStyling(form, controlName, linkedControl) Then
                                 Continue For
                             End If
@@ -5786,7 +5796,11 @@ Namespace HelloWorld
                                 Dim ctrl = matches(0)
                                 ctrl.Tag = "Required"
 
+                                ' Hidden until the field is actually left empty. Defaulting to
+                                ' visible put a stray control on the row, which also stopped a
+                                ' hidden field's row from collapsing.
                                 Dim borderPanel As New System.Windows.Forms.Panel() With {
+                                    .Visible = False,
                                     .BackColor = SystemColors.Control,
                                     .Location = New System.Drawing.Point(ctrl.Left - 1, ctrl.Top - 1),
                                     .Size = New System.Drawing.Size(ctrl.Width + 2, ctrl.Height + 2),
@@ -5796,29 +5810,10 @@ Namespace HelloWorld
                                 borderPanel.BringToFront()
                                 ctrl.BringToFront()
 
-                                Dim capturedCtrl = ctrl
-                                Dim capturedPanel = borderPanel
-                                Dim ctrlType = ctrl.GetType()
-                                If ctrlType = GetType(System.Windows.Forms.TextBox) OrElse
-                                   ctrlType = GetType(System.Windows.Forms.MaskedTextBox) OrElse
-                                   ctrlType = GetType(System.Windows.Forms.RichTextBox) Then
-                                    AddHandler ctrl.TextChanged,
-                                        Sub(s, e)
-                                            Dim isEmpty = String.IsNullOrWhiteSpace(capturedCtrl.Text)
-                                            capturedPanel.BackColor = If(isEmpty, Color.Red, SystemColors.Control)
-                                            capturedPanel.Visible = isEmpty
-                                        End Sub
-                                ElseIf ctrlType = GetType(System.Windows.Forms.ComboBox) Then
-                                    Dim combo = DirectCast(ctrl, System.Windows.Forms.ComboBox)
-                                    AddHandler combo.SelectedIndexChanged,
-                                        Sub(s, e)
-                                            Dim val As Integer = -1
-                                            If combo.SelectedValue IsNot Nothing Then Integer.TryParse(combo.SelectedValue.ToString(), val)
-                                            Dim isEmpty = combo.SelectedIndex < 0 OrElse val <= 0 OrElse String.IsNullOrWhiteSpace(combo.Text)
-                                            capturedPanel.BackColor = If(isEmpty, Color.Red, SystemColors.Control)
-                                            capturedPanel.Visible = isEmpty
-                                        End Sub
-                                End If
+                                ' Visibility is not managed here. FW_Base_U adopts this panel and
+                                ' applies the shared rule - red only once the user has visited the
+                                ' field and left it empty - so both kinds of required border on a
+                                ' page behave identically.
                             End If
                         End If
 
@@ -6022,15 +6017,19 @@ Namespace HelloWorld
         ''' single control and its Label_ partner. Column-level permissions on FW_RoleDetails
         ''' govern the CRUD buttons; these govern the individual field.
         ''' </summary>
-        Private Shared Sub ApplyFieldPermissions(form As System.Windows.Forms.Form,
-                                                 controlName As String,
-                                                 linkedControl As String,
-                                                 row As DataRow,
-                                                 isNewRecord As Boolean)
-            If String.IsNullOrWhiteSpace(controlName) Then Return
+        ''' <returns>
+        ''' True when the field was hidden outright. The caller uses this to skip the required
+        ''' border: a hidden field must not leave a border panel behind on its row.
+        ''' </returns>
+        Private Shared Function ApplyFieldPermissions(form As System.Windows.Forms.Form,
+                                                      controlName As String,
+                                                      linkedControl As String,
+                                                      row As DataRow,
+                                                      isNewRecord As Boolean) As Boolean
+            If String.IsNullOrWhiteSpace(controlName) Then Return False
 
             Dim matches = form.Controls.Find(controlName, True)
-            If matches.Length = 0 Then Return
+            If matches.Length = 0 Then Return False
             Dim ctrl = matches(0)
 
             Dim label As System.Windows.Forms.Control = Nothing
@@ -6042,14 +6041,14 @@ Namespace HelloWorld
 
             If FlagOrDefault(row, "Make_Invisible", False) Then
                 FieldPermissions.HideField(ctrl, label)
-                Return
+                Return True
             End If
 
             ' Can_Read false means the value must not be disclosed. The mask is displayed and the
             ' real value is preserved by FieldPermissions so the save writes it back unchanged.
             If Not FlagOrDefault(row, "Can_Read", True) Then
                 FieldPermissions.Mask(ctrl)
-                Return
+                Return False
             End If
 
             Dim entryAllowed = If(isNewRecord,
@@ -6058,7 +6057,9 @@ Namespace HelloWorld
             If Not entryAllowed Then
                 FieldPermissions.SetNoEntry(ctrl)
             End If
-        End Sub
+
+            Return False
+        End Function
 
         ''' <summary>Reads a bit column that may be absent from the result set or null.</summary>
         Private Shared Function FlagOrDefault(row As DataRow, columnName As String, defaultValue As Boolean) As Boolean
@@ -6147,15 +6148,57 @@ Namespace HelloWorld
         ''' Validates required controls before save using Tag="Required" set at load time.
         ''' Returns True if valid, False if any required fields are empty.
         ''' </summary>
-        Public Shared Function ValidateRequiredControls(form As System.Windows.Forms.Form, ByRef errorMessage As String) As Boolean
+        ''' <summary>
+        ''' Whether a combo is sitting on no real selection. Single owner of this test - the
+        ''' "Make a Selection" placeholder row carries 0 for numeric lookups and an empty string
+        ''' for text-keyed ones, and both count as empty. A value that is text rather than a
+        ''' number is a genuine selection: it must not be treated as empty just because it does
+        ''' not parse as an integer.
+        ''' </summary>
+        Public Shared Function IsEmptyComboSelection(combo As System.Windows.Forms.ComboBox) As Boolean
+            If combo Is Nothing OrElse combo.SelectedIndex < 0 OrElse String.IsNullOrWhiteSpace(combo.Text) Then
+                Return True
+            End If
+
+            If combo.SelectedValue Is Nothing OrElse IsDBNull(combo.SelectedValue) Then
+                Return True
+            End If
+
+            Dim valueText = combo.SelectedValue.ToString().Trim()
+            If valueText = String.Empty Then
+                Return True
+            End If
+
+            Dim numericValue As Integer
+            If Integer.TryParse(valueText, numericValue) Then
+                Return numericValue <= 0
+            End If
+
+            Return False
+        End Function
+
+        ''' <param name="firstEmptyControl">
+        ''' Receives the first control reported missing, in the same top-to-bottom, left-to-right
+        ''' order the message lists them, so the caller can put the cursor there.
+        ''' </param>
+        Public Shared Function ValidateRequiredControls(form As System.Windows.Forms.Form,
+                                                       ByRef errorMessage As String,
+                                                       Optional ByRef firstEmptyControl As System.Windows.Forms.Control = Nothing) As Boolean
             errorMessage = String.Empty
+            firstEmptyControl = Nothing
             Dim errors As New List(Of String)()
             Try
                 Dim allControls As New List(Of System.Windows.Forms.Control)()
                 CollectAllControls(form, allControls)
 
+                ' Listed in tab order - the sequence the user actually moves through - so the
+                ' message reads in the order the fields are reached and focus lands on the first
+                ' one they will come to. A control that is not a tab stop has no meaningful
+                ' TabIndex, so those fall to the end and are ordered by position instead.
                 Dim requiredControls = allControls.Where(Function(c) c.Tag IsNot Nothing AndAlso c.Tag.ToString() = "Required")
-                For Each ctrl In requiredControls.OrderBy(Function(c) GetAbsoluteLocation(c).Y).
+                For Each ctrl In requiredControls.OrderBy(Function(c) If(c.TabStop, 0, 1)).
+                                             ThenBy(Function(c) c.TabIndex).
+                                             ThenBy(Function(c) GetAbsoluteLocation(c).Y).
                                              ThenBy(Function(c) GetAbsoluteLocation(c).X).
                                              ThenBy(Function(c) c.Name, StringComparer.OrdinalIgnoreCase)
                     Dim isEmpty As Boolean = False
@@ -6163,12 +6206,7 @@ Namespace HelloWorld
                         Dim ctrlType = ctrl.GetType()
                         Select Case ctrlType
                             Case GetType(System.Windows.Forms.ComboBox)
-                                Dim combo = CType(ctrl, System.Windows.Forms.ComboBox)
-                                Dim selectedVal As Integer = -1
-                                If combo.SelectedValue IsNot Nothing Then
-                                    Integer.TryParse(combo.SelectedValue.ToString(), selectedVal)
-                                End If
-                                isEmpty = combo.SelectedIndex < 0 OrElse selectedVal <= 0
+                                isEmpty = IsEmptyComboSelection(CType(ctrl, System.Windows.Forms.ComboBox))
                             Case GetType(System.Windows.Forms.TextBox)
                                 isEmpty = String.IsNullOrWhiteSpace(ctrl.Text)
                             Case GetType(System.Windows.Forms.MaskedTextBox)
@@ -6185,6 +6223,7 @@ Namespace HelloWorld
 
                         If isEmpty Then
                             errors.Add(ResolveRequiredControlCaption(form, ctrl).ToUpperInvariant())
+                            If firstEmptyControl Is Nothing Then firstEmptyControl = ctrl
                         End If
                     Catch
                         ' Skip control on error

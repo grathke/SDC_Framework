@@ -20,8 +20,15 @@ Namespace HelloWorld
         Private baselineControlSnapshotJson As String = String.Empty
         Private baselineRecordSnapshotJson As String = String.Empty
         Private bypassCancelCloseCheck As Boolean
-        Private requiredValidationActivated As Boolean
         Private ReadOnly requiredBorderPanels As New Dictionary(Of Control, Panel)()
+
+        ''' <summary>
+        ''' Required fields the user has actually been in. A required field only turns red once it
+        ''' has been entered or left while empty - never merely because the page opened on a blank
+        ''' record. The focus the page sets for itself does not count, hence suppressRequiredTouch.
+        ''' </summary>
+        Private ReadOnly touchedRequiredControls As New HashSet(Of Control)()
+        Private suppressRequiredTouch As Boolean
         Private ReadOnly focusOriginalBackColors As New Dictionary(Of Control, Color)()
         Private ReadOnly focusBorderPanels As New Dictionary(Of Control, Panel)()
         Private ReadOnly readOnlyMouseHandled As New HashSet(Of Control)()
@@ -86,6 +93,8 @@ Namespace HelloWorld
                                        enumButton.TabStop = False
                                        okButton.TabStop = False
                                        cancelActionButton.TabStop = False
+                                       CollapseHiddenFieldRows()
+                                       RefreshLocalRequiredBorders()
                                        ApplySavedTabOrder()
                                        InitializeTabOrderManager()
                                        BeginInvoke(New Action(Sub()
@@ -135,6 +144,258 @@ Namespace HelloWorld
 
             ClientSize = New Size(ClientSize.Width, ClientSize.Height + 42)
         End Sub
+
+        ' ── Hidden-field row collapse ─────────────────────────────────────
+
+        ''' <summary>
+        ''' Vertical tolerance for treating two controls as being on the same row. A label sits
+        ''' a few pixels below the top of its text box, so an exact Top match is not usable.
+        ''' Must stay well under the 42px row pitch the pages lay out on.
+        ''' </summary>
+        Private Const FieldRowTolerance As Integer = 12
+
+        Private Shared ReadOnly FieldControlPrefixes As String() =
+            {"Label_", "TextBox_", "ComboBox_", "CheckBox_", "DateTimePicker_",
+             "NumericUpDown_", "MaskedTextBox_", "RichTextBox_"}
+
+        ''' <summary>Clearance kept between a row being pulled up and whatever sits above it.</summary>
+        Private Const FieldRowClearance As Integer = 6
+
+        ''' <summary>
+        ''' Left edge of each layout column, ascending, for pages laid out in more than one column.
+        ''' The default - Nothing - treats the page as a single column, so whole rows collapse
+        ''' across the full width and no existing page changes behavior.
+        '''
+        ''' Declaring columns lets each column close its own gaps, so hiding a left-hand field is
+        ''' no longer held up by the right-hand field that happens to share its row.
+        ''' </summary>
+        Protected Overridable Function GetLayoutColumnLefts() As Integer()
+            Return Nothing
+        End Function
+
+        ''' <summary>
+        ''' Closes the vertical gap left by fields hidden through Make_Invisible on FW_RoleFields.
+        '''
+        ''' Rows are the unit of movement, never individual controls, so a row that mixes hidden
+        ''' and visible fields stays exactly where it is. Within a column the rows below a fully
+        ''' hidden row move up by its pitch; a row is held back if rising would run it into a
+        ''' control in another column, and the rows already moved above it stay moved.
+        '''
+        ''' Runs on Shown rather than during BindToForm because Control.Visible reports False for
+        ''' every child until the form itself is displayed.
+        '''
+        ''' Single owner of this behavior. Do not reposition controls page-locally.
+        ''' </summary>
+        Protected Sub CollapseHiddenFieldRows()
+            Dim candidates = Controls.Cast(Of Control)().
+                Where(Function(control) IsRowLayoutControl(control)).
+                OrderBy(Function(control) control.Location.Y).ToList()
+            If candidates.Count = 0 Then Return
+
+            Dim fieldControls = candidates.Where(Function(control) IsFieldControl(control)).ToList()
+            If fieldControls.Count = 0 Then Return
+
+            ' Controls with no field on their row - grids, section headings, transfer buttons -
+            ' are not part of the field grid. They follow it up as one block instead.
+            Dim fieldArea = candidates.Where(Function(control) BelongsToFieldGrid(control, fieldControls)).ToList()
+            Dim trailing = candidates.Where(Function(control) Not BelongsToFieldGrid(control, fieldControls)).ToList()
+
+            Dim visibleArea = fieldArea.Where(Function(control) control.Visible).ToList()
+            If visibleArea.Count = 0 Then Return
+
+            Dim columnLefts = NormalizeColumnLefts(GetLayoutColumnLefts())
+            Dim columnOf = fieldArea.ToDictionary(
+                Function(control) control,
+                Function(control) ResolveColumnIndex(control, fieldControls, columnLefts))
+
+            SuspendLayout()
+
+            Try
+                Dim originalBottom = visibleArea.Max(Function(control) control.Bottom)
+
+                For Each column In fieldArea.GroupBy(Function(control) columnOf(control))
+                    Dim obstacles = fieldArea.
+                        Where(Function(control) control.Visible AndAlso columnOf(control) <> column.Key).ToList()
+                    ShiftColumn(column.OrderBy(Function(control) control.Location.Y).ToList(), obstacles)
+                Next
+
+                Dim trailingShift = originalBottom - visibleArea.Max(Function(control) control.Bottom)
+                If trailingShift <= 0 Then Return
+
+                For Each control In trailing
+                    control.Location = New Point(control.Location.X, control.Location.Y - trailingShift)
+                Next
+
+                For Each actionButton As Control In New Control() {enumButton, okButton, cancelActionButton}
+                    If actionButton Is Nothing Then Continue For
+                    actionButton.Location = New Point(actionButton.Location.X, actionButton.Location.Y - trailingShift)
+                Next
+
+                ClientSize = New Size(ClientSize.Width, Math.Max(200, ClientSize.Height - trailingShift))
+            Finally
+                ResumeLayout(True)
+            End Try
+        End Sub
+
+        ''' <summary>
+        ''' Moves one column's rows up over its own hidden rows, clamped so nothing collides with
+        ''' another column. A blocked row stops the column there: the rows below it would only run
+        ''' into the blocked row itself.
+        ''' </summary>
+        Private Shared Sub ShiftColumn(columnControls As List(Of Control), obstacles As List(Of Control))
+            Dim rows = BuildRows(columnControls)
+            Dim carryShift As Integer = 0
+
+            For rowIndex = 0 To rows.Count - 1
+                Dim currentRow = rows(rowIndex)
+
+                If IsCollapsibleRow(currentRow) Then
+                    ' Consume the pitch to the next row so the rows below keep their spacing.
+                    ' The last row has nothing following it, so it contributes no shift.
+                    If rowIndex < rows.Count - 1 Then
+                        carryShift += RowTop(rows(rowIndex + 1)) - RowTop(currentRow)
+                    End If
+                    Continue For
+                End If
+
+                Dim rowShift = Math.Min(carryShift, MaxShiftWithoutCollision(currentRow, obstacles))
+                If rowShift < 0 Then rowShift = 0
+
+                If rowShift > 0 Then
+                    For Each control In currentRow
+                        control.Location = New Point(control.Location.X, control.Location.Y - rowShift)
+                    Next
+                End If
+
+                carryShift = rowShift
+            Next
+        End Sub
+
+        ''' <summary>
+        ''' How far a row can rise before one of its controls would touch a control in another
+        ''' column. Integer.MaxValue when the row has clear air above it.
+        ''' </summary>
+        Private Shared Function MaxShiftWithoutCollision(row As List(Of Control), obstacles As List(Of Control)) As Integer
+            Dim allowed = Integer.MaxValue
+
+            For Each control In row
+                If Not control.Visible Then Continue For
+
+                For Each obstacle In obstacles
+                    ' Only obstacles above the control, and only where the two overlap horizontally.
+                    If obstacle.Bottom > control.Top Then Continue For
+                    If obstacle.Right <= control.Left OrElse obstacle.Left >= control.Right Then Continue For
+
+                    allowed = Math.Min(allowed, control.Top - obstacle.Bottom - FieldRowClearance)
+                Next
+            Next
+
+            Return allowed
+        End Function
+
+        ''' <summary>Groups controls already ordered by Top into rows.</summary>
+        Private Shared Function BuildRows(ordered As List(Of Control)) As List(Of List(Of Control))
+            Dim rows As New List(Of List(Of Control))()
+
+            For Each control In ordered
+                If rows.Count > 0 AndAlso control.Location.Y - RowTop(rows(rows.Count - 1)) <= FieldRowTolerance Then
+                    rows(rows.Count - 1).Add(control)
+                Else
+                    rows.Add(New List(Of Control) From {control})
+                End If
+            Next
+
+            Return rows
+        End Function
+
+        Private Shared Function BelongsToFieldGrid(control As Control, fieldControls As List(Of Control)) As Boolean
+            If IsFieldControl(control) Then Return True
+            Return fieldControls.Any(Function(field) Math.Abs(field.Location.Y - control.Location.Y) <= FieldRowTolerance)
+        End Function
+
+        Private Shared Function NormalizeColumnLefts(declared As Integer()) As Integer()
+            If declared Is Nothing OrElse declared.Length = 0 Then Return New Integer() {0}
+            Return declared.OrderBy(Function(value) value).ToArray()
+        End Function
+
+        ''' <summary>
+        ''' A control with a name of its own is placed by its own Left. One without - the Zip Coder
+        ''' button, for instance - belongs to the field group it was put beside, not to whichever
+        ''' column its Left happens to fall in.
+        ''' </summary>
+        Private Shared Function ResolveColumnIndex(control As Control,
+                                                   fieldControls As List(Of Control),
+                                                   columnLefts As Integer()) As Integer
+            If columnLefts.Length <= 1 Then Return 0
+            If IsFieldControl(control) Then Return ColumnIndexForLeft(control.Location.X, columnLefts)
+
+            Dim neighbour = fieldControls.
+                Where(Function(field) Math.Abs(field.Location.Y - control.Location.Y) <= FieldRowTolerance AndAlso
+                                      field.Location.X <= control.Location.X).
+                OrderByDescending(Function(field) field.Location.X).FirstOrDefault()
+
+            If neighbour Is Nothing Then Return ColumnIndexForLeft(control.Location.X, columnLefts)
+            Return ColumnIndexForLeft(neighbour.Location.X, columnLefts)
+        End Function
+
+        Private Shared Function ColumnIndexForLeft(left As Integer, columnLefts As Integer()) As Integer
+            Dim index = 0
+            For candidate = 0 To columnLefts.Length - 1
+                If left >= columnLefts(candidate) Then index = candidate
+            Next
+            Return index
+        End Function
+
+        Private Function IsRowLayoutControl(control As Control) As Boolean
+            If control Is Nothing OrElse control.Location.Y < 0 Then Return False
+
+            ' The shared page caption sits above the field grid and must not move with it.
+            ' ApplySharedPageCaption uses either of these two names.
+            If String.Equals(control.Name, "Label_UserTitle", StringComparison.OrdinalIgnoreCase) OrElse
+               String.Equals(control.Name, "Label_PageTitle", StringComparison.OrdinalIgnoreCase) Then
+                Return False
+            End If
+
+            Return Not (control Is enumButton OrElse control Is okButton OrElse control Is cancelActionButton)
+        End Function
+
+        ''' <summary>
+        ''' The row's Top. Candidates are added in ascending Top order, so the first control in a
+        ''' row always holds the minimum.
+        ''' </summary>
+        Private Shared Function RowTop(row As List(Of Control)) As Integer
+            Return row(0).Location.Y
+        End Function
+
+        ''' <summary>
+        ''' A row collapses only when it actually carries fields and none of them are showing.
+        ''' The field test keeps decorative rows, grids and standalone buttons from being removed
+        ''' just because they happen to be invisible.
+        ''' </summary>
+        Private Shared Function IsCollapsibleRow(row As List(Of Control)) As Boolean
+            If Not row.Any(Function(control) IsFieldControl(control)) Then Return False
+            Return row.All(Function(control) Not control.Visible OrElse IsRequiredBorderPanel(control))
+        End Function
+
+        ''' <summary>
+        ''' Required-border panels are decoration for the field they sit behind, not content, so
+        ''' they never keep a row alive. They carry no Name - only a Tag - so they are matched on
+        ''' that. Both the Base_U local border and the one ApplyControlUpdates adds are covered.
+        ''' </summary>
+        Private Shared Function IsRequiredBorderPanel(control As Control) As Boolean
+            If Not (TypeOf control Is Panel) Then Return False
+
+            Dim tagText = TryCast(control.Tag, String)
+            If tagText Is Nothing Then Return False
+
+            Return tagText.StartsWith("RequiredBorder_", StringComparison.OrdinalIgnoreCase) OrElse
+                   tagText.StartsWith("LocalRequiredBorder_", StringComparison.OrdinalIgnoreCase)
+        End Function
+
+        Private Shared Function IsFieldControl(control As Control) As Boolean
+            Dim controlName = If(control.Name, String.Empty)
+            Return FieldControlPrefixes.Any(Function(prefix) controlName.StartsWith(prefix, StringComparison.OrdinalIgnoreCase))
+        End Function
 
         Protected Sub SetManualTabOrder(ParamArray orderedControls() As Control)
             If orderedControls Is Nothing Then Return
@@ -372,9 +633,19 @@ Namespace HelloWorld
 
             Dim item = tabOrderList.Items(selectedIndex)
             Dim wasChecked = tabOrderList.GetItemChecked(selectedIndex)
-            tabOrderList.Items.RemoveAt(selectedIndex)
-            tabOrderList.Items.Insert(targetIndex, item)
-            tabOrderList.SetItemChecked(targetIndex, wasChecked)
+
+            ' Reordering is not the user clicking a checkbox. Without this guard the ItemCheck
+            ' handler sees an index that was never clicked and reverts the state we just restored,
+            ' so the row loses its tab stop every time it is moved.
+            loadingTabOrderManager = True
+            Try
+                tabOrderList.Items.RemoveAt(selectedIndex)
+                tabOrderList.Items.Insert(targetIndex, item)
+                tabOrderList.SetItemChecked(targetIndex, wasChecked)
+            Finally
+                loadingTabOrderManager = False
+            End Try
+
             tabOrderList.SelectedIndex = targetIndex
             UpdateTabOrderManagerButtons()
         End Sub
@@ -441,15 +712,44 @@ Namespace HelloWorld
             tabOrderDownButton.Enabled = tabOrderList.SelectedIndex >= 0 AndAlso tabOrderList.SelectedIndex < tabOrderList.Items.Count - 1
         End Sub
 
+        ''' <summary>
+        ''' Puts the cursor on the first field the validation message complained about, so the
+        ''' user lands on the problem instead of hunting for it. Silently does nothing when the
+        ''' field cannot take focus - hidden by permissions, disabled, or read-only.
+        ''' </summary>
+        Private Sub FocusValidationControl(control As Control)
+            If control Is Nothing OrElse Not control.Visible OrElse Not control.Enabled Then Return
+
+            Dim editable = TryCast(control, TextBoxBase)
+            If editable IsNot Nothing AndAlso editable.ReadOnly Then Return
+
+            Try
+                Me.ActiveControl = control
+                control.Select()
+                control.Focus()
+                ClearTextSelection(control)
+                ApplyFocusIndicator(control)
+            Catch
+                ' Focus is a convenience; never let it block the validation result.
+            End Try
+        End Sub
+
         Private Sub SetInitialFieldFocus()
             Dim firstField = FindFirstFocusableField(Me)
             If firstField Is Nothing Then Return
 
-            Me.ActiveControl = firstField
-            firstField.Select()
-            firstField.Focus()
-            ClearTextSelection(firstField)
-            ApplyFocusIndicator(firstField)
+            ' The page putting the cursor somewhere is not the user visiting the field, so this
+            ' must not turn a blank required field red before they have touched anything.
+            suppressRequiredTouch = True
+            Try
+                Me.ActiveControl = firstField
+                firstField.Select()
+                firstField.Focus()
+                ClearTextSelection(firstField)
+                ApplyFocusIndicator(firstField)
+            Finally
+                suppressRequiredTouch = False
+            End Try
         End Sub
 
         Private Sub RemoveReadOnlyControlsFromTabOrder(container As Control)
@@ -482,7 +782,7 @@ Namespace HelloWorld
             Next
 
             For Each control As Control In childControls
-                If IsFocusIndicatorControl(control) Then
+                If IsFocusIndicatorControl(control) AndAlso Not IsBaseActionButton(control) Then
                     If Not focusOriginalBackColors.ContainsKey(control) Then
                         focusOriginalBackColors(control) = control.BackColor
                         Dim borderPanel = FindExistingRequiredBorderPanel(control)
@@ -546,10 +846,22 @@ Namespace HelloWorld
             Return Nothing
         End Function
 
+        ''' <summary>
+        ''' Buttons are included so a command sitting in the field grid - Zip Coder, for one -
+        ''' shows the same green focus border as the fields around it when tabbed to.
+        ''' </summary>
         Private Shared Function IsFocusIndicatorControl(control As Control) As Boolean
             Return TypeOf control Is TextBoxBase OrElse TypeOf control Is ComboBox OrElse
                    TypeOf control Is CheckBox OrElse TypeOf control Is DateTimePicker OrElse
-                   TypeOf control Is NumericUpDown
+                   TypeOf control Is NumericUpDown OrElse TypeOf control Is Button
+        End Function
+
+        ''' <summary>
+        ''' Save, Cancel and the enum button sit outside the field grid and keep their standard
+        ''' appearance, so they are left out of the focus indicator.
+        ''' </summary>
+        Private Function IsBaseActionButton(control As Control) As Boolean
+            Return control Is okButton OrElse control Is cancelActionButton OrElse control Is enumButton
         End Function
 
         Private Shared Function IsEmptyRequiredControl(control As Control) As Boolean
@@ -558,12 +870,7 @@ Namespace HelloWorld
             End If
 
             If TypeOf control Is ComboBox Then
-                Dim combo = DirectCast(control, ComboBox)
-                Dim selectedValue = 0
-                If combo.SelectedValue IsNot Nothing AndAlso Not IsDBNull(combo.SelectedValue) Then
-                    Integer.TryParse(combo.SelectedValue.ToString(), selectedValue)
-                End If
-                Return combo.SelectedIndex < 0 OrElse selectedValue <= 0 OrElse String.IsNullOrWhiteSpace(combo.Text)
+                Return DataAccess.IsEmptyComboSelection(DirectCast(control, ComboBox))
             End If
 
             Return String.IsNullOrWhiteSpace(control.Text)
@@ -574,6 +881,7 @@ Namespace HelloWorld
             If control Is Nothing Then Return
             Dim originalColor As Color
             If focusOriginalBackColors.TryGetValue(control, originalColor) Then control.BackColor = originalColor
+            MarkRequiredTouched(control)
             ApplyFocusIndicator(control)
         End Sub
 
@@ -581,27 +889,60 @@ Namespace HelloWorld
             If control Is Nothing Then Return
             Dim borderPanel As Panel = Nothing
             If focusBorderPanels.TryGetValue(control, borderPanel) Then
-                borderPanel.BackColor = If(IsEmptyRequiredControl(control), Color.Red, Color.FromArgb(55, 180, 105))
+                borderPanel.BackColor = If(ShouldShowRequiredWarning(control), Color.Red, Color.FromArgb(55, 180, 105))
                 borderPanel.Visible = True
                 borderPanel.BringToFront()
                 control.BringToFront()
             End If
         End Sub
 
+        ''' <summary>
+        ''' Records that the user has been in a required field. Entering and leaving both count,
+        ''' so a field goes red as soon as it is visited empty and stays red until it has data.
+        ''' </summary>
+        Private Sub MarkRequiredTouched(control As Control)
+            If control Is Nothing OrElse suppressRequiredTouch Then Return
+            If Not String.Equals(If(control.Tag, String.Empty).ToString(), "Required", StringComparison.OrdinalIgnoreCase) Then Return
+            touchedRequiredControls.Add(control)
+        End Sub
+
+        Private Function ShouldShowRequiredWarning(control As Control) As Boolean
+            Return touchedRequiredControls.Contains(control) AndAlso IsEmptyRequiredControl(control)
+        End Function
+
         Private Sub FocusIndicator_Leave(sender As Object, e As EventArgs)
             Dim control = TryCast(sender, Control)
             If control Is Nothing Then Return
             Dim originalColor As Color
             If focusOriginalBackColors.TryGetValue(control, originalColor) Then control.BackColor = originalColor
+
+            MarkRequiredTouched(control)
+
             Dim borderPanel As Panel = Nothing
-            If focusBorderPanels.TryGetValue(control, borderPanel) Then borderPanel.Visible = False
+            If Not focusBorderPanels.TryGetValue(control, borderPanel) Then Return
+
+            ' The green focus ring and the red required ring are the same panel. Leaving the field
+            ' drops the focus ring, but a required field left empty keeps its red one and holds it
+            ' until the field has data.
+            If ShouldShowRequiredWarning(control) Then
+                borderPanel.BackColor = Color.Red
+                borderPanel.Visible = True
+                borderPanel.BringToFront()
+                control.BringToFront()
+            Else
+                borderPanel.Visible = False
+            End If
         End Sub
 
         Private Sub FocusIndicator_ValueChanged(sender As Object, e As EventArgs)
             Dim control = TryCast(sender, Control)
-            If control IsNot Nothing AndAlso control.Focused Then
-                ApplyFocusIndicator(control)
-            End If
+            If control Is Nothing OrElse Not control.Focused Then Return
+
+            ' Editing a field counts as visiting it. Without this, a field the page put the cursor
+            ' in at open - which is deliberately not treated as a visit - would not turn red until
+            ' the user tabbed away from it.
+            If Not loading Then MarkRequiredTouched(control)
+            ApplyFocusIndicator(control)
         End Sub
 
         Private Sub EditableControl_MouseEnter(sender As Object, e As EventArgs)
@@ -732,6 +1073,7 @@ Namespace HelloWorld
             loading = False
             hasUnsavedChanges = False
             DataAccess.ApplyControlUpdates(Me, Me.GetType().Name, IsCreatingNewRecord())
+            AdoptRequiredBorderPanels()
             NormalizeTextInputsForSave()
             baselineControlSnapshotJson = CaptureControlSnapshotJson()
             ResetPendingRecordBaseline()
@@ -803,12 +1145,19 @@ Namespace HelloWorld
 
         Protected Function ValidateAndBuildForSave() As Boolean
             NormalizeTextInputsForSave()
-            requiredValidationActivated = True
+
+            ' A failed save names the empty required fields, so mark them all visited: the red
+            ' borders then match the message even for fields the user never went into.
+            For Each requiredControl In requiredBorderPanels.Keys
+                touchedRequiredControls.Add(requiredControl)
+            Next
             RefreshLocalRequiredBorders()
             Dim errorMsg As String = String.Empty
             Dim validationLines As New List(Of String)()
 
-            If Not DataAccess.ValidateRequiredControls(Me, errorMsg) Then
+            Dim firstMissingControl As Control = Nothing
+
+            If Not DataAccess.ValidateRequiredControls(Me, errorMsg, firstMissingControl) Then
                 If Not String.IsNullOrWhiteSpace(errorMsg) Then
                     validationLines.AddRange(errorMsg.Split({Environment.NewLine}, StringSplitOptions.None))
                 End If
@@ -849,6 +1198,7 @@ Namespace HelloWorld
                                         validationMessage.Substring(sqlMarkerIndex)
                 End If
                 MessageBox.Show(validationMessage, "The Following Occurred", MessageBoxButtons.OK, MessageBoxIcon.Warning)
+                FocusValidationControl(firstMissingControl)
                 Return False
             End If
 
@@ -1342,17 +1692,53 @@ Namespace HelloWorld
                 requiredBorderPanels(txt) = borderPanel
                 AddHandler txt.TextChanged,
                     Sub(borderSender, borderEventArgs)
-                        If requiredValidationActivated Then RefreshLocalRequiredBorders()
+                        If Not loading Then MarkRequiredTouched(txt)
+                        RefreshLocalRequiredBorders()
                     End Sub
             End If
             Return txt
         End Function
 
+        ''' <summary>
+        ''' Takes ownership of the required-border panels ApplyControlUpdates creates from
+        ''' FW_RoleFields, so every required field on the page - combos included - follows the one
+        ''' rule in RefreshLocalRequiredBorders rather than a second copy of it in data access.
+        ''' </summary>
+        Private Sub AdoptRequiredBorderPanels()
+            Const tagPrefix As String = "RequiredBorder_"
+
+            For Each candidate As Control In Me.Controls
+                Dim panel = TryCast(candidate, Panel)
+                If panel Is Nothing OrElse panel.Tag Is Nothing Then Continue For
+
+                Dim tagText = panel.Tag.ToString()
+                If Not tagText.StartsWith(tagPrefix, StringComparison.OrdinalIgnoreCase) Then Continue For
+
+                Dim matches = Me.Controls.Find(tagText.Substring(tagPrefix.Length), True)
+                If matches.Length = 0 Then Continue For
+
+                Dim field = matches(0)
+                If requiredBorderPanels.ContainsKey(field) Then Continue For
+
+                requiredBorderPanels(field) = panel
+
+                Dim watched = field
+                Dim refresh = Sub(s As Object, e As EventArgs)
+                                  If Not loading Then MarkRequiredTouched(watched)
+                                  RefreshLocalRequiredBorders()
+                              End Sub
+
+                AddHandler watched.TextChanged, refresh
+                Dim combo = TryCast(watched, ComboBox)
+                If combo IsNot Nothing Then AddHandler combo.SelectedIndexChanged, refresh
+            Next
+        End Sub
+
         Private Sub RefreshLocalRequiredBorders()
             For Each pair In requiredBorderPanels
-                Dim isEmpty = String.IsNullOrWhiteSpace(pair.Key.Text)
-                pair.Value.BackColor = If(isEmpty, Color.Red, SystemColors.Control)
-                pair.Value.Visible = requiredValidationActivated AndAlso isEmpty
+                Dim showWarning = ShouldShowRequiredWarning(pair.Key)
+                pair.Value.BackColor = If(showWarning, Color.Red, SystemColors.Control)
+                pair.Value.Visible = showWarning
             Next
         End Sub
 

@@ -26,10 +26,57 @@ Namespace HelloWorld
 
         Private ReadOnly maskedValues As New Dictionary(Of Control, String)()
 
-        ''' <summary>Hides a control and its Label_ partner.</summary>
+        ''' <summary>
+        ''' Hides a control and its Label_ partner. TabStop is cleared as well so the control
+        ''' stays out of the tab order even if it is made visible again after the tab-order
+        ''' pass has run; WinForms already skips invisible controls on its own.
+        ''' </summary>
         Public Sub HideField(ctrl As Control, label As Control)
-            If ctrl IsNot Nothing Then ctrl.Visible = False
+            If ctrl IsNot Nothing Then
+                FreezeBoundValue(ctrl)
+                ctrl.Visible = False
+                ctrl.TabStop = False
+            End If
             If label IsNot Nothing Then label.Visible = False
+        End Sub
+
+        ''' <summary>
+        ''' Detaches a hidden field's data bindings, keeping the value it was loaded with.
+        '''
+        ''' A control hidden before the form is created never gets a window handle, but its
+        ''' binding still takes part in validation. On the first focus change WinForms pulls an
+        ''' empty value out of the handle-less control, writes that into the bound record, then
+        ''' pushes the blank back to the control - so the loaded value is lost and a save would
+        ''' write the empty value over the real one. Freezing the value here stops that: the
+        ''' field is not editable anyway, so it has nothing left to contribute to the binding.
+        ''' </summary>
+        Private Sub FreezeBoundValue(ctrl As Control)
+            If ctrl.DataBindings.Count = 0 Then Return
+
+            Dim textValue = ctrl.Text
+            Dim checkBox = TryCast(ctrl, CheckBox)
+            Dim combo = TryCast(ctrl, ComboBox)
+            Dim picker = TryCast(ctrl, DateTimePicker)
+            Dim numeric = TryCast(ctrl, NumericUpDown)
+
+            Dim checkedValue = checkBox IsNot Nothing AndAlso checkBox.Checked
+            Dim selectedIndex = If(combo Is Nothing, -1, combo.SelectedIndex)
+            Dim dateValue = If(picker Is Nothing, Date.MinValue, picker.Value)
+            Dim numericValue = If(numeric Is Nothing, 0D, numeric.Value)
+
+            ctrl.DataBindings.Clear()
+
+            If checkBox IsNot Nothing Then
+                checkBox.Checked = checkedValue
+            ElseIf combo IsNot Nothing Then
+                combo.SelectedIndex = selectedIndex
+            ElseIf picker IsNot Nothing Then
+                picker.Value = dateValue
+            ElseIf numeric IsNot Nothing Then
+                numeric.Value = numericValue
+            Else
+                ctrl.Text = textValue
+            End If
         End Sub
 
         ''' <summary>

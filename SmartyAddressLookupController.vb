@@ -179,6 +179,26 @@ Namespace HelloWorld
             suggestionsList.DataSource = Nothing
         End Sub
 
+        ''' <summary>
+        ''' True when the active session is cleared to use Smarty embedded-key lookup.
+        ''' Single owner of this test; pages must not re-derive it from SessionState.
+        ''' </summary>
+        Public Shared Function IsSessionLookupEnabled() As Boolean
+            Return SessionState.IsActive AndAlso SessionState.Current.HasValue AndAlso
+                   SessionState.Current.Value.Smarty_UseEmbeddedKey
+        End Function
+
+        ''' <summary>
+        ''' The active session's Smarty embedded key, trimmed, or an empty string.
+        ''' </summary>
+        Public Shared Function GetSessionEmbeddedKey() As String
+            If SessionState.IsActive AndAlso SessionState.Current.HasValue Then
+                Return If(SessionState.Current.Value.Smarty_EmbeddedKey, String.Empty).Trim()
+            End If
+
+            Return String.Empty
+        End Function
+
         Private Function IsLookupEnabled() As Boolean
             Return isEnabled IsNot Nothing AndAlso isEnabled()
         End Function
