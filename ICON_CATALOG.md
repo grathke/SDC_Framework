@@ -111,6 +111,19 @@ Icon files live in `assets/images/`.
   when the user has more than one role
 - click behavior: switches session role, reconfigures menu access, updates the caption
 
+## database-config
+
+- placement: Application dashboard (`02 FW Dashboard_Application.vb`), grid cell 2,4
+- ActionType: Command / configuration dialog
+- target: `FW_DatabaseConfig`, behind `DeveloperAccessGate.Prompt`
+- caption source: fixed (`Database Config`)
+- icon file: none — `SystemIcons.WinLogo`, matching the other dashboard tiles
+- visibility rule: the dashboard itself is Application Admin only; the tile is always shown there
+- click behavior: prompts for a developer password, and only on success opens the database
+  configuration dialog. The prompt is a guard against a stray click, not a security control — the
+  accepted values are compiled in and a .NET assembly can be decompiled. The dashboard being
+  Application Admin only is the actual protection.
+
 ---
 
 ## Gaps

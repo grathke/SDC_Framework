@@ -53,8 +53,24 @@ Namespace HelloWorld
         Private Sub New()
         End Sub
 
-        Private Shared ReadOnly ConnectionString As String =
-            BuildConnectionString()
+        ' Resolved on first use rather than at type load, so credentials entered in the startup
+        ' configuration dialog take effect without restarting the application.
+        Private Shared cachedConnectionString As String
+
+        Private Shared ReadOnly Property ConnectionString As String
+            Get
+                If cachedConnectionString Is Nothing Then
+                    cachedConnectionString = BuildConnectionString()
+                End If
+
+                Return cachedConnectionString
+            End Get
+        End Property
+
+        ''' <summary>Discards the resolved connection string so the next use picks up new settings.</summary>
+        Public Shared Sub RefreshConnectionString()
+            cachedConnectionString = Nothing
+        End Sub
         Private Shared ReadOnly metadataCacheLock As New Object()
         Private Shared ReadOnly crudCaptionCache As New Dictionary(Of Integer, CrudButtonCaptions)()
         Private Shared ReadOnly roleOverrideCaptionCache As New Dictionary(Of String, String)(StringComparer.OrdinalIgnoreCase)
@@ -278,10 +294,22 @@ Namespace HelloWorld
             Return builder.ConnectionString
         End Function
 
+        ''' <summary>
+        ''' Resolution order is environment, then the credentials the user saved through the
+        ''' startup dialog, then defaults. The environment comes first so a server deployment can
+        ''' override without touching anyone's saved file.
+        ''' </summary>
         Private Shared Function BuildConnectionString() As String
             Dim fullConnectionString = Environment.GetEnvironmentVariable("HELLOWORLD_DB_CONNECTION")
             If Not String.IsNullOrWhiteSpace(fullConnectionString) Then
                 Return fullConnectionString.Trim()
+            End If
+
+            If String.IsNullOrWhiteSpace(Environment.GetEnvironmentVariable("HELLOWORLD_DB_PASSWORD")) Then
+                Dim saved = DatabaseConfigStore.Load()
+                If saved IsNot Nothing AndAlso Not String.IsNullOrWhiteSpace(saved.Password) Then
+                    Return DatabaseConfigStore.BuildConnectionString(saved)
+                End If
             End If
 
             Dim server = GetEnvironmentOrDefault("HELLOWORLD_DB_SERVER", "BEELINK")
@@ -324,6 +352,28 @@ Namespace HelloWorld
             End If
 
             Return String.Empty
+        End Function
+
+        ''' <summary>
+        ''' Opens the configured connection and runs a trivial query. Returns the failure reason,
+        ''' or String.Empty when the database is reachable. Used at startup so credentials that
+        ''' stopped working - a password changed on the server, say - lead to the configuration
+        ''' dialog rather than an unexplained failure at login.
+        ''' </summary>
+        Public Shared Function TestConfiguredConnection() As String
+            Try
+                Using conn As New SqlConnection(ConnectionString)
+                    conn.Open()
+                    Using cmd As New SqlCommand("SELECT 1", conn)
+                        cmd.CommandTimeout = 15
+                        cmd.ExecuteScalar()
+                    End Using
+                End Using
+
+                Return String.Empty
+            Catch ex As Exception
+                Return ex.Message
+            End Try
         End Function
 
         Public Shared Function TryAuthenticate(emailInput As String, passwordInput As String, ByRef user As UserContext, ByRef errorMessage As String) As Boolean
@@ -2168,11 +2218,28 @@ Namespace HelloWorld
         End Function
 
         Private Shared Function ComputeHmacHashAsUnicodeString(emailWithoutSpaces As String, keyBytes As Byte(), messageEncoding As Encoding) As String
-            Dim messageBytes = messageEncoding.GetBytes(emailWithoutSpaces)
+            Return Encoding.Unicode.GetString(ComputeHmacHashBytes(emailWithoutSpaces, keyBytes, messageEncoding))
+        End Function
+
+        ''' <summary>Single implementation of the keyed hash. Both representations below use it.</summary>
+        Private Shared Function ComputeHmacHashBytes(message As String, keyBytes As Byte(), messageEncoding As Encoding) As Byte()
             Using hmac As New HMACSHA512(keyBytes)
-                Dim hashBytes = hmac.ComputeHash(messageBytes)
-                Return Encoding.Unicode.GetString(hashBytes)
+                Return hmac.ComputeHash(messageEncoding.GetBytes(message))
             End Using
+        End Function
+
+        ''' <summary>
+        ''' The same HMAC-SHA512 the user password path uses, rendered as hex.
+        '''
+        ''' Stored password hashes read the raw bytes back as a Unicode string, which is the
+        ''' database's existing contract but cannot be written as a source literal. Hex is the same
+        ''' hash in a form that can be compared against a compiled-in value.
+        ''' </summary>
+        Public Shared Function ComputeKeyedHashHex(value As String, key As String) As String
+            Dim hashBytes = ComputeHmacHashBytes(RemoveSpaces(value),
+                                                 Encoding.Unicode.GetBytes(If(key, String.Empty)),
+                                                 Encoding.Unicode)
+            Return Convert.ToHexString(hashBytes).ToLowerInvariant()
         End Function
 
         Private Shared Function RemoveSpaces(value As String) As String

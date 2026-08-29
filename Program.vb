@@ -97,10 +97,7 @@ Namespace HelloWorld
                     End Select
                 End If
 
-                Dim configurationError = DataAccess.GetMissingConfigurationMessage()
-                If Not String.IsNullOrWhiteSpace(configurationError) Then
-                    Log("Startup blocked, database not configured")
-                    MessageBox.Show(configurationError, "Database Configuration Required", MessageBoxButtons.OK, MessageBoxIcon.Error)
+                If Not EnsureDatabaseConfigured(args) Then
                     Environment.ExitCode = 2
                     Return
                 End If
@@ -116,5 +113,51 @@ Namespace HelloWorld
                 Throw
             End Try
         End Sub
+
+        ''' <summary>
+        ''' Makes sure there is a usable database before the login screen, since without one there
+        ''' is nothing to log in to. Returns False when the user declines to configure it.
+        '''
+        ''' Three ways in: --configure-db to change credentials that already work, nothing
+        ''' configured at all, or configured credentials that no longer connect - the last of
+        ''' these matters because a password changed on the server would otherwise leave the
+        ''' application failing with no way to correct it.
+        ''' </summary>
+        Private Function EnsureDatabaseConfigured(args As String()) As Boolean
+            Dim configureRequested = args IsNot Nothing AndAlso
+                args.Any(Function(arg) String.Equals(arg, "--configure-db", StringComparison.OrdinalIgnoreCase))
+
+            If configureRequested Then
+                Log("Database configuration requested")
+                Return ShowDatabaseConfiguration("Update the database credentials this application uses.")
+            End If
+
+            Dim configurationError = DataAccess.GetMissingConfigurationMessage()
+            If Not String.IsNullOrWhiteSpace(configurationError) Then
+                Log("Database not configured, prompting")
+                Return ShowDatabaseConfiguration(configurationError)
+            End If
+
+            Dim connectionError = DataAccess.TestConfiguredConnection()
+            If Not String.IsNullOrWhiteSpace(connectionError) Then
+                Log("Database configured but unreachable: " & connectionError)
+                Return ShowDatabaseConfiguration(
+                    "The configured database could not be reached." & Environment.NewLine & connectionError)
+            End If
+
+            Return True
+        End Function
+
+        Private Function ShowDatabaseConfiguration(reason As String) As Boolean
+            Using configForm As New FW_DatabaseConfig(reason)
+                If configForm.ShowDialog() <> DialogResult.OK Then
+                    Log("Database configuration cancelled")
+                    Return False
+                End If
+            End Using
+
+            Log("Database configuration saved")
+            Return True
+        End Function
     End Module
 End Namespace

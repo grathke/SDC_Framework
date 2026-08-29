@@ -130,6 +130,27 @@ dotnet build .\HelloWorld.vbproj -p:UseAppHost=false -p:OutputPath=bin\Debug\net
 Run: `powershell -ExecutionPolicy Bypass -File .\run-local.ps1` (VS Code task `Run HelloWorld`).
 With database: `.\run-with-db.ps1`.
 
+### Database configuration
+
+No credentials are compiled into the application. `DataAccess.BuildConnectionString` reads them
+from the environment:
+
+| Variable | Default |
+|---|---|
+| `HELLOWORLD_DB_CONNECTION` | none — a full connection string; takes precedence over everything below |
+| `HELLOWORLD_DB_PASSWORD` | none — **required**, and the one the startup check tests |
+| `HELLOWORLD_DB_SERVER` | `BEELINK` |
+| `HELLOWORLD_DB_USER` | `sa` |
+| `HELLOWORLD_DB_NAME` | `WX_Framework` |
+| `HELLOWORLD_DB_ENCRYPT` | `False` |
+| `HELLOWORLD_DB_TRUST_SERVER_CERT` | `True` |
+
+With nothing configured, `Program.vb` shows "Database Configuration Required" and exits with code 2
+before the login screen. `run-local.ps1` supplies these for local development and is in
+`.gitignore`, so it does not travel with the repository — `run-local.ps1.example` documents what to
+set. Away from this machine, prefer `HELLOWORLD_DB_CONNECTION` so a wrong server name cannot be
+picked up silently from a default.
+
 Browse regression validation:
 
 ```

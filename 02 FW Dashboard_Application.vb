@@ -31,6 +31,7 @@ Namespace HelloWorld
         Private ReadOnly helpDeskButton As DashboardIconButton
         Private ReadOnly helpDeskSupportButton As DashboardIconButton
         Private ReadOnly newPageRequestsButton As DashboardIconButton
+        Private ReadOnly databaseConfigButton As DashboardIconButton
         Private ReadOnly closeIconButton As Button
         Private ReadOnly generatedFW_UserAccessExplanation_BButton As DashboardIconButton
         Private ReadOnly generatedEntityX_BButton As DashboardIconButton
@@ -192,6 +193,24 @@ Namespace HelloWorld
             helpDeskSupportButton.FlatAppearance.MouseOverBackColor = Color.Transparent
             helpDeskSupportButton.FlatAppearance.MouseDownBackColor = Color.Transparent
 
+            databaseConfigButton = New DashboardIconButton() With {
+                .Text = "Database Config",
+                .Location = DashboardGridLayout.CellLocation(2, 4),
+                .Size = New Size(150, 118),
+                .BackColor = Color.Transparent,
+                .UseVisualStyleBackColor = False,
+                .FlatStyle = FlatStyle.Flat,
+                .Font = New Font("Segoe UI", 13.0F, FontStyle.Regular),
+                .Image = SystemIcons.WinLogo.ToBitmap(),
+                .TextImageRelation = TextImageRelation.ImageAboveText,
+                .ImageAlign = ContentAlignment.TopCenter,
+                .TextAlign = ContentAlignment.BottomCenter,
+                .TabStop = False
+            }
+            databaseConfigButton.FlatAppearance.BorderSize = 0
+            databaseConfigButton.FlatAppearance.MouseOverBackColor = Color.Transparent
+            databaseConfigButton.FlatAppearance.MouseDownBackColor = Color.Transparent
+
             newPageRequestsButton = New DashboardIconButton() With {
                 .Text = "Page Gen _B _U",
                 .Location = DashboardGridLayout.CellLocation(3, 1),
@@ -291,6 +310,9 @@ Namespace HelloWorld
             AddHandler rolesButton.MouseEnter, AddressOf IconButton_MouseEnter
             AddHandler rolesButton.MouseLeave, AddressOf IconButton_MouseLeave
             AddHandler rolesButton.Click, AddressOf RolesButton_Click
+            AddHandler databaseConfigButton.MouseEnter, AddressOf IconButton_MouseEnter
+            AddHandler databaseConfigButton.MouseLeave, AddressOf IconButton_MouseLeave
+            AddHandler databaseConfigButton.Click, AddressOf DatabaseConfigButton_Click
             AddHandler userAdminButton.MouseEnter, AddressOf IconButton_MouseEnter
             AddHandler userAdminButton.MouseLeave, AddressOf IconButton_MouseLeave
             AddHandler userAdminButton.Click, AddressOf UserAdminButton_Click
@@ -330,6 +352,7 @@ Namespace HelloWorld
             Me.Controls.Add(topStripLabel)
             Me.Controls.Add(closeIconButton)
             Me.Controls.Add(headerLabel)
+            Me.Controls.Add(databaseConfigButton)
             Me.Controls.Add(rolesButton)
             Me.Controls.Add(userAdminButton)
             Me.Controls.Add(registrationButton)
@@ -411,6 +434,23 @@ Namespace HelloWorld
         Private Sub HelpDeskSupportButton_Click(sender As Object, e As EventArgs)
             ResetIconButtonVisuals()
             Using page As New FW_HD_Issues_Support_B(currentUser, accessProfile)
+                page.ShowDialog(Me)
+            End Using
+        End Sub
+
+        ''' <summary>
+        ''' Opens the database configuration behind a developer password prompt. The dashboard is
+        ''' already Application Admin only; the prompt is there so this is never opened by a stray
+        ''' click, since a wrong entry here takes the application off its database.
+        ''' </summary>
+        Private Sub DatabaseConfigButton_Click(sender As Object, e As EventArgs)
+            ResetIconButtonVisuals()
+
+            If Not DeveloperAccessGate.Prompt(Me, "Changing the database connection affects every user of this installation.") Then
+                Return
+            End If
+
+            Using page As New FW_DatabaseConfig("Update the database credentials this application uses.")
                 page.ShowDialog(Me)
             End Using
         End Sub
