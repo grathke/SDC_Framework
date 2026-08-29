@@ -1,7 +1,7 @@
 # Framework Notes
 
 Working knowledge of the framework that is not obvious from the code. Guardrails live in
-`CLAUDE.md` and `.github/copilot-instructions.md`; the icon catalog lives in `ICON_CATALOG.md`.
+`CLAUDE.md`; the icon catalog lives in `ICON_CATALOG.md`.
 
 Merged from Copilot's machine-local `framework-notes.md` on 2026-08-28. Every claim below was
 checked against the source at that time; corrections to the original notes are marked.
@@ -116,30 +116,119 @@ TextBox, and validation as enumerating controls with `BorderStyle = FixedSingle`
 accurate: the red border is a `Panel` placed behind the control, and
 `DataAccess.ValidateRequiredControls` selects controls by `Tag = "Required"`.
 
+### Documented exceptions
+
+**`Roles_U` does not inherit `FW_Base_U`, and should not.** It is a permission administration
+console, not a single-record editor: three grids (available tables, granted permissions, role
+fields) with immediate per-row writes, no `SaveRecord`, no RowVersion, no single OK/Cancel save.
+Base_U's contract — one record, one concurrency token, one save that must succeed before the page
+closes — has nothing to bind to. Its writes are immediate and individually confirmed; do not treat
+them as transactional.
+
+`scripts\validate-maintenance-regression.ps1` records this exception by name. Every other `_U` page
+must inherit `FW_Base_U`, and the script fails if one does not.
+
+### Field lifecycle order
+
+The order below is load-bearing. Several steps only work where they are, and moving one breaks
+something that is not obvious from reading it in isolation.
+
+**Page constructor**
+
+1. The page builds its controls. `AddField` creates the `Label_` + `TextBox_` pair and, when
+   required, sets `Tag = "Required"` and a hidden `LocalRequiredBorder_<field>` panel.
+2. `BindToForm()`:
+   1. `WarnIfMissingRowVersion()`
+   2. `BindToFormInternal()` — the page loads the record, assigns control values, then adds
+      `DataBindings`. Values first, bindings second.
+   3. `DataAccess.ApplyControlUpdates()` — `ApplyFieldPermissions` runs **before** required
+      styling, and returns whether it hid the field so a hidden field gets no border panel.
+   4. `AdoptRequiredBorderPanels()` — Base_U takes ownership of the `RequiredBorder_<control>`
+      panels metadata created, and wires their change events.
+   5. `NormalizeTextInputsForSave()` — trims and applies database column lengths.
+   6. `ResetPendingRecordBaseline()` — provisional.
+3. The page constructs its controllers (`SmartyAddressLookupController`, `ZipCoderController`)
+   **after** `BindToForm`, so control sizes and positions are final.
+
+**On `Shown`**
+
+4. `ApplySharedPageCaption()`
+5. `RemoveReadOnlyControlsFromTabOrder()`
+6. `WireFocusIndicators()` — reuses a field's existing required border panel as its focus panel,
+   so the green ring and the red ring are the same control.
+7. Action buttons get `TabStop = False`.
+8. `CollapseHiddenFieldRows()` — **must** be here. `Control.Visible` returns `False` for every
+   child until the form is displayed, so testing visibility any earlier collapses the whole page.
+9. `RefreshLocalRequiredBorders()`
+10. `ApplySavedTabOrder()` — applies saved `TabIndex` values, overriding `SetManualTabOrder`.
+11. `InitializeTabOrderManager()`
+12. Then, on a second `BeginInvoke`: `SetInitialFieldFocus()` followed by
+    `ResetPendingRecordBaseline()`. The baseline is captured **last**, after every step above has
+    settled, or it will not match what the controls hold.
+
+**On save** — `ValidateAndBuildForSave()` normalizes, marks every required field visited, refreshes
+the borders, runs `ValidateRequiredControls` then `ValidateUniqueFields` then
+`GetAdditionalValidationMessageLines()`, and on failure shows one message and focuses the first
+missing field. On success: `UnmaskForSave` → `TryBuildRecord` → `RemaskAfterSave`.
+
 ### Required-field styling
 
 Two paths, distinguished by the label background:
 
-| Label | Owner | Border panel tag | Red border timing |
-|---|---|---|---|
-| **Yellow** `255,255,224` | metadata (`ApplyControlUpdates`) | `RequiredBorder_<control>` | live, on every change |
-| **Blue** `221,235,247` | the page itself | `LocalRequiredBorder_<field>` | after the first save attempt |
+| Label | Owner | Border panel tag |
+|---|---|---|
+| **Yellow** `255,255,224` | metadata (`ApplyControlUpdates`) | `RequiredBorder_<control>` |
+| **Blue** `221,235,247` | the page itself | `LocalRequiredBorder_<field>` |
+
+Both paths use the **same** red-border rule, applied by `RefreshLocalRequiredBorders` in Base_U.
+Data access creates the metadata panel hidden and does not manage its visibility.
 
 A blue label is an **opt-out switch**: `ShouldSkipBrRequiredStyling` matches that exact ARGB and
 makes the metadata path skip the field entirely — no border panel, no asterisk, no yellow repaint.
 Help Desk uses this for its conditional required rules.
 
+**When a field is red:** it has been *visited* and is empty. Visited means entered, left, or
+edited. The focus the page sets for itself on open does not count, so a blank new record shows no
+red until the user touches something. A failed save marks every required field visited, so the red
+borders match the message. Red clears on the first keystroke or a real selection.
+
 Focus and hover, wired by `WireFocusIndicators` for TextBoxBase, ComboBox, CheckBox,
-DateTimePicker and NumericUpDown:
+DateTimePicker, NumericUpDown and Button (excluding Save, Cancel and the enum button):
 
 - focus border green `#37B469` (`Color.FromArgb(55, 180, 105)`)
-- required and empty: red (`Color.Red`) instead, re-evaluated on change **while focused**
+- visited and empty: red (`Color.Red`) instead, re-evaluated on enter, leave and change
 - hover background `221,235,247`, applied only when the control is not focused
-- combos treat `Make a Selection` as empty via `SelectedIndex < 0 OrElse value <= 0 OrElse
-  String.IsNullOrWhiteSpace(Text)`
 
 Note the blue constant does double duty as both the hover background and the required-label
 opt-out. Painting a label that blue for cosmetic reasons silently disables its required styling.
+
+**Empty combo:** `DataAccess.IsEmptyComboSelection` is the single owner of that test. The
+`Make a Selection` placeholder carries `0` for numeric lookups and `""` for text-keyed ones; both
+count as empty, as do `SelectedIndex < 0`, a null value and blank `Text`. A value that is text
+rather than a number — `BR_RoleBased`, say — is a genuine selection. Do not re-derive this test.
+
+**Validation order:** `ValidateRequiredControls` lists missing fields in **tab order** — tab stops
+by `TabIndex` first, then everything else by position — and hands back the first one so the caller
+can focus it. Reordering fields in the Tab Order manager changes the message order too.
+
+### Hidden fields
+
+`FieldPermissions.HideField` clears the control's data bindings before hiding it, keeping the
+loaded value.
+
+This is not optional. A control hidden before the form is created never gets a window handle, but
+its binding still takes part in validation: on the first focus change WinForms pulls an empty value
+out of the handle-less control, writes that into the bound record, and pushes the blank back to the
+control. The loaded value is lost, the page reads as permanently dirty, and a save writes the empty
+value over the real one.
+
+The record still carries the field, and the page still writes the column — with its original value.
+Hidden fields are not excluded from the `UPDATE`.
+
+`CollapseHiddenFieldRows` closes the gap a hidden field leaves. It moves whole rows, never single
+controls, and only when every control on the row is invisible. Pages laid out in more than one
+column override `GetLayoutColumnLefts()` so each column closes its own gaps; a row is held back if
+rising would collide with another column.
 
 ## Hardcode Guardrail For Generated Pages
 

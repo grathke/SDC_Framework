@@ -19,7 +19,7 @@ New-Item -ItemType Directory -Path $restorePoint -Force | Out-Null
 $files = @(
     "01 FW_Base_B.vb",
     "scripts\validate-browse-regression.ps1",
-    ".github\copilot-instructions.md",
+    "CLAUDE.md",
     "BASE_B_QBE_LAYOUT_GUIDE.md"
 )
 
@@ -40,7 +40,7 @@ foreach ($relativePath in $files) {
 - Files captured:
     - 01 FW_Base_B.vb
     - scripts/validate-browse-regression.ps1
-    - .github/copilot-instructions.md
+    - CLAUDE.md
     - BASE_B_QBE_LAYOUT_GUIDE.md
 "@ | Set-Content -LiteralPath (Join-Path $restorePoint "RESTORE_POINT.md") -Encoding ascii
 

@@ -36,6 +36,18 @@
             "problemMatcher": []
         },
         {
+            "label": "Preflight Maintenance Framework",
+            "type": "shell",
+            "command": "powershell",
+            "args": ["-ExecutionPolicy", "Bypass", "-File", "${workspaceFolder}\\scripts\\validate-maintenance-regression.ps1", "-SkipBuild"],
+            "group": "test",
+            "presentation": {
+                "reveal": "always",
+                "panel": "dedicated"
+            },
+            "problemMatcher": []
+        },
+        {
             "label": "Run HelloWorld",
             "type": "shell",
             "command": "powershell",

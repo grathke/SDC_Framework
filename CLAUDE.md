@@ -2,9 +2,9 @@
 
 Guidance for Claude Code when working in this repository.
 
-Source of truth note: the guardrails below are copied from `.github/copilot-instructions.md` so both
-Claude Code and GitHub Copilot follow the same rules. If you change a guardrail, change it in **both**
-files. The Session Protocol section is Claude Code specific and has no Copilot counterpart.
+This file is the single source of truth for the guardrails. There is no second copy to keep in
+sync. `FRAMEWORK_NOTES.md` and the other companion documents below hold reference detail — how the
+framework actually behaves — and are read on demand rather than loaded every session.
 
 ## Session Protocol
 
@@ -116,6 +116,13 @@ Static checks only, no build (VS Code task `Preflight Browse Framework`):
 powershell -ExecutionPolicy Bypass -File .\scripts\validate-browse-regression.ps1 -SkipBuild
 ```
 
+Maintenance regression validation, the `_U` counterpart (VS Code task
+`Preflight Maintenance Framework`; add `-SkipBuild` for static checks only):
+
+```
+powershell -ExecutionPolicy Bypass -File .\scripts\validate-maintenance-regression.ps1
+```
+
 Restore points (VS Code tasks `Create Base_B Restore Point` / `Create Base_U Restore Point`):
 
 ```
@@ -175,6 +182,7 @@ These are baseline rules for this application, not optional task-specific sugges
 - Check create, update, delete, cancel, conflict, retry, and special-page paths where applicable.
 - Search for duplicate or page-local paths that bypass shared behavior.
 - Build the project, run focused regression checks, search all affected callers, and manually verify the actual page workflow.
+- Run `scripts\validate-browse-regression.ps1` for a `_B` page and `scripts\validate-maintenance-regression.ps1` for a `_U` page, then work through the manual checklist each one prints.
 - Do not declare a new page complete from compilation alone.
 - For every new standard `_B` page, verify the no-row `FW_RoleTables` path against the actual database: opening the page must create the correct `WindowOrPage`, `DB_Table`, friendly alias, session `CreatedBy`, and PK-safe fallback SQL.
 
