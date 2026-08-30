@@ -48,6 +48,18 @@
             "problemMatcher": []
         },
         {
+            "label": "Run Unit Tests",
+            "type": "shell",
+            "command": "dotnet",
+            "args": ["test", "${workspaceFolder}\\tests\\HelloWorld.Tests\\HelloWorld.Tests.vbproj"],
+            "group": "test",
+            "presentation": {
+                "reveal": "always",
+                "panel": "dedicated"
+            },
+            "problemMatcher": []
+        },
+        {
             "label": "Run HelloWorld",
             "type": "shell",
             "command": "powershell",

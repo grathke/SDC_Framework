@@ -170,6 +170,18 @@ Maintenance regression validation, the `_U` counterpart (VS Code task
 powershell -ExecutionPolicy Bypass -File .\scripts\validate-maintenance-regression.ps1
 ```
 
+Unit tests (VS Code task `Run Unit Tests`). No database and no message loop, so they run in about
+a second:
+
+```
+dotnet test .\tests\HelloWorld.Tests\HelloWorld.Tests.vbproj
+```
+
+They cover logic only — permissions, display-name formatting, the keyed hash, credential
+precedence, the empty-combo test. Page behavior is **not** covered: every `_B` and `_U` constructor
+reaches the database, and `Control.Visible` reports `False` until a form is shown, so UI rules
+cannot be asserted headlessly. Those stay with the manual checklists the validation scripts print.
+
 Restore points (VS Code tasks `Create Base_B Restore Point` / `Create Base_U Restore Point`):
 
 ```
@@ -230,6 +242,7 @@ These are baseline rules for this application, not optional task-specific sugges
 - Search for duplicate or page-local paths that bypass shared behavior.
 - Build the project, run focused regression checks, search all affected callers, and manually verify the actual page workflow.
 - Run `scripts\validate-browse-regression.ps1` for a `_B` page and `scripts\validate-maintenance-regression.ps1` for a `_U` page, then work through the manual checklist each one prints.
+- Run `dotnet test .\tests\HelloWorld.Tests\HelloWorld.Tests.vbproj` whenever the change touches permissions, display-name formatting, hashing, credential resolution, or the empty-combo test. Passing tests do not substitute for the manual workflow check.
 - Do not declare a new page complete from compilation alone.
 - For every new standard `_B` page, verify the no-row `FW_RoleTables` path against the actual database: opening the page must create the correct `WindowOrPage`, `DB_Table`, friendly alias, session `CreatedBy`, and PK-safe fallback SQL.
 
