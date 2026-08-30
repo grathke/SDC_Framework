@@ -62,7 +62,7 @@ Namespace HelloWorld
             maintenancePageName = NormalizeGeneratedPageName(maintenancePageName, "_U", createAsFrameworkPages)
             Dim browseFields = ParseFields(DbText(request("BrowseFields")))
             Dim maintenanceFields = ParseFields(DbText(request("MaintenanceFields")))
-            Dim lookupFields = ParseFields(DbText(request("LookupFields")))
+            Dim lookupFields = ParseLookupFields(DbText(request("LookupFields")), errors)
             Dim requiredFields = ParseFields(DbText(request("AdminRequiredFields")))
             Dim browseSql = DbText(request("BrowseSql"))
             Dim menuCaller = DbText(request("MenuCaller"))
@@ -81,6 +81,15 @@ Namespace HelloWorld
             If generateBrowsePage AndAlso browseFields.Count = 0 Then errors.Add("At least one _B field is required.")
             If generateMaintenancePage AndAlso maintenanceFields.Count = 0 Then errors.Add("At least one _U field is required.")
             If generateBrowsePage AndAlso String.IsNullOrWhiteSpace(browseSql) Then errors.Add("Browse SQL is required.")
+
+            ' Only an explicit alias named PK is accepted as the row key - there is no fallback to
+            ' ID or <Table>ID. Without it the generated page opens with a missing-key warning and
+            ' Read, Update and Delete hidden, which is far cheaper to catch here than at runtime.
+            If generateBrowsePage AndAlso Not String.IsNullOrWhiteSpace(browseSql) AndAlso
+               Not Regex.IsMatch(browseSql, "\bAS\s+PK\b", RegexOptions.IgnoreCase) Then
+                errors.Add("Browse SQL must alias the primary key as PK, for example " &
+                           "'" & tableName & ".SomeID AS PK'. Without it the browse page cannot open a record.")
+            End If
             If errors.Count > 0 Then Return New PageGenerationResult(created, skipped, errors)
 
             Dim schemaFields = DataAccess.GetTableFieldNames(tableName)
@@ -93,7 +102,7 @@ Namespace HelloWorld
             If generateBrowsePage Then ValidateFields(browseFields, schemaFields, "_B", errors)
             If generateMaintenancePage Then
                 ValidateFields(maintenanceFields, schemaFields, "_U", errors)
-                ValidateFields(lookupFields, maintenanceFields, "Lookup", errors)
+                ValidateFields(lookupFields.Select(Function(item) item.FieldName), maintenanceFields, "Lookup", errors)
                 ValidateFields(requiredFields, maintenanceFields, "Admin Required", errors)
             End If
             If errors.Count > 0 Then Return New PageGenerationResult(created, skipped, errors)
@@ -425,7 +434,7 @@ Namespace HelloWorld
             Return If(browsePageName.EndsWith("_B", StringComparison.OrdinalIgnoreCase), browsePageName.Substring(0, browsePageName.Length - 2) & "_U", browsePageName & "_U")
         End Function
 
-        Private Shared Function BuildMaintenanceSource(pageName As String, tableName As String, primaryKey As String, fields As List(Of String), requiredFields As List(Of String), lookupFields As List(Of String)) As String
+        Private Shared Function BuildMaintenanceSource(pageName As String, tableName As String, primaryKey As String, fields As List(Of String), requiredFields As List(Of String), lookupFields As List(Of LookupFieldSpec)) As String
             Dim output As New StringBuilder()
             output.AppendLine("Option Strict On")
             output.AppendLine("Option Explicit On")
@@ -449,7 +458,11 @@ Namespace HelloWorld
             output.AppendLine("        Private ReadOnly formBindingSource As New BindingSource()")
             output.AppendLine("        Private originalRowVersion As Byte()")
             For Each field In fields
-                output.AppendLine("        Private ReadOnly " & ControlVariable(field) & " As TextBox")
+                If IsLookupField(field, lookupFields) Then
+                    output.AppendLine("        Private ReadOnly " & LookupControlVariable(field) & " As ComboBox")
+                Else
+                    output.AppendLine("        Private ReadOnly " & ControlVariable(field) & " As TextBox")
+                End If
             Next
             output.AppendLine()
             output.AppendLine("        Public Sub New(id As Integer, user As UserContext, Optional profile As AccessProfile = Nothing)")
@@ -464,10 +477,24 @@ Namespace HelloWorld
             output.AppendLine("            enumButton.Location = New Point(20, ClientSize.Height - 46)")
             Dim y = 20
             For Each field In fields
-                output.AppendLine("            " & ControlVariable(field) & " = AddField(""" & EscapeLiteral(field) & """, " & y.ToString() & ", False, " & If(requiredFields.Any(Function(item) String.Equals(item, field, StringComparison.OrdinalIgnoreCase)), "True", "False") & ")")
+                Dim isRequired = requiredFields.Any(Function(item) String.Equals(item, field, StringComparison.OrdinalIgnoreCase))
+
+                If IsLookupField(field, lookupFields) Then
+                    ' AddField only produces TextBoxes, so a foreign key is built by hand to the
+                    ' same geometry: Label_<Field> at 20, the control at 150, 42px row pitch.
+                    Dim comboVariable = LookupControlVariable(field)
+                    output.AppendLine("            Controls.Add(New Label() With {.Name = ""Label_" & EscapeLiteral(field) & """, .Text = DisplayNameFormatter.ToDisplayName(""" & EscapeLiteral(field) & """, False)" &
+                                      If(isRequired, " & "" *""", String.Empty) & ", .Location = New Point(20, " & (y + 5).ToString() & "), .Size = New Size(120, 26)})")
+                    output.AppendLine("            " & comboVariable & " = New ComboBox() With {.Name = ""ComboBox_" & EscapeLiteral(field) & """, .Location = New Point(150, " & y.ToString() & "), .Size = New Size(320, 26), .DropDownStyle = ComboBoxStyle.DropDownList, .BackColor = SystemColors.Window}")
+                    If isRequired Then output.AppendLine("            " & comboVariable & ".Tag = ""Required""")
+                    output.AppendLine("            Controls.Add(" & comboVariable & ")")
+                Else
+                    output.AppendLine("            " & ControlVariable(field) & " = AddField(""" & EscapeLiteral(field) & """, " & y.ToString() & ", False, " & If(isRequired, "True", "False") & ")")
+                End If
+
                 y += 42
             Next
-                output.AppendLine("            SetManualTabOrder(" & String.Join(", ", fields.Select(Function(field) ControlVariable(field)).Concat({"enumButton", "okButton", "cancelActionButton"})) & ")")
+            output.AppendLine("            SetManualTabOrder(" & String.Join(", ", fields.Select(Function(field) FieldControlVariable(field, lookupFields)).Concat({"enumButton", "okButton", "cancelActionButton"})) & ")")
             output.AppendLine("            BindToForm()")
             output.AppendLine("            ApplyMode()")
             output.AppendLine("        End Sub")
@@ -498,12 +525,21 @@ Namespace HelloWorld
             output.AppendLine("            End If")
             output.AppendLine("            formBindingSource.DataSource = record.Table")
             output.AppendLine("            formBindingSource.Position = record.Table.Rows.IndexOf(record)")
-            output.AppendLine("            For Each control In New Control() {" & String.Join(", ", fields.Select(Function(field) ControlVariable(field))) & "}")
-            output.AppendLine("                Dim fieldName = control.Name.Substring(""TextBox_"".Length)")
-            output.AppendLine("                control.DataBindings.Clear()")
-            output.AppendLine("                control.DataBindings.Add(""Text"", formBindingSource, fieldName, True, DataSourceUpdateMode.Never)")
-            output.AppendLine("                If record.Table.Columns.Contains(fieldName) Then control.Text = If(record(fieldName) Is DBNull.Value, String.Empty, Convert.ToString(record(fieldName)))")
-            output.AppendLine("            Next")
+            Dim textFields = fields.Where(Function(field) Not IsLookupField(field, lookupFields)).ToList()
+            If textFields.Count > 0 Then
+                output.AppendLine("            For Each control In New Control() {" & String.Join(", ", textFields.Select(Function(field) ControlVariable(field))) & "}")
+                output.AppendLine("                Dim fieldName = control.Name.Substring(""TextBox_"".Length)")
+                output.AppendLine("                control.DataBindings.Clear()")
+                output.AppendLine("                control.DataBindings.Add(""Text"", formBindingSource, fieldName, True, DataSourceUpdateMode.Never)")
+                output.AppendLine("                If record.Table.Columns.Contains(fieldName) Then control.Text = If(record(fieldName) Is DBNull.Value, String.Empty, Convert.ToString(record(fieldName)))")
+                output.AppendLine("            Next")
+            End If
+
+            For Each spec In lookupFields.Where(Function(item) fields.Any(Function(field) String.Equals(field, item.FieldName, StringComparison.OrdinalIgnoreCase)))
+                output.AppendLine("            ConfigureLookupCombo(" & LookupControlVariable(spec.FieldName) &
+                                  ", DataAccess.GetLookupTable(""" & EscapeLiteral(spec.LookupTable) & """, """ & EscapeLiteral(spec.ValueColumn) & """, """ & EscapeLiteral(spec.DisplayColumn) & """)" &
+                                  ", """ & EscapeLiteral(spec.ValueColumn) & """, """ & EscapeLiteral(spec.DisplayColumn) & """, CurrentLookupId(""" & EscapeLiteral(spec.FieldName) & """))")
+            Next
             If fields.Any(Function(field) String.Equals(field, "RegistrationID", StringComparison.OrdinalIgnoreCase)) Then
                 output.AppendLine("            If recordId <= 0 AndAlso record.Table.Columns.Contains(""RegistrationID"") AndAlso SessionState.IsActive AndAlso SessionState.Current.HasValue Then")
                 output.AppendLine("                Dim sessionRegistrationId = SessionState.Current.Value.RegistrationID")
@@ -524,15 +560,69 @@ Namespace HelloWorld
             output.AppendLine("            Return True")
             output.AppendLine("        End Function")
             output.AppendLine()
+            output.AppendLine("        ''' <summary>Warns before discarding edits. Without this Cancel would discard silently.</summary>")
+            output.AppendLine("        Protected Overrides Function ShouldWarnOnCancel() As Boolean")
+            output.AppendLine("            Return True")
+            output.AppendLine("        End Function")
+            output.AppendLine()
+            output.AppendLine("        ''' <summary>")
+            output.AppendLine("        ''' Field-level permissions choose Can_Create over Can_Update from this. Without it")
+            output.AppendLine("        ''' every new record would be evaluated as an update and Can_Create would never apply.")
+            output.AppendLine("        ''' </summary>")
+            output.AppendLine("        Protected Overrides Function IsCreatingNewRecord() As Boolean")
+            output.AppendLine("            Return recordId <= 0")
+            output.AppendLine("        End Function")
+            output.AppendLine()
+
+            If lookupFields.Any(Function(item) fields.Any(Function(field) String.Equals(field, item.FieldName, StringComparison.OrdinalIgnoreCase))) Then
+                output.AppendLine("        Private Function CurrentLookupId(fieldName As String) As Integer")
+                output.AppendLine("            If record Is Nothing OrElse record.Table Is Nothing OrElse Not record.Table.Columns.Contains(fieldName) OrElse record.IsNull(fieldName) Then Return 0")
+                output.AppendLine("            Dim value As Integer")
+                output.AppendLine("            Return If(Integer.TryParse(Convert.ToString(record(fieldName)), value), value, 0)")
+                output.AppendLine("        End Function")
+                output.AppendLine()
+            End If
+
             output.AppendLine("        Protected Overrides Function SaveRecord() As Boolean")
             output.AppendLine("            Dim values As New Dictionary(Of String, Object)(StringComparer.OrdinalIgnoreCase)")
             For Each field In fields
-                output.AppendLine("            values(""" & EscapeLiteral(field) & """) = " & ControlVariable(field) & ".Text")
+                If IsLookupField(field, lookupFields) Then
+                    output.AppendLine("            values(""" & EscapeLiteral(field) & """) = GetComboSelectedIdOrZero(" & LookupControlVariable(field) & ")")
+                Else
+                    output.AppendLine("            values(""" & EscapeLiteral(field) & """) = " & ControlVariable(field) & ".Text")
+                End If
             Next
             output.AppendLine("            Dim savedId As Integer = recordId")
             output.AppendLine("            If savedId <= 0 AndAlso record.Table.Columns.Contains(primaryKey) AndAlso Not record.IsNull(primaryKey) Then Integer.TryParse(Convert.ToString(record(primaryKey)), savedId)")
-            output.AppendLine("            Dim savedRecordId = DataAccess.SaveGeneratedPageRecordWithId(tableName, primaryKey, savedId, values, originalRowVersion, If(SessionState.IsActive, SessionState.Current.Value.UserID, 0))")
-            output.AppendLine("            If savedRecordId <= 0 OrElse record Is Nothing OrElse Not record.Table.Columns.Contains(primaryKey) Then Return False")
+            output.AppendLine("            Dim updatedBy = If(SessionState.IsActive, SessionState.Current.Value.UserID, 0)")
+            output.AppendLine()
+            output.AppendLine("            Dim outcome As SaveResult")
+            output.AppendLine("            Dim savedRecordId = DataAccess.TrySaveGeneratedPageRecord(tableName, primaryKey, savedId, values, originalRowVersion, updatedBy, outcome)")
+            output.AppendLine()
+            output.AppendLine("            If outcome = SaveResult.RecordDeleted Then")
+            output.AppendLine("                MessageBox.Show(Me, ""The record no longer exists."", ""Save Failed"", MessageBoxButtons.OK, MessageBoxIcon.Warning)")
+            output.AppendLine("                Return False")
+            output.AppendLine("            End If")
+            output.AppendLine()
+            output.AppendLine("            ' A conflict is the user's decision, never last-saved-wins. Declining keeps the")
+            output.AppendLine("            ' page open with the edits intact.")
+            output.AppendLine("            If outcome = SaveResult.RecordChanged Then")
+            output.AppendLine("                If Not ConfirmConcurrencyOverwrite() Then Return False")
+            output.AppendLine()
+            output.AppendLine("                Dim latest = DataAccess.LoadGeneratedPageRecord(tableName, primaryKey, savedId)")
+            output.AppendLine("                If latest Is Nothing Then")
+            output.AppendLine("                    MessageBox.Show(Me, ""The record no longer exists."", ""Save Failed"", MessageBoxButtons.OK, MessageBoxIcon.Warning)")
+            output.AppendLine("                    Return False")
+            output.AppendLine("                End If")
+            output.AppendLine()
+            output.AppendLine("                originalRowVersion = If(latest.Table.Columns.Contains(""RowVersion"") AndAlso Not latest.IsNull(""RowVersion""),")
+            output.AppendLine("                                        CType(DirectCast(latest(""RowVersion""), Byte()).Clone(), Byte()), Nothing)")
+            output.AppendLine("                CaptureOriginalRowVersion(originalRowVersion)")
+            output.AppendLine("                savedRecordId = DataAccess.TrySaveGeneratedPageRecord(tableName, primaryKey, savedId, values, originalRowVersion, updatedBy, outcome)")
+            output.AppendLine("            End If")
+            output.AppendLine()
+            output.AppendLine("            If outcome <> SaveResult.Succeeded OrElse savedRecordId <= 0 Then Return False")
+            output.AppendLine("            If record Is Nothing OrElse Not record.Table.Columns.Contains(primaryKey) Then Return False")
             output.AppendLine("            record(primaryKey) = savedRecordId")
             output.AppendLine("            Return True")
             output.AppendLine("        End Function")
@@ -545,6 +635,52 @@ Namespace HelloWorld
             Return output.ToString()
         End Function
 
+        ''' <summary>
+        ''' A foreign-key field and where its list comes from, parsed from the page request format
+        ''' documented in new-page-request-manual.md:
+        '''     ManagerID -&gt; FW_Users.UserID displayed as FirstLast
+        ''' </summary>
+        Private Class LookupFieldSpec
+            Public Property FieldName As String
+            Public Property LookupTable As String
+            Public Property ValueColumn As String
+            Public Property DisplayColumn As String
+        End Class
+
+        ''' <summary>
+        ''' Parses lookup specifications. Anything that does not match the documented format is
+        ''' reported rather than ignored: before this, the whole line was treated as a field name,
+        ''' failed the "field does not exist" check, and lookups silently became plain text boxes.
+        ''' </summary>
+        Private Shared Function ParseLookupFields(value As String, errors As List(Of String)) As List(Of LookupFieldSpec)
+            Dim specs As New List(Of LookupFieldSpec)()
+
+            For Each entry In value.Split({","c, ";"c, ChrW(10), ChrW(13)}, StringSplitOptions.RemoveEmptyEntries).
+                                    Select(Function(item) item.Trim()).
+                                    Where(Function(item) item <> String.Empty AndAlso
+                                                         Not String.Equals(item, "Not specified", StringComparison.OrdinalIgnoreCase) AndAlso
+                                                         Not String.Equals(item, "None", StringComparison.OrdinalIgnoreCase))
+
+                Dim match = Regex.Match(entry,
+                                        "^\s*(?<field>\w+)\s*->\s*(?<table>\w+)\s*\.\s*(?<value>\w+)\s+displayed\s+as\s+(?<display>\w+)\s*$",
+                                        RegexOptions.IgnoreCase)
+
+                If Not match.Success Then
+                    errors.Add("Lookup field is not in the expected format '<Field> -> <Table>.<ValueColumn> displayed as <DisplayColumn>': " & entry)
+                    Continue For
+                End If
+
+                specs.Add(New LookupFieldSpec With {
+                    .FieldName = match.Groups("field").Value,
+                    .LookupTable = match.Groups("table").Value,
+                    .ValueColumn = match.Groups("value").Value,
+                    .DisplayColumn = match.Groups("display").Value
+                })
+            Next
+
+            Return specs
+        End Function
+
         Private Shared Function ParseFields(value As String) As List(Of String)
             Return value.Split({","c, ";"c}, StringSplitOptions.RemoveEmptyEntries).
                 Select(Function(item) item.Trim()).
@@ -555,6 +691,20 @@ Namespace HelloWorld
 
         Private Shared Function ControlVariable(field As String) As String
             Return Char.ToLowerInvariant(field(0)) & field.Substring(1) & "TextBox"
+        End Function
+
+        Private Shared Function LookupControlVariable(field As String) As String
+            Return Char.ToLowerInvariant(field(0)) & field.Substring(1) & "ComboBox"
+        End Function
+
+        Private Shared Function IsLookupField(field As String, lookupFields As List(Of LookupFieldSpec)) As Boolean
+            Return lookupFields IsNot Nothing AndAlso
+                   lookupFields.Any(Function(spec) String.Equals(spec.FieldName, field, StringComparison.OrdinalIgnoreCase))
+        End Function
+
+        ''' <summary>The generated variable name for a field, whichever control type it becomes.</summary>
+        Private Shared Function FieldControlVariable(field As String, lookupFields As List(Of LookupFieldSpec)) As String
+            Return If(IsLookupField(field, lookupFields), LookupControlVariable(field), ControlVariable(field))
         End Function
 
         Private Shared Function DeriveTableAlias(tableName As String) As String

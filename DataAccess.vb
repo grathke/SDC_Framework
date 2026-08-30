@@ -1455,6 +1455,37 @@ Namespace HelloWorld
             End Using
         End Function
 
+        ''' <summary>Whether the row still exists, ignoring its RowVersion.</summary>
+        Private Shared Function GeneratedPageRecordExists(conn As SqlConnection, tableName As String, primaryKey As String, recordId As Integer) As Boolean
+            Using cmd As New SqlCommand("SELECT COUNT(1) FROM dbo." & QuoteGeneratedIdentifier(tableName) &
+                                        " WHERE " & QuoteGeneratedIdentifier(primaryKey) & " = @RecordID", conn)
+                cmd.Parameters.Add("@RecordID", SqlDbType.Int).Value = recordId
+                Return Convert.ToInt32(cmd.ExecuteScalar(), CultureInfo.InvariantCulture) > 0
+            End Using
+        End Function
+
+        ''' <summary>
+        ''' Rows for a lookup combo, ordered by the display column. Used by generated maintenance
+        ''' pages to fill a foreign-key combo through the shared ConfigureLookupCombo helper.
+        ''' </summary>
+        Public Shared Function GetLookupTable(tableName As String, valueColumn As String, displayColumn As String) As DataTable
+            Dim result As New DataTable()
+
+            Using conn As New SqlConnection(ConnectionString)
+                conn.Open()
+                Using cmd As New SqlCommand("SELECT " & QuoteGeneratedIdentifier(valueColumn) & " AS " & QuoteGeneratedIdentifier(valueColumn) &
+                                            ", " & QuoteGeneratedIdentifier(displayColumn) & " AS " & QuoteGeneratedIdentifier(displayColumn) &
+                                            " FROM dbo." & QuoteGeneratedIdentifier(tableName) &
+                                            " ORDER BY " & QuoteGeneratedIdentifier(displayColumn), conn)
+                    Using adapter As New SqlDataAdapter(cmd)
+                        adapter.Fill(result)
+                    End Using
+                End Using
+            End Using
+
+            Return result
+        End Function
+
         Public Shared Function GetGeneratedPageSchema(tableName As String) As DataTable
             Using conn As New SqlConnection(ConnectionString)
                 conn.Open()
@@ -1495,12 +1526,39 @@ Namespace HelloWorld
             Return True
         End Function
 
+        ''' <summary>
+        ''' Original signature, kept so pages generated before TrySaveGeneratedPageRecord existed
+        ''' keep behaving exactly as they did: a concurrency conflict throws.
+        ''' </summary>
         Public Shared Function SaveGeneratedPageRecordWithId(tableName As String,
-                                                              primaryKey As String,
-                                                              recordId As Integer,
-                                                              values As Dictionary(Of String, Object),
-                                                              originalRowVersion As Byte(),
-                                                              userId As Integer) As Integer
+                                                             primaryKey As String,
+                                                             recordId As Integer,
+                                                             values As Dictionary(Of String, Object),
+                                                             originalRowVersion As Byte(),
+                                                             userId As Integer) As Integer
+            Dim outcome As SaveResult
+            Dim savedId = TrySaveGeneratedPageRecord(tableName, primaryKey, recordId, values, originalRowVersion, userId, outcome)
+
+            If outcome = SaveResult.RecordChanged OrElse outcome = SaveResult.RecordDeleted Then
+                Throw New InvalidOperationException("THE RECORD WAS CHANGED OR DELETED BEFORE IT COULD BE SAVED. RELOAD THE RECORD AND TRY AGAIN.")
+            End If
+
+            Return savedId
+        End Function
+
+        ''' <summary>
+        ''' Saves a generated page's record and reports the outcome instead of throwing, so the
+        ''' page can tell a concurrency conflict apart from a plain failure and put the choice to
+        ''' the user - reload, cancel, or overwrite - as the save contract requires.
+        ''' </summary>
+        Public Shared Function TrySaveGeneratedPageRecord(tableName As String,
+                                                          primaryKey As String,
+                                                          recordId As Integer,
+                                                          values As Dictionary(Of String, Object),
+                                                          originalRowVersion As Byte(),
+                                                          userId As Integer,
+                                                          ByRef outcome As SaveResult) As Integer
+            outcome = SaveResult.Succeeded
             Dim schema = GetGeneratedPageSchema(tableName)
             Dim writableValues = values.Where(Function(pair) schema.Columns.Contains(pair.Key) AndAlso
                                                        Not String.Equals(pair.Key, primaryKey, StringComparison.OrdinalIgnoreCase) AndAlso
@@ -1548,8 +1606,15 @@ Namespace HelloWorld
                     If schema.Columns.Contains("UpdatedBy") Then cmd.Parameters.Add("@UpdatedBy", SqlDbType.Int).Value = userId
                     If schema.Columns.Contains("RowVersion") Then cmd.Parameters.Add("@RowVersion", SqlDbType.Timestamp).Value = If(originalRowVersion, New Byte() {})
                     If cmd.ExecuteNonQuery() <> 1 Then
-                        Throw New InvalidOperationException("THE RECORD WAS CHANGED OR DELETED BEFORE IT COULD BE SAVED. RELOAD THE RECORD AND TRY AGAIN.")
+                        ' No row matched: either the RowVersion moved on or the record is gone.
+                        ' Distinguishing the two is what lets the page offer an overwrite for one
+                        ' and refuse it for the other.
+                        outcome = If(GeneratedPageRecordExists(conn, tableName, primaryKey, recordId),
+                                     SaveResult.RecordChanged,
+                                     SaveResult.RecordDeleted)
+                        Return 0
                     End If
+
                     Return recordId
                 End Using
             End Using
