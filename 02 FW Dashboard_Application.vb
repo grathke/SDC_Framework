@@ -225,7 +225,10 @@ Namespace HelloWorld
             newPageRequestsButton.FlatAppearance.BorderSize = 0
             newPageRequestsButton.FlatAppearance.MouseOverBackColor = Color.Transparent
             newPageRequestsButton.FlatAppearance.MouseDownBackColor = Color.Transparent
-
+
+
+
+
 
             generatedFW_UserAccessExplanation_BButton = New DashboardIconButton() With {
                 .Name = "GeneratedPageActionKey_FW_UserAccessExplanation_B",
@@ -382,7 +385,10 @@ Namespace HelloWorld
                 page.ShowDialog(Me)
             End Using
         End Sub
-
+
+
+
+
 
         Private Sub GeneratedFW_UserAccessExplanation_BButton_Click(sender As Object, e As EventArgs)
             ResetIconButtonVisuals()
