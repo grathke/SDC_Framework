@@ -34,9 +34,6 @@ Namespace HelloWorld
         Private ReadOnly databaseConfigButton As DashboardIconButton
         Private ReadOnly closeIconButton As Button
         Private ReadOnly generatedFW_UserAccessExplanation_BButton As DashboardIconButton
-        Private ReadOnly generatedEntityX_BButton As DashboardIconButton
-        Private ReadOnly generatedEntityA_BButton As DashboardIconButton
-        Private ReadOnly generatedEntityY_BButton As DashboardIconButton
 
         Public Sub New(user As UserContext, Optional profile As AccessProfile = Nothing)
             currentUser = user
@@ -228,64 +225,7 @@ Namespace HelloWorld
             newPageRequestsButton.FlatAppearance.BorderSize = 0
             newPageRequestsButton.FlatAppearance.MouseOverBackColor = Color.Transparent
             newPageRequestsButton.FlatAppearance.MouseDownBackColor = Color.Transparent
-
-            generatedEntityY_BButton = New DashboardIconButton() With {
-                .Name = "GeneratedPageActionKey_EntityY_B",
-                .Text = "EntityY",
-                .Location = DashboardGridLayout.CellLocation(3, 4),
-                .Size = New Size(150, 118),
-                .BackColor = Color.Transparent,
-                .UseVisualStyleBackColor = False,
-                .FlatStyle = FlatStyle.Flat,
-                .Font = New Font("Segoe UI", 13.0F, FontStyle.Regular),
-                .Image = SystemIcons.Application.ToBitmap(),
-                .TextImageRelation = TextImageRelation.ImageAboveText,
-                .ImageAlign = ContentAlignment.TopCenter,
-                .TextAlign = ContentAlignment.BottomCenter,
-                .TabStop = False
-            }
-            generatedEntityY_BButton.FlatAppearance.BorderSize = 0
-            generatedEntityY_BButton.FlatAppearance.MouseOverBackColor = Color.Transparent
-            generatedEntityY_BButton.FlatAppearance.MouseDownBackColor = Color.Transparent
-
-            generatedEntityA_BButton = New DashboardIconButton() With {
-                .Name = "GeneratedPageActionKey_EntityA_B",
-                .Text = "EntityA",
-                .Location = DashboardGridLayout.CellLocation(3, 2),
-                .Size = New Size(150, 118),
-                .BackColor = Color.Transparent,
-                .UseVisualStyleBackColor = False,
-                .FlatStyle = FlatStyle.Flat,
-                .Font = New Font("Segoe UI", 13.0F, FontStyle.Regular),
-                .Image = SystemIcons.Application.ToBitmap(),
-                .TextImageRelation = TextImageRelation.ImageAboveText,
-                .ImageAlign = ContentAlignment.TopCenter,
-                .TextAlign = ContentAlignment.BottomCenter,
-                .TabStop = False
-            }
-            generatedEntityA_BButton.FlatAppearance.BorderSize = 0
-            generatedEntityA_BButton.FlatAppearance.MouseOverBackColor = Color.Transparent
-            generatedEntityA_BButton.FlatAppearance.MouseDownBackColor = Color.Transparent
-
-            generatedEntityX_BButton = New DashboardIconButton() With {
-                .Name = "GeneratedPageActionKey_EntityX_B",
-                .Text = "EntityX",
-                .Location = DashboardGridLayout.CellLocation(3, 3),
-                .Size = New Size(150, 118),
-                .BackColor = Color.Transparent,
-                .UseVisualStyleBackColor = False,
-                .FlatStyle = FlatStyle.Flat,
-                .Font = New Font("Segoe UI", 13.0F, FontStyle.Regular),
-                .Image = SystemIcons.Application.ToBitmap(),
-                .TextImageRelation = TextImageRelation.ImageAboveText,
-                .ImageAlign = ContentAlignment.TopCenter,
-                .TextAlign = ContentAlignment.BottomCenter,
-                .TabStop = False
-            }
-            generatedEntityX_BButton.FlatAppearance.BorderSize = 0
-            generatedEntityX_BButton.FlatAppearance.MouseOverBackColor = Color.Transparent
-            generatedEntityX_BButton.FlatAppearance.MouseDownBackColor = Color.Transparent
-
+
 
             generatedFW_UserAccessExplanation_BButton = New DashboardIconButton() With {
                 .Name = "GeneratedPageActionKey_FW_UserAccessExplanation_B",
@@ -331,23 +271,10 @@ Namespace HelloWorld
             AddHandler newPageRequestsButton.MouseEnter, AddressOf IconButton_MouseEnter
             AddHandler newPageRequestsButton.MouseLeave, AddressOf IconButton_MouseLeave
             AddHandler newPageRequestsButton.Click, AddressOf NewPageRequestsButton_Click
-            AddHandler generatedEntityY_BButton.MouseEnter, AddressOf IconButton_MouseEnter
-            AddHandler generatedEntityY_BButton.MouseLeave, AddressOf IconButton_MouseLeave
-            AddHandler generatedEntityY_BButton.Click, AddressOf GeneratedEntityY_BButton_Click
-            AddHandler generatedEntityA_BButton.MouseEnter, AddressOf IconButton_MouseEnter
-            AddHandler generatedEntityA_BButton.MouseLeave, AddressOf IconButton_MouseLeave
-            AddHandler generatedEntityA_BButton.Click, AddressOf GeneratedEntityA_BButton_Click
-            AddHandler generatedEntityX_BButton.MouseEnter, AddressOf IconButton_MouseEnter
-            AddHandler generatedEntityX_BButton.MouseLeave, AddressOf IconButton_MouseLeave
-            AddHandler generatedEntityX_BButton.Click, AddressOf GeneratedEntityX_BButton_Click
             AddHandler generatedFW_UserAccessExplanation_BButton.MouseEnter, AddressOf IconButton_MouseEnter
             AddHandler generatedFW_UserAccessExplanation_BButton.MouseLeave, AddressOf IconButton_MouseLeave
             AddHandler generatedFW_UserAccessExplanation_BButton.Click, AddressOf GeneratedFW_UserAccessExplanation_BButton_Click
             AddHandler closeIconButton.Click, AddressOf CloseButton_Click
-
-            Me.Controls.Add(generatedEntityY_BButton)
-            Me.Controls.Add(generatedEntityA_BButton)
-            Me.Controls.Add(generatedEntityX_BButton)
             Me.Controls.Add(generatedFW_UserAccessExplanation_BButton)
             Me.Controls.Add(topStripLabel)
             Me.Controls.Add(closeIconButton)
@@ -376,12 +303,6 @@ Namespace HelloWorld
             rolesButton.Top = DashboardGridLayout.CellTop(1)
             generatedFW_UserAccessExplanation_BButton.Left = DashboardGridLayout.CellLeft(4)
             generatedFW_UserAccessExplanation_BButton.Top = DashboardGridLayout.CellTop(1)
-            generatedEntityX_BButton.Left = DashboardGridLayout.CellLeft(3)
-            generatedEntityX_BButton.Top = DashboardGridLayout.CellTop(3)
-            generatedEntityA_BButton.Left = DashboardGridLayout.CellLeft(2)
-            generatedEntityA_BButton.Top = DashboardGridLayout.CellTop(3)
-            generatedEntityY_BButton.Left = DashboardGridLayout.CellLeft(4)
-            generatedEntityY_BButton.Top = DashboardGridLayout.CellTop(3)
             userAdminButton.Top = DashboardGridLayout.CellTop(1)
             registrationButton.Top = DashboardGridLayout.CellTop(1)
             auditHistoryButton.Top = DashboardGridLayout.CellTop(2)
@@ -461,28 +382,7 @@ Namespace HelloWorld
                 page.ShowDialog(Me)
             End Using
         End Sub
-
-        Private Sub GeneratedEntityY_BButton_Click(sender As Object, e As EventArgs)
-            ResetIconButtonVisuals()
-            Using page As New EntityY_B(currentUser, accessProfile)
-                page.ShowDialog(Me)
-            End Using
-        End Sub
-
-        Private Sub GeneratedEntityA_BButton_Click(sender As Object, e As EventArgs)
-            ResetIconButtonVisuals()
-            Using page As New EntityA_B(currentUser, accessProfile)
-                page.ShowDialog(Me)
-            End Using
-        End Sub
-
-        Private Sub GeneratedEntityX_BButton_Click(sender As Object, e As EventArgs)
-            ResetIconButtonVisuals()
-            Using page As New EntityX_B(currentUser, accessProfile)
-                page.ShowDialog(Me)
-            End Using
-        End Sub
-
+
 
         Private Sub GeneratedFW_UserAccessExplanation_BButton_Click(sender As Object, e As EventArgs)
             ResetIconButtonVisuals()
