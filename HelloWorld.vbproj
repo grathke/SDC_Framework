@@ -17,5 +17,10 @@
     <Compile Remove="restore-points/**" />
     <EmbeddedResource Remove="restore-points/**" />
     <None Remove="restore-points/**" />
+    <!-- The test project lives under the repository root, which this project globs. Without
+         these it would compile the tests into the application. -->
+    <Compile Remove="tests/**" />
+    <EmbeddedResource Remove="tests/**" />
+    <None Remove="tests/**" />
   </ItemGroup>
 </Project>

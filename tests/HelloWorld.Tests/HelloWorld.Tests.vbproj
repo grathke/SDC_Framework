@@ -1,0 +1,23 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <!-- Matches the application: it is a WinForms project, and some tested types
+         (ComboBox, for one) come from System.Windows.Forms. -->
+    <TargetFramework>net10.0-windows</TargetFramework>
+    <UseWindowsForms>true</UseWindowsForms>
+    <LangVersion>latest</LangVersion>
+    <IsPackable>false</IsPackable>
+    <!-- Empty: the application namespace is HelloWorld.HelloWorld, because its own RootNamespace
+         and its Namespace block stack. Leaving this empty keeps test namespaces predictable. -->
+    <RootNamespace></RootNamespace>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="MSTest" Version="4.0.2" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\HelloWorld.vbproj" />
+  </ItemGroup>
+
+</Project>
