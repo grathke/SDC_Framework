@@ -3,6 +3,7 @@ Option Explicit On
 
 Imports System
 Imports System.Collections.Generic
+Imports System.Linq
 Imports System.Drawing
 Imports System.Windows.Forms
 Imports Microsoft.Data.SqlClient
@@ -22,7 +23,7 @@ Namespace HelloWorld
         Private ReadOnly serverTextBox As TextBox
         Private ReadOnly userTextBox As TextBox
         Private ReadOnly passwordTextBox As TextBox
-        Private ReadOnly databaseTextBox As TextBox
+        Private ReadOnly databaseComboBox As ComboBox
         Private ReadOnly encryptCheckBox As CheckBox
         Private ReadOnly trustCertificateCheckBox As CheckBox
         Private ReadOnly testButton As Button
@@ -63,7 +64,24 @@ Namespace HelloWorld
             userTextBox = AddField("User", 142)
             passwordTextBox = AddField("Password", 184)
             passwordTextBox.UseSystemPasswordChar = True
-            databaseTextBox = AddField("Database", 226)
+            ' Editable rather than a fixed list: the name can be typed before any connection has
+            ' been made, and a successful test fills the list with what is actually on the server.
+            Dim databaseLabel As New Label() With {
+                .Name = "Label_Database",
+                .Text = "Database",
+                .Location = New Point(20, 231),
+                .Size = New Size(120, 24)
+            }
+            databaseComboBox = New ComboBox() With {
+                .Name = "ComboBox_Database",
+                .Location = New Point(150, 226),
+                .Size = New Size(380, 26),
+                .DropDownStyle = ComboBoxStyle.DropDown,
+                .AutoCompleteMode = AutoCompleteMode.SuggestAppend,
+                .AutoCompleteSource = AutoCompleteSource.ListItems
+            }
+            Controls.Add(databaseLabel)
+            Controls.Add(databaseComboBox)
 
             encryptCheckBox = New CheckBox() With {
                 .Name = "CheckBox_Encrypt",
@@ -98,7 +116,7 @@ Namespace HelloWorld
             CancelButton = cancelActionButton
 
             ' Any edit invalidates the last successful test, so Save can never store untested values.
-            For Each editable As Control In New Control() {serverTextBox, userTextBox, passwordTextBox, databaseTextBox}
+            For Each editable As Control In New Control() {serverTextBox, userTextBox, passwordTextBox, databaseComboBox}
                 AddHandler editable.TextChanged, AddressOf Setting_Changed
             Next
             AddHandler encryptCheckBox.CheckedChanged, AddressOf Setting_Changed
@@ -136,13 +154,13 @@ Namespace HelloWorld
             If saved Is Nothing Then
                 serverTextBox.Text = "BEELINK"
                 userTextBox.Text = "sa"
-                databaseTextBox.Text = "WX_Framework"
+                databaseComboBox.Text = "WX_Framework"
                 Return
             End If
 
             serverTextBox.Text = saved.Server
             userTextBox.Text = saved.UserId
-            databaseTextBox.Text = saved.Database
+            databaseComboBox.Text = saved.Database
             encryptCheckBox.Checked = saved.Encrypt
             trustCertificateCheckBox.Checked = saved.TrustServerCertificate
         End Sub
@@ -158,7 +176,7 @@ Namespace HelloWorld
                 .Server = serverTextBox.Text.Trim(),
                 .UserId = userTextBox.Text.Trim(),
                 .Password = passwordTextBox.Text,
-                .Database = databaseTextBox.Text.Trim(),
+                .Database = databaseComboBox.Text.Trim(),
                 .Encrypt = encryptCheckBox.Checked,
                 .TrustServerCertificate = trustCertificateCheckBox.Checked
             }
@@ -169,7 +187,7 @@ Namespace HelloWorld
             If serverTextBox.Text.Trim() = String.Empty Then missing.Add("Server")
             If userTextBox.Text.Trim() = String.Empty Then missing.Add("User")
             If passwordTextBox.Text = String.Empty Then missing.Add("Password")
-            If databaseTextBox.Text.Trim() = String.Empty Then missing.Add("Database")
+            If databaseComboBox.Text.Trim() = String.Empty Then missing.Add("Database")
 
             If missing.Count > 0 Then
                 ShowStatus("Required: " & String.Join(", ", missing), Color.Firebrick)
@@ -192,11 +210,23 @@ Namespace HelloWorld
 
                 testPassed = True
                 saveButton.Enabled = True
+                LoadDatabaseNames(candidate)
                 ShowStatus("Connection succeeded. Save to use these credentials.", Color.ForestGreen)
             Catch ex As Exception
                 testPassed = False
                 saveButton.Enabled = False
-                ShowStatus("Connection failed: " & ex.Message, Color.Firebrick)
+
+                ' The credentials may be fine and only the database name wrong. Reaching master
+                ' proves that, and fills the list so the right one can simply be picked.
+                Dim settings = BuildSettings()
+                settings.Database = "master"
+
+                If LoadDatabaseNames(DatabaseConfigStore.BuildConnectionString(settings)) Then
+                    ShowStatus("Could not open that database, but the server accepted the credentials. " &
+                               "Pick a database from the list and test again.", Color.DarkGoldenrod)
+                Else
+                    ShowStatus("Connection failed: " & ex.Message, Color.Firebrick)
+                End If
             Finally
                 testButton.Enabled = True
                 Cursor = previousCursor
@@ -219,6 +249,45 @@ Namespace HelloWorld
             DialogResult = DialogResult.OK
             Close()
         End Sub
+
+        ''' <summary>
+        ''' Fills the database list with what the login can actually see on that server. Returns
+        ''' False when the server could not be reached at all, which is how the caller tells a bad
+        ''' database name apart from bad credentials. The typed name is preserved either way.
+        ''' </summary>
+        Private Function LoadDatabaseNames(connectionString As String) As Boolean
+            Dim names As New List(Of String)()
+
+            Try
+                Using conn As New SqlConnection(connectionString)
+                    conn.Open()
+                    Using cmd As New SqlCommand("SELECT name FROM sys.databases ORDER BY name", conn)
+                        cmd.CommandTimeout = 15
+                        Using reader = cmd.ExecuteReader()
+                            While reader.Read()
+                                names.Add(reader.GetString(0))
+                            End While
+                        End Using
+                    End Using
+                End Using
+            Catch
+                Return False
+            End Try
+
+            Dim currentName = databaseComboBox.Text
+
+            ' Repopulating raises TextChanged, which would otherwise clear the test result.
+            RemoveHandler databaseComboBox.TextChanged, AddressOf Setting_Changed
+            Try
+                databaseComboBox.Items.Clear()
+                databaseComboBox.Items.AddRange(names.Cast(Of Object)().ToArray())
+                databaseComboBox.Text = currentName
+            Finally
+                AddHandler databaseComboBox.TextChanged, AddressOf Setting_Changed
+            End Try
+
+            Return True
+        End Function
 
         Private Sub ShowStatus(message As String, messageColor As Color)
             statusLabel.ForeColor = messageColor

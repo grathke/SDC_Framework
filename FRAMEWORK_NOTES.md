@@ -76,6 +76,135 @@ layout maths works: equal margins means grid right edge + margin = `ClientSize.W
 - **Deleted view:** use `DeletedViewGuard` plus the shared DataAccess helpers; no page-local
   deleted-view logic. Run `scripts\validate-browse-regression.ps1` after browse changes.
 
+### Load order, from opening the page to rows on screen
+
+**Load** — `BrowsePage_Load` calls `LoadSqlFromRoleTable`, which is the only thing that decides
+what SQL the page runs:
+
+1. Reads `RegistrationID` from the session and the page name from `ResolveBrowsePageName()`.
+2. `GetDbTableFromRoleTableByWindowOrPage` resolves the physical table, and the title comes from
+   the `Table_Alias`.
+3. `GetTableSqlFromRoleTableByWindowOrPage` fetches the SQL for this page. If a row exists, that
+   SQL is used and `sqlLoadedFromRoleTable` is set.
+4. With no row, it falls back: SQL for the same *table* under a different page, else
+   `BuildDefaultSqlForBrowse`. Either way it writes an `FW_RoleTables` row back through
+   `UpsertRoleTableRecord` and tells the user which happened. A failure to create the row throws
+   rather than leaving the page half-registered.
+5. `EnsureSqlOrClose` closes the page if there is still no SQL.
+
+**Then the page either starts empty or loads.** `StartsEmptyOnInitialLoad()` decides. Start Empty
+runs `InitializeEmptyBrowseState`, which binds an empty table and derives QBE from the SQL schema
+instead of from a grid that does not exist yet. Everything else calls `RefreshGrid(Nothing, True)`.
+
+**`RefreshGrid` is the whole pipeline** and runs on every reload, not just the first:
+
+1. `CaptureGridViewState()` — selected row and scroll position, restored at the end. This is why a
+   `_B` page returns to the same row after a `_U` edit.
+2. Resolve the registration, capture the current column visibility, and get the SQL through
+   `GetActiveBaseSql()`.
+3. Apply the user scope: `ViewOnlyMyRecords` becomes `UserID = @UserID`, or warns and stops when
+   the result has no `UserID` to scope by.
+4. `DataAccess.GetBrowseRowsByRegistration` runs the SQL with the QBE filters, the deleted-only
+   flag, the scope predicate and the row cap.
+5. Bind to the grid and set the record count.
+6. **Headers** — `ApplyFriendlyColumnHeaders`. An `OverrideCaption` on `FW_RoleFields` wins;
+   otherwise `ToFriendlyCaption` splits the column name into words. Formatting is owned by
+   `DisplayNameFormatter.ToDisplayName`; do not add a second formatter.
+7. **Hiding**, in order: `ApplyPkColumnHiding`, `HideRegistrationIdColumn`, `HideSoftDeleteColumns`,
+   `HideInvisibleRoleFieldColumns`. Then the saved visibility map is applied and all four run
+   **again** — the map can otherwise re-show a column that must never be visible.
+8. `EnsureAtLeastOneManageableVisibleColumn`, `UpdateMaintenanceKeyAvailability`, fit columns to
+   width, refresh the columns manager and the deleted-view button.
+9. **Layout**, first load only: `EnsureDefaultLayoutExists` seeds the shared `Default`, then
+   `ApplySavedLayoutIfAvailable` applies `LastUsed` for this user, else `Default`.
+10. **QBE**, only when the SQL text or the visible-column set has actually changed — both are
+    compared as signatures, so a plain refresh does not rebuild it and lose what the user typed.
+11. `RestoreGridViewState` puts the selection and scroll position back.
+
+**QBE has two sources, and they are not interchangeable:**
+
+| | When | Excludes |
+|---|---|---|
+| `PopulateQbeFromGridColumns` | normal pages, from the **visible** grid columns after all hiding | invisible columns, the `PK` alias, soft-delete columns |
+| `PopulateQbeFromSqlSchema` | Start Empty pages, before a grid exists | same internal aliases, derived from the SQL schema |
+
+The grid-derived path is why hiding a browse column also removes it from QBE. Existing operator and
+value entries are keyed by field name and restored after a rebuild, so re-deriving QBE does not
+discard a filter the user was in the middle of typing.
+
+**A custom `_B` page changes none of this.** `Users_AppAdmin_B`, `Entity_B` and `Roles_B` inherit
+the same pipeline; they override presentation hooks such as `ApplyPageSpecificLayout`,
+`ApplyFriendlyColumnHeaders` or `HideSoftDeleteColumns`. Overriding `GetActiveBaseSql()` to create a
+second SQL-loading path is a documented special-page exception, not a normal option, and needs its
+own validation check.
+
+### CRUD buttons and permissions
+
+Captions and permissions are separate concerns and come from different places.
+
+- **Captions** — `ApplyCrudButtonCaptions(registrationId)`, from `FW_Registration`
+  (`BTN_Create_Caption` and friends). Applied on every `RefreshGrid`, so they are right on first
+  open without waiting for a registration change.
+- **Permissions** — `accessProfile.Can(accessTableName, AccessCapability.X)` for `Create`, `Read`,
+  `Update`, `Delete`, `UseQbe`, `ExpandQbe`, `ViewAllRecords` and `ViewOnlyMyRecords`.
+
+A CRUD button is visible only when **all** of these hold: the capability is granted, the page is not
+`OnlyUseQbe()`, the deleted view is off, and — for Read, Update and Delete — the result actually
+carries a usable maintenance key. That last condition is why the buttons disappear on a page whose
+SQL has no `AS PK`: without a key there is no record to open.
+
+`ViewOnlyMyRecords` is a data filter, not a button rule. It rewrites the query scope to
+`UserID = @UserID`. If the result set has no `UserID` to scope by, the page warns once and returns
+rather than silently showing everything.
+
+Button visibility is a convenience, never the enforcement point. The write itself must check access
+at its own boundary.
+
+### QBE and the Find button
+
+`TryBuildFiltersFromQbe` turns the QBE grid into filters, and it is overridable for pages with
+their own criteria. Rows with an empty value are skipped, so a blank QBE means no filter. Each row
+is validated against its field kind: an unknown field, an operator the field kind does not support,
+a non-numeric value in a numeric field or an unparseable boolean each produce a message and stop the
+search rather than running a broken query.
+
+Find then sets `currentFilters` and calls `RefreshGrid`, and reports the outcome in the retrieval
+status line — record count, "No records found", or the row-cap message.
+
+**The empty-QBE row cap** matters on large tables: with rows present but no criteria entered,
+`GetEmptyQbeRowLimit()` caps the result and the status line says so, inviting a criterion. The cap
+applies only to that case; a real filter is never truncated.
+
+Filter values entered by the user survive a QBE rebuild — they are keyed by field name and restored
+— so refreshing the grid does not wipe what someone was typing.
+
+### Column layout
+
+Layouts live in the table-layout store, keyed by registration, user, page, table and layout type.
+
+| Type | Owner | Notes |
+|---|---|---|
+| `Default` | shared, `userId = 0` | seeded by `EnsureDefaultLayoutExists` on first load |
+| `LastUsed` / "Last Used" | the individual user | written on close |
+| named layouts | the user, or Company Admin | chosen through the layout combo |
+
+**Precedence on load** (`GetPreferredTableLayout`): the user's `LastUsed`, else the shared
+`Default`, else the physical column order the SQL produced.
+
+**Saving** — `Save My Layout` prompts for a name and refuses reserved system names, refuses a
+leading `*` unless the session is Company Admin, and refuses to save with no visible data column.
+Saving as Default writes the shared `userId = 0` row.
+
+**On close** — `BrowsePage_FormClosing` writes the current layout as `LastUsed`, but only when the
+layout actually changed or no `LastUsed` row exists yet, so simply opening and closing a page does
+not churn the store. Failures there are swallowed deliberately: layout persistence must never block
+a form from closing.
+
+**Columns manager** — the panel drives visibility and order for the current session; changes flow
+back into the grid and are picked up by the next layout snapshot. `EnsureAtLeastOneManageableVisibleColumn`
+stops the user hiding everything, and the layout controls disable entirely when a page has no
+manageable columns.
+
 **Correction:** the original notes said "hide only PK; keep all other columns visible including
 soft-delete and registration columns". The code also calls `HideRegistrationIdColumn` and
 `HideSoftDeleteColumns`, so all three are hidden.
