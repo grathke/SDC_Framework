@@ -245,6 +245,94 @@ TextBox, and validation as enumerating controls with `BorderStyle = FixedSingle`
 accurate: the red border is a `Panel` placed behind the control, and
 `DataAccess.ValidateRequiredControls` selects controls by `Tag = "Required"`.
 
+### What a page must supply, and what it gets
+
+Three members are `MustOverride`. Everything else has a working default.
+
+| Member | Purpose |
+|---|---|
+| `BindToFormInternal()` | load the record, set control values, then add `DataBindings`. Values first, bindings second. |
+| `ApplyMode()` | apply read-only / enabled state for the page's mode |
+| `TryBuildRecord()` | build the record from the form; return False to stop the save |
+
+The hooks worth knowing, all overridable with a safe default:
+
+| Hook | Default | Override when |
+|---|---|---|
+| `SaveRecord()` | returns True, persists nothing | the page writes to the database |
+| `IsViewOnly()` | False | Read mode — OK closes without saving |
+| `IsCreatingNewRecord()` | False | the page has a create mode; field permissions use it to choose `Can_Create` over `Can_Update` |
+| `ShouldWarnOnCancel()` | **False** | the page can lose edits — without this, Cancel never warns |
+| `OkButtonText()` | "OK" | a different verb, such as Delete |
+| `GetTableNameOverride()` | derived from the page name | the class name does not match the table, e.g. `Users_AppAdmin_U` to `FW_Users` |
+| `GetAdditionalValidationMessageLines()` | empty | page-specific validation — never a page-local first-error MessageBox |
+| `ResolveAuditRecordKey()` / `ResolveAuditOperationType()` | empty, inferred | the key or operation cannot be inferred |
+| `GetLayoutColumnLefts()` | single column | the page is laid out in more than one column |
+
+`ShouldWarnOnCancel` defaulting to False is the one that catches people: a page that edits real data
+and forgets it will discard changes silently.
+
+### Save pipeline
+
+`OK` runs `ExecuteSaveWorkflow`, which is `ValidateAndBuildForSave` then `SaveRecordWithAudit`. The
+page closes only after the save has actually succeeded — a failed save leaves it open.
+
+**In view-only mode OK does not save at all**; it closes.
+
+`ValidateAndBuildForSave`:
+
+1. `NormalizeTextInputsForSave` — trim, and apply database column lengths.
+2. Mark every required field visited and refresh the borders, so the red matches the message.
+3. `ValidateRequiredControls` in tab order, then `ValidateUniqueFields`, then
+   `GetAdditionalValidationMessageLines()`. All three contribute to **one** message.
+4. On failure: one message box, focus the first missing field, and stop.
+5. On success: `UnmaskForSave` → `TryBuildRecord()` → `RemaskAfterSave`. The unmask is essential —
+   without it a masked field would write `••••••` to the database.
+
+`SaveRecordWithAudit` writes a `BeforeSave` audit row, calls `SaveRecord()`, then writes an
+`AfterSave` row carrying the outcome. Both snapshots are the control state, so the audit records
+what the user saw. An exception inside `SaveRecord` is caught and reported as a failed save rather
+than escaping. On success the dirty baselines are reset so the page is clean again.
+
+### Concurrency
+
+`WarnIfMissingRowVersion` runs during `BindToForm` and warns once if the table has no `RowVersion`
+column, because nothing below can protect the record.
+
+The page captures the token with `CaptureOriginalRowVersion` on load and passes
+`CopyOriginalRowVersion()` on save — copies, never the array itself, so nothing can mutate it
+mid-flight. The save result must distinguish success, conflict, deleted record, unavailable
+protection, and failure:
+
+- **Conflict** — `ConfirmConcurrencyOverwrite()` asks explicitly whether to overwrite the newer
+  version. There is no last-saved-wins path.
+- **No protection available** — `ShowConcurrencyUnavailable()` and the save stops.
+- After an approved overwrite, the page re-reads the record for a fresh token before retrying.
+
+### Cancel and unsaved changes
+
+`Cancel` and the window X both go through the same check, so neither can bypass it.
+`HasNetUnsavedChanges` compares a snapshot of every field against a baseline, which means changing a
+value and changing it back is **not** a change and does not prompt.
+
+`bypassCancelCloseCheck` is set on the paths that close deliberately — a successful save, or
+`CloseAfterSuccessfulCommand` — so a completed action never asks whether to discard.
+
+The prompt only appears at all when `ShouldWarnOnCancel()` is True.
+
+### Other shared behavior
+
+- **`AddField`** builds the `Label_` + `TextBox_` pair, sets `Tag = "Required"` where required, and
+  creates the hidden border panel. It produces TextBoxes only — combos, checkboxes and pickers are
+  hand-built.
+- **`ConfigureLookupCombo`** gives every lookup a `Make a Selection` placeholder;
+  `GetComboSelectedIdOrZero` maps placeholder, null and non-positive to 0 on save.
+- **Tab order manager** — available to Application Admin. Reordering and ticking apply to the live
+  form; OK persists them and Cancel, or collapsing the panel, reverts both. Selecting a row focuses
+  that field on the page.
+- **Enum button** — writes the page's controls to the metadata store, which is what populates
+  `FW_Enumerations_U` and therefore what field-level permissions can be configured against.
+
 ### Documented exceptions
 
 **`Roles_U` does not inherit `FW_Base_U`, and should not.** It is a permission administration
