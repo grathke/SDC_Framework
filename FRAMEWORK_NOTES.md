@@ -333,29 +333,40 @@ The prompt only appears at all when `ShouldWarnOnCancel()` is True.
 - **Enum button** — writes the page's controls to the metadata store, which is what populates
   `FW_Enumerations_U` and therefore what field-level permissions can be configured against.
 
-### Which RegistrationID applies
+### Which role and registration apply — both page types
 
-Two different registrations are in play on a maintenance page, and mixing them up is easy.
+**Field-level metadata always follows the logged-in session's `RoleID` *and* `RegistrationID`.**
+Both, together, on `_B` and `_U` alike. Neither page type lets you ask for another role's or
+another registration's field rules.
 
-| | Which registration | Where it comes from |
+| What | Scoped by | Where |
 |---|---|---|
-| Required fields, override captions, field-level permissions | **the session's** | `GetControlUpdates` filters `vw_FW_ControlUpdates_U` by `SessionState` RegistrationID **and** RoleID |
-| Unique-field validation scope | **the session's** | `ValidateUniqueFields` |
-| The record's own `RegistrationID` | **the record's** | bound read-only to the record, shown only to an Application Admin |
-| Data scoped to the record, such as the role lists on `Users_AppAdmin_U` | **the record's** | `GetEffectiveRegistrationId()` - the record's value, falling back to the session for a new record |
+| `_U` required fields, field override captions, `Make_Invisible` / `Can_Read` / `Can_Create` / `Can_Update` / `IsUnique` | session RoleID + session RegistrationID, keyed by **PageName** | `GetControlUpdates` filtering `vw_FW_ControlUpdates_U` |
+| `_B` column captions and hidden columns | session RoleID + session RegistrationID, keyed by **TableName** | `GetPageInitMetadata(roleId, registrationId, tableName)` |
+| Unique-field validation scope | session RegistrationID | `ValidateUniqueFields` |
 
-**This is deliberate, not an oversight.** A browse page can operate on a registration other than the
-session's - `Users_AppAdmin_B` has a registration combo, and captions and QBE Find honour it. But
-the maintenance page it opens still takes its *display rules* from the session. An Application Admin
-editing another registration's user sees their own registration's required fields and captions,
-while the record keeps its own `RegistrationID` and its role list loads for the user being edited.
+Note the keying difference: maintenance metadata is per **page**, browse metadata is per **table**.
+
+**Two things are *not* session-scoped, and that is deliberate:**
+
+| What | Scoped by | Where |
+|---|---|---|
+| `_B` data, QBE Find, and the **CRUD button captions** (`BTN_Create_Caption` and friends from `FW_Registration`) | the **selected** registration from the combo, falling back to the session | `TryGetActiveRegistrationId` |
+| The record's own `RegistrationID`, and data scoped to the record such as the role lists on `Users_AppAdmin_U` | the **record's** registration, falling back to the session for a new record | `GetEffectiveRegistrationId()` |
+
+So "caption" means two different things and they scope differently. A **field** caption follows the
+session. A **CRUD button** caption follows whichever registration the browse page is showing.
+
+An Application Admin browsing another registration's users therefore sees that registration's data
+and its Create/Read/Update/Delete button wording, but their **own** role's required fields, field
+captions and permissions — and the record keeps its own `RegistrationID`, with its role list loaded
+for the user being edited.
 
 Do not "fix" this by plumbing the browse page's selected registration into `ApplyControlUpdates`.
-Metadata follows the person doing the editing; data follows the record.
+Field rules follow the logged-in role and registration; data follows the record.
 
 `ApplyControlUpdates` is called from exactly one place, `Base_U.BindToForm`, and takes only the page
-name and the is-new-record flag. There is no per-page override, and adding one would break the rule
-above.
+name and the is-new-record flag. There is no per-page override.
 
 **Correction:** the view once hardcoded `RegistrationID = 1` and exposed no `RoleID`, so field
 attributes were inert outside registration 1 and a field configured for two roles returned two rows
