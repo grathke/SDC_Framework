@@ -21,6 +21,52 @@ Namespace HelloWorld
         End Function
     End Class
 
+    ''' <summary>
+    ''' Why a database connection failed. The three real causes need different fixes, so they must
+    ''' not be reported as one vague "unavailable".
+    ''' </summary>
+    Public Enum DatabaseFailureKind
+        None
+        ServerUnreachable
+        BadCredentials
+        DatabaseUnavailable
+        Other
+    End Enum
+
+    Public Class DatabaseConnectionStatus
+        Public Property Kind As DatabaseFailureKind = DatabaseFailureKind.None
+        Public Property Message As String = String.Empty
+
+        Public ReadOnly Property Succeeded As Boolean
+            Get
+                Return Kind = DatabaseFailureKind.None
+            End Get
+        End Property
+
+        ''' <summary>Whether changing the connection settings could plausibly fix this.</summary>
+        Public ReadOnly Property SettingsMightFixIt As Boolean
+            Get
+                Return Kind = DatabaseFailureKind.BadCredentials OrElse
+                       Kind = DatabaseFailureKind.DatabaseUnavailable
+            End Get
+        End Property
+
+        Public Function Describe() As String
+            Select Case Kind
+                Case DatabaseFailureKind.ServerUnreachable
+                    Return "The database server could not be reached."
+                Case DatabaseFailureKind.BadCredentials
+                    Return "The database server refused the sign-in it was given."
+                Case DatabaseFailureKind.DatabaseUnavailable
+                    Return "The server answered, but that database could not be opened."
+                Case DatabaseFailureKind.Other
+                    Return "The database returned an error."
+                Case Else
+                    Return String.Empty
+            End Select
+        End Function
+    End Class
+
     Public Enum SaveResult
         Succeeded
         RecordChanged

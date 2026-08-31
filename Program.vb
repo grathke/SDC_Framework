@@ -4,7 +4,6 @@ Option Explicit On
 Imports System
 Imports System.IO
 Imports System.Threading
-Imports System.Threading.Tasks
 Imports System.Windows.Forms
 
 Namespace HelloWorld
@@ -119,10 +118,9 @@ Namespace HelloWorld
         ''' Makes sure there is a usable database before the login screen, since without one there
         ''' is nothing to log in to. Returns False when the user declines to configure it.
         '''
-        ''' Three ways in: --configure-db to change credentials that already work, nothing
-        ''' configured at all, or configured credentials that no longer connect - the last of
-        ''' these matters because a password changed on the server would otherwise leave the
-        ''' application failing with no way to correct it.
+        ''' Two ways in: --configure-db to change credentials deliberately, or nothing configured at
+        ''' all. Credentials that no longer connect are reported by LoginForm, which distinguishes
+        ''' a connection failure from a bad password.
         ''' </summary>
         Private Function EnsureDatabaseConfigured(args As String()) As Boolean
             Dim configureRequested = args IsNot Nothing AndAlso
@@ -139,61 +137,12 @@ Namespace HelloWorld
                 Return ShowDatabaseConfiguration(configurationError)
             End If
 
-            ' A short probe, so a dead server is reported plainly instead of surfacing as a
-            ' confusing failure on the login screen. Kept brief because it runs on every launch.
-            ' A connect timeout with headroom over a real connection. An encrypted connection to a
-            ' healthy server measured around 3 seconds, so anything tighter reports working
-            ' databases as broken.
-            Const probeTimeoutSeconds As Integer = 15
-
-            ' The driver does not reliably honour its own connect timeout - measured at 27 seconds
-            ' for a 5 second setting - so the visible wait is bounded here as well.
-            Const probeGiveUpSeconds As Integer = 20
-
-            Dim probeTask = Task.Run(Function() DataAccess.TestConfiguredConnection(probeTimeoutSeconds))
-
-            ' Only put a window up if the check is actually slow. A healthy connection finishes
-            ' well inside this, so normal startup shows nothing and stays instant.
-            If Not probeTask.Wait(TimeSpan.FromMilliseconds(600)) Then
-                Using probeWindow As New FW_DatabaseProbe(probeTask, probeGiveUpSeconds)
-                    probeWindow.ShowDialog()
-                End Using
-            End If
-
-            ' A probe that did not finish proves nothing. Continuing is the only safe reading: this
-            ' check exists to explain a clear failure, not to stand between the user and a database
-            ' that is merely slow. A genuinely dead server still fails visibly at login, which is
-            ' where it failed before this check existed.
-            If Not probeTask.IsCompleted Then
-                Log("Database probe did not complete within " & probeGiveUpSeconds.ToString() & "s; continuing to login")
-                Return True
-            End If
-
-            Dim connectionError = probeTask.Result
-            If String.IsNullOrWhiteSpace(connectionError) Then Return True
-
-            ' An unreachable database is not a credentials problem, so it is never answered with a
-            ' dialog offering to replace credentials that are probably fine. Report it, and let the
-            ' user start the server and retry without relaunching. Credentials are changed
-            ' deliberately, through --configure-db.
-            Log("Database unreachable: " & connectionError)
-
-            Dim message = "The database could not be reached." & Environment.NewLine & Environment.NewLine &
-                          connectionError & Environment.NewLine & Environment.NewLine &
-                          "Start the database and choose Retry."
-
-            If Not DataAccess.IsUsingEnvironmentCredentials() Then
-                message &= Environment.NewLine & Environment.NewLine &
-                           "To change the saved credentials, run the application with --configure-db."
-            End If
-
-            If MessageBox.Show(message, "Database Unavailable",
-                               MessageBoxButtons.RetryCancel, MessageBoxIcon.Error) = DialogResult.Retry Then
-                DataAccess.RefreshConnectionString()
-                Return EnsureDatabaseConfigured(args)
-            End If
-
-            Return False
+            ' No connection check here. Probing before the login screen cost a full extra
+            ' connection on every launch - about three seconds encrypted - to improve the message
+            ' in a case that is rare, and it doubled the work of simply starting up. LoginForm
+            ' already reports a connection failure distinctly, separate from a bad password, so
+            ' the failure is surfaced where it actually happens.
+            Return True
         End Function
 
         Private Function ShowDatabaseConfiguration(reason As String) As Boolean

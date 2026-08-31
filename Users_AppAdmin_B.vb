@@ -60,7 +60,7 @@ Namespace HelloWorld
             Dim who = If(String.IsNullOrWhiteSpace(userRecord.FirstLast), userRecord.Email, userRecord.FirstLast)
             If MessageBox.Show(Me,
                                ("Delete " & who & "?" & Environment.NewLine & Environment.NewLine &
-                                "The user will no longer be able to sign in, and will be hidden from this list.").ToUpperInvariant(),
+                                "The user will no longer be able to sign in, and will be removed from this list.").ToUpperInvariant(),
                                "CONFIRM DELETE",
                                MessageBoxButtons.YesNo,
                                MessageBoxIcon.Question) <> DialogResult.Yes Then

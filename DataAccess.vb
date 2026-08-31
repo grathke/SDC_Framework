@@ -408,6 +408,55 @@ Namespace HelloWorld
             End Try
         End Function
 
+        ''' <summary>
+        ''' Tests the configured connection and says *why* it failed, not merely that it did.
+        '''
+        ''' The three causes need different responses: an unreachable server is fixed by starting
+        ''' it and retrying, while refused credentials or a missing database are fixed by changing
+        ''' the settings. Telling a user to reconfigure a connection that is perfectly correct,
+        ''' because their server is simply off, wastes their time and invites them to break it.
+        '''
+        ''' Classified on the SQL error number rather than message text, so it is not defeated by
+        ''' wording or localisation.
+        ''' </summary>
+        Public Shared Function GetConnectionStatus(Optional timeoutSeconds As Integer = 10) As DatabaseConnectionStatus
+            Try
+                Dim builder As New SqlConnectionStringBuilder(ConnectionString) With {
+                    .ConnectTimeout = Math.Max(1, timeoutSeconds),
+                    .ConnectRetryCount = 0
+                }
+
+                Using conn As New SqlConnection(builder.ConnectionString)
+                    conn.Open()
+                    Using cmd As New SqlCommand("SELECT 1", conn)
+                        cmd.CommandTimeout = Math.Max(1, timeoutSeconds)
+                        cmd.ExecuteScalar()
+                    End Using
+                End Using
+
+                Return New DatabaseConnectionStatus()
+            Catch ex As SqlException
+                Dim kind As DatabaseFailureKind
+                Select Case ex.Number
+                    Case 18456, 18452, 18470
+                        ' Login failed, untrusted domain, account disabled.
+                        kind = DatabaseFailureKind.BadCredentials
+                    Case 911, 4060, 4063, 4064
+                        ' Database does not exist, or cannot be opened by this login.
+                        kind = DatabaseFailureKind.DatabaseUnavailable
+                    Case -2, -1, 2, 17, 40, 53, 121, 233, 1231, 10060, 10061, 10054
+                        ' Timeouts and the network family: not found, refused, reset.
+                        kind = DatabaseFailureKind.ServerUnreachable
+                    Case Else
+                        kind = DatabaseFailureKind.Other
+                End Select
+
+                Return New DatabaseConnectionStatus With {.Kind = kind, .Message = ex.Message}
+            Catch ex As Exception
+                Return New DatabaseConnectionStatus With {.Kind = DatabaseFailureKind.Other, .Message = ex.Message}
+            End Try
+        End Function
+
         Public Shared Function TestConfiguredConnection(Optional timeoutSeconds As Integer = 15) As String
             Return TestConnection(ConnectionString, timeoutSeconds)
         End Function

@@ -3,6 +3,7 @@ Option Explicit On
 
 Imports System.Drawing
 Imports System.Collections.Generic
+Imports System.Threading.Tasks
 Imports System.Windows.Forms
 
 Namespace HelloWorld
@@ -181,17 +182,97 @@ Namespace HelloWorld
             LoginButton_Click(loginButton, EventArgs.Empty)
         End Sub
 
+        ''' <summary>Carries an authentication result back from the worker thread.</summary>
+        Private Class AuthenticationAttempt
+            Public Property Succeeded As Boolean
+            Public Property User As UserContext
+            Public Property ErrorMessage As String = String.Empty
+        End Class
+
+        ''' <summary>
+        ''' Reports a login that failed for a reason other than the credentials, and separates the
+        ''' causes: an unreachable server is fixed by starting it, while refused credentials or a
+        ''' missing database are fixed by changing the settings. Only the latter offers the
+        ''' configuration dialog.
+        ''' </summary>
+        Private Sub HandleLoginDatabaseError(errorMessage As String)
+            Dim statusTask = Task.Run(Function() DataAccess.GetConnectionStatus(10))
+            FW_BusyDialog.WaitFor(Me, statusTask, "CHECKING DATABASE", "Working out why the sign-in failed...")
+            Dim status = statusTask.Result
+
+            If status.Succeeded Then
+                ' The database answers, so this was something else and the settings are not at
+                ' fault. Offering to change them would send the user down the wrong path.
+                statusLabel.Text = errorMessage
+                MessageBox.Show(Me, errorMessage, "Login Failed", MessageBoxButtons.OK, MessageBoxIcon.Error)
+                Return
+            End If
+
+            statusLabel.Text = status.Describe()
+
+            ' An unreachable server is not a settings problem. Retrying once it is up is the fix,
+            ' and inviting the user to edit a correct connection would only risk breaking it.
+            If Not status.SettingsMightFixIt Then
+                MessageBox.Show(Me,
+                                status.Describe() & Environment.NewLine & Environment.NewLine &
+                                status.Message & Environment.NewLine & Environment.NewLine &
+                                "Start the database, then sign in again.",
+                                "Database Unavailable",
+                                MessageBoxButtons.OK,
+                                MessageBoxIcon.Error)
+                Return
+            End If
+
+            If MessageBox.Show(Me,
+                               status.Describe() & Environment.NewLine & Environment.NewLine &
+                               status.Message & Environment.NewLine & Environment.NewLine &
+                               "Open the database connection settings?",
+                               "Database Connection Error",
+                               MessageBoxButtons.YesNo,
+                               MessageBoxIcon.Error) <> DialogResult.Yes Then
+                Return
+            End If
+
+            Using configForm As New FW_DatabaseConfig(status.Describe() & " Check the connection settings below.")
+                If configForm.ShowDialog(Me) = DialogResult.OK Then
+                    statusLabel.Text = "Connection settings saved. Sign in again."
+                End If
+            End Using
+        End Sub
+
         Private Sub LoginButton_Click(sender As Object, e As EventArgs)
             statusLabel.Text = String.Empty
 
-            Dim user As UserContext = Nothing
-            Dim errorMessage As String = String.Empty
-            Dim ok = DataAccess.TryAuthenticate(emailTextBox.Text, passwordTextBox.Text, user, errorMessage)
+            ' Authenticated off the UI thread so the window can paint. Against an unreachable
+            ' server the connection attempt can take tens of seconds, and doing it inline made the
+            ' application look frozen with no indication anything was happening.
+            Dim email = emailTextBox.Text
+            Dim password = passwordTextBox.Text
+            Dim attemptTask = Task.Run(Function()
+                                           Dim attemptUser As UserContext = Nothing
+                                           Dim attemptError As String = String.Empty
+                                           Dim attemptOk = DataAccess.TryAuthenticate(email, password, attemptUser, attemptError)
+                                           Return New AuthenticationAttempt With {
+                                               .Succeeded = attemptOk,
+                                               .User = attemptUser,
+                                               .ErrorMessage = attemptError
+                                           }
+                                       End Function)
+
+            FW_BusyDialog.WaitFor(Me, attemptTask, "SIGNING IN", "Contacting the database...")
+
+            Dim attempt = attemptTask.Result
+            Dim user As UserContext = attempt.User
+            Dim errorMessage As String = attempt.ErrorMessage
+            Dim ok = attempt.Succeeded
 
             If Not ok Then
+                ' Only a thrown error reaches here. A wrong password or unknown email produces a
+                ' plain message and falls through to the attempt counter below, and must never
+                ' offer to reconfigure the database.
                 If errorMessage.StartsWith("Login failed:", StringComparison.OrdinalIgnoreCase) Then
                     statusLabel.Text = errorMessage
-                    MessageBox.Show(errorMessage, "Database Connection Error", MessageBoxButtons.OK, MessageBoxIcon.Error)
+                    HandleLoginDatabaseError(errorMessage)
                     Return
                 End If
 
