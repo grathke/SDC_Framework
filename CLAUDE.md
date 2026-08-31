@@ -88,6 +88,8 @@ Key areas:
 - `FRAMEWORK_NOTES.md` — how the menu shell, browse pages, maintenance pages, required-field
   styling and layout persistence actually work. Read before changing framework behavior.
 - `ICON_CATALOG.md` — the repository icon catalog required by the Action Icon Guardrail.
+- `TEST_CASES.md` — manual and scripted test cases with stable IDs. Add a case when a defect is
+  found, and record pass or fail with a date.
 - `BASE_B_QBE_LAYOUT_GUIDE.md`, `COMBO_CHECKLIST.md` — existing area-specific guides.
 - `.github/new-page-request-template.md` and `.github/new-page-request-manual.md` — the page
   request template and how to interpret a filled-in one.
