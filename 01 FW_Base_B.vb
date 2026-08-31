@@ -3042,6 +3042,31 @@ Namespace HelloWorld
             Return SelectedRecordId()
         End Function
 
+        ''' <summary>
+        ''' The first visible cell of the selected row, for naming the record in a confirmation.
+        ''' Falls back to the record id when there is nothing readable.
+        '''
+        ''' "Delete this record?" over a grid of similar rows does not tell the user which one is
+        ''' about to go, and the destructive-action guardrail requires the target be identified.
+        ''' A generated page has no idea which field is the record's name, so the leftmost visible
+        ''' column is the closest thing available - and it is the one the user is looking at.
+        ''' </summary>
+        Protected Function GetSelectedRowSummary() As String
+            If browseGrid.SelectedRows.Count = 0 Then Return String.Empty
+
+            Dim row = browseGrid.SelectedRows(0)
+
+            For Each col As DataGridViewColumn In browseGrid.Columns.Cast(Of DataGridViewColumn)().OrderBy(Function(c) c.DisplayIndex)
+                If Not col.Visible Then Continue For
+
+                Dim value = Convert.ToString(row.Cells(col.Index).Value)
+                If Not String.IsNullOrWhiteSpace(value) Then Return value.Trim()
+            Next
+
+            Dim recordId = SelectedRecordId()
+            Return If(recordId.HasValue, "record " & recordId.Value.ToString(), String.Empty)
+        End Function
+
         Protected Function GetSelectedBrowseValue(columnName As String) As String
             If String.IsNullOrWhiteSpace(columnName) OrElse Not browseGrid.Columns.Contains(columnName) Then
                 Return String.Empty

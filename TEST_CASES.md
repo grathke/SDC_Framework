@@ -68,7 +68,8 @@ Mostly verified on `Users_AppAdmin_U` during 2026-08-29/30. Re-run after changes
 | U-11 | Hidden field value survives | Save with a field hidden — the stored value is unchanged, not blanked. | untested |
 | U-12 | Change and change back, Cancel | No unsaved-changes prompt. | pass 2026-08-30 |
 | U-13 | Real change, Cancel | Prompt appears; No keeps the page open. | untested |
-| U-14 | Save conflict | Another user changes the record first — explicit overwrite choice, page stays open. | untested |
+| U-14 | Save conflict | Another user changes the record first — explicit overwrite choice, page stays open. | pass 2026-08-31 |
+| U-21 | Save onto a deleted record | One uppercase message naming who deleted it and when; page closes; no overwrite offered; grid returns without the record. | pass 2026-08-31 |
 | U-15 | Password sentinel | Existing user shows `#####`; tabbing through it does not mark the page dirty. | pass 2026-08-30 |
 | U-16 | Set a new password | Type over `#####`, save, log in with it, reopen — shows `#####` again. | untested |
 | U-17 | Tab order focus | Selecting a row in the Tab Order panel focuses that field. | pass 2026-08-30 |
@@ -87,6 +88,7 @@ Mostly verified on `Users_AppAdmin_U` during 2026-08-29/30. Re-run after changes
 | B-14 | Saved layout cannot resurrect a hidden field | A layout saved while the field was visible must not bring it back on first open. | pass 2026-08-31 |
 | B-15 | Column order drives QBE order | Dragging a column, or reordering in the panel, puts QBE rows in the same order as the grid. Reset restores both together. | pass 2026-08-31 |
 | B-16 | Columns panel defers to OK | Ticking and reordering in the panel change nothing until OK; Cancel leaves the grid untouched. | untested |
+| B-17 | Delete button soft-deletes | Confirmation names the user; the record leaves the grid and DeletedFlag, DeletedBy and DeletedOn are set. | pass 2026-08-31 |
 | B-03 | QBE Find | Criteria filter the grid; the status line reports the count. | untested |
 | B-04 | Empty QBE row cap | With no criteria, the result is capped and the status line says so. | untested |
 | B-05 | Invalid QBE value | Text in a numeric field is reported and the search does not run. | untested |
