@@ -333,6 +333,35 @@ The prompt only appears at all when `ShouldWarnOnCancel()` is True.
 - **Enum button** — writes the page's controls to the metadata store, which is what populates
   `FW_Enumerations_U` and therefore what field-level permissions can be configured against.
 
+### Which RegistrationID applies
+
+Two different registrations are in play on a maintenance page, and mixing them up is easy.
+
+| | Which registration | Where it comes from |
+|---|---|---|
+| Required fields, override captions, field-level permissions | **the session's** | `GetControlUpdates` filters `vw_FW_ControlUpdates_U` by `SessionState` RegistrationID **and** RoleID |
+| Unique-field validation scope | **the session's** | `ValidateUniqueFields` |
+| The record's own `RegistrationID` | **the record's** | bound read-only to the record, shown only to an Application Admin |
+| Data scoped to the record, such as the role lists on `Users_AppAdmin_U` | **the record's** | `GetEffectiveRegistrationId()` - the record's value, falling back to the session for a new record |
+
+**This is deliberate, not an oversight.** A browse page can operate on a registration other than the
+session's - `Users_AppAdmin_B` has a registration combo, and captions and QBE Find honour it. But
+the maintenance page it opens still takes its *display rules* from the session. An Application Admin
+editing another registration's user sees their own registration's required fields and captions,
+while the record keeps its own `RegistrationID` and its role list loads for the user being edited.
+
+Do not "fix" this by plumbing the browse page's selected registration into `ApplyControlUpdates`.
+Metadata follows the person doing the editing; data follows the record.
+
+`ApplyControlUpdates` is called from exactly one place, `Base_U.BindToForm`, and takes only the page
+name and the is-new-record flag. There is no per-page override, and adding one would break the rule
+above.
+
+**Correction:** the view once hardcoded `RegistrationID = 1` and exposed no `RoleID`, so field
+attributes were inert outside registration 1 and a field configured for two roles returned two rows
+with an arbitrary winner. `sql/026_control_updates_role_scope.sql` moved both filters up into
+`GetControlUpdates`, where they read from the session.
+
 ### Documented exceptions
 
 **`Roles_U` does not inherit `FW_Base_U`, and should not.** It is a permission administration
