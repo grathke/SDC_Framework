@@ -1555,6 +1555,65 @@ Namespace HelloWorld
             Return result
         End Function
 
+        ''' <summary>
+        ''' Soft-deletes a generated page's record, and writes the audit row.
+        '''
+        ''' Returns the reason it could not be done, or String.Empty on success. A table with no
+        ''' DeletedFlag is refused rather than deleted physically: a physical delete needs explicit
+        ''' approval, and quietly doing one because the column happens to be missing is exactly the
+        ''' kind of surprise that guardrail exists to prevent.
+        ''' </summary>
+        Public Shared Function SoftDeleteGeneratedPageRecord(tableName As String,
+                                                             primaryKey As String,
+                                                             recordId As Integer,
+                                                             userId As Integer,
+                                                             pageName As String) As String
+            Dim normalizedTable = NormalizeTableName(tableName)
+            If String.IsNullOrWhiteSpace(normalizedTable) OrElse String.IsNullOrWhiteSpace(primaryKey) OrElse recordId <= 0 Then
+                Return "The record could not be identified."
+            End If
+
+            If Not TableHasColumn(normalizedTable, "DeletedFlag") Then
+                Return "This table does not support delete. It has no DeletedFlag column, and records are never removed physically."
+            End If
+
+            Try
+                Dim assignments As New List(Of String)() From {"[DeletedFlag] = 1"}
+                If TableHasColumn(normalizedTable, "DeletedBy") Then assignments.Add("[DeletedBy] = @UserID")
+                If TableHasColumn(normalizedTable, "DeletedOn") Then assignments.Add("[DeletedOn] = SYSUTCDATETIME()")
+                If TableHasColumn(normalizedTable, "IsActive") Then assignments.Add("[IsActive] = 0")
+                If TableHasColumn(normalizedTable, "UpdatedBy") Then assignments.Add("[UpdatedBy] = @UserID")
+                If TableHasColumn(normalizedTable, "UpdatedOn") Then assignments.Add("[UpdatedOn] = GETDATE()")
+
+                Using conn As New SqlConnection(ConnectionString)
+                    conn.Open()
+                    Using cmd As New SqlCommand(
+                        "UPDATE dbo." & QuoteGeneratedIdentifier(normalizedTable) &
+                        " SET " & String.Join(", ", assignments) &
+                        " WHERE " & QuoteGeneratedIdentifier(primaryKey) & " = @RecordID", conn)
+                        cmd.Parameters.Add("@RecordID", SqlDbType.Int).Value = recordId
+                        cmd.Parameters.Add("@UserID", SqlDbType.Int).Value = If(userId > 0, CType(userId, Object), DBNull.Value)
+
+                        If cmd.ExecuteNonQuery() <> 1 Then
+                            Return "The record was not found. It may already have been deleted."
+                        End If
+                    End Using
+                End Using
+
+                LogUpdateAudit(If(String.IsNullOrWhiteSpace(pageName), "FW_Base_B", pageName),
+                               normalizedTable,
+                               "Delete",
+                               "AfterSave",
+                               recordId.ToString(CultureInfo.InvariantCulture),
+                               String.Empty,
+                               True)
+
+                Return String.Empty
+            Catch ex As Exception
+                Return ex.Message
+            End Try
+        End Function
+
         Public Shared Function GetGeneratedPageSchema(tableName As String) As DataTable
             Using conn As New SqlConnection(ConnectionString)
                 conn.Open()

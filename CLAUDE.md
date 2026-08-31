@@ -24,11 +24,13 @@ whether something is expected of them.
 - **Do not launch the application until the user replies `run`.** They may prefer to run it themselves.
 - **`BLOCKED`** — end with this marker instead when work cannot continue without a decision from the
   user. State what is needed and what is assumed if they choose nothing.
-- **`What's Next`** — end with this heading whenever the response hands control back and something
+- **`WHATS NEXT ?`** — end with this heading whenever the response hands control back and something
   is expected from the user: a decision, a test result, an answer, or a choice between options.
   List the open items as a short numbered list, most immediate first, so nothing is left buried in
   prose. Include threads still open from earlier in the session, not only the current one. Omit it
-  when genuinely nothing is pending — a finished answer with no follow-up needs no list.
+  when genuinely nothing is pending — a finished answer with no follow-up needs no list. Any
+  direct prompt for a decision — "Shall I?", "Which one?" — is written in bold, so what is being
+  asked of the user is never buried in a paragraph.
 - Finish every part of the work that is not blocked before reporting either marker, and say explicitly
   what was left out and why.
 - Read the full relevant file before changing it. Never apply a generic solution without first

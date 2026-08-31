@@ -53,6 +53,8 @@ Namespace HelloWorld
         Private ReadOnly columnsManagerPanel As Panel
         Private ReadOnly columnsManagerLabel As Label
         Private ReadOnly columnsManagerHideButton As Button
+        Private ReadOnly columnsManagerOkButton As Button
+        Private columnsManagerBaseline As List(Of Tuple(Of String, Boolean))
         Private ReadOnly columnsManagerList As CheckedListBox
         Private ReadOnly columnsMoveUpButton As Button
         Private ReadOnly columnsMoveDownButton As Button
@@ -346,7 +348,7 @@ Namespace HelloWorld
 
             columnsManagerPanel = New Panel() With {
                 .Dock = DockStyle.None,
-                .Width = 206,
+                .Width = 218,
                 .BackColor = Color.FromArgb(248, 248, 248),
                 .BorderStyle = BorderStyle.FixedSingle,
                 .Visible = False
@@ -361,28 +363,34 @@ Namespace HelloWorld
                 .Visible = False
             }
 
-            columnsManagerHideButton = New Button() With {
-                .Text = "Close",
-                .Size = New Size(58, 28),
+            columnsMoveUpButton = New Button() With {
+                .Text = ChrW(&H25B2),
+                .Size = New Size(32, 28),
                 .Location = New Point(8, 6)
             }
 
-            columnsMoveUpButton = New Button() With {
-                .Text = "Up",
-                .Size = New Size(58, 28),
-                .Location = New Point(72, 6)
+            columnsMoveDownButton = New Button() With {
+                .Text = ChrW(&H25BC),
+                .Size = New Size(32, 28),
+                .Location = New Point(46, 6)
             }
 
-            columnsMoveDownButton = New Button() With {
-                .Text = "Down",
+            columnsManagerOkButton = New Button() With {
+                .Text = "OK",
                 .Size = New Size(58, 28),
-                .Location = New Point(136, 6)
+                .Location = New Point(84, 6)
+            }
+
+            columnsManagerHideButton = New Button() With {
+                .Text = "Cancel",
+                .Size = New Size(58, 28),
+                .Location = New Point(148, 6)
             }
 
             columnsManagerList = New CheckedListBox() With {
                 .CheckOnClick = True,
                 .Location = New Point(8, 40),
-                .Size = New Size(186, 340),
+                .Size = New Size(198, 340),
                 .Anchor = AnchorStyles.Top Or AnchorStyles.Left Or AnchorStyles.Right Or AnchorStyles.Bottom,
                 .BorderStyle = BorderStyle.FixedSingle
             }
@@ -515,6 +523,7 @@ Namespace HelloWorld
             AddHandler columnsManagerList.MouseUp, AddressOf ColumnsManagerList_MouseUp
             AddHandler columnsManagerList.SelectedIndexChanged, AddressOf ColumnsManagerList_SelectedIndexChanged
             AddHandler columnsManagerHideButton.Click, AddressOf ColumnsManagerHideButton_Click
+            AddHandler columnsManagerOkButton.Click, AddressOf ColumnsManagerOkButton_Click
             AddHandler columnsMoveUpButton.Click, AddressOf ColumnsMoveUpButton_Click
             AddHandler columnsMoveDownButton.Click, AddressOf ColumnsMoveDownButton_Click
             AddHandler Me.Resize, AddressOf ContactsForm_Resize
@@ -533,6 +542,7 @@ Namespace HelloWorld
             qbePanel.Controls.Add(retrieveQbeButton)
             columnsManagerPanel.Controls.Add(columnsManagerLabel)
             columnsManagerPanel.Controls.Add(columnsManagerHideButton)
+            columnsManagerPanel.Controls.Add(columnsManagerOkButton)
             columnsManagerPanel.Controls.Add(columnsMoveUpButton)
             columnsManagerPanel.Controls.Add(columnsMoveDownButton)
             columnsManagerPanel.Controls.Add(columnsManagerList)
@@ -1499,10 +1509,11 @@ Namespace HelloWorld
             SetColumnsPanelVisible(Not columnsManagerPanel.Visible)
             If columnsManagerPanel.Visible Then
                 RefreshColumnsManagerFromGrid()
+                CaptureColumnsManagerBaseline()
                 columnsManagerList.Focus()
                 PositionColumnsManagerPanel()
                 If Not SessionState.HasSeenUiHint(ColumnsUsageHintKey) Then
-                    MessageBox.Show("Tip: click the checkbox area to show/hide a column. Use Up/Down or arrow keys to move selection, and Space to toggle visibility.", "Columns", MessageBoxButtons.OK, MessageBoxIcon.Information)
+                    MessageBox.Show("Tip: click the checkbox area to show or hide a column, and use Up/Down to reorder. Nothing changes on the grid until you choose OK.", "Columns", MessageBoxButtons.OK, MessageBoxIcon.Information)
                     SessionState.MarkUiHintSeen(ColumnsUsageHintKey)
                 End If
             End If
@@ -1556,6 +1567,9 @@ Namespace HelloWorld
         End Sub
 
         Private Sub ColumnsManagerHideButton_Click(sender As Object, e As EventArgs)
+            ' Cancel. Nothing was applied while the panel was open, so restoring the list is enough.
+            RestoreColumnsManagerBaseline()
+            columnsManagerBaseline = Nothing
             SetColumnsPanelVisible(False)
         End Sub
 
@@ -1676,7 +1690,48 @@ Namespace HelloWorld
                 Return
             End If
 
-            BeginInvoke(New MethodInvoker(AddressOf ApplyColumnsManagerStateToGrid))
+            ' Nothing is applied to the grid here. Ticking only edits the list, and OK commits the
+            ' whole set at once - so the grid does not flicker column by column, and QBE is rebuilt
+            ' once from the final selection rather than on every tick.
+        End Sub
+
+        ''' <summary>
+        ''' Remembers the panel's contents as it opens, so Cancel can put them back. Nothing has
+        ''' been applied to the grid by then, so only the list needs restoring.
+        ''' </summary>
+        Private Sub CaptureColumnsManagerBaseline()
+            columnsManagerBaseline = New List(Of Tuple(Of String, Boolean))()
+
+            For index = 0 To columnsManagerList.Items.Count - 1
+                columnsManagerBaseline.Add(Tuple.Create(columnsManagerList.Items(index).ToString(),
+                                                        columnsManagerList.GetItemChecked(index)))
+            Next
+        End Sub
+
+        Private Sub RestoreColumnsManagerBaseline()
+            If columnsManagerBaseline Is Nothing Then Return
+
+            suppressColumnsManagerSync = True
+            Try
+                Dim byName = columnsManagerList.Items.Cast(Of Object)().ToDictionary(Function(item) item.ToString(), Function(item) item)
+                columnsManagerList.Items.Clear()
+
+                For Each entry In columnsManagerBaseline
+                    Dim item As Object = Nothing
+                    If Not byName.TryGetValue(entry.Item1, item) Then Continue For
+                    columnsManagerList.SetItemChecked(columnsManagerList.Items.Add(item), entry.Item2)
+                Next
+            Finally
+                suppressColumnsManagerSync = False
+            End Try
+
+            UpdateColumnsManagerButtonsState()
+        End Sub
+
+        Private Sub ColumnsManagerOkButton_Click(sender As Object, e As EventArgs)
+            ApplyColumnsManagerStateToGrid()
+            columnsManagerBaseline = Nothing
+            SetColumnsPanelVisible(False)
         End Sub
 
         Private Sub ColumnsMoveUpButton_Click(sender As Object, e As EventArgs)
@@ -1697,7 +1752,8 @@ Namespace HelloWorld
                 suppressColumnsManagerSync = False
             End Try
 
-            ApplyColumnsManagerStateToGrid()
+            ' Reordering edits the list only. Like the checkboxes, it reaches the grid on OK, so
+            ' the columns do not shuffle underneath the user while they arrange them.
             UpdateColumnsManagerButtonsState()
         End Sub
 
@@ -1714,6 +1770,14 @@ Namespace HelloWorld
                 ApplyPkColumnHiding(browseGrid)
                 HideRegistrationIdColumn(browseGrid)
                 HideSoftDeleteColumns(browseGrid)
+
+                ' QBE is derived from the visible columns, so hiding one here has to re-derive it.
+                ' Without this the field stayed searchable after being hidden - and permanently so,
+                ' because the signature below then told the next refresh that nothing had changed.
+                ' Values already typed are preserved by field name, so a filter in progress
+                ' survives on the columns that remain.
+                PopulateQbeFromGridColumns()
+
                 lastVisibleColumnsSignature = BuildVisibleColumnsSignature()
                 lastAppliedSqlSignature = NormalizeSql(GetActiveBaseSql())
                 If hasBaselineLayoutSnapshot Then
@@ -2489,7 +2553,10 @@ Namespace HelloWorld
             qbeFieldDefinitions.Clear()
             qbeGrid.Rows.Clear()
 
-            For Each col As DataGridViewColumn In browseGrid.Columns
+            ' Ordered by DisplayIndex, not by the order the SQL returned the columns, so QBE reads
+            ' in the same order as the grid. Arranging the important column first puts it first
+            ' in QBE too, rather than leaving the two out of step.
+            For Each col As DataGridViewColumn In browseGrid.Columns.Cast(Of DataGridViewColumn)().OrderBy(Function(c) c.DisplayIndex)
                 If col Is Nothing OrElse Not col.Visible Then
                     Continue For
                 End If
