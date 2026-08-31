@@ -55,6 +55,7 @@ Namespace HelloWorld
         Private ReadOnly columnsManagerHideButton As Button
         Private ReadOnly columnsManagerOkButton As Button
         Private columnsManagerBaseline As List(Of Tuple(Of String, Boolean))
+        Private qbeRebuildPending As Boolean
         Private ReadOnly columnsManagerList As CheckedListBox
         Private ReadOnly columnsMoveUpButton As Button
         Private ReadOnly columnsMoveDownButton As Button
@@ -1801,6 +1802,18 @@ Namespace HelloWorld
                 userChangedLayout = True
             End If
 
+            ' QBE follows the grid's order, so dragging a column has to re-derive it. One drag
+            ' raises this once per column whose position shifted, so the rebuild is deferred and
+            ' coalesced - otherwise a single move of a left-hand column would rebuild QBE several
+            ' times over. Reset and the layout combo re-derive it through their own path.
+            If qbeRebuildPending Then Return
+
+            qbeRebuildPending = True
+            BeginInvoke(New MethodInvoker(Sub()
+                                              qbeRebuildPending = False
+                                              PopulateQbeFromGridColumns()
+                                              lastVisibleColumnsSignature = BuildVisibleColumnsSignature()
+                                          End Sub))
         End Sub
 
         Private Sub BrowseGrid_ColumnStateChanged(sender As Object, e As DataGridViewColumnStateChangedEventArgs)
