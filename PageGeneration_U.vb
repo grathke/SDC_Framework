@@ -1731,6 +1731,8 @@ Namespace HelloWorld
                     {"MenuCaller", DbSaveValue(menuCallerTextBox.Text)}
                 }
                 If Not DataAccess.SavePageGeneration(isNewRecord, Integer.Parse(If(String.IsNullOrWhiteSpace(pageRequestIdTextBox.Text), "0", pageRequestIdTextBox.Text)), values, originalRowVersion) Then
+                    ' A deleted record is not a conflict to overwrite.
+                    If HandleRecordDeletedDuringSave() Then Return False
                     Return ConfirmConcurrencyOverwrite()
                 End If
                 Dim savedRequestId = If(String.IsNullOrWhiteSpace(pageRequestIdTextBox.Text),

@@ -6180,6 +6180,69 @@ Namespace HelloWorld
             End Using
         End Function
 
+        ''' <summary>
+        ''' Who soft-deleted a record and when, or Nothing when it is not deleted, the table does
+        ''' not support soft delete, or the row cannot be found.
+        '''
+        ''' A save that matches no row is reported as a concurrency conflict, but a soft-deleted
+        ''' record is not a conflict - the row still exists, so an overwrite would succeed and quietly
+        ''' write the user's edits onto a deleted record. Callers use this to tell the two apart.
+        ''' </summary>
+        Public Shared Function GetSoftDeleteInfo(tableName As String, recordId As Integer) As SoftDeleteInfo
+            Dim normalizedTable = NormalizeTableName(tableName)
+            If String.IsNullOrWhiteSpace(normalizedTable) OrElse recordId <= 0 Then Return Nothing
+
+            Dim keyColumn = GetPrimaryKeyColumn(normalizedTable)
+            If String.IsNullOrWhiteSpace(keyColumn) Then Return Nothing
+
+            Try
+                Using conn As New SqlConnection(ConnectionString)
+                    conn.Open()
+
+                    Dim columns = New List(Of String)()
+                    Using schemaCmd As New SqlCommand(
+                        "SELECT COLUMN_NAME FROM INFORMATION_SCHEMA.COLUMNS " &
+                        "WHERE TABLE_SCHEMA = 'dbo' AND TABLE_NAME = @TableName", conn)
+                        schemaCmd.Parameters.AddWithValue("@TableName", normalizedTable)
+                        Using reader = schemaCmd.ExecuteReader()
+                            While reader.Read()
+                                columns.Add(reader.GetString(0))
+                            End While
+                        End Using
+                    End Using
+
+                    If Not columns.Any(Function(name) String.Equals(name, "DeletedFlag", StringComparison.OrdinalIgnoreCase)) Then
+                        Return Nothing
+                    End If
+
+                    Dim hasDeletedBy = columns.Any(Function(name) String.Equals(name, "DeletedBy", StringComparison.OrdinalIgnoreCase))
+                    Dim hasDeletedOn = columns.Any(Function(name) String.Equals(name, "DeletedOn", StringComparison.OrdinalIgnoreCase))
+
+                    Dim sql = "SELECT ISNULL(t.DeletedFlag, 0) AS DeletedFlag" &
+                              If(hasDeletedOn, ", t.DeletedOn", ", CAST(NULL AS datetime) AS DeletedOn") &
+                              If(hasDeletedBy, ", ISNULL(u.FirstLast, '') AS DeletedByName", ", '' AS DeletedByName") &
+                              " FROM dbo." & QuoteGeneratedIdentifier(normalizedTable) & " t" &
+                              If(hasDeletedBy, " LEFT JOIN dbo.FW_Users u ON u.UserID = t.DeletedBy", String.Empty) &
+                              " WHERE t." & QuoteGeneratedIdentifier(keyColumn) & " = @RecordID"
+
+                    Using cmd As New SqlCommand(sql, conn)
+                        cmd.Parameters.Add("@RecordID", SqlDbType.Int).Value = recordId
+                        Using reader = cmd.ExecuteReader()
+                            If Not reader.Read() Then Return Nothing
+                            If Not Convert.ToBoolean(reader("DeletedFlag"), CultureInfo.InvariantCulture) Then Return Nothing
+
+                            Return New SoftDeleteInfo With {
+                                .DeletedByName = If(reader("DeletedByName") Is DBNull.Value, String.Empty, reader("DeletedByName").ToString().Trim()),
+                                .DeletedOn = If(reader("DeletedOn") Is DBNull.Value, CType(Nothing, Date?), Convert.ToDateTime(reader("DeletedOn"), CultureInfo.InvariantCulture))
+                            }
+                        End Using
+                    End Using
+                End Using
+            Catch
+                Return Nothing
+            End Try
+        End Function
+
         Public Shared Function GetPrimaryKeyColumn(tableName As String) As String
             Dim normalizedTable = NormalizeTableName(tableName)
             If String.IsNullOrWhiteSpace(normalizedTable) Then Return String.Empty

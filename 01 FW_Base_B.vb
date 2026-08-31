@@ -2879,6 +2879,23 @@ Namespace HelloWorld
                 End If
             End If
 
+            ' The row that was selected is no longer in the result - deleted, or filtered out by a
+            ' changed criterion. Selecting something else would imply the user picked it, so nothing
+            ' is selected and the grid returns to the top rather than to a position that no longer
+            ' means anything. Binding leaves row 0 selected by default, hence the explicit clear.
+            If state.HasSelection Then
+                browseGrid.ClearSelection()
+                browseGrid.CurrentCell = Nothing
+
+                Try
+                    browseGrid.FirstDisplayedScrollingRowIndex = 0
+                Catch
+                    ' Ignore if grid cannot set scroll position yet.
+                End Try
+
+                Return
+            End If
+
             Dim fallbackTop = Math.Max(0, Math.Min(state.FallbackFirstDisplayedIndex, browseGrid.RowCount - 1))
             Try
                 browseGrid.FirstDisplayedScrollingRowIndex = fallbackTop

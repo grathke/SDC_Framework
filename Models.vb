@@ -5,6 +5,22 @@ Imports System.Collections.Generic
 
 Namespace HelloWorld
 
+    ''' <summary>
+    ''' Who soft-deleted a record and when, for the message shown to a user whose save found the
+    ''' record already deleted.
+    ''' </summary>
+    Public Class SoftDeleteInfo
+        Public Property DeletedByName As String = String.Empty
+        Public Property DeletedOn As Date?
+
+        ''' <summary>A sentence naming the person and time, degrading gracefully when either is missing.</summary>
+        Public Function Describe() As String
+            Dim who = If(String.IsNullOrWhiteSpace(DeletedByName), String.Empty, " by " & DeletedByName.Trim())
+            Dim whenDeleted = If(DeletedOn.HasValue, " on " & DeletedOn.Value.ToString("d MMM yyyy HH:mm"), String.Empty)
+            Return "This record was already deleted" & who & whenDeleted & "."
+        End Function
+    End Class
+
     Public Enum SaveResult
         Succeeded
         RecordChanged

@@ -138,6 +138,10 @@ Namespace HelloWorld
                     End If
 
                     If saveResult = SaveResult.RecordChanged Then
+                        ' A deleted record is not a conflict to overwrite - saying so first stops
+                        ' the edits being written onto a record nobody can see any more.
+                        If HandleRecordDeletedDuringSave() Then Return False
+
                         If Not ConfirmConcurrencyOverwrite() Then
                             Return False
                         End If

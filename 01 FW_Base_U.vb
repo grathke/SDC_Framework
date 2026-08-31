@@ -1112,6 +1112,41 @@ Namespace HelloWorld
             Return String.Empty
         End Function
 
+        ''' <summary>
+        ''' True when the save failed because the record has been soft-deleted rather than merely
+        ''' changed. Reports it, and closes the page - there is nothing to overwrite and no useful
+        ''' decision to offer.
+        '''
+        ''' This has to be checked before offering an overwrite. A soft-deleted row still exists,
+        ''' so an overwrite would succeed and quietly write the user's edits onto a deleted record,
+        ''' where nobody would see them again.
+        '''
+        ''' Returns False when the record is not deleted, leaving the caller to treat it as an
+        ''' ordinary concurrency conflict.
+        ''' </summary>
+        Protected Function HandleRecordDeletedDuringSave() As Boolean
+            Dim recordId As Integer
+            If Not Integer.TryParse(ResolveAuditRecordKey(), recordId) OrElse recordId <= 0 Then
+                Return False
+            End If
+
+            Dim info = DataAccess.GetSoftDeleteInfo(ResolveTableNameForConcurrency(), recordId)
+            If info Is Nothing Then Return False
+
+            MessageBox.Show(Me,
+                            info.Describe() & Environment.NewLine & Environment.NewLine &
+                            "Your changes have not been saved.",
+                            "Record Deleted",
+                            MessageBoxButtons.OK,
+                            MessageBoxIcon.Warning)
+
+            ' Cancel rather than OK: nothing was saved, so the caller must not treat this as success.
+            DialogResult = DialogResult.Cancel
+            bypassCancelCloseCheck = True
+            Close()
+            Return True
+        End Function
+
         Protected Function ConfirmConcurrencyOverwrite() As Boolean
             Return MessageBox.Show(Me,
                                    "This record was changed by another user after you opened it." & Environment.NewLine & Environment.NewLine &
