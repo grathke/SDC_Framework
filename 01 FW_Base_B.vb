@@ -1202,6 +1202,9 @@ Namespace HelloWorld
                 lastRefreshExceededRowLimit = maxRows > 0 AndAlso
                                               dt.ExtendedProperties.ContainsKey("BrowseRowsLimited") AndAlso
                                               Convert.ToBoolean(dt.ExtendedProperties("BrowseRowsLimited"))
+                ' Fields this role may not see are removed from the result before anything can bind
+                ' to them, so no later step can put them back on screen.
+                RemoveInvisibleRoleFieldColumns(dt)
                 browseGrid.DataSource = dt
                 recordCountLabel.Text = "Record Count: " & dt.Rows.Count.ToString()
                 browseGrid.ColumnHeadersVisible = True
@@ -1209,12 +1212,10 @@ Namespace HelloWorld
                 ApplyPkColumnHiding(browseGrid)
                 HideRegistrationIdColumn(browseGrid)
                 HideSoftDeleteColumns(browseGrid)
-                HideInvisibleRoleFieldColumns(browseGrid)
                 ApplyColumnVisibilityMap(existingVisibility)
                 ApplyPkColumnHiding(browseGrid)
                 HideRegistrationIdColumn(browseGrid)
                 HideSoftDeleteColumns(browseGrid)
-                HideInvisibleRoleFieldColumns(browseGrid)
                 EnsureAtLeastOneManageableVisibleColumn()
                 UpdateMaintenanceKeyAvailability()
                 GridColumnsManager.FitVisibleColumnsToAvailableWidth(browseGrid)
@@ -1285,16 +1286,12 @@ Namespace HelloWorld
                     ApplyPkColumnHiding(browseGrid)
                     HideRegistrationIdColumn(browseGrid)
                     HideSoftDeleteColumns(browseGrid)
-                    HideInvisibleRoleFieldColumns(browseGrid)
-                HideInvisibleRoleFieldColumns(browseGrid)
                     EnsureAtLeastOneManageableVisibleColumn()
                     GridColumnsManager.FitVisibleColumnsToAvailableWidth(browseGrid)
                     TryApplyLayoutSnapshotJson(layoutJson)
                     ApplyPkColumnHiding(browseGrid)
                     HideRegistrationIdColumn(browseGrid)
                     HideSoftDeleteColumns(browseGrid)
-                    HideInvisibleRoleFieldColumns(browseGrid)
-                HideInvisibleRoleFieldColumns(browseGrid)
                     RefreshColumnsManagerFromGrid()
                     PopulateQbeFromGridColumns()
                     lastVisibleColumnsSignature = BuildVisibleColumnsSignature()
@@ -1451,7 +1448,6 @@ Namespace HelloWorld
             ApplyPkColumnHiding(browseGrid)
             HideRegistrationIdColumn(browseGrid)
             HideSoftDeleteColumns(browseGrid)
-            HideInvisibleRoleFieldColumns(browseGrid)
             EnsureAtLeastOneManageableVisibleColumn()
             RefreshColumnsManagerFromGrid()
             PopulateQbeFromGridColumns()
@@ -1718,7 +1714,6 @@ Namespace HelloWorld
                 ApplyPkColumnHiding(browseGrid)
                 HideRegistrationIdColumn(browseGrid)
                 HideSoftDeleteColumns(browseGrid)
-                HideInvisibleRoleFieldColumns(browseGrid)
                 lastVisibleColumnsSignature = BuildVisibleColumnsSignature()
                 lastAppliedSqlSignature = NormalizeSql(GetActiveBaseSql())
                 If hasBaselineLayoutSnapshot Then
@@ -2375,10 +2370,22 @@ Namespace HelloWorld
         ''' field-level setting hides it on both the browse grid and the maintenance page.
         ''' QBE follows automatically, since it derives from visible columns.
         ''' </summary>
-        Protected Overridable Sub HideInvisibleRoleFieldColumns(grid As DataGridView)
-            If grid Is Nothing OrElse grid.Columns Is Nothing OrElse grid.Columns.Count = 0 Then
-                Return
-            End If
+        ''' <summary>
+        ''' Removes fields the role may not see from the result outright, rather than hiding them.
+        '''
+        ''' Hiding is only a display convention, and anything that re-applies column visibility can
+        ''' undo it - a saved layout did exactly that, putting the field back on screen the first
+        ''' time a page opened. It also left the field listed in the columns manager, where it could
+        ''' simply be ticked back on. Dropping the column removes all of those routes at once: there
+        ''' is nothing to show, nothing to list, nothing for QBE to derive, and nothing a layout can
+        ''' resurrect.
+        '''
+        ''' Only `Make_Invisible` role fields are dropped. `PK`, `RegistrationID` and the soft-delete
+        ''' columns are also hidden from the user, but the framework reads them, so those stay in
+        ''' the table and remain merely hidden.
+        ''' </summary>
+        Protected Overridable Sub RemoveInvisibleRoleFieldColumns(table As DataTable)
+            If table Is Nothing OrElse table.Columns.Count = 0 Then Return
 
             Dim session = SessionState.Current
             If Not session.HasValue Then Return
@@ -2393,15 +2400,19 @@ Namespace HelloWorld
             Dim invisibleFields = DataAccess.GetPageInitMetadata(roleId, registrationId, tableName).InvisibleFields
             If invisibleFields Is Nothing OrElse invisibleFields.Count = 0 Then Return
 
-            For Each col As DataGridViewColumn In grid.Columns
-                If col Is Nothing OrElse Not col.Visible Then
+            For Each columnName In table.Columns.Cast(Of DataColumn)().
+                                         Select(Function(c) c.ColumnName).
+                                         Where(Function(name) invisibleFields.Contains(name)).
+                                         ToList()
+
+                ' Never drop a column the framework depends on, whatever the metadata says.
+                If String.Equals(columnName, "PK", StringComparison.OrdinalIgnoreCase) OrElse
+                   String.Equals(columnName, "RegistrationID", StringComparison.OrdinalIgnoreCase) OrElse
+                   IsSoftDeleteColumnName(columnName) Then
                     Continue For
                 End If
 
-                Dim columnKey = If(String.IsNullOrWhiteSpace(col.DataPropertyName), col.Name, col.DataPropertyName)
-                If invisibleFields.Contains(columnKey) Then
-                    col.Visible = False
-                End If
+                table.Columns.Remove(columnName)
             Next
         End Sub
 
