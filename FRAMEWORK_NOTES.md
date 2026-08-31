@@ -499,6 +499,65 @@ controls, and only when every control on the row is invisible. Pages laid out in
 column override `GetLayoutColumnLefts()` so each column closes its own gaps; a row is held back if
 rising would collide with another column.
 
+## Page Generation
+
+There are **two** ways a page pair gets built, and they are not the same thing.
+
+| Path | Driven by | Documented in |
+|---|---|---|
+| By hand | a filled-in page request read by Claude Code | `.github/new-page-request-manual.md` — page identity, SQL rules, field options, create/update/delete behavior, and a 13-step implementation procedure |
+| Automated | `PageGenerator.Generate`, from an `FW_PageGeneration_B_U` row | this section |
+
+The manual's "What Happens During Implementation" describes the **by hand** path. The generator
+does none of it: no restore point, no build, no regression run, no manual test.
+
+### What the generator refuses
+
+Generation stops and reports every problem at once rather than emitting a broken page:
+
+- neither page target selected, or a name missing its `_B` / `_U` suffix
+- no underlying table, or a table with no primary key
+- no `_B` or `_U` fields when that page was requested
+- a field that does not exist in the table's schema
+- **browse SQL with no `AS PK` alias.** Only an explicit `PK` alias is accepted as the row key, so
+  without it the page opens with a missing-key warning and Read, Update and Delete hidden
+- a lookup entry not matching `<Field> -> <Table>.<ValueColumn> displayed as <DisplayColumn>`
+
+### What the generated `_U` page contains
+
+`Inherits FW_Base_U`, a `New(id, user, profile)` constructor, and `SavedRecordId` so the browse page
+can reselect the saved row. Overrides emitted: `GetPageName`, `GetTableNameOverride`,
+`BindToFormInternal`, `ApplyMode`, `TryBuildRecord`, `SaveRecord`, `ResolveAuditRecordKey`,
+`ShouldWarnOnCancel` (True) and `IsCreatingNewRecord` (`recordId <= 0`).
+
+Fields become `TextBox_<Field>` through `AddField`, except lookups, which become
+`ComboBox_<Field>` filled by `ConfigureLookupCombo` over `DataAccess.GetLookupTable` and saved
+through `GetComboSelectedIdOrZero`. RowVersion is captured on load, and the save uses
+`TrySaveGeneratedPageRecord`, so a conflict offers overwrite, reloads for a fresh token and retries
+rather than dead-ending.
+
+### What the generator writes outside the source files
+
+- **`FW_RoleTables`** for the browse page. No row: inserted. A row for the same table: its SQL is
+  updated if it differs, otherwise skipped. A row for a *different* table: overwritten. Registration
+  is passed as `0`, which `UpsertRoleTableRecord` stores as `NULL` — shared across registrations.
+- **The maintenance source baseline** on the request row, so later drift can be compared.
+- **A dashboard icon**, but only when the request's `MenuCaller` is `Dashboard_Application`. An icon
+  failure is reported as `ICON WARNING` and does not fail generation.
+
+### What it still leaves to you
+
+- **`ICON_CATALOG.md`** is never updated, even when it adds the dashboard button. The Action Icon
+  Guardrail requires the catalogue entry, so that is a manual step.
+- **No Read or Delete mode.** `IsViewOnly` is never generated, and `ApplyMode` only makes the
+  primary key read-only.
+- **`TryBuildRecord` is a stub** returning `True`. Page-specific validation means overriding
+  `GetAdditionalValidationMessageLines` by hand.
+- **No roles, role details, role fields, permissions or access profiles** — deliberately, per the
+  request manual.
+- **Nothing is built, run or tested.** The generator emits source text, so a template mistake only
+  surfaces when the project is compiled.
+
 ## Hardcode Guardrail For Generated Pages
 
 Never put page-local SELECT/INSERT/UPDATE/DELETE SQL or duplicated field lists in a standard
