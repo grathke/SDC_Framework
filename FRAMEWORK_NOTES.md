@@ -347,20 +347,32 @@ another registration's field rules.
 
 Note the keying difference: maintenance metadata is per **page**, browse metadata is per **table**.
 
-**Two things are *not* session-scoped, and that is deliberate:**
+**CRUD buttons are session-scoped too:**
 
-| What | Scoped by | Where |
-|---|---|---|
-| `_B` data, QBE Find, and the **CRUD button captions** (`BTN_Create_Caption` and friends from `FW_Registration`) | the **selected** registration from the combo, falling back to the session | `TryGetActiveRegistrationId` |
-| The record's own `RegistrationID`, and data scoped to the record such as the role lists on `Users_AppAdmin_U` | the **record's** registration, falling back to the session for a new record | `GetEffectiveRegistrationId()` |
+| What | Scoped by |
+|---|---|
+| Whether a CRUD button is visible and enabled | session RoleID **and** RegistrationID, through `accessProfile.Can(...)` - the profile is built from the session role's `FW_RoleDetails` rows, which are themselves per registration |
+| The CRUD button captions (`BTN_Create_Caption` and friends from `FW_Registration`) | session RegistrationID |
 
-So "caption" means two different things and they scope differently. A **field** caption follows the
-session. A **CRUD button** caption follows whichever registration the browse page is showing.
+So "caption" means two different things, but both default to the session: a **field** caption from
+`FW_RoleFields`, a **CRUD button** caption from `FW_Registration`.
 
-An Application Admin browsing another registration's users therefore sees that registration's data
-and its Create/Read/Update/Delete button wording, but their **own** role's required fields, field
-captions and permissions — and the record keeps its own `RegistrationID`, with its role list loaded
-for the user being edited.
+**The registration selector is the one narrow exception, and it is admin-initiated.** Every `_B`
+page uses it by default - only `FW_Registration_B` opts out - but it is shown *and populated* only
+when the session has `ViewAllRecords` on that table and admin controls are visible, and it is
+**seeded to the session's registration**. Until someone actively changes it,
+`TryGetActiveRegistrationId` finds nothing selected and falls through to the session. Changing it
+re-scopes the **data, QBE Find and the CRUD button captions** only.
+
+**Field-level metadata never follows the selector.** An Application Admin who switches to another
+registration sees that registration's rows and its Create/Read/Update/Delete wording, but still
+their **own** role and registration's required fields, field captions, hidden columns and
+permissions.
+
+One more that follows neither: the record's own `RegistrationID`, and data scoped to the record such
+as the role lists on `Users_AppAdmin_U`, come from the **record**, falling back to the session for a
+new record (`GetEffectiveRegistrationId()`). Roles are per registration, so the list has to load for
+the user being edited rather than the person editing.
 
 Do not "fix" this by plumbing the browse page's selected registration into `ApplyControlUpdates`.
 Field rules follow the logged-in role and registration; data follows the record.
