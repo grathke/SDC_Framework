@@ -16,14 +16,14 @@ each case is simulated through `HELLOWORLD_DB_CONNECTION` in the launched proces
 
 | ID | Case | Expected | Status |
 |---|---|---|---|
-| DB-01 | `Healthy` | Straight to the login screen. No dialog, no perceptible delay. | untested |
-| DB-02 | `ServerDown` | **Database Unavailable** with a network/instance error, Retry and Cancel. Never a credentials prompt. | untested |
-| DB-03 | `Timeout` | Database Unavailable after roughly the 5s connect timeout — proves the probe does not stall startup. | untested |
-| DB-04 | `WrongDatabase` | Database Unavailable, "Cannot open database". | untested |
-| DB-05 | `WrongPassword` | Database Unavailable, "Login failed for user". | untested |
-| DB-06 | `WrongUser` | Database Unavailable, "Login failed for user". | untested |
-| DB-07 | `NotConfigured` | The **Database Configuration** dialog, not the unavailable message. Requires no saved `dbconfig.dat`. | untested |
-| DB-08 | Retry recovers | On DB-02, start the server then choose Retry — reaches login without relaunching. | untested |
+| DB-01 | `Healthy` | Straight to the login screen. No dialog, no perceptible delay. | pass 2026-08-31 — went straight to "Contacts Login" |
+| DB-02 | `ServerDown` | **Database Unavailable** with a network/instance error, Retry and Cancel. Never a credentials prompt. | pass 2026-08-31 — window titled "Database Unavailable" |
+| DB-03 | `Timeout` | Database Unavailable after roughly the 5s connect timeout — proves the probe does not stall startup. | **FAIL 2026-08-31 — took 27s, not ~5s. SqlClient retries by default (ConnectRetryCount=1, 10s interval) and startup shows nothing meanwhile.** |
+| DB-04 | `WrongDatabase` | Database Unavailable, "Cannot open database". | pass 2026-08-31 |
+| DB-05 | `WrongPassword` | Database Unavailable, "Login failed for user". | pass 2026-08-31 — no credentials prompt |
+| DB-06 | `WrongUser` | Database Unavailable, "Login failed for user". | pass 2026-08-31 |
+| DB-07 | `NotConfigured` | The **Database Configuration** dialog, not the unavailable message. Requires no saved `dbconfig.dat`. | pass 2026-08-31 — window titled "Database Configuration" |
+| DB-08 | Retry recovers | On DB-02, start the server then choose Retry — reaches login without relaunching. | partial 2026-08-31 — Retry re-runs the check (6 times on a dead server); recovery after starting the server not yet tried |
 | DB-09 | Save and reload | In the config dialog: wrong password → Test fails with the real SQL error, Save stays disabled. Correct password → Test succeeds, Save enables. Save → login. Relaunch bare exe → straight to login, no prompt. | untested |
 | DB-10 | Edit invalidates test | After a successful Test, change any field — Save disables again. | untested |
 | DB-11 | Database dropdown | Test success fills the list from `sys.databases`, keeping the current selection. | untested |
