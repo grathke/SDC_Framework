@@ -83,7 +83,8 @@ Mostly verified on `Users_AppAdmin_U` during 2026-08-29/30. Re-run after changes
 | ID | Case | Expected | Status |
 |---|---|---|---|
 | B-01 | SQL without `AS PK` | Missing-key warning; Read, Update and Delete hidden, Create still available. | untested |
-| B-02 | Hide a column | It disappears from QBE as well as the grid. | untested |
+| B-02 | Hide a column | It is absent from the grid, QBE and the columns manager - the column is removed from the result, not hidden. | pass 2026-08-31 |
+| B-14 | Saved layout cannot resurrect a hidden field | A layout saved while the field was visible must not bring it back on first open. | pass 2026-08-31 |
 | B-03 | QBE Find | Criteria filter the grid; the status line reports the count. | untested |
 | B-04 | Empty QBE row cap | With no criteria, the result is capped and the status line says so. | untested |
 | B-05 | Invalid QBE value | Text in a numeric field is reported and the search does not run. | untested |
