@@ -27,7 +27,7 @@ Namespace HelloWorld
 
         Protected Overrides Function HandleCustomCreateAction() As Boolean
             Using page As New FW_HD_Issues_U(0, GetSessionRegistrationId())
-                If page.ShowDialog(Me) = DialogResult.OK Then
+                If ShouldRefreshAfterMaintenance(page.ShowDialog(Me)) Then
                     RefreshGridForCustomAction()
                     FitUserGridColumns()
                 End If
@@ -51,7 +51,7 @@ Namespace HelloWorld
         Protected Overrides Function HandleCustomUpdateAction(recordId As Integer) As Boolean
             Dim registrationId = GetSessionRegistrationId()
             Using page As New FW_HD_Issues_U(recordId, registrationId)
-                If page.ShowDialog(Me) = DialogResult.OK Then
+                If ShouldRefreshAfterMaintenance(page.ShowDialog(Me)) Then
                     RefreshGridForCustomAction(recordId)
                     FitUserGridColumns()
                 End If

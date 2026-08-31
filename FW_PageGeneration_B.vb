@@ -47,7 +47,7 @@ Namespace HelloWorld
 
         Protected Overrides Function HandleCustomCreateAction() As Boolean
             Using page As New PageGeneration_U(0, currentUser, accessProfile)
-                If page.ShowDialog(Me) = DialogResult.OK Then
+                If ShouldRefreshAfterMaintenance(page.ShowDialog(Me)) Then
                     RefreshGridForCustomAction()
                 End If
             End Using
@@ -60,7 +60,7 @@ Namespace HelloWorld
 
         Protected Overrides Function HandleCustomUpdateAction(recordId As Integer) As Boolean
             Using page As New PageGeneration_U(recordId, currentUser, accessProfile)
-                If page.ShowDialog(Me) = DialogResult.OK Then
+                If ShouldRefreshAfterMaintenance(page.ShowDialog(Me)) Then
                     RefreshGridForCustomAction(recordId)
                 End If
             End Using

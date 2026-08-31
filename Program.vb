@@ -141,12 +141,14 @@ Namespace HelloWorld
 
             ' A short probe, so a dead server is reported plainly instead of surfacing as a
             ' confusing failure on the login screen. Kept brief because it runs on every launch.
-            Const probeTimeoutSeconds As Integer = 5
+            ' A connect timeout with headroom over a real connection. An encrypted connection to a
+            ' healthy server measured around 3 seconds, so anything tighter reports working
+            ' databases as broken.
+            Const probeTimeoutSeconds As Integer = 15
 
-            ' The driver does not reliably honour its own connect timeout against an unreachable
-            ' address - measured at 27 seconds for a 5 second setting - so the wait is bounded here
-            ' instead. An abandoned attempt finishes in the background and its result is ignored.
-            Const probeGiveUpSeconds As Integer = 8
+            ' The driver does not reliably honour its own connect timeout - measured at 27 seconds
+            ' for a 5 second setting - so the visible wait is bounded here as well.
+            Const probeGiveUpSeconds As Integer = 20
 
             Dim probeTask = Task.Run(Function() DataAccess.TestConfiguredConnection(probeTimeoutSeconds))
 
@@ -158,9 +160,16 @@ Namespace HelloWorld
                 End Using
             End If
 
-            Dim connectionError = If(probeTask.IsCompleted,
-                                     probeTask.Result,
-                                     "The database did not respond within " & probeGiveUpSeconds.ToString() & " seconds.")
+            ' A probe that did not finish proves nothing. Continuing is the only safe reading: this
+            ' check exists to explain a clear failure, not to stand between the user and a database
+            ' that is merely slow. A genuinely dead server still fails visibly at login, which is
+            ' where it failed before this check existed.
+            If Not probeTask.IsCompleted Then
+                Log("Database probe did not complete within " & probeGiveUpSeconds.ToString() & "s; continuing to login")
+                Return True
+            End If
+
+            Dim connectionError = probeTask.Result
             If String.IsNullOrWhiteSpace(connectionError) Then Return True
 
             ' An unreachable database is not a credentials problem, so it is never answered with a

@@ -6231,9 +6231,18 @@ Namespace HelloWorld
                             If Not reader.Read() Then Return Nothing
                             If Not Convert.ToBoolean(reader("DeletedFlag"), CultureInfo.InvariantCulture) Then Return Nothing
 
+                            ' DeletedOn is written by SYSUTCDATETIME() and comes back with Kind
+                            ' Unspecified, so it has to be marked UTC before converting - otherwise
+                            ' the message shows a time hours away from the user's clock.
+                            Dim deletedOn As Date? = Nothing
+                            If Not reader("DeletedOn") Is DBNull.Value Then
+                                deletedOn = Date.SpecifyKind(Convert.ToDateTime(reader("DeletedOn"), CultureInfo.InvariantCulture),
+                                                             DateTimeKind.Utc).ToLocalTime()
+                            End If
+
                             Return New SoftDeleteInfo With {
                                 .DeletedByName = If(reader("DeletedByName") Is DBNull.Value, String.Empty, reader("DeletedByName").ToString().Trim()),
-                                .DeletedOn = If(reader("DeletedOn") Is DBNull.Value, CType(Nothing, Date?), Convert.ToDateTime(reader("DeletedOn"), CultureInfo.InvariantCulture))
+                                .DeletedOn = deletedOn
                             }
                         End Using
                     End Using

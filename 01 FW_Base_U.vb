@@ -46,6 +46,7 @@ Namespace HelloWorld
         Private tabOrderBaselineTabStops As Dictionary(Of Control, Boolean)
         Private tabOrderCommitInProgress As Boolean
         Private loadingTabOrderManager As Boolean
+        Private saveFailureAlreadyReported As Boolean
         Private tabOrderCheckClickIndex As Integer = -1
         Private tabOrderPanelDragging As Boolean
         Private tabOrderPanelDragStart As Point
@@ -1134,14 +1135,19 @@ Namespace HelloWorld
             If info Is Nothing Then Return False
 
             MessageBox.Show(Me,
-                            info.Describe() & Environment.NewLine & Environment.NewLine &
-                            "Your changes have not been saved.",
-                            "Record Deleted",
+                            (info.Describe() & Environment.NewLine & Environment.NewLine &
+                             "Your changes have not been saved.").ToUpperInvariant(),
+                            "RECORD DELETED",
                             MessageBoxButtons.OK,
                             MessageBoxIcon.Warning)
 
-            ' Cancel rather than OK: nothing was saved, so the caller must not treat this as success.
-            DialogResult = DialogResult.Cancel
+            ' This explains the failure completely, so the generic save-failed message that would
+            ' otherwise follow is suppressed - two dialogs for one cause is just noise.
+            saveFailureAlreadyReported = True
+
+            ' Abort, not Cancel: nothing was saved, so this is not success, but the browse grid is
+            ' now stale and must refresh. Cancel would leave the deleted record on screen.
+            DialogResult = DialogResult.Abort
             bypassCancelCloseCheck = True
             Close()
             Return True
@@ -1340,6 +1346,7 @@ Namespace HelloWorld
         End Function
 
         Protected Function SaveRecordWithAudit() As Boolean
+            saveFailureAlreadyReported = False
             Dim pageName = GetPageName()
             Dim tableName = ResolveTableNameForConstraints()
             Dim beforeRecordKey = ResolveRecordKeyForAudit()
@@ -1383,10 +1390,14 @@ Namespace HelloWorld
                 baselineControlSnapshotJson = CaptureControlSnapshotJson()
                 ResetPendingRecordBaseline()
             Else
-                Dim message = If(String.IsNullOrWhiteSpace(saveError),
-                                 "THE RECORD COULD NOT BE SAVED.",
-                                 "SAVE FAILED: " & saveError)
-                MessageBox.Show(Me, message.ToUpperInvariant(), "SAVE FAILED", MessageBoxButtons.OK, MessageBoxIcon.Error)
+                ' Skipped when the page has already explained the failure - a deleted record, for
+                ' one - so the user is not told twice about one cause.
+                If Not saveFailureAlreadyReported Then
+                    Dim message = If(String.IsNullOrWhiteSpace(saveError),
+                                     "THE RECORD COULD NOT BE SAVED.",
+                                     "SAVE FAILED: " & saveError)
+                    MessageBox.Show(Me, message.ToUpperInvariant(), "SAVE FAILED", MessageBoxButtons.OK, MessageBoxIcon.Error)
+                End If
             End If
 
             Return saveSucceeded

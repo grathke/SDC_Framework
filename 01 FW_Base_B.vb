@@ -2992,6 +2992,19 @@ Namespace HelloWorld
             MessageBox.Show("Read detail is not wired for this browse page yet.", "Read", MessageBoxButtons.OK, MessageBoxIcon.Information)
         End Sub
 
+        ''' <summary>
+        ''' Whether the grid must reload after a maintenance page closed.
+        '''
+        ''' OK means something was saved. Abort means nothing was saved but the row is gone - the
+        ''' record was deleted by someone else while it was open - so the grid is stale either way.
+        ''' Cancel means nothing changed and a reload would be wasted work.
+        '''
+        ''' Single owner of this rule. Do not re-test DialogResult at a call site.
+        ''' </summary>
+        Protected Shared Function ShouldRefreshAfterMaintenance(result As DialogResult) As Boolean
+            Return result = DialogResult.OK OrElse result = DialogResult.Abort
+        End Function
+
         Private Sub ExecuteUpdateForRecord(recordId As Integer)
             If HandleCustomUpdateAction(recordId) Then
                 Return

@@ -411,14 +411,14 @@ Namespace HelloWorld
                    String.Join(Environment.NewLine, {
                        "        Protected Overrides Function HandleDefaultCreateAction() As Boolean",
                        "            Using page As New " & maintenancePageNameForBrowse(pageName) & "(0, currentUser, accessProfile)",
-                       "                If page.ShowDialog(Me) = DialogResult.OK Then RefreshGridForCustomAction(page.SavedRecordId)",
+                       "                If ShouldRefreshAfterMaintenance(page.ShowDialog(Me)) Then RefreshGridForCustomAction(page.SavedRecordId)",
                        "            End Using",
                        "            Return True",
                        "        End Function",
                        "",
                        "        Protected Overrides Function HandleDefaultUpdateAction(recordId As Integer) As Boolean",
                        "            Using page As New " & maintenancePageNameForBrowse(pageName) & "(recordId, currentUser, accessProfile)",
-                       "                If page.ShowDialog(Me) = DialogResult.OK Then RefreshGridForCustomAction(recordId)",
+                       "                If ShouldRefreshAfterMaintenance(page.ShowDialog(Me)) Then RefreshGridForCustomAction(recordId)",
                        "            End Using",
                        "            Return True",
                        "        End Function"

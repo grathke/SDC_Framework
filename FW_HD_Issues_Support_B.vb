@@ -61,7 +61,7 @@ Namespace HelloWorld
 
         Protected Overrides Function HandleCustomUpdateAction(recordId As Integer) As Boolean
             Using page As New FW_HD_Issues_U(recordId, _selectedRegistrationId)
-                If page.ShowDialog(Me) = DialogResult.OK Then RefreshGridForCustomAction(recordId)
+                If ShouldRefreshAfterMaintenance(page.ShowDialog(Me)) Then RefreshGridForCustomAction(recordId)
             End Using
             Return True
         End Function

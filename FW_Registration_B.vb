@@ -24,7 +24,7 @@ Namespace HelloWorld
 
         Protected Overrides Function HandleDefaultCreateAction() As Boolean
             Using page As New FW_Registration_U()
-                If page.ShowDialog(Me) = DialogResult.OK Then
+                If ShouldRefreshAfterMaintenance(page.ShowDialog(Me)) Then
                     RefreshGridForCustomAction()
                 End If
             End Using
@@ -38,7 +38,7 @@ Namespace HelloWorld
             End If
 
             Using page As New FW_Registration_U(recordId)
-                If page.ShowDialog(Me) = DialogResult.OK Then
+                If ShouldRefreshAfterMaintenance(page.ShowDialog(Me)) Then
                     RefreshGridForCustomAction(recordId)
                 End If
             End Using
