@@ -18,7 +18,7 @@ each case is simulated through `HELLOWORLD_DB_CONNECTION` in the launched proces
 |---|---|---|---|
 | DB-01 | `Healthy` | Straight to the login screen. No dialog, no perceptible delay. | pass 2026-08-31 — went straight to "Contacts Login" |
 | DB-02 | `ServerDown` | **Database Unavailable** with a network/instance error, Retry and Cancel. Never a credentials prompt. | pass 2026-08-31 — window titled "Database Unavailable" |
-| DB-03 | `Timeout` | Database Unavailable after roughly the 5s connect timeout — proves the probe does not stall startup. | **FAIL 2026-08-31 — took 27s, not ~5s. SqlClient retries by default (ConnectRetryCount=1, 10s interval) and startup shows nothing meanwhile.** |
+| DB-03 | `Timeout` | Database Unavailable after roughly the 5s connect timeout — proves the probe does not stall startup. | pass 2026-08-31 — 9.7s, bounded by the give-up deadline. "Connecting" window shows at ~1.3s. Was 27s. |
 | DB-04 | `WrongDatabase` | Database Unavailable, "Cannot open database". | pass 2026-08-31 |
 | DB-05 | `WrongPassword` | Database Unavailable, "Login failed for user". | pass 2026-08-31 — no credentials prompt |
 | DB-06 | `WrongUser` | Database Unavailable, "Login failed for user". | pass 2026-08-31 |

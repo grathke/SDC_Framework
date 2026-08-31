@@ -393,6 +393,21 @@ Namespace HelloWorld
         ''' stopped working - a password changed on the server, say - lead to the configuration
         ''' dialog rather than an unexplained failure at login.
         ''' </summary>
+        ''' <summary>
+        ''' Server and database of the configured connection, for display. Never includes the
+        ''' password, so it is safe to show on screen or write to the log.
+        ''' </summary>
+        Public Shared Function GetConnectionDescription() As String
+            Try
+                Dim builder As New SqlConnectionStringBuilder(ConnectionString)
+                Dim server = If(String.IsNullOrWhiteSpace(builder.DataSource), "(unknown server)", builder.DataSource)
+                Dim database = If(String.IsNullOrWhiteSpace(builder.InitialCatalog), "(unknown database)", builder.InitialCatalog)
+                Return server & " / " & database
+            Catch
+                Return String.Empty
+            End Try
+        End Function
+
         Public Shared Function TestConfiguredConnection(Optional timeoutSeconds As Integer = 15) As String
             Return TestConnection(ConnectionString, timeoutSeconds)
         End Function
@@ -406,8 +421,13 @@ Namespace HelloWorld
             If String.IsNullOrWhiteSpace(connectionString) Then Return "No connection string is configured."
 
             Try
+                ' ConnectRetryCount = 0 matters as much as the timeout. SqlClient retries once by
+                ' default with a 10 second interval, so a 5 second timeout against an unreachable
+                ' address took 27 seconds to report. Retrying is the user's decision, offered by
+                ' the Retry button, not something the probe should do silently.
                 Dim builder As New SqlConnectionStringBuilder(connectionString) With {
-                    .ConnectTimeout = Math.Max(1, timeoutSeconds)
+                    .ConnectTimeout = Math.Max(1, timeoutSeconds),
+                    .ConnectRetryCount = 0
                 }
 
                 Using conn As New SqlConnection(builder.ConnectionString)

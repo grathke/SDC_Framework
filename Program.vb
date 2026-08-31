@@ -4,6 +4,7 @@ Option Explicit On
 Imports System
 Imports System.IO
 Imports System.Threading
+Imports System.Threading.Tasks
 Imports System.Windows.Forms
 
 Namespace HelloWorld
@@ -140,7 +141,26 @@ Namespace HelloWorld
 
             ' A short probe, so a dead server is reported plainly instead of surfacing as a
             ' confusing failure on the login screen. Kept brief because it runs on every launch.
-            Dim connectionError = DataAccess.TestConfiguredConnection(5)
+            Const probeTimeoutSeconds As Integer = 5
+
+            ' The driver does not reliably honour its own connect timeout against an unreachable
+            ' address - measured at 27 seconds for a 5 second setting - so the wait is bounded here
+            ' instead. An abandoned attempt finishes in the background and its result is ignored.
+            Const probeGiveUpSeconds As Integer = 8
+
+            Dim probeTask = Task.Run(Function() DataAccess.TestConfiguredConnection(probeTimeoutSeconds))
+
+            ' Only put a window up if the check is actually slow. A healthy connection finishes
+            ' well inside this, so normal startup shows nothing and stays instant.
+            If Not probeTask.Wait(TimeSpan.FromMilliseconds(600)) Then
+                Using probeWindow As New FW_DatabaseProbe(probeTask, probeGiveUpSeconds)
+                    probeWindow.ShowDialog()
+                End Using
+            End If
+
+            Dim connectionError = If(probeTask.IsCompleted,
+                                     probeTask.Result,
+                                     "The database did not respond within " & probeGiveUpSeconds.ToString() & " seconds.")
             If String.IsNullOrWhiteSpace(connectionError) Then Return True
 
             ' An unreachable database is not a credentials problem, so it is never answered with a
