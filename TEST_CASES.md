@@ -24,12 +24,12 @@ each case is simulated through `HELLOWORLD_DB_CONNECTION` in the launched proces
 | DB-06 | `WrongUser` | Database Unavailable, "Login failed for user". | pass 2026-08-31 |
 | DB-07 | `NotConfigured` | The **Database Configuration** dialog, not the unavailable message. Requires no saved `dbconfig.dat`. | pass 2026-08-31 — window titled "Database Configuration" |
 | DB-08 | Retry recovers | On DB-02, start the server then choose Retry — reaches login without relaunching. | partial 2026-08-31 — Retry re-runs the check (6 times on a dead server); recovery after starting the server not yet tried |
-| DB-09 | Save and reload | In the config dialog: wrong password → Test fails with the real SQL error, Save stays disabled. Correct password → Test succeeds, Save enables. Save → login. Relaunch bare exe → straight to login, no prompt. | untested |
+| DB-09 | Save and reload | In the config dialog: wrong password → Test fails with the real SQL error, Save stays disabled. Correct password → Test succeeds, Save enables. Save → login. Relaunch bare exe → straight to login, no prompt. | pass 2026-08-31 — wrong password rejected with the real error and Save disabled; correct password and database saved; relaunch with no environment went straight to login |
 | DB-10 | Edit invalidates test | After a successful Test, change any field — Save disables again. | untested |
-| DB-11 | Database dropdown | Test success fills the list from `sys.databases`, keeping the current selection. | untested |
-| DB-12 | Wrong database name only | Test with a bad database but valid credentials — falls back to `master`, populates the list, and says to pick one. | untested |
-| DB-13 | Clean up | Delete `%LOCALAPPDATA%\WXFramework\dbconfig.dat` — behavior returns to environment-only. | untested |
-| DB-14 | `--configure-db` | Launching with the switch opens the dialog even when credentials already work. | untested |
+| DB-11 | Database dropdown | Test success fills the list from `sys.databases`, keeping the current selection. | pass 2026-08-31 — 7 databases listed |
+| DB-12 | Wrong database name only | Test with a bad database but valid credentials — falls back to `master`, populates the list, and says to pick one. | pass 2026-08-31 — master fallback populated the list and said to pick one |
+| DB-13 | Clean up | Delete `%LOCALAPPDATA%\WXFramework\dbconfig.dat` — behavior returns to environment-only. | pass 2026-08-31 — no environment and no file gives the configuration dialog |
+| DB-14 | `--configure-db` | Launching with the switch opens the dialog even when credentials already work. | pass 2026-08-31 |
 | DB-15 | Dashboard tile | Application dashboard → Database Config → wrong password rejected, correct one opens the dialog. | untested |
 
 ---
