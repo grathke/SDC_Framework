@@ -84,7 +84,65 @@ Namespace HelloWorld
             HelpDeskLauncher.Attach(Me, Me.GetType().Name)
         End Sub
 
+        ''' <summary>
+        ''' Takes the page background from whatever opened this page, so a maintenance page matches
+        ''' the listing it was opened from.
+        '''
+        ''' The owner is the window that called ShowDialog(Me), which every call site already does -
+        ''' so this needs no change at any of them. A page opened from a menu or dashboard has no
+        ''' owner to inherit from and falls back to the colour stored for its paired _B page.
+        '''
+        ''' Only the form's own BackColor is set, and deliberately nothing else. Labels that were
+        ''' never given a colour inherit it automatically; the ones that were - blue for App Admin
+        ''' required, yellow for permission required - keep theirs, as do the red required borders.
+        ''' Tinting labels or panels here, the way a browse page does, would destroy the
+        ''' required-field colour contract.
+        ''' </summary>
+        Private Sub ApplyInheritedPageBackground()
+            Try
+                Dim source = TryCast(Me.Owner, Form)
+                If source IsNot Nothing AndAlso (TypeOf source Is FW_Base_B OrElse TypeOf source Is FW_Base_U) Then
+                    Me.BackColor = source.BackColor
+                    KeepButtonsUntinted(Me)
+                    Return
+                End If
+
+                Dim pageName = GetPageName()
+                If Not pageName.EndsWith("_U", StringComparison.OrdinalIgnoreCase) Then Return
+
+                Dim browsePageName = pageName.Substring(0, pageName.Length - 2) & "_B"
+                Dim stored = DataAccess.GetPageBackgroundColor(browsePageName)
+                If stored.HasValue Then
+                    Me.BackColor = Color.FromArgb(stored.Value)
+                    KeepButtonsUntinted(Me)
+                End If
+            Catch
+                ' A page colour is decoration. It must never stop a maintenance page opening.
+            End Try
+        End Sub
+
+        ''' <summary>
+        ''' Buttons keep their own look rather than inheriting the page tint, which makes them read
+        ''' as disabled. Only themed buttons are touched: a button given a deliberate colour or a
+        ''' flat style keeps what it was given.
+        ''' </summary>
+        Private Shared Sub KeepButtonsUntinted(container As Control)
+            If container Is Nothing OrElse container.Controls Is Nothing Then Return
+
+            For Each child As Control In container.Controls
+                Dim button = TryCast(child, Button)
+                If button IsNot Nothing Then
+                    If button.FlatStyle = FlatStyle.Standard OrElse button.FlatStyle = FlatStyle.System Then
+                        button.UseVisualStyleBackColor = True
+                    End If
+                Else
+                    KeepButtonsUntinted(child)
+                End If
+            Next
+        End Sub
+
         Private Sub FW_Base_U_Shown(sender As Object, e As EventArgs)
+            ApplyInheritedPageBackground()
             BeginInvoke(New Action(Sub()
                                        ApplySharedPageCaption()
                                        RemoveReadOnlyControlsFromTabOrder(Me)

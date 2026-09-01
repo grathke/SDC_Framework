@@ -22,7 +22,6 @@ Namespace HelloWorld
         Private ReadOnly sqlTextBox As TextBox
         Private ReadOnly registrationComboBox As ComboBox
         Private ReadOnly rolesGrid As DataGridView
-        Private ReadOnly enumButton As Button
         Private ReadOnly showDeletedButton As Button
         Private ReadOnly restoreDeletedButton As Button
         Private ReadOnly showNormalButton As Button
@@ -104,7 +103,6 @@ Namespace HelloWorld
             }
             ApplyBrowseGridStandard(rolesGrid)
 
-            enumButton = New Button() With {.Text = "Enum", .Size = New Size(80, 32), .Location = New Point(20, 84)}
             newButton = New Button() With {.Text = "New", .Size = New Size(80, 32), .Location = New Point(108, 84)}
             modifyButton = New Button() With {.Text = "Modify", .Size = New Size(80, 32), .Location = New Point(196, 84)}
             deleteButton = New Button() With {.Text = "Delete", .Size = New Size(80, 32), .Location = New Point(284, 84)}
@@ -113,7 +111,6 @@ Namespace HelloWorld
             showNormalButton = New Button() With {.Text = "Normal", .Size = New Size(64, 32), .Location = New Point(438, 84), .Visible = False}
             closeButton = New Button() With {.Text = "Close", .Size = New Size(80, 32), .Location = New Point(372, 84)}
 
-            ConfigureActionButton(enumButton)
             ConfigureActionButton(newButton)
             ConfigureActionButton(modifyButton)
             ConfigureActionButton(deleteButton)
@@ -123,7 +120,6 @@ Namespace HelloWorld
             ConfigureActionButton(closeButton)
 
             AddHandler registrationComboBox.SelectedIndexChanged, AddressOf RegistrationComboBox_SelectedIndexChanged
-            AddHandler enumButton.Click, AddressOf EnumButton_Click
             AddHandler newButton.Click, AddressOf NewButton_Click
             AddHandler modifyButton.Click, AddressOf ModifyButton_Click
             AddHandler deleteButton.Click, AddressOf DeleteButton_Click
@@ -144,7 +140,6 @@ Namespace HelloWorld
             Me.Controls.Add(registrationComboBox)
             Me.Controls.Add(sqlTextBox)
             Me.Controls.Add(rolesGrid)
-            Me.Controls.Add(enumButton)
             Me.Controls.Add(newButton)
             Me.Controls.Add(modifyButton)
             Me.Controls.Add(deleteButton)
@@ -223,10 +218,8 @@ Namespace HelloWorld
             modifyButton.Left = newButton.Right + buttonGap
             deleteButton.Top = buttonTop
             deleteButton.Left = modifyButton.Right + buttonGap
-            enumButton.Top = buttonTop
-            enumButton.Left = deleteButton.Right + buttonGap
             showDeletedButton.Top = buttonTop
-            showDeletedButton.Left = enumButton.Right + buttonGap
+            showDeletedButton.Left = deleteButton.Right + buttonGap
             restoreDeletedButton.Top = buttonTop
             restoreDeletedButton.Left = showDeletedButton.Left
             showNormalButton.Top = buttonTop
@@ -241,7 +234,6 @@ Namespace HelloWorld
         End Sub
 
         Private Sub ApplyAccess()
-            enumButton.Enabled = True
             newButton.Enabled = True
             modifyButton.Enabled = True
             deleteButton.Enabled = True
@@ -731,10 +723,6 @@ Namespace HelloWorld
 
             Return accessTableName
         End Function
-
-        Private Sub EnumButton_Click(sender As Object, e As EventArgs)
-            RefreshGrid()
-        End Sub
 
         Private Sub NewButton_Click(sender As Object, e As EventArgs)
             Dim registrationId As Integer

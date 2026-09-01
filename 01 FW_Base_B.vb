@@ -157,6 +157,295 @@ Namespace HelloWorld
             Return 0
         End Function
 
+        ''' <summary>
+        ''' TEMPORARY - a picker for trying a faint page background on a real browse page, before
+        ''' deciding whether the colour becomes a per-registration setting stored beside the CRUD
+        ''' button captions. Applies to the open page only and stores nothing: reopen the page and
+        ''' it is white again.
+        '''
+        ''' Admin only, like the Tab Order manager on _U pages, and built on the same shape - a
+        ''' toggle button in the action row and a panel that expands over the page and collapses on
+        ''' selection. The button sits in the row's layout rather than at a fixed point, so it
+        ''' cannot overlap or be overlapped whatever the window width.
+        ''' </summary>
+        Private Shared ReadOnly BackgroundColorChoices As KeyValuePair(Of String, Color)() = {
+            New KeyValuePair(Of String, Color)("White", Color.White),
+            New KeyValuePair(Of String, Color)("Whisper", Color.FromArgb(248, 248, 248)),
+            New KeyValuePair(Of String, Color)("Cloud", Color.FromArgb(244, 246, 248)),
+            New KeyValuePair(Of String, Color)("Alice Blue", Color.FromArgb(240, 248, 255)),
+            New KeyValuePair(Of String, Color)("Ice", Color.FromArgb(236, 245, 250)),
+            New KeyValuePair(Of String, Color)("Powder", Color.FromArgb(234, 242, 247)),
+            New KeyValuePair(Of String, Color)("Honeydew", Color.FromArgb(240, 255, 240)),
+            New KeyValuePair(Of String, Color)("Mint", Color.FromArgb(238, 250, 243)),
+            New KeyValuePair(Of String, Color)("Ivory", Color.FromArgb(255, 255, 240)),
+            New KeyValuePair(Of String, Color)("Sand", Color.FromArgb(250, 248, 240)),
+            New KeyValuePair(Of String, Color)("Linen", Color.FromArgb(250, 245, 240)),
+            New KeyValuePair(Of String, Color)("Seashell", Color.FromArgb(255, 245, 238)),
+            New KeyValuePair(Of String, Color)("Blush", Color.FromArgb(252, 244, 244)),
+            New KeyValuePair(Of String, Color)("Lavender", Color.FromArgb(245, 243, 252)),
+            New KeyValuePair(Of String, Color)("Wheat", Color.FromArgb(250, 246, 236))
+        }
+
+        Private backgroundColorButton As Button
+        Private backgroundColorPanel As Panel
+        Private pageBackgroundColor As Color = Color.White
+
+        Private Sub BuildBackgroundColorPicker()
+            backgroundColorButton = New Button() With {
+                .Name = "Button_PageBackgroundColor",
+                .Text = "Color",
+                .Size = New Size(94, 36),
+                .Location = New Point(430, 112),
+                .Visible = False,
+                .TabStop = False
+            }
+
+            ' A palette rather than a single swatch: nine pastels at 5px inside the same 16x16, so
+            ' the button says what it offers without growing. The applied colour shows on the page
+            ' itself, which is a better indicator than a square this small could ever be.
+            AddHandler backgroundColorButton.Paint,
+                Sub(paintSender As Object, paintArgs As PaintEventArgs)
+                    Const cell As Integer = 5
+                    Dim originX As Integer = 8
+                    Dim originY As Integer = (backgroundColorButton.Height - (cell * 3)) \ 2
+
+                    ' Vivid rather than pastel: the icon has to say "colour" at 15 pixels across.
+                    ' The pastels it offers are far too faint to read at this size.
+                    Dim paletteIcon As Color() = {
+                        Color.FromArgb(214, 69, 65), Color.FromArgb(232, 140, 48), Color.FromArgb(240, 200, 60),
+                        Color.FromArgb(112, 176, 74), Color.FromArgb(48, 150, 152), Color.FromArgb(58, 122, 205),
+                        Color.FromArgb(96, 82, 170), Color.FromArgb(170, 78, 150), Color.FromArgb(120, 120, 128)
+                    }
+
+                    For index = 0 To 8
+                        Dim swatchColour = paletteIcon(index)
+                        Using brush As New SolidBrush(swatchColour)
+                            paintArgs.Graphics.FillRectangle(brush,
+                                                             originX + (index Mod 3) * cell,
+                                                             originY + (index \ 3) * cell,
+                                                             cell, cell)
+                        End Using
+                    Next
+
+                    paintArgs.Graphics.DrawRectangle(Pens.Gray, originX, originY, cell * 3, cell * 3)
+                End Sub
+
+            AddHandler backgroundColorButton.Click,
+                Sub()
+                    If backgroundColorPanel.Visible Then
+                        CancelPageBackgroundColor()
+                    Else
+                        OpenPageBackgroundColorPanel()
+                    End If
+                End Sub
+
+            backgroundColorPanel = New Panel() With {
+                .Name = "Panel_PageBackgroundColor",
+                .Size = New Size(5 * 44 + 12, 42 + 3 * 34 + 6),
+                .BorderStyle = BorderStyle.FixedSingle,
+                .BackColor = SystemColors.Control,
+                .Visible = False
+            }
+
+            ' OK and Cancel, in the same shape and sizes as the Tab Order panel on _U pages, so the
+            ' two collapsible panels behave alike. A swatch previews; OK keeps it; Cancel and any
+            ' click outside put back the colour the page had when the panel was opened.
+            Dim colorOkButton As New Button() With {
+                .Text = "OK",
+                .Size = New Size(60, 26),
+                .Location = New Point(backgroundColorPanel.Width - 136, 8),
+                .TabStop = False
+            }
+            Dim colorCancelButton As New Button() With {
+                .Text = "Cancel",
+                .Size = New Size(60, 26),
+                .Location = New Point(backgroundColorPanel.Width - 70, 8),
+                .TabStop = False
+            }
+
+            AddHandler colorOkButton.Click, Sub() CommitPageBackgroundColor()
+            AddHandler colorCancelButton.Click, Sub() CancelPageBackgroundColor()
+
+            backgroundColorPanel.Controls.Add(colorOkButton)
+            backgroundColorPanel.Controls.Add(colorCancelButton)
+
+            For index = 0 To BackgroundColorChoices.Length - 1
+                Dim choice = BackgroundColorChoices(index)
+                Dim swatchButton As New Button() With {
+                    .Size = New Size(38, 28),
+                    .Location = New Point(6 + (index Mod 5) * 44, 42 + (index \ 5) * 34),
+                    .BackColor = choice.Value,
+                    .FlatStyle = FlatStyle.Flat,
+                    .TabStop = False
+                }
+                swatchButton.FlatAppearance.BorderColor = Color.FromArgb(150, 150, 150)
+                swatchButton.FlatAppearance.BorderSize = 1
+
+                Dim swatchTip As New ToolTip()
+                swatchTip.SetToolTip(swatchButton, choice.Key)
+
+                Dim chosen = choice.Value
+                AddHandler swatchButton.Click,
+                    Sub()
+                        ' Preview only. Nothing is stored until OK.
+                        pageBackgroundColor = chosen
+                        ApplyPageBackgroundColor(Me, chosen)
+                        backgroundColorButton.Invalidate()
+                        backgroundColorPanel.BringToFront()
+                    End Sub
+
+                backgroundColorPanel.Controls.Add(swatchButton)
+            Next
+
+            Me.Controls.Add(backgroundColorButton)
+            Me.Controls.Add(backgroundColorPanel)
+        End Sub
+
+        ''' <summary>
+        ''' Watches for a click anywhere outside the open colour panel and closes it, because a
+        ''' popup that stays open until you find the right button is a popup in the way. Focus
+        ''' events are not enough on their own - a click can land on a control that never takes
+        ''' focus, and the panel would sit there.
+        ''' </summary>
+        Private NotInheritable Class ClickAwayFilter
+            Implements IMessageFilter
+
+            Private Const WM_LBUTTONDOWN As Integer = &H201
+            Private Const WM_RBUTTONDOWN As Integer = &H204
+            Private Const WM_NCLBUTTONDOWN As Integer = &HA1
+
+            Private ReadOnly panel As Control
+            Private ReadOnly onClickAway As Action
+
+            Public Sub New(watched As Control, dismiss As Action)
+                panel = watched
+                onClickAway = dismiss
+            End Sub
+
+            Public Function PreFilterMessage(ByRef m As Message) As Boolean Implements IMessageFilter.PreFilterMessage
+                If m.Msg <> WM_LBUTTONDOWN AndAlso m.Msg <> WM_RBUTTONDOWN AndAlso m.Msg <> WM_NCLBUTTONDOWN Then
+                    Return False
+                End If
+
+                If panel Is Nothing OrElse Not panel.Visible Then Return False
+
+                Dim bounds = panel.RectangleToScreen(panel.ClientRectangle)
+                If Not bounds.Contains(Cursor.Position) Then
+                    onClickAway()
+                End If
+
+                ' Never swallow the click. Closing the panel must not also eat the button press
+                ' that closed it, or the user has to click twice to do anything.
+                Return False
+            End Function
+        End Class
+
+        Private panelClickAwayFilter As ClickAwayFilter
+        Private backgroundColorBeforePicker As Color = Color.White
+
+        Private Sub OpenPageBackgroundColorPanel()
+            backgroundColorBeforePicker = pageBackgroundColor
+            PositionBackgroundColorPanel()
+            backgroundColorPanel.Visible = True
+            backgroundColorPanel.BringToFront()
+
+            If panelClickAwayFilter Is Nothing Then
+                panelClickAwayFilter = New ClickAwayFilter(backgroundColorPanel, AddressOf CancelPageBackgroundColor)
+            End If
+            Application.AddMessageFilter(panelClickAwayFilter)
+        End Sub
+
+        Private Sub ClosePageBackgroundColorPanel()
+            backgroundColorPanel.Visible = False
+            If panelClickAwayFilter IsNot Nothing Then
+                Application.RemoveMessageFilter(panelClickAwayFilter)
+            End If
+        End Sub
+
+        ''' <summary>Keeps the previewed colour and stores it against the page.</summary>
+        Private Sub CommitPageBackgroundColor()
+            ClosePageBackgroundColorPanel()
+
+            Dim pageName = Me.GetType().Name
+            Dim savedBy = If(SessionState.IsActive AndAlso SessionState.Current.HasValue,
+                             SessionState.Current.Value.UserID, 0)
+
+            If Not DataAccess.SavePageBackgroundColor(pageName, pageBackgroundColor.ToArgb(), savedBy) Then
+                MessageBox.Show(Me,
+                                "THE COLOUR WAS APPLIED BUT NOT SAVED." & Environment.NewLine & Environment.NewLine &
+                                "THIS PAGE HAS NO FW_RoleTables ROW TO STORE IT AGAINST." & Environment.NewLine &
+                                Environment.NewLine &
+                                "PAGE: " & pageName,
+                                "PAGE COLOUR NOT SAVED",
+                                MessageBoxButtons.OK,
+                                MessageBoxIcon.Warning)
+            End If
+        End Sub
+
+        ''' <summary>Puts back the colour the page had when the panel was opened.</summary>
+        Private Sub CancelPageBackgroundColor()
+            ClosePageBackgroundColorPanel()
+            pageBackgroundColor = backgroundColorBeforePicker
+            ApplyPageBackgroundColor(Me, pageBackgroundColor)
+            If backgroundColorButton IsNot Nothing Then backgroundColorButton.Invalidate()
+        End Sub
+
+        ''' <summary>
+        ''' Applies the colour stored for this page, if any. Runs for every user, not just an
+        ''' administrator: the picker is admin-only, the colour it sets is not.
+        ''' </summary>
+        Private Sub RestorePageBackgroundColor()
+            Try
+                Dim stored = DataAccess.GetPageBackgroundColor(Me.GetType().Name)
+                If Not stored.HasValue Then Return
+
+                pageBackgroundColor = Color.FromArgb(stored.Value)
+                ApplyPageBackgroundColor(Me, pageBackgroundColor)
+                If backgroundColorButton IsNot Nothing Then backgroundColorButton.Invalidate()
+            Catch
+                ' A page colour is decoration. It must never be the reason a listing fails to open.
+            End Try
+        End Sub
+
+        Private Sub PositionBackgroundColorPanel()
+            If backgroundColorButton Is Nothing OrElse backgroundColorPanel Is Nothing Then Return
+            backgroundColorPanel.Location = New Point(
+                Math.Max(0, Math.Min(backgroundColorButton.Left, Me.ClientSize.Width - backgroundColorPanel.Width)),
+                backgroundColorButton.Bottom + 4)
+        End Sub
+
+        ''' <summary>
+        ''' Tints the page and its plain panels, leaving the grid, inputs and buttons alone - those
+        ''' carry their own colour, and repainting them would swamp the effect being judged.
+        ''' </summary>
+        Private Shared Sub ApplyPageBackgroundColor(container As Control, colour As Color)
+            container.BackColor = colour
+
+            For Each child As Control In container.Controls
+                ' A button keeps its own look. Left to inherit, it takes the page tint and reads as
+                ' disabled or selected - the visual style is what makes it look pressable.
+                Dim button = TryCast(child, Button)
+                If button IsNot Nothing Then
+                    If button.FlatStyle = FlatStyle.Standard OrElse button.FlatStyle = FlatStyle.System Then
+                        button.UseVisualStyleBackColor = True
+                    End If
+                    Continue For
+                End If
+
+                If TypeOf child Is DataGridView OrElse TypeOf child Is TextBox OrElse
+                   TypeOf child Is ComboBox Then
+                    Continue For
+                End If
+
+                If TypeOf child Is Panel OrElse TypeOf child Is SplitContainer OrElse
+                   TypeOf child Is SplitterPanel Then
+                    ApplyPageBackgroundColor(child, colour)
+                ElseIf TypeOf child Is Label Then
+                    child.BackColor = Color.Transparent
+                End If
+            Next
+        End Sub
+
         Protected Function IsAppAdminSession() As Boolean
             Dim activeSession = SessionState.Current
             Return activeSession.HasValue AndAlso activeSession.Value.IsApplicationAdminRole
@@ -317,6 +606,8 @@ Namespace HelloWorld
             deleteButton = New Button() With {.Text = "Delete", .Size = New Size(90, 36), .Location = New Point(320, 112)}
             closeButton = New Button() With {.Text = "Close", .Size = New Size(90, 36), .Location = New Point(520, 112)}
             toggleQbeButton = New Button() With {.Text = QbeCollapsedText, .Size = New Size(110, 36), .Location = New Point(620, 112)}
+
+            BuildBackgroundColorPicker()
 
             qbeSplitContainer = New SplitContainer() With {
                 .Location = New Point(20, 162),
@@ -582,6 +873,7 @@ Namespace HelloWorld
         Private Sub ContactsForm_Load(sender As Object, e As EventArgs)
             LoadReferenceImageFromAssets()
             WarnIfMissingRowVersion()
+            RestorePageBackgroundColor()
             LoadRegistrationCombo()
             ApplyCrudButtonCaptions(GetRegistrationIdForCaptions())
             ApplyCrudAccess()
@@ -630,6 +922,12 @@ Namespace HelloWorld
             sqlTextBox.Visible = showAdminQueryControls AndAlso Not OnlyUseQbe()
             UpdateRegistrationSelectorVisibility(IsAppAdminSession())
             applySqlButton.Visible = showAdminQueryControls AndAlso Not OnlyUseQbe()
+
+            ' Admin only, like the Tab Order manager on _U pages.
+            If backgroundColorButton IsNot Nothing Then
+                backgroundColorButton.Visible = IsAppAdminSession()
+                If Not backgroundColorButton.Visible Then backgroundColorPanel.Visible = False
+            End If
 
             If Not UseRoleBasedCrudAccess() Then
                 createButton.Visible = Not OnlyUseQbe()
@@ -1047,6 +1345,14 @@ Namespace HelloWorld
             Dim deletedActionLeft = toggleQbeButton.Left - showDeletedButton.Width - actionGap
             showDeletedButton.Top = actionTop
             showDeletedButton.Left = deletedActionLeft
+
+            ' Positioned from its neighbour like everything else in this row, so it cannot overlap
+            ' or be overlapped at any window width. This is the slot the Enum button used to hold.
+            If backgroundColorButton IsNot Nothing Then
+                backgroundColorButton.Top = actionTop
+                backgroundColorButton.Left = deletedActionLeft - backgroundColorButton.Width - actionGap
+                PositionBackgroundColorPanel()
+            End If
             restoreButton.Top = actionTop
             restoreButton.Left = deletedActionLeft
             showNormalButton.Top = actionTop

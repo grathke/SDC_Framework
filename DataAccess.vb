@@ -922,6 +922,53 @@ Namespace HelloWorld
             End Using
         End Function
 
+        ''' <summary>
+        ''' The stored background colour for a browse page, as an ARGB value, or Nothing when none
+        ''' has been chosen. Read from the same row and on the same trip as the page's SQL.
+        ''' </summary>
+        Public Shared Function GetPageBackgroundColor(windowOrPageName As String) As Integer?
+            If String.IsNullOrWhiteSpace(windowOrPageName) Then Return Nothing
+
+            Using conn As New SqlConnection(ConnectionString)
+                conn.Open()
+                Using cmd As New SqlCommand(
+                    "SELECT TOP 1 Background FROM dbo.FW_RoleTables " &
+                    "WHERE WindowOrPage = @WindowOrPage " &
+                    "ORDER BY ID DESC", conn)
+
+                    cmd.Parameters.AddWithValue("@WindowOrPage", windowOrPageName.Trim())
+
+                    Dim result = cmd.ExecuteScalar()
+                    If result Is Nothing OrElse IsDBNull(result) Then Return Nothing
+                    Return Convert.ToInt32(result, CultureInfo.InvariantCulture)
+                End Using
+            End Using
+        End Function
+
+        ''' <summary>
+        ''' Stores a browse page's background colour as an ARGB value. Returns False when the page
+        ''' has no FW_RoleTables row - there is nothing to attach the colour to, and inventing a row
+        ''' here would create one without the SQL, alias and table name that give it meaning.
+        ''' </summary>
+        Public Shared Function SavePageBackgroundColor(windowOrPageName As String, argb As Integer, updatedBy As Integer) As Boolean
+            If String.IsNullOrWhiteSpace(windowOrPageName) Then Return False
+
+            Using conn As New SqlConnection(ConnectionString)
+                conn.Open()
+                Using cmd As New SqlCommand(
+                    "UPDATE dbo.FW_RoleTables " &
+                    "SET Background = @Background, ModifiedBy = @ModifiedBy, ModifiedOn = GETDATE() " &
+                    "WHERE WindowOrPage = @WindowOrPage", conn)
+
+                    cmd.Parameters.AddWithValue("@Background", argb)
+                    cmd.Parameters.AddWithValue("@ModifiedBy", updatedBy)
+                    cmd.Parameters.AddWithValue("@WindowOrPage", windowOrPageName.Trim())
+
+                    Return cmd.ExecuteNonQuery() > 0
+                End Using
+            End Using
+        End Function
+
         Public Shared Function GetTableAliasFromRoleTableByWindowOrPage(registrationId As Integer, windowOrPageName As String) As String
             If String.IsNullOrWhiteSpace(windowOrPageName) Then
                 Return String.Empty
