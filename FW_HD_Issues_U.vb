@@ -34,21 +34,16 @@ Namespace HelloWorld
         Private ReadOnly reportingPage As String = String.Empty
         Private expectedBehaviorLabel As Label
         Private expectedBehaviorTextBox As TextBox
-        Private expectedBehaviorRequiredBorder As Panel
         Private stepsToReproduceLabel As Label
         Private stepsToReproduceTextBox As TextBox
-        Private stepsToReproduceRequiredBorder As Panel
         Private categoryWantsExpectedBehavior As Boolean
         Private categoryWantsStepsToReproduce As Boolean
         Private categoryDescribeThe As String = String.Empty
         Private categoryTable As DataTable
         Private copyForClaudeButton As Button
-        Private descriptionRequiredBorder As Panel
-        Private responseRequiredBorder As Panel
         Private categoryRequiredBorder As Panel
         Private priorityRequiredBorder As Panel
         Private statusRequiredBorder As Panel
-        Private subjectRequiredBorder As Panel
         Private attachmentButton As Button
         Private thinfinityButton As Button
         Private pendingAttachment As HelpDeskAttachmentUpload
@@ -201,11 +196,11 @@ Namespace HelloWorld
                 .BackColor = Color.White
             }
             AddHandler statusValueLabel.Paint, AddressOf StatusValueLabel_Paint
-            subjectTextBox = New TextBox() With {.Name = "TextBox_Subject", .Location = New Point(150, 140), .Size = New Size(700, 26)}
-            descriptionTextBox = New TextBox() With {.Name = "TextBox_Description", .Location = New Point(150, 180), .Size = New Size(700, 70), .Multiline = True, .ScrollBars = ScrollBars.Vertical, .BorderStyle = BorderStyle.FixedSingle}
-            expectedBehaviorTextBox = New TextBox() With {.Name = "TextBox_ExpectedBehavior", .Location = New Point(150, 260), .Size = New Size(700, 70), .Multiline = True, .ScrollBars = ScrollBars.Vertical, .BorderStyle = BorderStyle.FixedSingle}
-            stepsToReproduceTextBox = New TextBox() With {.Name = "TextBox_StepsToReproduce", .Location = New Point(150, 340), .Size = New Size(700, 70), .Multiline = True, .ScrollBars = ScrollBars.Vertical, .BorderStyle = BorderStyle.FixedSingle}
-            responseTextBox = New TextBox() With {.Name = "TextBox_Response", .Location = New Point(150, 270), .Size = New Size(700, 90), .Multiline = True, .ScrollBars = ScrollBars.Vertical}
+            subjectTextBox = AddField("Subject", 140, False, True, 20, False, 700)
+            descriptionTextBox = AddField("Description", 180, False, True, 20, True, 700, 70, "Describe The Problem")
+            expectedBehaviorTextBox = AddField("ExpectedBehavior", 260, False, True, 20, True, 700, 70, "How It Should Behave")
+            stepsToReproduceTextBox = AddField("StepsToReproduce", 340, False, True, 20, True, 700, 70, "Steps To Reproduce")
+            responseTextBox = AddField("Response", 270, False, True, 20, True, 700, 90, "New Response")
             conversationHistoryPanel = New FlowLayoutPanel() With {
                 .Name = "Panel_ConversationHistory",
                 .Location = New Point(150, 380),
@@ -221,47 +216,29 @@ Namespace HelloWorld
             categoryLabel = AddLabel("Category *", 20, 20, "CategoryID")
             priorityLabel = AddLabel("Priority *", 20, 60, "Priority")
             statusLabel = AddLabel("Status *", 20, 100, "Status")
-            subjectLabel = AddLabel("Subject *", 20, 140, "Subject")
-            descriptionLabel = AddLabel("Describe The Problem *", 20, 180, "Description")
-            expectedBehaviorLabel = AddLabel("How It Should Behave *", 20, 260, "ExpectedBehavior")
-            stepsToReproduceLabel = AddLabel("Steps To Reproduce *", 20, 340, "StepsToReproduce")
-            responseLabel = AddLabel("New Response *", 20, 270)
             conversationHistoryLabel = AddLabel("Conversation History", 20, 380)
+
+            ' The labels the helpers created, kept so the page can position them and rename the
+            ' first one as the category changes.
+            subjectLabel = FieldLabel("Subject")
+            descriptionLabel = FieldLabel("Description")
+            expectedBehaviorLabel = FieldLabel("ExpectedBehavior")
+            stepsToReproduceLabel = FieldLabel("StepsToReproduce")
+            responseLabel = FieldLabel("Response")
+
             Dim requiredLabelBackColor = Color.FromArgb(221, 235, 247)
             categoryLabel.BackColor = requiredLabelBackColor
             priorityLabel.BackColor = requiredLabelBackColor
             statusLabel.BackColor = requiredLabelBackColor
-            subjectLabel.BackColor = requiredLabelBackColor
-            descriptionLabel.BackColor = Color.FromArgb(221, 235, 247)
-            expectedBehaviorLabel.BackColor = Color.FromArgb(221, 235, 247)
-            stepsToReproduceLabel.BackColor = Color.FromArgb(221, 235, 247)
-            responseLabel.BackColor = Color.FromArgb(221, 235, 247)
-            Me.Controls.AddRange({categoryComboBox, priorityComboBox, statusComboBox, statusValueLabel, subjectTextBox, descriptionTextBox, conversationHistoryPanel, responseTextBox})
+
+            Me.Controls.AddRange({categoryComboBox, priorityComboBox, statusComboBox, statusValueLabel, conversationHistoryPanel})
             categoryRequiredBorder = CreateRequiredBorder(categoryComboBox)
             priorityRequiredBorder = CreateRequiredBorder(priorityComboBox)
             statusRequiredBorder = CreateRequiredBorder(statusComboBox)
-            subjectRequiredBorder = CreateRequiredBorder(subjectTextBox)
-            Me.Controls.AddRange({categoryRequiredBorder, priorityRequiredBorder, statusRequiredBorder, subjectRequiredBorder})
+            Me.Controls.AddRange({categoryRequiredBorder, priorityRequiredBorder, statusRequiredBorder})
             categoryRequiredBorder.SendToBack()
             priorityRequiredBorder.SendToBack()
             statusRequiredBorder.SendToBack()
-            subjectRequiredBorder.SendToBack()
-            descriptionRequiredBorder = CreateRequiredBorder(descriptionTextBox)
-            expectedBehaviorRequiredBorder = CreateRequiredBorder(expectedBehaviorTextBox)
-            stepsToReproduceRequiredBorder = CreateRequiredBorder(stepsToReproduceTextBox)
-            Me.Controls.AddRange({expectedBehaviorRequiredBorder, stepsToReproduceRequiredBorder,
-                                  expectedBehaviorTextBox, stepsToReproduceTextBox})
-            expectedBehaviorRequiredBorder.SendToBack()
-            stepsToReproduceRequiredBorder.SendToBack()
-            expectedBehaviorTextBox.BringToFront()
-            stepsToReproduceTextBox.BringToFront()
-            Me.Controls.Add(descriptionRequiredBorder)
-            descriptionRequiredBorder.SendToBack()
-            descriptionTextBox.BringToFront()
-            responseRequiredBorder = CreateRequiredBorder(responseTextBox)
-            Me.Controls.Add(responseRequiredBorder)
-            responseRequiredBorder.SendToBack()
-            responseTextBox.BringToFront()
             copyForClaudeButton = New Button() With {.Name = "Button_CopyReport", .Text = "Copy Report", .Location = New Point(470, 525), .Size = New Size(130, 34)}
             AddHandler copyForClaudeButton.Click, AddressOf CopyForClaudeButton_Click
             Me.Controls.Add(copyForClaudeButton)
@@ -358,22 +335,14 @@ Namespace HelloWorld
             copyForClaudeButton.Top = attachmentTop
             copyForClaudeButton.Left = thinfinityButton.Right + 10
 
-            responseRequiredBorder.Location = New Point(responseTextBox.Left - 2, responseTextBox.Top - 2)
-            responseRequiredBorder.Size = New Size(responseTextBox.Width + 4, responseTextBox.Height + 4)
-            descriptionRequiredBorder.Location = New Point(descriptionTextBox.Left - 2, descriptionTextBox.Top - 2)
-            descriptionRequiredBorder.Size = New Size(descriptionTextBox.Width + 4, descriptionTextBox.Height + 4)
-            expectedBehaviorRequiredBorder.Location = New Point(expectedBehaviorTextBox.Left - 2, expectedBehaviorTextBox.Top - 2)
-            expectedBehaviorRequiredBorder.Size = New Size(expectedBehaviorTextBox.Width + 4, expectedBehaviorTextBox.Height + 4)
-            stepsToReproduceRequiredBorder.Location = New Point(stepsToReproduceTextBox.Left - 2, stepsToReproduceTextBox.Top - 2)
-            stepsToReproduceRequiredBorder.Size = New Size(stepsToReproduceTextBox.Width + 4, stepsToReproduceTextBox.Height + 4)
+            ' The framework re-seats every border it owns behind its control after this layout pass.
             categoryRequiredBorder.Location = New Point(categoryComboBox.Left - 2, categoryComboBox.Top - 2)
             categoryRequiredBorder.Size = New Size(categoryComboBox.Width + 4, categoryComboBox.Height + 4)
             priorityRequiredBorder.Location = New Point(priorityComboBox.Left - 2, priorityComboBox.Top - 2)
             priorityRequiredBorder.Size = New Size(priorityComboBox.Width + 4, priorityComboBox.Height + 4)
             statusRequiredBorder.Location = New Point(statusValueLabel.Left - 2, statusValueLabel.Top - 2)
             statusRequiredBorder.Size = New Size(statusValueLabel.Width + 4, statusValueLabel.Height + 4)
-            subjectRequiredBorder.Location = New Point(subjectTextBox.Left - 2, subjectTextBox.Top - 2)
-            subjectRequiredBorder.Size = New Size(subjectTextBox.Width + 4, subjectTextBox.Height + 4)
+            RefreshRequiredBorderGeometry()
 
             cancelActionButton.Location = New Point(ClientSize.Width - 20 - cancelActionButton.Width, actionTop)
             okButton.Location = New Point(cancelActionButton.Left - 10 - okButton.Width, actionTop)

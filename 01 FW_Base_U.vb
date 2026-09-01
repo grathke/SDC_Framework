@@ -1282,7 +1282,7 @@ Namespace HelloWorld
             BindToFormInternal()
             loading = False
             hasUnsavedChanges = False
-            DataAccess.ApplyControlUpdates(Me, Me.GetType().Name, IsCreatingNewRecord())
+            DataAccess.ApplyControlUpdates(Me, Me.GetType().Name, ResolveTableNameForConstraints(), IsCreatingNewRecord())
             AdoptRequiredBorderPanels()
             NormalizeTextInputsForSave()
             baselineControlSnapshotJson = CaptureControlSnapshotJson()
@@ -1578,7 +1578,7 @@ Namespace HelloWorld
             Dim tableName = ResolveTableNameForConstraints()
             Dim pageName = GetPageName()
             Dim columnLengths = DataAccess.GetTextColumnMaxLengths(tableName)
-            Dim controlMap = DataAccess.GetPageControlFieldMap(pageName, tableName)
+            Dim controlMap = DataAccess.GetPageControlFieldMap(Me, pageName, tableName)
 
             If columnLengths Is Nothing OrElse columnLengths.Count = 0 Then
                 TrimTextControlsOnly(Me)
@@ -1878,13 +1878,23 @@ Namespace HelloWorld
         ''' the control name and the label, so a combo cannot be misnamed relative to its column.
         ''' Fill it through ConfigureLookupCombo.
         ''' </summary>
+        ''' The label a field helper created, by field name. Nothing else needs to know how labels
+        ''' are named.
+        Protected Function FieldLabel(fieldName As String) As Label
+            If String.IsNullOrWhiteSpace(fieldName) Then Return Nothing
+            Dim matches = Controls.Find("Label_" & fieldName.Trim(), True)
+            If matches.Length = 0 Then Return Nothing
+            Return TryCast(matches(0), Label)
+        End Function
+
         Protected Function AddComboField(caption As String, y As Integer,
                                          Optional required As Boolean = False,
                                          Optional fieldLeft As Integer = 20,
-                                         Optional fieldWidth As Integer = 320) As ComboBox
+                                         Optional fieldWidth As Integer = 320,
+                                         Optional labelText As String = Nothing) As ComboBox
             Dim lbl As New Label() With {
                 .Name = "Label_" & caption,
-                .Text = ToPascalCaseDisplay(caption),
+                .Text = If(String.IsNullOrWhiteSpace(labelText), ToPascalCaseDisplay(caption), labelText),
                 .Location = New Point(fieldLeft, y + 5),
                 .Size = New Size(120, 26)
             }
@@ -1947,10 +1957,11 @@ Namespace HelloWorld
                                     Optional fieldLeft As Integer = 20,
                                     Optional multiline As Boolean = False,
                                     Optional fieldWidth As Integer = 320,
-                                    Optional fieldHeight As Integer = 26) As TextBox
+                                    Optional fieldHeight As Integer = 26,
+                                    Optional labelText As String = Nothing) As TextBox
             Dim lbl As New Label() With {
                 .Name = "Label_" & caption,
-                .Text = ToPascalCaseDisplay(caption),
+                .Text = If(String.IsNullOrWhiteSpace(labelText), ToPascalCaseDisplay(caption), labelText),
                 .Location = New Point(fieldLeft, y + 5),
                 .Size = New Size(120, 26)
             }
@@ -2044,10 +2055,25 @@ Namespace HelloWorld
 
         Private Sub RefreshLocalRequiredBorders()
             For Each pair In requiredBorderPanels
-                Dim showWarning = ShouldShowRequiredWarning(pair.Key)
-                pair.Value.BackColor = If(showWarning, Color.Red, SystemColors.Control)
-                pair.Value.Visible = showWarning
+                Dim field = pair.Key
+                Dim border = pair.Value
+
+                ' Follow the control. A page is free to move and resize its fields, and the border
+                ' is behind whichever one it belongs to.
+                If field.Parent Is border.Parent Then
+                    border.Location = New Point(field.Left - 2, field.Top - 2)
+                    border.Size = New Size(field.Width + 4, field.Height + 4)
+                End If
+
+                Dim showWarning = ShouldShowRequiredWarning(field)
+                border.BackColor = If(showWarning, Color.Red, SystemColors.Control)
+                border.Visible = showWarning
             Next
+        End Sub
+
+        ''' Re-seats the required borders behind their controls. Call after a layout pass.
+        Protected Sub RefreshRequiredBorderGeometry()
+            RefreshLocalRequiredBorders()
         End Sub
 
         Protected Sub ConfigureLookupCombo(combo As ComboBox,

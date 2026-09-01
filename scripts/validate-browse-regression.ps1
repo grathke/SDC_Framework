@@ -110,7 +110,7 @@ Assert-Pattern -Path ".\PageGeneration_U.vb" -Pattern 'Run a duplicate-logic che
 Assert-Pattern -Path ".\PageGeneration_U.vb" -Pattern 'Run the applicable _B/_U regression checks' -Description "Page Generation directions require _B/_U regression checks"
 Assert-Pattern -Path ".\PageGeneration_U.vb" -Pattern 'Build the application after the regression checks pass' -Description "Page Generation directions require a post-regression build"
 Assert-Pattern -Path ".\01 FW_Base_U.vb" -Pattern 'touchedRequiredControls.Add(control)' -Description "Shared AddField required borders activate only once a required control is visited"
-Assert-Pattern -Path ".\01 FW_Base_U.vb" -Pattern 'pair.Value.BackColor = If(showWarning, Color.Red, SystemColors.Control)' -Description "Shared AddField required borders refresh color with control values"
+Assert-Pattern -Path ".\01 FW_Base_U.vb" -Pattern 'border.BackColor = If(showWarning, Color.Red, SystemColors.Control)' -Description "Shared AddField required borders refresh color with control values"
 Assert-Pattern -Path ".\01 FW_Base_U.vb" -Pattern 'Return touchedRequiredControls.Contains(control) AndAlso IsEmptyRequiredControl(control)' -Description "Shared AddField required borders stay hidden until a visited required control is empty"
 Assert-Pattern -Path ".\PageGeneration_U.vb" -Pattern 'Generated _U pages must inherit required-field styling and validation from FW_Base_U' -Description "Directions require generated pages to inherit required styling from Base_U"
 Assert-Pattern -Path ".\PageGeneration_U.vb" -Pattern 'must not create page-local red-border panels' -Description "Directions prohibit generated page-local required-border duplication"

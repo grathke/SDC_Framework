@@ -249,7 +249,7 @@ Namespace HelloWorld
                    SessionState.Current.Value.IsApplicationAdminRole
         End Function
         Private Sub EnsureAddressFieldLabels()
-            SetAddressFieldLabel("Label_Address", "Address")
+            SetAddressFieldLabel("Label_Address1", "Address 1")
             SetAddressFieldLabel("Label_City", "City")
             SetAddressFieldLabel("Label_State", "State")
             SetAddressFieldLabel("Label_Zip", "Zip")
@@ -263,7 +263,7 @@ Namespace HelloWorld
             passwordTextBox.MaxLength = 50
             PositionUserField("FirstName", New Point(20, 62), New Point(150, 62), 220, 120)
             PositionUserField("LastName", New Point(20, 104), New Point(150, 104), 220, 120)
-            PositionUserField("Address", New Point(20, 146), New Point(150, 146), 250, 120)
+            PositionUserField("Address1", New Point(20, 146), New Point(150, 146), 250, 120)
             PositionUserField("Address2", New Point(20, 188), New Point(150, 188), 250, 120)
             PositionUserField("City", New Point(20, 230), New Point(150, 230), 145, 120)
             PositionUserField("State", New Point(305, 230), New Point(350, 230), 45, 40)

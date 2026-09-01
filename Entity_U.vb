@@ -41,7 +41,7 @@ Namespace HelloWorld
             
             ' Create AssignedManagerID ComboBox
             Dim assignedManagerLabel As New Label() With {
-                .Name = "Label_AssignedManager",
+                .Name = "Label_AssignedManagerID",
                 .Text = "AssignedManagerID",
                 .Location = New Point(20, y + 5),
                 .Size = New Size(120, 24)
@@ -49,7 +49,7 @@ Namespace HelloWorld
             Me.Controls.Add(assignedManagerLabel)
             
             assignedManagerComboBox = New ComboBox() With {
-                .Name = "ComboBox_AssignedManager",
+                .Name = "ComboBox_AssignedManagerID",
                 .Location = New Point(150, y),
                 .Size = New Size(320, 26),
                 .DropDownStyle = ComboBoxStyle.DropDownList,

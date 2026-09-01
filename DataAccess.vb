@@ -3279,7 +3279,7 @@ Namespace HelloWorld
             Using conn As New SqlConnection(ConnectionString)
                 conn.Open()
                 Using cmd As New SqlCommand(
-                    "SELECT TOP 1 ID, RegName, Smarty_AuthID, Smarty_AuthToken, Smarty_EmbeddedKey, ISNULL(Smarty_UseEmbeddedKey, 0) AS Smarty_UseEmbeddedKey, ISNULL(LTRIM(RTRIM(BusinessRuleType)), '') AS BusinessRuleType, RegTypeId, Address, Address2, City, State, Zip, MainFax, MainPhone, MainEMail, WebLandingPage, " &
+                    "SELECT TOP 1 ID, RegName, Smarty_AuthID, Smarty_AuthToken, Smarty_EmbeddedKey, ISNULL(Smarty_UseEmbeddedKey, 0) AS Smarty_UseEmbeddedKey, ISNULL(LTRIM(RTRIM(BusinessRuleType)), '') AS BusinessRuleType, RegTypeId, Address1, Address2, City, State, Zip, MainFax, MainPhone, MainEMail, WebLandingPage, " &
                     "ISNULL(DisplayDashboardOnStartUp, 0) AS DisplayDashboardOnStartUp, " &
                     "ISNULL(AllowMessaging, 0) AS AllowMessaging, " &
                     "ISNULL(AllowMultipleRoles, 0) AS AllowMultipleRoles, " &
@@ -3363,7 +3363,7 @@ Namespace HelloWorld
                 Dim normalizedBusinessRuleType = NormalizeBusinessRuleType(record.BusinessRuleType)
                 Using cmd As New SqlCommand(
                     "INSERT INTO dbo.FW_Registration " &
-                    "(RegName, BusinessRuleType, RegTypeId, Address, Address2, City, State, Zip, MainFax, MainPhone, MainEMail, WebLandingPage, Smarty_AuthID, Smarty_AuthToken, Smarty_EmbeddedKey, Smarty_UseEmbeddedKey, DisplayDashboardOnStartUp, AllowMessaging, AllowMultipleRoles, AllowPasswordChangeAtLogin, AllowUpdateMyProfile, AllowUpdateMyProfileEmail, Ribbonbar_InvisibleIcons, Use2FA, IsActive, CreatedBy, CreatedOn, UpdatedBy, UpdatedOn) " &
+                    "(RegName, BusinessRuleType, RegTypeId, Address1, Address2, City, State, Zip, MainFax, MainPhone, MainEMail, WebLandingPage, Smarty_AuthID, Smarty_AuthToken, Smarty_EmbeddedKey, Smarty_UseEmbeddedKey, DisplayDashboardOnStartUp, AllowMessaging, AllowMultipleRoles, AllowPasswordChangeAtLogin, AllowUpdateMyProfile, AllowUpdateMyProfileEmail, Ribbonbar_InvisibleIcons, Use2FA, IsActive, CreatedBy, CreatedOn, UpdatedBy, UpdatedOn) " &
                     "VALUES " &
                     "(@RegName, @BusinessRuleType, @RegTypeId, @Address1, @Address2, @City, @State, @Zip, @MainFax, @MainPhone, @MainEMail, @WebLandingPage, @Smarty_AuthID, @Smarty_AuthToken, @Smarty_EmbeddedKey, @Smarty_UseEmbeddedKey, @DisplayDashboardOnStartUp, @AllowMessaging, @AllowMultipleRoles, @AllowPasswordChangeAtLogin, @AllowUpdateMyProfile, @AllowUpdateMyProfileEmail, @Ribbonbar_InvisibleIcons, @Use2FA, @IsActive, @CurrentUserId, GETDATE(), @CurrentUserId, GETDATE()); " &
                     "SELECT CAST(SCOPE_IDENTITY() AS INT);", conn)
@@ -6031,24 +6031,178 @@ Namespace HelloWorld
         ''' configured for more than one role returns duplicate rows and an arbitrary role wins.
         ''' See sql\026_control_updates_role_scope.sql.
         ''' </summary>
-        Public Shared Function GetControlUpdates(pageName As String) As DataTable
+        ''' <summary>
+        ''' One control on a page, and the table column its name maps it to.
+        ''' </summary>
+        Private NotInheritable Class ControlFieldLink
+            Public Property ControlName As String
+            Public Property LabelName As String
+        End Class
+
+        ''' <summary>
+        ''' Field attributes for a page's controls, derived from the live form.
+        '''
+        ''' The control name carries the mapping: TextBox_Address1, on a page whose table is
+        ''' FW_Users, is FW_Users.Address1. That is the convention the framework already applies
+        ''' when it creates a field, so the page in front of the user *is* the mapping, and a
+        ''' control added today is permission-aware today.
+        '''
+        ''' This replaced a join through FW_Enumerations_U - a snapshot of the page written by the
+        ''' Enum button. Any control added after that snapshot was invisible to permissions with no
+        ''' error anywhere: Users_AppAdmin_U had five such fields, and FW_HD_Issues_U,
+        ''' FW_Registration_U and PageGeneration_U had never been enumerated at all, so field
+        ''' permissions had never once applied to them. The table, the view and the Enum button are
+        ''' all still in place; nothing reads them on this path.
+        ''' </summary>
+        Public Shared Function GetControlUpdates(form As System.Windows.Forms.Form,
+                                                 pageName As String,
+                                                 tableName As String) As DataTable
+            Dim table As New DataTable("ControlUpdates")
+            table.Columns.Add("PageName", GetType(String))
+            table.Columns.Add("ControlName", GetType(String))
+            table.Columns.Add("LinkedControl", GetType(String))
+            table.Columns.Add("OverrideCaption", GetType(String))
+            For Each flagColumn In {"CA_CanChange", "Can_Create", "Can_Read", "Can_Update",
+                                    "IsRequired", "IsUnique", "Make_Invisible"}
+                table.Columns.Add(flagColumn, GetType(Boolean))
+            Next
+            table.Columns.Add("OrderBy", GetType(Object))
+
+            If form Is Nothing Then Return table
+
+            Dim normalizedTable = NormalizeTableName(tableName)
+            If normalizedTable = String.Empty Then Return table
+
+            ' A control named for something that is not a column of the table maps to nothing. That
+            ' is a page defect to report, not a row to apply.
+            Dim columns = GetTableColumnNames(normalizedTable)
+            If columns.Count = 0 Then Return table
+
+            Dim derived As New Dictionary(Of String, ControlFieldLink)(StringComparer.OrdinalIgnoreCase)
+            CollectBoundControls(form, form, normalizedTable, columns, derived)
+            If derived.Count = 0 Then Return table
+
             Dim registrationId = If(SessionState.IsActive, SessionState.Current.Value.RegistrationID, 0)
             Dim roleId = If(SessionState.IsActive, SessionState.Current.Value.RoleID, 0)
-            Dim table As New DataTable("ControlUpdates")
+
             Using conn As New SqlConnection(ConnectionString)
                 conn.Open()
                 Using cmd As New SqlCommand(
-                    "SELECT * FROM dbo.vw_FW_ControlUpdates_U " &
-                    "WHERE PageName = @PageName AND RegistrationID = @RegistrationID AND RoleID = @RoleID", conn)
-                    cmd.Parameters.AddWithValue("@PageName", pageName.Trim())
+                    "SELECT FileLink, OverrideCaption, CA_CanChange, Can_Create, Can_Read, Can_Update, " &
+                    "IsRequired, IsUnique, Make_Invisible, OrderBy " &
+                    "FROM dbo.FW_RoleFields " &
+                    "WHERE RegistrationID = @RegistrationID AND RoleID = @RoleID " &
+                    "AND IsActive = 1 AND ISNULL(DeletedFlag, 0) = 0 AND TableName = @TableName", conn)
                     cmd.Parameters.AddWithValue("@RegistrationID", registrationId)
                     cmd.Parameters.AddWithValue("@RoleID", roleId)
-                    Using da As New SqlDataAdapter(cmd)
-                        da.Fill(table)
+                    cmd.Parameters.AddWithValue("@TableName", normalizedTable)
+                    Using reader = cmd.ExecuteReader()
+                        While reader.Read()
+                            Dim link As ControlFieldLink = Nothing
+
+                            ' Matched here rather than in SQL: a page declares its own table name and
+                            ' the casing need not agree with the stored rows - EntityX_U says
+                            ' FW_ENTITY where the rows say FW_Entity. Relying on database collation
+                            ' for that would work until the day it did not.
+                            If Not derived.TryGetValue(SafeString(reader("FileLink")), link) Then
+                                Continue While
+                            End If
+
+                            Dim row = table.NewRow()
+                            row("PageName") = pageName
+                            row("ControlName") = link.ControlName
+                            row("LinkedControl") = link.LabelName
+                            row("OverrideCaption") = reader("OverrideCaption")
+                            row("CA_CanChange") = reader("CA_CanChange")
+                            row("Can_Create") = reader("Can_Create")
+                            row("Can_Read") = reader("Can_Read")
+                            row("Can_Update") = reader("Can_Update")
+                            row("IsRequired") = reader("IsRequired")
+                            row("IsUnique") = reader("IsUnique")
+                            row("Make_Invisible") = reader("Make_Invisible")
+                            row("OrderBy") = reader("OrderBy")
+                            table.Rows.Add(row)
+                        End While
                     End Using
                 End Using
             End Using
+
             Return table
+        End Function
+
+        ''' <summary>
+        ''' Walks the form for controls whose name maps them to a column of the page's table, keyed
+        ''' by FileLink. A label is paired by the same convention, so an override caption lands on
+        ''' the caption belonging to the field rather than on whatever was nearest.
+        ''' </summary>
+        Private Shared Sub CollectBoundControls(root As System.Windows.Forms.Control,
+                                                container As System.Windows.Forms.Control,
+                                                tableName As String,
+                                                columns As HashSet(Of String),
+                                                results As Dictionary(Of String, ControlFieldLink))
+            If container Is Nothing OrElse container.Controls Is Nothing Then Return
+
+            For Each ctrl As System.Windows.Forms.Control In container.Controls
+                If ctrl Is Nothing Then Continue For
+
+                Dim fieldName = BoundFieldNameFromControlName(ctrl.Name)
+                If fieldName <> String.Empty AndAlso columns.Contains(fieldName) Then
+                    Dim fileLink = tableName & "." & fieldName
+                    If Not results.ContainsKey(fileLink) Then
+                        Dim labelName = "Label_" & fieldName
+                        If root.Controls.Find(labelName, True).Length = 0 Then
+                            labelName = String.Empty
+                        End If
+
+                        results(fileLink) = New ControlFieldLink With {
+                            .ControlName = ctrl.Name,
+                            .LabelName = labelName
+                        }
+                    End If
+                End If
+
+                CollectBoundControls(root, ctrl, tableName, columns, results)
+            Next
+        End Sub
+
+        ''' <summary>
+        ''' The column a control name maps to, or empty for a control that is not field-shaped.
+        ''' The prefixes match the ones ApplyControlUpdates already understands.
+        ''' </summary>
+        Private Shared Function BoundFieldNameFromControlName(controlName As String) As String
+            Dim name = If(controlName, String.Empty).Trim()
+            If name = String.Empty Then Return String.Empty
+
+            For Each prefix In {"TextBox_", "ComboBox_", "CheckBox_", "DateTimePicker_",
+                                "NumericUpDown_", "MaskedTextBox_", "RichTextBox_"}
+                If name.StartsWith(prefix, StringComparison.Ordinal) Then
+                    Return name.Substring(prefix.Length)
+                End If
+            Next
+
+            Return String.Empty
+        End Function
+
+        ''' <summary>Column names of a table, for deciding which controls are field-shaped.</summary>
+        Private Shared Function GetTableColumnNames(tableName As String) As HashSet(Of String)
+            Dim columns As New HashSet(Of String)(StringComparer.OrdinalIgnoreCase)
+            Dim normalized = NormalizeTableName(tableName)
+            If normalized = String.Empty Then Return columns
+
+            Using conn As New SqlConnection(ConnectionString)
+                conn.Open()
+                Using cmd As New SqlCommand(
+                    "SELECT name FROM sys.columns WHERE object_id = OBJECT_ID('dbo.' + @TableName)", conn)
+                    cmd.Parameters.AddWithValue("@TableName", normalized)
+                    Using reader = cmd.ExecuteReader()
+                        While reader.Read()
+                            columns.Add(SafeString(reader("name")))
+                        End While
+                    End Using
+                End Using
+            End Using
+
+            Return columns
         End Function
 
         Public Shared Function GetTextColumnMaxLengths(tableName As String) As Dictionary(Of String, Integer)
@@ -6086,39 +6240,45 @@ Namespace HelloWorld
             Return results
         End Function
 
-        Public Shared Function GetPageControlFieldMap(pageName As String, tableName As String) As Dictionary(Of String, String)
+        ''' <summary>
+        ''' Control name to column name for a page, derived from the live form.
+        '''
+        ''' Derived for the same reason GetControlUpdates is: this map decides which MaxLength a
+        ''' text box gets, and read from the enumeration it was silently empty for any page whose
+        ''' controls postdated the last Enum run - so an over-long value reached the database and
+        ''' failed there instead of being trimmed at the control.
+        ''' </summary>
+        Public Shared Function GetPageControlFieldMap(form As System.Windows.Forms.Form,
+                                                      pageName As String,
+                                                      tableName As String) As Dictionary(Of String, String)
             Dim results As New Dictionary(Of String, String)(StringComparer.OrdinalIgnoreCase)
-            If String.IsNullOrWhiteSpace(pageName) Then
+            If form Is Nothing OrElse String.IsNullOrWhiteSpace(pageName) Then
                 Return results
             End If
 
             Dim normalizedTable = NormalizeTableName(tableName)
+            If normalizedTable = String.Empty Then
+                Return results
+            End If
 
-            Using conn As New SqlConnection(ConnectionString)
-                conn.Open()
-                Using cmd As New SqlCommand("SELECT ControlName, FileLink FROM dbo.FW_Enumerations_U WHERE PageName = @PageName", conn)
-                    cmd.Parameters.AddWithValue("@PageName", pageName.Trim())
+            Dim columns = GetTableColumnNames(normalizedTable)
+            If columns.Count = 0 Then
+                Return results
+            End If
 
-                    Using reader = cmd.ExecuteReader()
-                        While reader.Read()
-                            Dim controlName = SafeString(reader("ControlName")).Trim()
-                            Dim fileLink = SafeString(reader("FileLink")).Trim()
-                            If controlName = String.Empty OrElse fileLink = String.Empty Then
-                                Continue While
-                            End If
+            Dim derived As New Dictionary(Of String, ControlFieldLink)(StringComparer.OrdinalIgnoreCase)
+            CollectBoundControls(form, form, normalizedTable, columns, derived)
 
-                            Dim mappedColumn = ExtractColumnNameFromFileLink(fileLink, normalizedTable)
-                            If mappedColumn = String.Empty Then
-                                Continue While
-                            End If
+            For Each pair In derived
+                Dim mappedColumn = ExtractColumnNameFromFileLink(pair.Key, normalizedTable)
+                If mappedColumn = String.Empty Then
+                    Continue For
+                End If
 
-                            If Not results.ContainsKey(controlName) Then
-                                results.Add(controlName, mappedColumn)
-                            End If
-                        End While
-                    End Using
-                End Using
-            End Using
+                If Not results.ContainsKey(pair.Value.ControlName) Then
+                    results.Add(pair.Value.ControlName, mappedColumn)
+                End If
+            Next
 
             Return results
         End Function
@@ -6166,9 +6326,10 @@ Namespace HelloWorld
         End Function
 
         Public Shared Sub ApplyControlUpdates(form As System.Windows.Forms.Form, pageName As String,
+                                              tableName As String,
                                               Optional isNewRecord As Boolean = False)
             Try
-                Dim updates = GetControlUpdates(pageName)
+                Dim updates = GetControlUpdates(form, pageName, tableName)
                 If updates.Rows.Count = 0 Then Return
 
                 Dim errors As New List(Of String)()
@@ -6312,7 +6473,7 @@ Namespace HelloWorld
                 Dim normalizedTable = NormalizeTableName(tableName)
                 If String.IsNullOrWhiteSpace(normalizedTable) Then Return True
 
-                Dim updates = GetControlUpdates(pageName)
+                Dim updates = GetControlUpdates(form, pageName, normalizedTable)
                 If updates.Rows.Count = 0 Then Return True
 
                 Dim keyColumn = GetPrimaryKeyColumn(normalizedTable)
