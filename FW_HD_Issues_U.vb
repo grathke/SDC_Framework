@@ -235,7 +235,7 @@ Namespace HelloWorld
 
             ' Category and Priority are painted by AddComboField. Status is not, because its label
             ' is the page's own.
-            statusLabel.BackColor = Color.FromArgb(221, 235, 247)
+            statusLabel.BackColor = FW_Base_U.AppAdminRequiredBackColor
 
             Me.Controls.AddRange({statusComboBox, statusValueLabel, conversationHistoryPanel})
             statusRequiredBorder = CreateRequiredBorder(statusComboBox)

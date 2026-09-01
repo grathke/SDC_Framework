@@ -6553,7 +6553,7 @@ Namespace HelloWorld
                                 Dim labelMatches = form.Controls.Find(asteriskTarget, True)
                                 If labelMatches.Length > 0 Then
                                     labelMatches(0).Text = EnsureRequiredMarker(labelMatches(0).Text)
-                                    labelMatches(0).BackColor = System.Drawing.Color.FromArgb(255, 255, 224)
+                                    labelMatches(0).BackColor = FW_Base_U.PermissionRequiredBackColor
                                 End If
                             End If
                         End If
@@ -6908,7 +6908,7 @@ Namespace HelloWorld
                     Continue For
                 End If
 
-                If labelCtrl.BackColor.ToArgb() = System.Drawing.Color.FromArgb(221, 235, 247).ToArgb() Then
+                If labelCtrl.BackColor.ToArgb() = FW_Base_U.AppAdminRequiredBackColor.ToArgb() Then
                     Return True
                 End If
             Next

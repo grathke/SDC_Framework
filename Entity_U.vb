@@ -43,8 +43,9 @@ Namespace HelloWorld
             Dim assignedManagerLabel As New Label() With {
                 .Name = "Label_AssignedManagerID",
                 .Text = "AssignedManagerID",
-                .Location = New Point(20, y + 5),
-                .Size = New Size(120, 24)
+                .Location = New Point(20, y),
+                .Size = New Size(120, 26),
+                .TextAlign = ContentAlignment.MiddleLeft
             }
             Me.Controls.Add(assignedManagerLabel)
             
@@ -61,8 +62,9 @@ Namespace HelloWorld
             Dim genderLabel As New Label() With {
                 .Name = "Label_GenderID",
                 .Text = "Gender",
-                .Location = New Point(20, y + 5),
-                .Size = New Size(120, 24)
+                .Location = New Point(20, y),
+                .Size = New Size(120, 26),
+                .TextAlign = ContentAlignment.MiddleLeft
             }
             Me.Controls.Add(genderLabel)
 

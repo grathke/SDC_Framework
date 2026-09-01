@@ -14,6 +14,24 @@ Namespace HelloWorld
     Public MustInherit Class FW_Base_U
         Inherits Form
 
+        ''' <summary>
+        ''' The two colours that say a field is required, and the only place either value lives.
+        '''
+        ''' Blue means App Admin required - declared on the page, so it applies to every role.
+        ''' Yellow means permission required, from FW_RoleFields. Blue wins where both apply.
+        '''
+        ''' One owner matters more here than almost anywhere else, because the blue is not only
+        ''' painted but *read back*: ShouldSkipBrRequiredStyling decides App Admin ownership by
+        ''' comparing a label's BackColor to this exact value. A paint site changed without the
+        ''' comparison would silently invert the precedence rather than fail.
+        '''
+        ''' Note the same light blue is used elsewhere for entirely different things - the browse
+        ''' grid header and the chosen tile in Page Generation. Those are not signals and must not
+        ''' follow this value.
+        ''' </summary>
+        Public Shared ReadOnly AppAdminRequiredBackColor As Color = Color.FromArgb(168, 201, 237)
+        Public Shared ReadOnly PermissionRequiredBackColor As Color = Color.FromArgb(250, 236, 155)
+
         Protected loading As Boolean
         Protected hasUnsavedChanges As Boolean
         Private originalRowVersion As Byte()
@@ -107,15 +125,17 @@ Namespace HelloWorld
                     Return
                 End If
 
+                ' No owner to inherit from - opened from a menu or dashboard. Fall back to the colour
+                ' stored for the paired _B page, and to the shared default when there is none, so a
+                ' maintenance page never sits there white while every listing is Paper.
+                Dim stored As Integer? = Nothing
                 Dim pageName = GetPageName()
-                If Not pageName.EndsWith("_U", StringComparison.OrdinalIgnoreCase) Then Return
-
-                Dim browsePageName = pageName.Substring(0, pageName.Length - 2) & "_B"
-                Dim stored = DataAccess.GetPageBackgroundColor(browsePageName)
-                If stored.HasValue Then
-                    Me.BackColor = Color.FromArgb(stored.Value)
-                    KeepButtonsUntinted(Me)
+                If pageName.EndsWith("_U", StringComparison.OrdinalIgnoreCase) Then
+                    stored = DataAccess.GetPageBackgroundColor(pageName.Substring(0, pageName.Length - 2) & "_B")
                 End If
+
+                Me.BackColor = If(stored.HasValue, Color.FromArgb(stored.Value), FW_Base_B.DefaultPageBackground)
+                KeepButtonsUntinted(Me)
             Catch
                 ' A page colour is decoration. It must never stop a maintenance page opening.
             End Try
@@ -1183,7 +1203,7 @@ Namespace HelloWorld
         Private Sub EditableControl_MouseEnter(sender As Object, e As EventArgs)
             Dim control = TryCast(sender, Control)
             If control Is Nothing OrElse control.Focused Then Return
-            control.BackColor = Color.FromArgb(221, 235, 247)
+            control.BackColor = AppAdminRequiredBackColor
         End Sub
 
         Private Sub EditableControl_MouseLeave(sender As Object, e As EventArgs)
@@ -2090,8 +2110,9 @@ Namespace HelloWorld
             Dim lbl As New Label() With {
                 .Name = "Label_" & caption,
                 .Text = If(String.IsNullOrWhiteSpace(labelText), ToPascalCaseDisplay(caption), labelText),
-                .Location = New Point(fieldLeft, y + 5),
-                .Size = New Size(120, 26)
+                .Location = New Point(fieldLeft, y),
+                .Size = New Size(120, 26),
+                .TextAlign = ContentAlignment.MiddleLeft
             }
 
             If required Then
@@ -2100,7 +2121,7 @@ Namespace HelloWorld
                 End If
 
                 ' App Admin required: declared here on the page, so it applies to every role.
-                lbl.BackColor = Color.FromArgb(221, 235, 247)
+                lbl.BackColor = AppAdminRequiredBackColor
             End If
 
             Me.Controls.Add(lbl)
@@ -2157,8 +2178,9 @@ Namespace HelloWorld
             Dim lbl As New Label() With {
                 .Name = "Label_" & caption,
                 .Text = If(String.IsNullOrWhiteSpace(labelText), ToPascalCaseDisplay(caption), labelText),
-                .Location = New Point(fieldLeft, y + 5),
-                .Size = New Size(120, 26)
+                .Location = New Point(fieldLeft, y),
+                .Size = New Size(120, 26),
+                .TextAlign = ContentAlignment.MiddleLeft
             }
 
             If required Then
@@ -2170,7 +2192,7 @@ Namespace HelloWorld
                 ' blue label is not decoration - ShouldSkipBrRequiredStyling reads this exact ARGB
                 ' and makes the permission path skip the field, which is how App Admin required
                 ' takes precedence over the yellow FW_RoleFields required.
-                lbl.BackColor = Color.FromArgb(221, 235, 247)
+                lbl.BackColor = AppAdminRequiredBackColor
             End If
 
             Me.Controls.Add(lbl)

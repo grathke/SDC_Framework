@@ -276,8 +276,9 @@ Namespace HelloWorld
             Dim lbl As New Label() With {
                 .Name = "Label_" & fieldName,
                 .Text = labelText,
-                .Location = New Point(20, y + 5),
-                .Size = New Size(120, 24)
+                .Location = New Point(20, y),
+                .Size = New Size(120, 26),
+                .TextAlign = ContentAlignment.MiddleLeft
             }
             Me.Controls.Add(lbl)
 

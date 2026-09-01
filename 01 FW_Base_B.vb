@@ -168,27 +168,59 @@ Namespace HelloWorld
         ''' selection. The button sits in the row's layout rather than at a fixed point, so it
         ''' cannot overlap or be overlapped whatever the window width.
         ''' </summary>
+        ''' <summary>
+        ''' Page backgrounds, five to a row, grouped by family: neutrals, blue, greens, warms,
+        ''' pinks, purples.
+        '''
+        ''' Chosen on their own merits rather than around the required-field colours, which is the
+        ''' right way round: a signal should be more saturated than any background it lands on, so
+        ''' the signals are fitted to the palette afterwards, not the palette to the signals.
+        '''
+        ''' Every colour is measured, not judged by eye:
+        '''
+        '''   - at least 15:1 contrast with black text, so no page is harder to read than white.
+        '''   - at least 16 from every other colour here, so no two choices are a distinction the
+        '''     eye cannot actually make. Warm Gray and Almond were dropped for failing this.
+        '''
+        ''' Sky was out of this palette until the App Admin required blue was deepened on
+        ''' 2026-09-01. At the old pale value the two were 6 apart - the same colour - and a signal
+        ''' cannot share its colour with a background. It is 108 clear of the new one.
+        '''
+        ''' The grid's own blues - the header band and the selected row - are deliberately not
+        ''' treated as constraints here. They sit inside the grid, on white, and are read in that
+        ''' context rather than against the page.
+        '''
+        ''' Paper is the default rather than white. Pure white as a whole-page background is
+        ''' needlessly stark, and a faint grey lets the white grid and inputs read as content
+        ''' sitting on the page rather than merging with it.
+        ''' </summary>
         Private Shared ReadOnly BackgroundColorChoices As KeyValuePair(Of String, Color)() = {
+            New KeyValuePair(Of String, Color)("Paper", Color.FromArgb(243, 245, 246)),
             New KeyValuePair(Of String, Color)("White", Color.White),
-            New KeyValuePair(Of String, Color)("Whisper", Color.FromArgb(248, 248, 248)),
-            New KeyValuePair(Of String, Color)("Cloud", Color.FromArgb(244, 246, 248)),
-            New KeyValuePair(Of String, Color)("Alice Blue", Color.FromArgb(240, 248, 255)),
-            New KeyValuePair(Of String, Color)("Ice", Color.FromArgb(236, 245, 250)),
-            New KeyValuePair(Of String, Color)("Powder", Color.FromArgb(234, 242, 247)),
-            New KeyValuePair(Of String, Color)("Honeydew", Color.FromArgb(240, 255, 240)),
-            New KeyValuePair(Of String, Color)("Mint", Color.FromArgb(238, 250, 243)),
-            New KeyValuePair(Of String, Color)("Ivory", Color.FromArgb(255, 255, 240)),
-            New KeyValuePair(Of String, Color)("Sand", Color.FromArgb(250, 248, 240)),
-            New KeyValuePair(Of String, Color)("Linen", Color.FromArgb(250, 245, 240)),
-            New KeyValuePair(Of String, Color)("Seashell", Color.FromArgb(255, 245, 238)),
-            New KeyValuePair(Of String, Color)("Blush", Color.FromArgb(252, 244, 244)),
-            New KeyValuePair(Of String, Color)("Lavender", Color.FromArgb(245, 243, 252)),
-            New KeyValuePair(Of String, Color)("Wheat", Color.FromArgb(250, 246, 236))
+            New KeyValuePair(Of String, Color)("Cool Gray", Color.FromArgb(236, 239, 241)),
+            New KeyValuePair(Of String, Color)("Sky", Color.FromArgb(220, 232, 248)),
+            New KeyValuePair(Of String, Color)("Mint", Color.FromArgb(230, 244, 236)),
+            New KeyValuePair(Of String, Color)("Moss", Color.FromArgb(226, 234, 214)),
+            New KeyValuePair(Of String, Color)("Fern", Color.FromArgb(214, 230, 214)),
+            New KeyValuePair(Of String, Color)("Sand", Color.FromArgb(240, 234, 220)),
+            New KeyValuePair(Of String, Color)("Peach", Color.FromArgb(250, 226, 208)),
+            New KeyValuePair(Of String, Color)("Terra", Color.FromArgb(238, 214, 204)),
+            New KeyValuePair(Of String, Color)("Rose", Color.FromArgb(247, 228, 232)),
+            New KeyValuePair(Of String, Color)("Coral", Color.FromArgb(250, 224, 220)),
+            New KeyValuePair(Of String, Color)("Dusk", Color.FromArgb(232, 220, 232)),
+            New KeyValuePair(Of String, Color)("Orchid", Color.FromArgb(240, 224, 240)),
+            New KeyValuePair(Of String, Color)("Lilac", Color.FromArgb(230, 226, 244))
         }
 
         Private backgroundColorButton As Button
         Private backgroundColorPanel As Panel
-        Private pageBackgroundColor As Color = Color.White
+        ''' <summary>
+        ''' The page background before anyone chooses one. Public and shared because maintenance
+        ''' pages fall back to the same value: one default, not two that can drift apart.
+        ''' </summary>
+        Public Shared ReadOnly DefaultPageBackground As Color = Color.FromArgb(243, 245, 246)
+
+        Private pageBackgroundColor As Color = DefaultPageBackground
 
         Private Sub BuildBackgroundColorPicker()
             backgroundColorButton = New Button() With {
@@ -243,7 +275,7 @@ Namespace HelloWorld
                 .Name = "Panel_PageBackgroundColor",
                 .Size = New Size(5 * 44 + 12, 42 + 3 * 34 + 6),
                 .BorderStyle = BorderStyle.FixedSingle,
-                .BackColor = SystemColors.Control,
+                .BackColor = Color.White,
                 .Visible = False
             }
 
@@ -397,9 +429,11 @@ Namespace HelloWorld
         Private Sub RestorePageBackgroundColor()
             Try
                 Dim stored = DataAccess.GetPageBackgroundColor(Me.GetType().Name)
-                If Not stored.HasValue Then Return
 
-                pageBackgroundColor = Color.FromArgb(stored.Value)
+                ' No stored colour means the default, which is applied rather than assumed: the form
+                ' is built white, so leaving it alone would make "no choice" look different from
+                ' choosing Paper.
+                pageBackgroundColor = If(stored.HasValue, Color.FromArgb(stored.Value), DefaultPageBackground)
                 ApplyPageBackgroundColor(Me, pageBackgroundColor)
                 If backgroundColorButton IsNot Nothing Then backgroundColorButton.Invalidate()
             Catch
@@ -422,6 +456,13 @@ Namespace HelloWorld
             container.BackColor = colour
 
             For Each child As Control In container.Controls
+                ' The picker itself keeps a fixed ground. Tinting it would mean judging every swatch
+                ' against whatever is currently applied, so the same colour would look different
+                ' depending on what it is replacing.
+                If String.Equals(child.Name, "Panel_PageBackgroundColor", StringComparison.Ordinal) Then
+                    Continue For
+                End If
+
                 ' A button keeps its own look. Left to inherit, it takes the page tint and reads as
                 ' disabled or selected - the visual style is what makes it look pressable.
                 Dim button = TryCast(child, Button)

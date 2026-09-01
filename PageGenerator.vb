@@ -973,7 +973,7 @@ Namespace HelloWorld
                     ' same geometry: Label_<Field> at 20, the control at 150, 42px row pitch.
                     Dim comboVariable = LookupControlVariable(field)
                     output.AppendLine("            Controls.Add(New Label() With {.Name = ""Label_" & EscapeLiteral(field) & """, .Text = DisplayNameFormatter.ToDisplayName(""" & EscapeLiteral(field) & """, False)" &
-                                      If(isRequired, " & "" *""", String.Empty) & ", .Location = New Point(20, " & (y + 5).ToString() & "), .Size = New Size(120, 26)})")
+                                      If(isRequired, " & "" *""", String.Empty) & ", .Location = New Point(20, " & y.ToString() & "), .Size = New Size(120, 26), .TextAlign = ContentAlignment.MiddleLeft})")
                     output.AppendLine("            " & comboVariable & " = New ComboBox() With {.Name = ""ComboBox_" & EscapeLiteral(field) & """, .Location = New Point(150, " & y.ToString() & "), .Size = New Size(320, 26), .DropDownStyle = ComboBoxStyle.DropDownList, .BackColor = SystemColors.Window}")
                     If isRequired Then output.AppendLine("            " & comboVariable & ".Tag = ""Required""")
                     output.AppendLine("            Controls.Add(" & comboVariable & ")")

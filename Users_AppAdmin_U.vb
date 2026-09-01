@@ -374,7 +374,7 @@ Namespace HelloWorld
                             Dim label = TryCast(labels(0), Label)
                             If label IsNot Nothing Then
                                 label.Text = EnsureSingleRequiredMarker(label.Text)
-                                label.BackColor = Color.FromArgb(221, 235, 247)
+                                label.BackColor = FW_Base_U.AppAdminRequiredBackColor
                             End If
                         End If
                     End If
