@@ -1025,7 +1025,8 @@ Namespace HelloWorld
 
             For Each spec In lookupFields.Where(Function(item) fields.Any(Function(field) String.Equals(field, item.FieldName, StringComparison.OrdinalIgnoreCase)))
                 output.AppendLine("            ConfigureLookupCombo(" & LookupControlVariable(spec.FieldName) &
-                                  ", DataAccess.GetLookupTable(""" & EscapeLiteral(spec.LookupTable) & """, """ & EscapeLiteral(spec.ValueColumn) & """, """ & EscapeLiteral(spec.DisplayColumn) & """)" &
+                                  ", DataAccess.GetLookupTable(""" & EscapeLiteral(spec.LookupTable) & """, """ & EscapeLiteral(spec.ValueColumn) & """, """ & EscapeLiteral(spec.DisplayColumn) & """, " &
+                                  If(spec.FilterByRegistration, "True", "False") & ")" &
                                   ", """ & EscapeLiteral(spec.ValueColumn) & """, """ & EscapeLiteral(spec.DisplayColumn) & """, CurrentLookupId(""" & EscapeLiteral(spec.FieldName) & """))")
             Next
             If fields.Any(Function(field) String.Equals(field, "RegistrationID", StringComparison.OrdinalIgnoreCase)) Then
@@ -1133,6 +1134,14 @@ Namespace HelloWorld
             Public Property LookupTable As String
             Public Property ValueColumn As String
             Public Property DisplayColumn As String
+
+            ''' <summary>
+            ''' Whether the list is scoped to the session's registration. Written as an optional
+            ''' " filtered by registration" on the end of the spec, so every request written before
+            ''' this existed still parses and still filters - the default is on, because a lookup
+            ''' table with a RegistrationID almost always means it.
+            ''' </summary>
+            Public Property FilterByRegistration As Boolean = True
         End Class
 
         ''' <summary>
@@ -1150,19 +1159,24 @@ Namespace HelloWorld
                                                          Not String.Equals(item, "None", StringComparison.OrdinalIgnoreCase))
 
                 Dim match = Regex.Match(entry,
-                                        "^\s*(?<field>\w+)\s*->\s*(?<table>\w+)\s*\.\s*(?<value>\w+)\s+displayed\s+as\s+(?<display>\w+)\s*$",
+                                        "^\s*(?<field>\w+)\s*->\s*(?<table>\w+)\s*\.\s*(?<value>\w+)\s+displayed\s+as\s+(?<display>\w+)(?<scope>\s+(?:filtered|not\s+filtered)\s+by\s+registration)?\s*$",
                                         RegexOptions.IgnoreCase)
 
                 If Not match.Success Then
-                    errors.Add("Lookup field is not in the expected format '<Field> -> <Table>.<ValueColumn> displayed as <DisplayColumn>': " & entry)
+                    errors.Add("Lookup field is not in the expected format '<Field> -> <Table>.<ValueColumn> displayed as <DisplayColumn>', optionally followed by 'filtered by registration' or 'not filtered by registration': " & entry)
                     Continue For
                 End If
 
+                ' Absent means filtered. Every spec written before the suffix existed was filtered
+                ' by the runtime rule, so reading them as unfiltered would change what those pages
+                ' show without anyone editing them.
+                Dim scope = match.Groups("scope").Value
                 specs.Add(New LookupFieldSpec With {
                     .FieldName = match.Groups("field").Value,
                     .LookupTable = match.Groups("table").Value,
                     .ValueColumn = match.Groups("value").Value,
-                    .DisplayColumn = match.Groups("display").Value
+                    .DisplayColumn = match.Groups("display").Value,
+                    .FilterByRegistration = Not Regex.IsMatch(scope, "not\s+filtered", RegexOptions.IgnoreCase)
                 })
             Next
 

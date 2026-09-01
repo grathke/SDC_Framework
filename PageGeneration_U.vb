@@ -1280,6 +1280,7 @@ Namespace HelloWorld
                 maintenanceFieldsTextBox.Text = DbText(row("MaintenanceFields"))
                 browseSqlTextBox.Text = DbText(row("BrowseSql"))
                 lookupFieldsTextBox.Text = DbText(row("LookupFields"))
+                LoadLookupTargetsFromText(lookupFieldsTextBox.Text)
                 adminRequiredFieldsTextBox.Text = DbText(row("AdminRequiredFields"))
                 SelectMenuCaller(DbText(row("MenuCaller")))
                 SetIconFileName(If(row.Table.Columns.Contains("IconFileName"), DbText(row("IconFileName")), String.Empty))
@@ -1932,6 +1933,24 @@ Namespace HelloWorld
                             If isRequired OrElse isLookup Then
                                 row.Cells("Include").Value = True
                             End If
+
+                            ' Ticking Lookup asks where the values come from. The generator needs a
+                            ' table, the column it saves and the column it shows, and cannot guess
+                            ' any of them - so ticking used to record the field name alone and
+                            ' generation then refused it as malformed. Untick and the answer goes.
+                            If eventArgs.ColumnIndex = maintenanceGrid.Columns("Lookup").Index Then
+                                Dim fieldName = Convert.ToString(row.Cells("FieldName").Value)
+                                If isLookup Then
+                                    Dim spec = PromptForLookupTarget(maintenanceGrid.FindForm(), fieldName)
+                                    If spec = String.Empty Then
+                                        row.Cells("Lookup").Value = False
+                                    Else
+                                        lookupTargets(fieldName) = spec
+                                    End If
+                                Else
+                                    lookupTargets.Remove(fieldName)
+                                End If
+                            End If
                         End If
                         NormalizeSelectionGridOrder(maintenanceGrid)
                     End Sub
@@ -2014,7 +2033,7 @@ Namespace HelloWorld
                 If dialog.ShowDialog(Me) = DialogResult.OK Then
                     browseFieldsTextBox.Text = JoinCheckedGridFields(browseGrid, "Include")
                     maintenanceFieldsTextBox.Text = JoinIncludedGridFields(maintenanceGrid)
-                    lookupFieldsTextBox.Text = JoinCheckedGridFields(maintenanceGrid, "Lookup")
+                    lookupFieldsTextBox.Text = JoinLookupFields(maintenanceGrid)
                     adminRequiredFieldsTextBox.Text = JoinCheckedGridFields(maintenanceGrid, "Required")
                     browseSqlTextBox.Text = BuildGeneratedBrowseSql(tableName, browseGrid, fields, primaryKeyField, orderByFields)
                     RefreshSavedPageDocumentTemplate()
@@ -2226,6 +2245,146 @@ Namespace HelloWorld
                 End If
             Next
             Return String.Join(", ", selectedFields)
+        End Function
+
+        ''' <summary>
+        ''' Where each ticked lookup field gets its values, keyed by field name and holding the
+        ''' whole "Field -> Table.Value displayed as Display" sentence the generator parses.
+        ''' </summary>
+        Private ReadOnly lookupTargets As New Dictionary(Of String, String)(StringComparer.OrdinalIgnoreCase)
+
+        ''' <summary>
+        ''' Joins the lookup fields in the form the generator expects. A ticked field with no target
+        ''' is dropped rather than written as a bare name: the generator refuses a bare name, so
+        ''' writing one would turn a mis-click into a failed generation later instead of nothing now.
+        ''' </summary>
+        Private Function JoinLookupFields(grid As DataGridView) As String
+            Dim specs As New List(Of String)()
+            For Each row As DataGridViewRow In grid.Rows
+                If Not Convert.ToBoolean(row.Cells("Include").Value) Then Continue For
+                If Not Convert.ToBoolean(row.Cells("Lookup").Value) Then Continue For
+
+                Dim fieldName = Convert.ToString(row.Cells("FieldName").Value)
+                Dim spec As String = Nothing
+                If lookupTargets.TryGetValue(fieldName, spec) AndAlso Not String.IsNullOrWhiteSpace(spec) Then
+                    specs.Add(spec)
+                End If
+            Next
+            Return String.Join(", ", specs)
+        End Function
+
+        ''' <summary>
+        ''' Rebuilds the lookup targets from a saved request, so reopening one and touching the grid
+        ''' does not quietly discard the lookups it already had.
+        ''' </summary>
+        Private Sub LoadLookupTargetsFromText(storedValue As String)
+            lookupTargets.Clear()
+            If String.IsNullOrWhiteSpace(storedValue) Then Return
+
+            For Each entry In storedValue.Split(","c)
+                Dim spec = entry.Trim()
+                If spec = String.Empty Then Continue For
+
+                Dim arrow = spec.IndexOf("->", StringComparison.Ordinal)
+                Dim fieldName = If(arrow > 0, spec.Substring(0, arrow).Trim(), spec)
+                If fieldName <> String.Empty Then lookupTargets(fieldName) = spec
+            Next
+        End Sub
+
+        ''' <summary>
+        ''' Asks where a lookup field's values come from and returns the sentence the generator
+        ''' parses, or empty if the user cancels.
+        '''
+        ''' Three choices, each narrowing the next: the table, the column whose value is saved, and
+        ''' the column whose text is shown. They are chosen from lists rather than typed because the
+        ''' format is exact and a typo is only discovered at generation, as a refusal.
+        ''' </summary>
+        Private Function PromptForLookupTarget(owner As IWin32Window, fieldName As String) As String
+            Using dialog As New Form() With {
+                .Text = "Lookup values for " & fieldName,
+                .FormBorderStyle = FormBorderStyle.FixedDialog,
+                .StartPosition = FormStartPosition.CenterParent,
+                .MinimizeBox = False,
+                .MaximizeBox = False,
+                .ClientSize = New Size(430, 210)
+            }
+                Dim tableCombo As New ComboBox() With {.Location = New Point(150, 20), .Size = New Size(250, 26), .DropDownStyle = ComboBoxStyle.DropDownList}
+                Dim valueCombo As New ComboBox() With {.Location = New Point(150, 60), .Size = New Size(250, 26), .DropDownStyle = ComboBoxStyle.DropDownList}
+                Dim displayCombo As New ComboBox() With {.Location = New Point(150, 100), .Size = New Size(250, 26), .DropDownStyle = ComboBoxStyle.DropDownList}
+
+                dialog.Controls.Add(New Label() With {.Text = "Table", .Location = New Point(20, 20), .Size = New Size(120, 26), .TextAlign = ContentAlignment.MiddleLeft})
+                dialog.Controls.Add(New Label() With {.Text = "Saves this column", .Location = New Point(20, 60), .Size = New Size(120, 26), .TextAlign = ContentAlignment.MiddleLeft})
+                dialog.Controls.Add(New Label() With {.Text = "Shows this column", .Location = New Point(20, 100), .Size = New Size(120, 26), .TextAlign = ContentAlignment.MiddleLeft})
+
+                For Each table In DataAccess.GetDatabaseTables()
+                    tableCombo.Items.Add(table)
+                Next
+
+                AddHandler tableCombo.SelectedIndexChanged,
+                    Sub()
+                        valueCombo.Items.Clear()
+                        displayCombo.Items.Clear()
+                        Dim columns = DataAccess.GetTableColumnList(Convert.ToString(tableCombo.SelectedItem))
+                        For Each column In columns
+                            valueCombo.Items.Add(column)
+                            displayCombo.Items.Add(column)
+                        Next
+
+                        ' The key is nearly always what a lookup saves, so it is offered first.
+                        Dim keyColumn = DataAccess.GetPrimaryKeyColumn(Convert.ToString(tableCombo.SelectedItem))
+                        If Not String.IsNullOrWhiteSpace(keyColumn) AndAlso valueCombo.Items.Contains(keyColumn) Then
+                            valueCombo.SelectedItem = keyColumn
+                        ElseIf valueCombo.Items.Count > 0 Then
+                            valueCombo.SelectedIndex = 0
+                        End If
+                    End Sub
+
+                ' Ticked from what the data says, not from what the schema allows: a table can carry
+                ' a RegistrationID that no row populates, and scoping the list by it would empty the
+                ' combo. The count is shown so the choice can be judged rather than trusted.
+                Dim registrationCheckBox As New CheckBox() With {
+                    .Text = "Filter by registration",
+                    .Location = New Point(150, 132),
+                    .AutoSize = True,
+                    .Enabled = False
+                }
+
+                AddHandler tableCombo.SelectedIndexChanged,
+                    Sub()
+                        ' Enabled only when the table has a RegistrationID, and ticked only when
+                        ' rows actually populate it: scoping a list by a column nobody fills would
+                        ' empty the combo. The state answers the question, so the caption does not
+                        ' have to explain itself.
+                        Dim registrations = DataAccess.CountLookupRegistrations(Convert.ToString(tableCombo.SelectedItem))
+                        registrationCheckBox.Enabled = registrations >= 0
+                        registrationCheckBox.Checked = registrations > 0
+                    End Sub
+
+                Dim okButtonLocal As New Button() With {.Text = "OK", .Size = New Size(90, 30), .Location = New Point(220, 165), .DialogResult = DialogResult.OK}
+                Dim cancelButtonLocal As New Button() With {.Text = "Cancel", .Size = New Size(90, 30), .Location = New Point(316, 165), .DialogResult = DialogResult.Cancel}
+
+                dialog.ClientSize = New Size(430, 225)
+                dialog.Controls.AddRange({tableCombo, valueCombo, displayCombo, registrationCheckBox, okButtonLocal, cancelButtonLocal})
+                dialog.AcceptButton = okButtonLocal
+                dialog.CancelButton = cancelButtonLocal
+
+                If dialog.ShowDialog(owner) <> DialogResult.OK Then Return String.Empty
+                If tableCombo.SelectedItem Is Nothing OrElse valueCombo.SelectedItem Is Nothing OrElse displayCombo.SelectedItem Is Nothing Then
+                    MessageBox.Show(owner,
+                                    "A LOOKUP NEEDS A TABLE, THE COLUMN IT SAVES AND THE COLUMN IT SHOWS." & Environment.NewLine & Environment.NewLine &
+                                    "THE FIELD WAS LEFT UNTICKED.",
+                                    "LOOKUP NOT SET",
+                                    MessageBoxButtons.OK,
+                                    MessageBoxIcon.Information)
+                    Return String.Empty
+                End If
+
+                ' The scope is always written out, even when it matches the default, so a spec says
+                ' what it does rather than relying on the reader knowing what absent means.
+                Return fieldName & " -> " & Convert.ToString(tableCombo.SelectedItem) & "." &
+                       Convert.ToString(valueCombo.SelectedItem) & " displayed as " & Convert.ToString(displayCombo.SelectedItem) &
+                       If(registrationCheckBox.Checked, " filtered by registration", " not filtered by registration")
+            End Using
         End Function
 
         Private Shared Function JoinIncludedGridFields(grid As DataGridView) As String

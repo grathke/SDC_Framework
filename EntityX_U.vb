@@ -25,13 +25,14 @@ Namespace HelloWorld
         Private ReadOnly cityTextBox As TextBox
         Private ReadOnly stateTextBox As TextBox
         Private ReadOnly zipCodeTextBox As TextBox
+        Private ReadOnly genderIDComboBox As ComboBox
 
         Public Sub New(id As Integer, user As UserContext, Optional profile As AccessProfile = Nothing)
             MyBase.New()
             recordId = id
             currentUser = user
             accessProfile = profile
-            ClientSize = New Size(600, 307)
+            ClientSize = New Size(600, 349)
             okButton.Location = New Point(ClientSize.Width - 270, ClientSize.Height - 46)
             cancelActionButton.Location = New Point(ClientSize.Width - 135, ClientSize.Height - 46)
             firstNameTextBox = AddField("FirstName", 20, False, False)
@@ -40,7 +41,8 @@ Namespace HelloWorld
             cityTextBox = AddField("City", 146, False, False)
             stateTextBox = AddField("State", 188, False, False)
             zipCodeTextBox = AddField("ZipCode", 230, False, False)
-            SetManualTabOrder(firstNameTextBox, lastNameTextBox, address1TextBox, cityTextBox, stateTextBox, zipCodeTextBox, okButton, cancelActionButton)
+            genderIDComboBox = AddComboField("GenderID", 272, False, 20, 320)
+            SetManualTabOrder(firstNameTextBox, lastNameTextBox, address1TextBox, cityTextBox, stateTextBox, zipCodeTextBox, genderIDComboBox, okButton, cancelActionButton)
             BindToForm()
             ApplyMode()
         End Sub
@@ -77,6 +79,7 @@ Namespace HelloWorld
                 control.DataBindings.Add("Text", formBindingSource, fieldName, True, DataSourceUpdateMode.Never)
                 If record.Table.Columns.Contains(fieldName) Then control.Text = If(record(fieldName) Is DBNull.Value, String.Empty, Convert.ToString(record(fieldName)))
             Next
+            ConfigureLookupCombo(genderIDComboBox, DataAccess.GetLookupTable("FW_GENDER", "ID", "GenderDescription", True), "ID", "GenderDescription", CurrentLookupId("GenderID"))
             If record.Table.Columns.Contains("RowVersion") AndAlso Not record.IsNull("RowVersion") Then originalRowVersion = CType(DirectCast(record("RowVersion"), Byte()).Clone(), Byte())
             CaptureOriginalRowVersion(originalRowVersion)
         End Sub
@@ -104,6 +107,12 @@ Namespace HelloWorld
             Return recordId <= 0
         End Function
 
+        Private Function CurrentLookupId(fieldName As String) As Integer
+            If record Is Nothing OrElse record.Table Is Nothing OrElse Not record.Table.Columns.Contains(fieldName) OrElse record.IsNull(fieldName) Then Return 0
+            Dim value As Integer
+            Return If(Integer.TryParse(Convert.ToString(record(fieldName)), value), value, 0)
+        End Function
+
         Protected Overrides Function SaveRecord() As Boolean
             Dim values As New Dictionary(Of String, Object)(StringComparer.OrdinalIgnoreCase)
             values("FirstName") = firstNameTextBox.Text
@@ -112,6 +121,7 @@ Namespace HelloWorld
             values("City") = cityTextBox.Text
             values("State") = stateTextBox.Text
             values("ZipCode") = zipCodeTextBox.Text
+            values("GenderID") = GetComboSelectedIdOrZero(genderIDComboBox)
             Dim savedId As Integer = recordId
             If savedId <= 0 AndAlso record.Table.Columns.Contains(primaryKey) AndAlso Not record.IsNull(primaryKey) Then Integer.TryParse(Convert.ToString(record(primaryKey)), savedId)
             Dim updatedBy = If(SessionState.IsActive, SessionState.Current.Value.UserID, 0)

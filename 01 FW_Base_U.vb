@@ -1161,9 +1161,42 @@ Namespace HelloWorld
             touchedRequiredControls.Add(control)
         End Sub
 
+        ''' <summary>
+        ''' Whether a required field is currently showing its red border.
+        '''
+        ''' Two ways to earn it, and both require the field to be empty - red never appears on a
+        ''' field that has a value, so seeing red always means something needs doing:
+        '''
+        '''   - visited and left empty. Persists until the field is filled; the mouse is irrelevant.
+        '''   - hovered while empty. Withdrawn on mouse-out, but only because it was never earned
+        '''     the first way. Hovering cannot clear a border the visit rule turned on.
+        ''' </summary>
         Private Function ShouldShowRequiredWarning(control As Control) As Boolean
-            Return touchedRequiredControls.Contains(control) AndAlso IsEmptyRequiredControl(control)
+            If Not IsEmptyRequiredControl(control) Then Return False
+            Return touchedRequiredControls.Contains(control) OrElse hoveredRequiredControls.Contains(control)
         End Function
+
+        ''' <summary>
+        ''' Required fields the mouse is currently over. Separate from touchedRequiredControls
+        ''' because the two are withdrawn differently: a hover ends, a visit does not.
+        ''' </summary>
+        Private ReadOnly hoveredRequiredControls As New HashSet(Of Control)()
+
+        Private Sub WatchRequiredHover(field As Control)
+            If field Is Nothing Then Return
+
+            AddHandler field.MouseEnter,
+                Sub()
+                    hoveredRequiredControls.Add(field)
+                    RefreshLocalRequiredBorders()
+                End Sub
+
+            AddHandler field.MouseLeave,
+                Sub()
+                    hoveredRequiredControls.Remove(field)
+                    RefreshLocalRequiredBorders()
+                End Sub
+        End Sub
 
         Private Sub FocusIndicator_Leave(sender As Object, e As EventArgs)
             Dim control = TryCast(sender, Control)
@@ -2150,6 +2183,7 @@ Namespace HelloWorld
                 borderPanel.BringToFront()
                 combo.BringToFront()
                 requiredBorderPanels(combo) = borderPanel
+                WatchRequiredHover(combo)
 
                 Dim refresh = Sub(s As Object, e As EventArgs)
                                   If Not loading Then MarkRequiredTouched(combo)
@@ -2226,6 +2260,7 @@ Namespace HelloWorld
                 borderPanel.BringToFront()
                 txt.BringToFront()
                 requiredBorderPanels(txt) = borderPanel
+                WatchRequiredHover(txt)
                 AddHandler txt.TextChanged,
                     Sub(borderSender, borderEventArgs)
                         If Not loading Then MarkRequiredTouched(txt)
@@ -2257,6 +2292,7 @@ Namespace HelloWorld
                 If requiredBorderPanels.ContainsKey(field) Then Continue For
 
                 requiredBorderPanels(field) = panel
+                WatchRequiredHover(field)
 
                 Dim watched = field
                 Dim refresh = Sub(s As Object, e As EventArgs)

@@ -1602,15 +1602,83 @@ Namespace HelloWorld
         ''' Rows for a lookup combo, ordered by the display column. Used by generated maintenance
         ''' pages to fill a foreign-key combo through the shared ConfigureLookupCombo helper.
         ''' </summary>
-        Public Shared Function GetLookupTable(tableName As String, valueColumn As String, displayColumn As String) As DataTable
+        ''' <summary>
+        ''' The rows a lookup combo offers.
+        '''
+        ''' Filtered by what the table actually has, because a lookup table is any table: FW_Gender
+        ''' is per registration, a table of country codes would not be. Asking TableHasColumn rather
+        ''' than assuming is what lets both work.
+        '''
+        '''   - RegistrationID, when present: the session's registration, plus rows with none. A
+        '''     NULL RegistrationID means the row is shared by every registration, the same
+        '''     convention FW_RoleTables uses. Without this filter FW_Gender offered Male and Female
+        '''     twice - once for each registration - which is what prompted this.
+        '''   - DeletedFlag, when present: soft-deleted rows are not offered.
+        '''
+        ''' IsActive is deliberately not filtered. An existing record can point at a row that has
+        ''' since been deactivated, and hiding it would leave that record's combo blank - losing the
+        ''' value on the next save rather than merely styling it. Keeping inactive rows selectable
+        ''' is the lesser fault, and one the page can override if it needs to.
+        ''' </summary>
+        ''' <summary>
+        ''' How many registrations a lookup table actually has rows for: -1 when it has no
+        ''' RegistrationID column at all, otherwise the count of distinct values in it.
+        '''
+        ''' The column existing is not the same as the column being used. A table can carry a
+        ''' RegistrationID that every row leaves null, and scoping a list by a column nobody
+        ''' populates would empty it. This lets the choice be offered already answered, from what
+        ''' the data says rather than what the schema allows.
+        ''' </summary>
+        Public Shared Function CountLookupRegistrations(tableName As String) As Integer
+            Dim normalizedTable = NormalizeTableName(tableName)
+            If normalizedTable = String.Empty Then Return -1
+            If Not TableHasColumn(normalizedTable, "RegistrationID") Then Return -1
+
+            Try
+                Using conn As New SqlConnection(ConnectionString)
+                    conn.Open()
+                    Using cmd As New SqlCommand(
+                        "SELECT COUNT(DISTINCT [RegistrationID]) FROM dbo." & QuoteGeneratedIdentifier(normalizedTable) &
+                        " WHERE [RegistrationID] IS NOT NULL", conn)
+                        Return Convert.ToInt32(cmd.ExecuteScalar(), CultureInfo.InvariantCulture)
+                    End Using
+                End Using
+            Catch
+                Return 0
+            End Try
+        End Function
+
+        Public Shared Function GetLookupTable(tableName As String,
+                                              valueColumn As String,
+                                              displayColumn As String,
+                                              Optional filterByRegistration As Boolean = True) As DataTable
             Dim result As New DataTable()
+            Dim normalizedTable = NormalizeTableName(tableName)
+
+            Dim filters As New List(Of String)()
+            Dim scopeToRegistration = filterByRegistration AndAlso TableHasColumn(normalizedTable, "RegistrationID")
+            If scopeToRegistration Then
+                filters.Add("([RegistrationID] = @RegistrationID OR [RegistrationID] IS NULL)")
+            End If
+            If TableHasColumn(normalizedTable, "DeletedFlag") Then
+                filters.Add("ISNULL([DeletedFlag], 0) = 0")
+            End If
+
+            Dim whereClause = If(filters.Count = 0, String.Empty, " WHERE " & String.Join(" AND ", filters))
 
             Using conn As New SqlConnection(ConnectionString)
                 conn.Open()
                 Using cmd As New SqlCommand("SELECT " & QuoteGeneratedIdentifier(valueColumn) & " AS " & QuoteGeneratedIdentifier(valueColumn) &
                                             ", " & QuoteGeneratedIdentifier(displayColumn) & " AS " & QuoteGeneratedIdentifier(displayColumn) &
-                                            " FROM dbo." & QuoteGeneratedIdentifier(tableName) &
+                                            " FROM dbo." & QuoteGeneratedIdentifier(normalizedTable) &
+                                            whereClause &
                                             " ORDER BY " & QuoteGeneratedIdentifier(displayColumn), conn)
+                    If scopeToRegistration Then
+                        cmd.Parameters.AddWithValue("@RegistrationID",
+                                                    If(SessionState.IsActive AndAlso SessionState.Current.HasValue,
+                                                       SessionState.Current.Value.RegistrationID, 0))
+                    End If
+
                     Using adapter As New SqlDataAdapter(cmd)
                         adapter.Fill(result)
                     End Using
@@ -6303,6 +6371,36 @@ Namespace HelloWorld
         ''' <summary>The column a control name maps to, for reporting. Empty if not field-shaped.</summary>
         Public Shared Function ColumnNameFromControlName(controlName As String) As String
             Return BoundFieldNameFromControlName(controlName)
+        End Function
+
+        ''' <summary>
+        ''' A table's columns in their declared order, for offering a choice of them. Ordered by
+        ''' column_id rather than alphabetically because that is the order someone reading the table
+        ''' would expect, and it puts the key first.
+        ''' </summary>
+        Public Shared Function GetTableColumnList(tableName As String) As List(Of String)
+            Dim columns As New List(Of String)()
+            Dim normalized = NormalizeTableName(tableName)
+            If normalized = String.Empty Then Return columns
+
+            Try
+                Using conn As New SqlConnection(ConnectionString)
+                    conn.Open()
+                    Using cmd As New SqlCommand(
+                        "SELECT name FROM sys.columns WHERE object_id = OBJECT_ID('dbo.' + @TableName) ORDER BY column_id", conn)
+                        cmd.Parameters.AddWithValue("@TableName", normalized)
+                        Using reader = cmd.ExecuteReader()
+                            While reader.Read()
+                                columns.Add(SafeString(reader("name")))
+                            End While
+                        End Using
+                    End Using
+                End Using
+            Catch
+                ' An empty list means the picker offers nothing rather than the page failing.
+            End Try
+
+            Return columns
         End Function
 
         ''' <summary>Column names of a table, for deciding which controls are field-shaped.</summary>
