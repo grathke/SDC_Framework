@@ -133,6 +133,7 @@ compiled**.
 | GEN-14 | Menu Caller lists the dashboards | The drop-down holds Make a Selection, Main Menu, and every `Dashboard_*` class found by reflection - four entries today. Window controls and browse pages are absent. | pass 2026-08-31 |
 | GEN-15 | Menu Caller required clears on selection | Choosing a caller clears the red required border. The combo is unbound, so `IsEmptyComboSelection` judges it on the selected item rather than `SelectedValue`. | pass 2026-08-31 |
 | GEN-16 | Save && Generate validates first | With a required field blank, validation reports before any overwrite prompt, so no overwrite is authorised for a request that cannot generate. | untested |
+| GEN-17 | Required lookup uses the framework helper | A lookup marked Admin Required emits one `AddComboField` call, so it gets the App Admin blue, the `*`, the required border and the naming convention. Built by hand it got the `*` but never the blue, and `ShouldSkipBrRequiredStyling` decides App Admin ownership by that blue - so the field silently lost its precedence. | pass 2026-09-01 — Preview Code, Compile Check and the opened `_U` page all correct |
 
 ---
 

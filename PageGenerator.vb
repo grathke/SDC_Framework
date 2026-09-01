@@ -969,14 +969,13 @@ Namespace HelloWorld
                 Dim isRequired = requiredFields.Any(Function(item) String.Equals(item, field, StringComparison.OrdinalIgnoreCase))
 
                 If IsLookupField(field, lookupFields) Then
-                    ' AddField only produces TextBoxes, so a foreign key is built by hand to the
-                    ' same geometry: Label_<Field> at 20, the control at 150, 42px row pitch.
-                    Dim comboVariable = LookupControlVariable(field)
-                    output.AppendLine("            Controls.Add(New Label() With {.Name = ""Label_" & EscapeLiteral(field) & """, .Text = DisplayNameFormatter.ToDisplayName(""" & EscapeLiteral(field) & """, False)" &
-                                      If(isRequired, " & "" *""", String.Empty) & ", .Location = New Point(20, " & y.ToString() & "), .Size = New Size(120, 26), .TextAlign = ContentAlignment.MiddleLeft})")
-                    output.AppendLine("            " & comboVariable & " = New ComboBox() With {.Name = ""ComboBox_" & EscapeLiteral(field) & """, .Location = New Point(150, " & y.ToString() & "), .Size = New Size(320, 26), .DropDownStyle = ComboBoxStyle.DropDownList, .BackColor = SystemColors.Window}")
-                    If isRequired Then output.AppendLine("            " & comboVariable & ".Tag = ""Required""")
-                    output.AppendLine("            Controls.Add(" & comboVariable & ")")
+                    ' A foreign key goes through AddComboField for the same reason a plain field
+                    ' goes through AddField: the helper paints the App Admin blue when required,
+                    ' adds the marker, registers the required border and names both controls to the
+                    ' convention. Built by hand, as this used to be, a required lookup got the
+                    ' asterisk but never the blue - and since ShouldSkipBrRequiredStyling decides
+                    ' App Admin ownership by that blue, the field silently lost its precedence.
+                    output.AppendLine("            " & LookupControlVariable(field) & " = AddComboField(""" & EscapeLiteral(field) & """, " & y.ToString() & ", " & If(isRequired, "True", "False") & ", 20, 320)")
                 Else
                     output.AppendLine("            " & ControlVariable(field) & " = AddField(""" & EscapeLiteral(field) & """, " & y.ToString() & ", False, " & If(isRequired, "True", "False") & ")")
                 End If
