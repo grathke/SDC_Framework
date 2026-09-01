@@ -5,7 +5,7 @@
             "label": "Create Base_B Restore Point",
             "type": "shell",
             "command": "powershell",
-            "args": ["-ExecutionPolicy", "Bypass", "-File", "${workspaceFolder}\\scripts\\create-base-b-restore-point.ps1"],
+            "args": ["-ExecutionPolicy", "Bypass", "-File", "${workspaceFolder}\\scripts\\create-base-b-restore-point.ps1", "-Description", "${input:restorePointDescription}"],
             "presentation": {
                 "reveal": "always",
                 "panel": "dedicated"
@@ -16,7 +16,7 @@
             "label": "Create Base_U Restore Point",
             "type": "shell",
             "command": "powershell",
-            "args": ["-ExecutionPolicy", "Bypass", "-File", "${workspaceFolder}\\scripts\\create-base-u-restore-point.ps1"],
+            "args": ["-ExecutionPolicy", "Bypass", "-File", "${workspaceFolder}\\scripts\\create-base-u-restore-point.ps1", "-Description", "${input:restorePointDescription}"],
             "presentation": {
                 "reveal": "always",
                 "panel": "dedicated"
@@ -84,6 +84,14 @@
                 "panel": "dedicated"
             },
             "problemMatcher": []
+        }
+    ],
+    "inputs": [
+        {
+            "id": "restorePointDescription",
+            "type": "promptString",
+            "description": "What is this restore point protecting? Leave blank to use the suggested name.",
+            "default": ""
         }
     ]
 }

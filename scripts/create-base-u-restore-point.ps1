@@ -1,6 +1,6 @@
 [CmdletBinding()]
 param(
-    [string]$Description = "Pre Base_U change"
+    [string]$Description = ""
 )
 
 Set-StrictMode -Version Latest
@@ -8,9 +8,18 @@ $ErrorActionPreference = "Stop"
 
 $repoRoot = Split-Path -Parent $PSScriptRoot
 $timestamp = Get-Date -Format "yyyy-MM-dd-HHmmss"
+
+# With no description given, take the one Claude wrote when proposing the change. See the matching
+# comment in create-base-b-restore-point.ps1 for why an unnamed restore point is close to worthless.
+$suggestionFile = Join-Path $PSScriptRoot "next-restore-point.txt"
+if ([string]::IsNullOrWhiteSpace($Description) -and (Test-Path -LiteralPath $suggestionFile)) {
+    $Description = (Get-Content -LiteralPath $suggestionFile -Raw).Trim()
+    Remove-Item -LiteralPath $suggestionFile -Force
+}
+
 $safeDescription = ($Description.Trim() -replace '[^A-Za-z0-9]+', '-').Trim('-').ToLowerInvariant()
 if ([string]::IsNullOrWhiteSpace($safeDescription)) {
-    $safeDescription = "pre-base-u-change"
+    $safeDescription = "UNNAMED"
 }
 $restorePoint = Join-Path $repoRoot "restore-points\$timestamp-base-u-$safeDescription"
 

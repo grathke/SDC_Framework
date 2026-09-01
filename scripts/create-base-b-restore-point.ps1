@@ -1,6 +1,6 @@
 [CmdletBinding()]
 param(
-    [string]$Description = "Pre Base_B change"
+    [string]$Description = ""
 )
 
 Set-StrictMode -Version Latest
@@ -8,9 +8,21 @@ $ErrorActionPreference = "Stop"
 
 $repoRoot = Split-Path -Parent $PSScriptRoot
 $timestamp = Get-Date -Format "yyyy-MM-dd-HHmmss"
+
+# With no description given, take the one Claude wrote when proposing the change. A restore point
+# that does not say what it protects is close to worthless: running these scripts bare produced 46
+# folders called "pre-base-b-change" in two weeks, and nothing could tell you which was the last
+# known-good one. UNNAMED is deliberately loud, so an unnamed point looks wrong rather than normal.
+$suggestionFile = Join-Path $PSScriptRoot "next-restore-point.txt"
+if ([string]::IsNullOrWhiteSpace($Description) -and (Test-Path -LiteralPath $suggestionFile)) {
+    $Description = (Get-Content -LiteralPath $suggestionFile -Raw).Trim()
+    # Used once. A stale suggestion must not attach itself to the next, unrelated restore point.
+    Remove-Item -LiteralPath $suggestionFile -Force
+}
+
 $safeDescription = ($Description.Trim() -replace '[^A-Za-z0-9]+', '-').Trim('-').ToLowerInvariant()
 if ([string]::IsNullOrWhiteSpace($safeDescription)) {
-    $safeDescription = "pre-base-b-change"
+    $safeDescription = "UNNAMED"
 }
 $restorePoint = Join-Path $repoRoot "restore-points\$timestamp-base-b-$safeDescription"
 
