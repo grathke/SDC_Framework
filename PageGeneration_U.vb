@@ -1279,8 +1279,9 @@ Namespace HelloWorld
                 browseFieldsTextBox.Text = DbText(row("BrowseFields"))
                 maintenanceFieldsTextBox.Text = DbText(row("MaintenanceFields"))
                 browseSqlTextBox.Text = DbText(row("BrowseSql"))
-                lookupFieldsTextBox.Text = DbText(row("LookupFields"))
-                LoadLookupTargetsFromText(lookupFieldsTextBox.Text)
+                lookupSpecs = DbText(row("LookupFields"))
+                lookupFieldsTextBox.Text = LookupFieldNames(lookupSpecs)
+                LoadLookupTargetsFromText(lookupSpecs)
                 adminRequiredFieldsTextBox.Text = DbText(row("AdminRequiredFields"))
                 SelectMenuCaller(DbText(row("MenuCaller")))
                 SetIconFileName(If(row.Table.Columns.Contains("IconFileName"), DbText(row("IconFileName")), String.Empty))
@@ -1310,8 +1311,13 @@ Namespace HelloWorld
             Return True
         End Function
 
+        ''' <summary>
+        ''' lookupFieldsTextBox is deliberately absent from this list. Every other box shows its
+        ''' column verbatim, but this one shows the field names parsed out of the stored sentences -
+        ''' bound, the binding would write the sentences straight back over them.
+        ''' </summary>
         Private Sub BindFormControls()
-            For Each control In New Control() {requestNameTextBox, pageBaseNameTextBox, browsePageNameTextBox, maintenancePageNameTextBox, underlyingTableNameTextBox, browseFieldsTextBox, maintenanceFieldsTextBox, lookupFieldsTextBox, adminRequiredFieldsTextBox}
+            For Each control In New Control() {requestNameTextBox, pageBaseNameTextBox, browsePageNameTextBox, maintenancePageNameTextBox, underlyingTableNameTextBox, browseFieldsTextBox, maintenanceFieldsTextBox, adminRequiredFieldsTextBox}
                 Dim fieldName = control.Name.Substring("TextBox_".Length)
                 control.DataBindings.Clear()
                 control.DataBindings.Add("Text", formBindingSource, fieldName, True, DataSourceUpdateMode.Never)
@@ -1903,6 +1909,34 @@ Namespace HelloWorld
                     .HeaderText = "Lookup",
                     .Width = 90
                 })
+
+                ' Without this the four answers can be given but never seen again: unticking and
+                ' re-ticking opens an empty picker, so changing one table meant re-entering all of
+                ' it from memory.
+                maintenanceGrid.Columns.Add(New DataGridViewButtonColumn With {
+                    .Name = "EditLookup",
+                    .HeaderText = "",
+                    .Text = "Edit",
+                    .UseColumnTextForButtonValue = True,
+                    .Width = 60
+                })
+
+                AddHandler maintenanceGrid.CellClick,
+                    Sub(gridSender, eventArgs)
+                        If eventArgs.RowIndex < 0 Then Return
+                        If eventArgs.ColumnIndex <> maintenanceGrid.Columns("EditLookup").Index Then Return
+
+                        Dim row = maintenanceGrid.Rows(eventArgs.RowIndex)
+                        ' The tick is the switch; Edit only revisits an answer already given.
+                        If Not Convert.ToBoolean(row.Cells("Lookup").Value) Then Return
+
+                        Dim fieldName = Convert.ToString(row.Cells("FieldName").Value)
+                        Dim existing As String = Nothing
+                        lookupTargets.TryGetValue(fieldName, existing)
+
+                        Dim spec = PromptForLookupTarget(maintenanceGrid.FindForm(), fieldName, existing)
+                        If spec <> String.Empty Then lookupTargets(fieldName) = spec
+                    End Sub
                 AddHandler maintenanceGrid.CurrentCellDirtyStateChanged,
                     Sub(gridSender, eventArgs)
                         If maintenanceGrid.IsCurrentCellDirty Then
@@ -1938,7 +1972,7 @@ Namespace HelloWorld
                             ' table, the column it saves and the column it shows, and cannot guess
                             ' any of them - so ticking used to record the field name alone and
                             ' generation then refused it as malformed. Untick and the answer goes.
-                            If eventArgs.ColumnIndex = maintenanceGrid.Columns("Lookup").Index Then
+                            If eventArgs.ColumnIndex = maintenanceGrid.Columns("Lookup").Index AndAlso Not seedingSelectionGrids Then
                                 Dim fieldName = Convert.ToString(row.Cells("FieldName").Value)
                                 If isLookup Then
                                     Dim spec = PromptForLookupTarget(maintenanceGrid.FindForm(), fieldName)
@@ -1987,15 +2021,17 @@ Namespace HelloWorld
                     End Sub
 
                 Dim savedMaintenanceFields = maintenanceFieldsTextBox.Text.Trim()
+                seedingSelectionGrids = True
                 For Each field In fields
                     maintenanceGrid.Rows.Add(
                         ContainsField(savedMaintenanceFields, field) OrElse
-                            ContainsField(lookupFieldsTextBox.Text, field) OrElse
+                            lookupTargets.ContainsKey(field) OrElse
                             ContainsField(adminRequiredFieldsTextBox.Text, field),
                         field,
                         ContainsField(adminRequiredFieldsTextBox.Text, field),
-                        ContainsField(lookupFieldsTextBox.Text, field))
+                        lookupTargets.ContainsKey(field))
                 Next
+                seedingSelectionGrids = False
                 OrderSelectionGrid(maintenanceGrid, savedMaintenanceFields)
                 layout.Controls.Add(CreateSelectionPanel("_U Maintenance Fields", maintenanceGrid), 1, 0)
 
@@ -2033,7 +2069,8 @@ Namespace HelloWorld
                 If dialog.ShowDialog(Me) = DialogResult.OK Then
                     browseFieldsTextBox.Text = JoinCheckedGridFields(browseGrid, "Include")
                     maintenanceFieldsTextBox.Text = JoinIncludedGridFields(maintenanceGrid)
-                    lookupFieldsTextBox.Text = JoinLookupFields(maintenanceGrid)
+                    lookupSpecs = JoinLookupFields(maintenanceGrid)
+                    lookupFieldsTextBox.Text = LookupFieldNames(lookupSpecs)
                     adminRequiredFieldsTextBox.Text = JoinCheckedGridFields(maintenanceGrid, "Required")
                     browseSqlTextBox.Text = BuildGeneratedBrowseSql(tableName, browseGrid, fields, primaryKeyField, orderByFields)
                     RefreshSavedPageDocumentTemplate()
@@ -2099,6 +2136,8 @@ Namespace HelloWorld
         Private Sub ClearTableDependentSelections()
             browseFieldsTextBox.Text = String.Empty
             maintenanceFieldsTextBox.Text = String.Empty
+            lookupTargets.Clear()
+            lookupSpecs = String.Empty
             lookupFieldsTextBox.Text = String.Empty
             adminRequiredFieldsTextBox.Text = String.Empty
             browseSqlTextBox.Text = String.Empty
@@ -2254,6 +2293,40 @@ Namespace HelloWorld
         Private ReadOnly lookupTargets As New Dictionary(Of String, String)(StringComparer.OrdinalIgnoreCase)
 
         ''' <summary>
+        ''' The lookup specifications as stored: one sentence per lookup, carrying the table, the
+        ''' column saved, the column shown and the scope. This is what goes to the database and what
+        ''' the generator parses.
+        '''
+        ''' The box on the page shows only the field names, because that is the part worth reading -
+        ''' the sentences are for the generator, and four of them make an unreadable line.
+        ''' </summary>
+        Private lookupSpecs As String = String.Empty
+
+        ''' <summary>The field names from a set of lookup specs, in the order they were written.</summary>
+        Private Shared Function LookupFieldNames(specs As String) As String
+            If String.IsNullOrWhiteSpace(specs) Then Return String.Empty
+
+            Dim names As New List(Of String)()
+            For Each entry In specs.Split(","c)
+                Dim spec = entry.Trim()
+                If spec = String.Empty Then Continue For
+
+                Dim arrow = spec.IndexOf("->", StringComparison.Ordinal)
+                Dim fieldName = If(arrow > 0, spec.Substring(0, arrow).Trim(), spec)
+                If fieldName <> String.Empty Then names.Add(fieldName)
+            Next
+
+            Return String.Join(", ", names)
+        End Function
+
+        ''' <summary>
+        ''' True while the selection grids are being filled from a saved request. Seeding a ticked
+        ''' Lookup cell raises CellValueChanged exactly as a click does, and without this the picker
+        ''' would open for every lookup the request already has, the moment Select Fields is opened.
+        ''' </summary>
+        Private seedingSelectionGrids As Boolean
+
+        ''' <summary>
         ''' Joins the lookup fields in the form the generator expects. A ticked field with no target
         ''' is dropped rather than written as a bare name: the generator refuses a bare name, so
         ''' writing one would turn a mis-click into a failed generation later instead of nothing now.
@@ -2299,7 +2372,9 @@ Namespace HelloWorld
         ''' the column whose text is shown. They are chosen from lists rather than typed because the
         ''' format is exact and a typo is only discovered at generation, as a refusal.
         ''' </summary>
-        Private Function PromptForLookupTarget(owner As IWin32Window, fieldName As String) As String
+        Private Function PromptForLookupTarget(owner As IWin32Window,
+                                               fieldName As String,
+                                               Optional existingSpec As String = Nothing) As String
             Using dialog As New Form() With {
                 .Text = "Lookup values for " & fieldName,
                 .FormBorderStyle = FormBorderStyle.FixedDialog,
@@ -2365,6 +2440,30 @@ Namespace HelloWorld
 
                 dialog.ClientSize = New Size(430, 225)
                 dialog.Controls.AddRange({tableCombo, valueCombo, displayCombo, registrationCheckBox, okButtonLocal, cancelButtonLocal})
+
+                ' Reopened on an answer already given: show what it says rather than a blank form.
+                ' The table is selected first because choosing it is what fills the other two.
+                If Not String.IsNullOrWhiteSpace(existingSpec) Then
+                    Dim parsed = Regex.Match(existingSpec,
+                                             "->\s*(?<table>\w+)\s*\.\s*(?<value>\w+)\s+displayed\s+as\s+(?<display>\w+)(?<scope>.*)$",
+                                             RegexOptions.IgnoreCase)
+                    If parsed.Success Then
+                        Dim storedTable = parsed.Groups("table").Value
+                        If tableCombo.Items.Contains(storedTable) Then
+                            tableCombo.SelectedItem = storedTable
+
+                            Dim storedValue = parsed.Groups("value").Value
+                            If valueCombo.Items.Contains(storedValue) Then valueCombo.SelectedItem = storedValue
+
+                            Dim storedDisplay = parsed.Groups("display").Value
+                            If displayCombo.Items.Contains(storedDisplay) Then displayCombo.SelectedItem = storedDisplay
+
+                            ' Absent means filtered, matching how the generator reads an old spec.
+                            registrationCheckBox.Checked = registrationCheckBox.Enabled AndAlso
+                                                           Not Regex.IsMatch(parsed.Groups("scope").Value, "not\s+filtered", RegexOptions.IgnoreCase)
+                        End If
+                    End If
+                End If
                 dialog.AcceptButton = okButtonLocal
                 dialog.CancelButton = cancelButtonLocal
 
@@ -2490,7 +2589,7 @@ Namespace HelloWorld
                     {"BrowseFields", DbSaveValue(browseFieldsTextBox.Text)},
                     {"MaintenanceFields", DbSaveValue(maintenanceFieldsTextBox.Text)},
                     {"BrowseSql", DbSaveValue(browseSqlTextBox.Text)},
-                    {"LookupFields", DbSaveValue(lookupFieldsTextBox.Text)},
+                    {"LookupFields", DbSaveValue(lookupSpecs)},
                     {"AdminRequiredFields", DbSaveValue(adminRequiredFieldsTextBox.Text)},
                     {"MenuCaller", DbSaveValue(SelectedMenuCaller())},
                     {"IconFileName", DbSaveValue(IconChoiceValue(iconFileNameTextBox.Text))}
@@ -2552,7 +2651,7 @@ Namespace HelloWorld
                 Replace("{{BROWSE_PAGE_NAME}}", ValueOrDefault(browsePageNameTextBox.Text), StringComparison.Ordinal).
                 Replace("{{MAINTENANCE_PAGE_NAME}}", ValueOrDefault(maintenancePageNameTextBox.Text), StringComparison.Ordinal).
                 Replace("{{UNDERLYING_TABLE}}", ValueOrDefault(underlyingTableNameTextBox.Text), StringComparison.Ordinal).
-                Replace("{{LOOKUP_FIELDS}}", ValueOrDefault(lookupFieldsTextBox.Text), StringComparison.Ordinal).
+                Replace("{{LOOKUP_FIELDS}}", ValueOrDefault(lookupSpecs), StringComparison.Ordinal).
                 Replace("{{ADMIN_REQUIRED_FIELDS}}", ValueOrDefault(adminRequiredFieldsTextBox.Text), StringComparison.Ordinal).
                 Replace("{{MENU_CALLER}}", ValueOrDefault(SelectedMenuCaller()), StringComparison.Ordinal).
                 Replace("{{BROWSE_SQL}}", browseSqlTextBox.Text.Trim(), StringComparison.Ordinal).

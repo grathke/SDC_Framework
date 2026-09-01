@@ -111,13 +111,6 @@ Namespace HelloWorld
             showNormalButton = New Button() With {.Text = "Normal", .Size = New Size(64, 32), .Location = New Point(438, 84), .Visible = False}
             closeButton = New Button() With {.Text = "Close", .Size = New Size(80, 32), .Location = New Point(372, 84)}
 
-            ConfigureActionButton(newButton)
-            ConfigureActionButton(modifyButton)
-            ConfigureActionButton(deleteButton)
-            ConfigureActionButton(showDeletedButton)
-            ConfigureActionButton(restoreDeletedButton)
-            ConfigureActionButton(showNormalButton)
-            ConfigureActionButton(closeButton)
 
             AddHandler registrationComboBox.SelectedIndexChanged, AddressOf RegistrationComboBox_SelectedIndexChanged
             AddHandler newButton.Click, AddressOf NewButton_Click
@@ -157,17 +150,6 @@ Namespace HelloWorld
 
         Private Sub FocusRolesGridOnEntry()
             FocusGridForBrowseEntry(rolesGrid)
-        End Sub
-
-        Private Sub ConfigureActionButton(button As Button)
-            button.FlatStyle = FlatStyle.Flat
-            button.FlatAppearance.BorderColor = Color.FromArgb(170, 170, 170)
-            button.FlatAppearance.BorderSize = 1
-            button.FlatAppearance.MouseOverBackColor = Color.FromArgb(235, 243, 255)
-            button.FlatAppearance.MouseDownBackColor = Color.FromArgb(220, 232, 248)
-            button.BackColor = Color.White
-            button.ForeColor = Color.Black
-            button.UseVisualStyleBackColor = False
         End Sub
 
         Private Sub LoadInternalSqlFromRoleTable()

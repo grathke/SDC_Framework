@@ -992,11 +992,26 @@ Namespace HelloWorld
             Next
         End Sub
 
+        ''' <summary>
+        ''' A click on a read-only field is ignored: focus stays where it was.
+        '''
+        ''' This used to move focus to the next editable control, which meant clicking something
+        ''' you cannot type in scrolled the page to somewhere else entirely - the answer to "you
+        ''' cannot edit this" should not be to take you somewhere you did not ask to go.
+        ''' </summary>
         Private Sub ReadOnlyControl_MouseDown(sender As Object, e As MouseEventArgs)
             Dim control = TryCast(sender, Control)
             If control Is Nothing Then Return
 
-            SelectNextControl(control, True, True, True, True)
+            Dim previous = ActiveControl
+            If previous IsNot Nothing AndAlso previous IsNot control Then
+                ' The click focuses the field before this runs, so focus is handed back rather than
+                ' prevented. Deferred, or WinForms puts it straight back on the clicked control.
+                BeginInvoke(New Action(Sub()
+                                           If previous.IsDisposed OrElse Not previous.CanFocus Then Return
+                                           previous.Focus()
+                                       End Sub))
+            End If
         End Sub
 
         Private Sub WireFocusIndicators(container As Control)
@@ -1007,8 +1022,18 @@ Namespace HelloWorld
 
             For Each control As Control In childControls
                 If IsFocusIndicatorControl(control) AndAlso Not IsBaseActionButton(control) Then
-                    If Not focusOriginalBackColors.ContainsKey(control) Then
-                        focusOriginalBackColors(control) = control.BackColor
+                    ' Guarded on the border rather than the remembered colour, because a button now
+                    ' gets a border but no remembered colour - and this block also attaches
+                    ' handlers, which must not happen twice.
+                    If Not focusBorderPanels.ContainsKey(control) Then
+                        ' A button is remembered as Nothing-to-restore. Focus assigns this colour
+                        ' back on the way in, and assigning BackColor to a themed button turns its
+                        ' visual style off - so it would paint as a flat rectangle in whatever
+                        ' colour it had inherited from the page. The green border is enough to say
+                        ' where the focus is; a button does not need its face repainted too.
+                        If Not TypeOf control Is Button Then
+                            focusOriginalBackColors(control) = control.BackColor
+                        End If
                         HostFlowChildForFocusBorder(control)
                         Dim borderPanel = FindExistingRequiredBorderPanel(control)
                         If borderPanel Is Nothing Then
@@ -1138,6 +1163,17 @@ Namespace HelloWorld
             If focusOriginalBackColors.TryGetValue(control, originalColor) Then control.BackColor = originalColor
             MarkRequiredTouched(control)
             ApplyFocusIndicator(control)
+
+            ' Arriving at a field selects its text, so typing replaces rather than appends. Stated
+            ' here rather than left to WinForms, which only does it for some arrivals - the first
+            ' field on the page behaved differently from every other one.
+            '
+            ' A mouse click still places the caret: the click sets its own selection after this
+            ' runs. And the page's own opening focus is excluded, so a page does not open with text
+            ' already highlighted.
+            If suppressRequiredTouch Then Return
+            Dim editable = TryCast(control, TextBoxBase)
+            If editable IsNot Nothing AndAlso Not editable.ReadOnly Then editable.SelectAll()
         End Sub
 
         Private Sub ApplyFocusIndicator(control As Control)
@@ -1233,15 +1269,20 @@ Namespace HelloWorld
             ApplyFocusIndicator(control)
         End Sub
 
+        ''' <summary>
+        ''' Buttons are left alone by both of these. Windows already paints a button's hover, and
+        ''' repainting its face turns the visual style off - the button then keeps whatever colour
+        ''' was last assigned, because there is nothing to restore it to.
+        ''' </summary>
         Private Sub EditableControl_MouseEnter(sender As Object, e As EventArgs)
             Dim control = TryCast(sender, Control)
-            If control Is Nothing OrElse control.Focused Then Return
+            If control Is Nothing OrElse control.Focused OrElse TypeOf control Is Button Then Return
             control.BackColor = AppAdminRequiredBackColor
         End Sub
 
         Private Sub EditableControl_MouseLeave(sender As Object, e As EventArgs)
             Dim control = TryCast(sender, Control)
-            If control Is Nothing OrElse control.Focused Then Return
+            If control Is Nothing OrElse control.Focused OrElse TypeOf control Is Button Then Return
 
             Dim originalColor As Color
             If focusOriginalBackColors.TryGetValue(control, originalColor) Then

@@ -26,13 +26,14 @@ Namespace HelloWorld
         Private ReadOnly stateTextBox As TextBox
         Private ReadOnly zipCodeTextBox As TextBox
         Private ReadOnly genderIDComboBox As ComboBox
+        Private ReadOnly assignedManagerIDComboBox As ComboBox
 
         Public Sub New(id As Integer, user As UserContext, Optional profile As AccessProfile = Nothing)
             MyBase.New()
             recordId = id
             currentUser = user
             accessProfile = profile
-            ClientSize = New Size(600, 349)
+            ClientSize = New Size(600, 391)
             okButton.Location = New Point(ClientSize.Width - 270, ClientSize.Height - 46)
             cancelActionButton.Location = New Point(ClientSize.Width - 135, ClientSize.Height - 46)
             firstNameTextBox = AddField("FirstName", 20, False, False)
@@ -42,7 +43,8 @@ Namespace HelloWorld
             stateTextBox = AddField("State", 188, False, False)
             zipCodeTextBox = AddField("ZipCode", 230, False, False)
             genderIDComboBox = AddComboField("GenderID", 272, False, 20, 320)
-            SetManualTabOrder(firstNameTextBox, lastNameTextBox, address1TextBox, cityTextBox, stateTextBox, zipCodeTextBox, genderIDComboBox, okButton, cancelActionButton)
+            assignedManagerIDComboBox = AddComboField("AssignedManagerID", 314, False, 20, 320)
+            SetManualTabOrder(firstNameTextBox, lastNameTextBox, address1TextBox, cityTextBox, stateTextBox, zipCodeTextBox, genderIDComboBox, assignedManagerIDComboBox, okButton, cancelActionButton)
             BindToForm()
             ApplyMode()
         End Sub
@@ -80,6 +82,7 @@ Namespace HelloWorld
                 If record.Table.Columns.Contains(fieldName) Then control.Text = If(record(fieldName) Is DBNull.Value, String.Empty, Convert.ToString(record(fieldName)))
             Next
             ConfigureLookupCombo(genderIDComboBox, DataAccess.GetLookupTable("FW_GENDER", "ID", "GenderDescription", True), "ID", "GenderDescription", CurrentLookupId("GenderID"))
+            ConfigureLookupCombo(assignedManagerIDComboBox, DataAccess.GetLookupTable("FW_USERS", "UserId", "FirstLast", True), "UserId", "FirstLast", CurrentLookupId("AssignedManagerID"))
             If record.Table.Columns.Contains("RowVersion") AndAlso Not record.IsNull("RowVersion") Then originalRowVersion = CType(DirectCast(record("RowVersion"), Byte()).Clone(), Byte())
             CaptureOriginalRowVersion(originalRowVersion)
         End Sub
@@ -122,6 +125,7 @@ Namespace HelloWorld
             values("State") = stateTextBox.Text
             values("ZipCode") = zipCodeTextBox.Text
             values("GenderID") = GetComboSelectedIdOrZero(genderIDComboBox)
+            values("AssignedManagerID") = GetComboSelectedIdOrZero(assignedManagerIDComboBox)
             Dim savedId As Integer = recordId
             If savedId <= 0 AndAlso record.Table.Columns.Contains(primaryKey) AndAlso Not record.IsNull(primaryKey) Then Integer.TryParse(Convert.ToString(record(primaryKey)), savedId)
             Dim updatedBy = If(SessionState.IsActive, SessionState.Current.Value.UserID, 0)
