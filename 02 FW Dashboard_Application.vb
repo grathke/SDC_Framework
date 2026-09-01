@@ -33,6 +33,7 @@ Namespace HelloWorld
         Private ReadOnly newPageRequestsButton As DashboardIconButton
         Private ReadOnly databaseConfigButton As DashboardIconButton
         Private ReadOnly closeIconButton As Button
+        Private ReadOnly generatedEntityY_BButton As DashboardIconButton
         Private ReadOnly generatedEntityX_BButton As DashboardIconButton
         Private ReadOnly generatedFW_UserAccessExplanation_BButton As DashboardIconButton
 
@@ -259,7 +260,7 @@ Namespace HelloWorld
                 .UseVisualStyleBackColor = False,
                 .FlatStyle = FlatStyle.Flat,
                 .Font = New Font("Segoe UI", 13.0F, FontStyle.Regular),
-                .Image = SystemIcons.Exclamation.ToBitmap(),
+                .Image = LoadDashboardIcon("Add 128 x 128.png", SystemIcons.Application.ToBitmap()),
                 .TextImageRelation = TextImageRelation.ImageAboveText,
                 .ImageAlign = ContentAlignment.TopCenter,
                 .TextAlign = ContentAlignment.BottomCenter,
@@ -268,6 +269,25 @@ Namespace HelloWorld
             generatedEntityX_BButton.FlatAppearance.BorderSize = 0
             generatedEntityX_BButton.FlatAppearance.MouseOverBackColor = Color.Transparent
             generatedEntityX_BButton.FlatAppearance.MouseDownBackColor = Color.Transparent
+
+            generatedEntityY_BButton = New DashboardIconButton() With {
+                .Name = "GeneratedPageActionKey_EntityY_B",
+                .Text = "EntityY",
+                .Location = DashboardGridLayout.CellLocation(2, 5),
+                .Size = New Size(150, 118),
+                .BackColor = Color.Transparent,
+                .UseVisualStyleBackColor = False,
+                .FlatStyle = FlatStyle.Flat,
+                .Font = New Font("Segoe UI", 13.0F, FontStyle.Regular),
+                .Image = LoadDashboardIcon("Add 128 x 128.png", SystemIcons.Application.ToBitmap()),
+                .TextImageRelation = TextImageRelation.ImageAboveText,
+                .ImageAlign = ContentAlignment.TopCenter,
+                .TextAlign = ContentAlignment.BottomCenter,
+                .TabStop = False
+            }
+            generatedEntityY_BButton.FlatAppearance.BorderSize = 0
+            generatedEntityY_BButton.FlatAppearance.MouseOverBackColor = Color.Transparent
+            generatedEntityY_BButton.FlatAppearance.MouseDownBackColor = Color.Transparent
             AddHandler Me.Load, AddressOf Dashboard_Application_Load
             AddHandler Me.Resize, AddressOf Dashboard_Application_Resize
             AddHandler rolesButton.MouseEnter, AddressOf IconButton_MouseEnter
@@ -300,9 +320,13 @@ Namespace HelloWorld
             AddHandler generatedEntityX_BButton.MouseEnter, AddressOf IconButton_MouseEnter
             AddHandler generatedEntityX_BButton.MouseLeave, AddressOf IconButton_MouseLeave
             AddHandler generatedEntityX_BButton.Click, AddressOf GeneratedEntityX_BButton_Click
+            AddHandler generatedEntityY_BButton.MouseEnter, AddressOf IconButton_MouseEnter
+            AddHandler generatedEntityY_BButton.MouseLeave, AddressOf IconButton_MouseLeave
+            AddHandler generatedEntityY_BButton.Click, AddressOf GeneratedEntityY_BButton_Click
             AddHandler closeIconButton.Click, AddressOf CloseButton_Click
             Me.Controls.Add(generatedFW_UserAccessExplanation_BButton)
             Me.Controls.Add(generatedEntityX_BButton)
+            Me.Controls.Add(generatedEntityY_BButton)
             Me.Controls.Add(topStripLabel)
             Me.Controls.Add(closeIconButton)
             Me.Controls.Add(headerLabel)
@@ -328,6 +352,8 @@ Namespace HelloWorld
 
         Private Sub Dashboard_Application_Resize(sender As Object, e As EventArgs)
             rolesButton.Top = DashboardGridLayout.CellTop(1)
+            generatedEntityY_BButton.Left = DashboardGridLayout.CellLeft(5)
+            generatedEntityY_BButton.Top = DashboardGridLayout.CellTop(2)
             generatedEntityX_BButton.Left = DashboardGridLayout.CellLeft(5)
             generatedEntityX_BButton.Top = DashboardGridLayout.CellTop(1)
             generatedFW_UserAccessExplanation_BButton.Left = DashboardGridLayout.CellLeft(4)
@@ -426,6 +452,13 @@ Namespace HelloWorld
         Private Sub GeneratedEntityX_BButton_Click(sender As Object, e As EventArgs)
             ResetIconButtonVisuals()
             Using page As New EntityX_B(currentUser, accessProfile)
+                page.ShowDialog(Me)
+            End Using
+        End Sub
+
+        Private Sub GeneratedEntityY_BButton_Click(sender As Object, e As EventArgs)
+            ResetIconButtonVisuals()
+            Using page As New EntityY_B(currentUser, accessProfile)
                 page.ShowDialog(Me)
             End Using
         End Sub

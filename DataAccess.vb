@@ -1470,6 +1470,24 @@ Namespace HelloWorld
             End Using
         End Function
 
+        ''' <summary>
+        ''' Records the hash of a generated browse page, so a hand-edited _B page is protected the
+        ''' same way a _U page is. There is no source column to match the maintenance baseline: the
+        ''' browse side only needs to answer whether the file still matches what was generated.
+        ''' </summary>
+        Public Shared Function SavePageGenerationBrowseBaseline(pageRequestId As Integer,
+                                                                sourceHash As String) As Boolean
+            Using conn As New SqlConnection(ConnectionString)
+                conn.Open()
+                Using cmd As New SqlCommand(
+                    "UPDATE dbo.FW_PageGeneration_B_U SET GeneratedBrowseHash = @Hash, UpdatedOn = GETDATE() WHERE PageRequestID = @PageRequestID", conn)
+                    cmd.Parameters.Add("@Hash", SqlDbType.VarChar, 64).Value = If(sourceHash, String.Empty)
+                    cmd.Parameters.Add("@PageRequestID", SqlDbType.Int).Value = pageRequestId
+                    Return cmd.ExecuteNonQuery() = 1
+                End Using
+            End Using
+        End Function
+
         Public Shared Function GetPageGenerationSchema() As DataTable
             Dim table As New DataTable("PageGenerationSchema")
             Using conn As New SqlConnection(ConnectionString)

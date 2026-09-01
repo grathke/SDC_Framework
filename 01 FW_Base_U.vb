@@ -163,14 +163,21 @@ Namespace HelloWorld
             captionLabel.Font = New Font("Segoe UI", 14.0F, FontStyle.Bold)
             captionLabel.Location = New Point(20, 15)
             captionLabel.BringToFront()
-            HelpDeskLauncher.AlignToCaption(Me, captionLabel)
 
+            ' The page's own content moves down to make room for the caption. The header does not:
+            ' the Help Desk button belongs to the caption line, and shifting it with the fields put
+            ' it a row below the caption on every page that did not bring its own title - which is
+            ' every generated page. Tab Order escaped only because it is created after this pass.
             For Each control As Control In Controls
                 If control Is captionLabel OrElse control.Location.Y < 0 Then Continue For
+                If String.Equals(control.Name, HelpDeskLauncher.ButtonName, StringComparison.Ordinal) Then Continue For
                 control.Location = New Point(control.Location.X, control.Location.Y + 42)
             Next
 
             ClientSize = New Size(ClientSize.Width, ClientSize.Height + 42)
+
+            ' Aligned after the shift, so it centres on where the caption actually ended up.
+            HelpDeskLauncher.AlignToCaption(Me, captionLabel)
         End Sub
 
         ' â”€â”€ Hidden-field row collapse â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
@@ -377,10 +384,17 @@ Namespace HelloWorld
         Private Function IsRowLayoutControl(control As Control) As Boolean
             If control Is Nothing OrElse control.Location.Y < 0 Then Return False
 
-            ' The shared page caption sits above the field grid and must not move with it.
-            ' ApplySharedPageCaption uses either of these two names.
+            ' The header sits above the field grid and must not move with it: the caption, and the
+            ' two buttons that share its line. ApplySharedPageCaption uses either caption name.
+            '
+            ' The buttons belong here for the same reason the caption does. Collapsing a hidden
+            ' field row pulls everything below it upwards, and a header button caught in that pull
+            ' is carried off the top of the page - which is exactly what happened to Help Desk on a
+            ' page with a permission-hidden field.
             If String.Equals(control.Name, "Label_UserTitle", StringComparison.OrdinalIgnoreCase) OrElse
-               String.Equals(control.Name, "Label_PageTitle", StringComparison.OrdinalIgnoreCase) Then
+               String.Equals(control.Name, "Label_PageTitle", StringComparison.OrdinalIgnoreCase) OrElse
+               String.Equals(control.Name, HelpDeskLauncher.ButtonName, StringComparison.OrdinalIgnoreCase) OrElse
+               String.Equals(control.Name, "Button_TabOrderManager", StringComparison.OrdinalIgnoreCase) Then
                 Return False
             End If
 
@@ -475,7 +489,9 @@ Namespace HelloWorld
                 .Anchor = AnchorStyles.Top Or AnchorStyles.Right,
                 .TabStop = False
             }
-            tabOrderToggleButton.Location = New Point(ClientSize.Width - tabOrderToggleButton.Width - 10 - HelpDeskLauncher.ReservedWidth, 10)
+            ' ReservedWidth already includes the edge margin, so it is not subtracted again here.
+            ' Doing both left a 22px gap where every browse page has 12.
+            tabOrderToggleButton.Location = New Point(ClientSize.Width - tabOrderToggleButton.Width - HelpDeskLauncher.ReservedWidth, 10)
             AlignHeaderButtonToCaption(tabOrderToggleButton)
             AddHandler tabOrderToggleButton.Click, AddressOf TabOrderToggleButton_Click
             Controls.Add(tabOrderToggleButton)

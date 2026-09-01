@@ -97,7 +97,11 @@ Namespace HelloWorld
             Dim errors As New List(Of String)()
 
             If plan.GenerateBrowsePage Then
-                WriteGeneratedPage(plan.BrowsePath, plan.BrowseSource, overwriteExistingPages, created, skipped)
+                If WriteGeneratedPage(plan.BrowsePath, plan.BrowseSource, overwriteExistingPages, created, skipped) Then
+                    If Not SaveBrowseBaseline(requestId, plan.BrowseSource, errors) Then
+                        errors.Add("The generated browse source baseline could not be saved.")
+                    End If
+                End If
             End If
             If plan.GenerateMaintenancePage Then
                 If WriteGeneratedPage(plan.MaintenancePath, plan.MaintenanceSource, overwriteExistingPages, created, skipped) Then
@@ -795,6 +799,21 @@ Namespace HelloWorld
             File.WriteAllText(path, content, New UTF8Encoding(False))
             created.Add(If(existed, "OVERWRITTEN: ", String.Empty) & System.IO.Path.GetFileName(path))
             Return True
+        End Function
+
+        Private Shared Function SaveBrowseBaseline(requestId As Integer,
+                                                   source As String,
+                                                   errors As List(Of String)) As Boolean
+            Try
+                Dim hasher As SHA256 = SHA256.Create()
+                Using hasher
+                    Dim hash = Convert.ToHexString(hasher.ComputeHash(Encoding.UTF8.GetBytes(source)))
+                    Return DataAccess.SavePageGenerationBrowseBaseline(requestId, hash)
+                End Using
+            Catch ex As Exception
+                errors.Add("Browse baseline error: " & ex.Message)
+                Return False
+            End Try
         End Function
 
         Private Shared Function SaveMaintenanceBaseline(requestId As Integer,

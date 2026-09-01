@@ -77,6 +77,15 @@ Namespace HelloWorld
         Private suppressMenuCallerPrompt As Boolean
         Private suppressSaveConfirmation As Boolean
         Private pageHasManualChanges As Boolean
+        Private browsePageHasManualChanges As Boolean
+        Private maintenancePageHasManualChanges As Boolean
+
+        ''' <summary>
+        ''' Set once the user has answered all three prompts to regenerate over their own edits.
+        ''' Lasts only while this page is open, and suppresses the ordinary overwrite prompt: the
+        ''' question it asks has already been answered, twice over and in stronger terms.
+        ''' </summary>
+        Private manualChangesOverridden As Boolean
 
         Public Sub New(id As Integer, user As UserContext, Optional profile As AccessProfile = Nothing)
             MyBase.New()
@@ -399,7 +408,7 @@ Namespace HelloWorld
         End Sub
 
         Private Sub GeneratePagesButton_Click(sender As Object, e As EventArgs)
-            If pageHasManualChanges Then
+            If pageHasManualChanges AndAlso Not manualChangesOverridden Then
                 ShowManualPageChangesWarning()
                 Return
             End If
@@ -423,7 +432,10 @@ Namespace HelloWorld
             Dim browsePagePath = Path.Combine(Environment.CurrentDirectory, browsePageNameTextBox.Text.Trim() & ".vb")
             Dim maintenancePagePath = Path.Combine(Environment.CurrentDirectory, maintenancePageNameTextBox.Text.Trim() & ".vb")
             Dim overwriteExistingPages = False
-            If (generateBrowsePageCheckBox.Checked AndAlso File.Exists(browsePagePath)) OrElse
+            If manualChangesOverridden Then
+                ' Already authorised, three times over, when the page was opened.
+                overwriteExistingPages = True
+            ElseIf (generateBrowsePageCheckBox.Checked AndAlso File.Exists(browsePagePath)) OrElse
                 (generateMaintenancePageCheckBox.Checked AndAlso File.Exists(maintenancePagePath)) Then
                 Dim selectedTargets As New List(Of String)()
                 If generateBrowsePageCheckBox.Checked Then selectedTargets.Add("_B")
@@ -522,27 +534,53 @@ Namespace HelloWorld
 
         End Sub
 
+        ''' <summary>
+        ''' Compares a generated file against the hash recorded when it was generated. False when
+        ''' there is no baseline: a page generated before the baseline existed is not evidence of a
+        ''' manual change, and treating it as one would lock a request nobody had touched.
+        ''' </summary>
+        Private Shared Function FileDiffersFromBaseline(dataRow As DataRowView,
+                                                        hashColumn As String,
+                                                        pageName As String) As Boolean
+            If dataRow Is Nothing OrElse String.IsNullOrWhiteSpace(pageName) Then Return False
+            If Not dataRow.Row.Table.Columns.Contains(hashColumn) OrElse dataRow.Row.IsNull(hashColumn) Then Return False
+
+            Dim expectedHash = DbText(dataRow.Row(hashColumn)).Trim()
+            If expectedHash = String.Empty Then Return False
+
+            Dim pagePath = Path.Combine(Environment.CurrentDirectory, pageName.Trim() & ".vb")
+            If Not File.Exists(pagePath) Then Return False
+
+            Dim hasher As SHA256 = SHA256.Create()
+            Using hasher
+                Using stream = File.OpenRead(pagePath)
+                    Dim currentHash = Convert.ToHexString(hasher.ComputeHash(stream))
+                    Return Not String.Equals(expectedHash, currentHash, StringComparison.OrdinalIgnoreCase)
+                End Using
+            End Using
+        End Function
+
         Private Sub DetectManualMaintenancePageChanges()
             pageHasManualChanges = False
+            browsePageHasManualChanges = False
+            maintenancePageHasManualChanges = False
+            manualChangesOverridden = False
             If isNewRecord Then Return
 
             Dim pagePath = Path.Combine(Environment.CurrentDirectory, maintenancePageNameTextBox.Text.Trim() & ".vb")
-            If Not File.Exists(pagePath) Then Return
 
             Dim row = formBindingSource.Current
             Dim dataRow = TryCast(row, DataRowView)
-            If dataRow IsNot Nothing AndAlso dataRow.Row.Table.Columns.Contains("GeneratedMaintenanceHash") AndAlso
-               Not dataRow.Row.IsNull("GeneratedMaintenanceHash") Then
-                Dim expectedHash = DbText(dataRow.Row("GeneratedMaintenanceHash")).Trim()
-                If expectedHash <> String.Empty Then
-                    Dim hasher As SHA256 = SHA256.Create()
-                    Using hasher
-                        Using stream = File.OpenRead(pagePath)
-                            Dim currentHash = Convert.ToHexString(hasher.ComputeHash(stream))
-                            pageHasManualChanges = Not String.Equals(expectedHash, currentHash, StringComparison.OrdinalIgnoreCase)
-                        End Using
-                    End Using
-                End If
+
+            ' Both generated pages are checked. Only the _U page used to be, so a hand-edited _B was
+            ' overwritten by the next generation with no warning at all.
+            maintenancePageHasManualChanges = FileDiffersFromBaseline(dataRow, "GeneratedMaintenanceHash", maintenancePageNameTextBox.Text)
+            browsePageHasManualChanges = FileDiffersFromBaseline(dataRow, "GeneratedBrowseHash", browsePageNameTextBox.Text)
+            pageHasManualChanges = maintenancePageHasManualChanges OrElse browsePageHasManualChanges
+
+            If Not File.Exists(pagePath) Then
+                If pageHasManualChanges Then ProtectManualPageChanges()
+                Return
             End If
 
             Dim savedFields = maintenanceFieldsTextBox.Text.Split({",", ";"}, StringSplitOptions.RemoveEmptyEntries).
@@ -558,7 +596,85 @@ Namespace HelloWorld
             If pageHasManualChanges Then ProtectManualPageChanges()
         End Sub
 
+        ''' <summary>
+        ''' The changed files, named, one per line, for a message.
+        ''' </summary>
+        Private Function ChangedPageFileList() As String
+            Dim changed As New List(Of String)()
+            If browsePageHasManualChanges Then changed.Add(browsePageNameTextBox.Text.Trim() & ".vb")
+            If maintenancePageHasManualChanges Then changed.Add(maintenancePageNameTextBox.Text.Trim() & ".vb")
+            Return String.Join(Environment.NewLine, changed)
+        End Function
+
+        ''' <summary>
+        ''' Asks whether to regenerate over manual changes, then locks the page or unlocks it.
+        '''
+        ''' Three questions, escalating. The first states the situation plainly; the second warns;
+        ''' the third says what is actually about to happen and cannot be undone. Every one defaults
+        ''' to No, and answering No at any point leaves the page locked exactly as it was before any
+        ''' of this existed - Close and nothing else.
+        '''
+        ''' Three prompts for one action is deliberate. The files being overwritten are hand-written
+        ''' code that exists nowhere else, and the generator cannot tell a deliberate customisation
+        ''' from an accident.
+        ''' </summary>
         Private Sub ProtectManualPageChanges()
+            Dim fileList = ChangedPageFileList()
+            Dim fileWord = If(browsePageHasManualChanges AndAlso maintenancePageHasManualChanges, "FILES HAVE", "FILE HAS")
+
+            Dim proceed = MessageBox.Show(Me,
+                            "A GENERATED PAGE " & fileWord & " BEEN CHANGED IN VS CODE." & Environment.NewLine &
+                            Environment.NewLine &
+                            fileList & Environment.NewLine &
+                            Environment.NewLine &
+                            "SAVE AND SAVE & GENERATE ARE DISABLED TO PROTECT THOSE CHANGES." & Environment.NewLine &
+                            Environment.NewLine &
+                            "DO YOU WANT TO REGENERATE THIS PAGE ANYWAY?",
+                            "MANUAL PAGE CHANGES DETECTED",
+                            MessageBoxButtons.YesNo,
+                            MessageBoxIcon.Question,
+                            MessageBoxDefaultButton.Button2)
+
+            If proceed = DialogResult.Yes Then
+                Dim confirmed = MessageBox.Show(Me,
+                                "REGENERATING REPLACES THE GENERATED PAGE WITH A FRESH ONE." & Environment.NewLine &
+                                Environment.NewLine &
+                                "ANY CODE YOU ADDED BY HAND IS NOT IN THE PAGE REQUEST." & Environment.NewLine &
+                                Environment.NewLine &
+                                "IT CANNOT BE PUT BACK BY REGENERATING AGAIN." & Environment.NewLine &
+                                Environment.NewLine &
+                                "DO YOU STILL WANT TO CONTINUE?",
+                                "MANUAL CHANGES WILL BE REPLACED",
+                                MessageBoxButtons.YesNo,
+                                MessageBoxIcon.Warning,
+                                MessageBoxDefaultButton.Button2)
+
+                If confirmed = DialogResult.Yes Then
+                    Dim final = MessageBox.Show(Me,
+                                    "THIS WILL OVERWRITE:" & Environment.NewLine &
+                                    Environment.NewLine &
+                                    fileList & Environment.NewLine &
+                                    Environment.NewLine &
+                                    "EVERY MANUAL CHANGE IN THE " & If(browsePageHasManualChanges AndAlso maintenancePageHasManualChanges, "FILES ABOVE", "FILE ABOVE") & " WILL BE PERMANENTLY LOST." & Environment.NewLine &
+                                    Environment.NewLine &
+                                    "THIS CANNOT BE UNDONE." & Environment.NewLine &
+                                    Environment.NewLine &
+                                    "ARE YOU SURE?",
+                                    "PERMANENT - LAST CHANCE",
+                                    MessageBoxButtons.YesNo,
+                                    MessageBoxIcon.Error,
+                                    MessageBoxDefaultButton.Button2)
+
+                    If final = DialogResult.Yes Then
+                        ' Unlocked, and the overwrite prompt at generation is skipped: the user has
+                        ' just answered a stronger form of that question twice.
+                        manualChangesOverridden = True
+                        RefreshPageCaption()
+                        Return
+                    End If
+                End If
+            End If
+
             For Each control As Control In GetAllControls(Me)
                 If TypeOf control Is Button Then
                     control.Enabled = control Is cancelActionButton
@@ -571,14 +687,6 @@ Namespace HelloWorld
             cancelActionButton.Enabled = True
             cancelActionButton.Text = "Close"
             RefreshPageCaption()
-            MessageBox.Show(Me,
-                            "THE GENERATED _U PAGE HAS BEEN CHANGED IN VS CODE." & Environment.NewLine & Environment.NewLine &
-                            "SAVE AND SAVE & GENERATE ARE DISABLED TO PROTECT THE MANUAL CHANGES." & Environment.NewLine &
-                            Environment.NewLine &
-                            "ONLY CLOSE IS AVAILABLE.",
-                            "MANUAL PAGE CHANGES DETECTED",
-                            MessageBoxButtons.OK,
-                            MessageBoxIcon.Warning)
         End Sub
 
         Private Shared Iterator Function GetAllControls(parent As Control) As IEnumerable(Of Control)
