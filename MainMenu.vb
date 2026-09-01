@@ -740,21 +740,11 @@ Namespace HelloWorld
             End Using
         End Sub
 
+        ''' A menu tile is 122 x 96 with the caption below the picture, so the icon is given 56.
+        Private Const MenuIconSize As Integer = 56
+
         Private Function LoadMenuIcon(fileName As String, fallback As Image) As Image
-            Dim candidates As String() = {
-                Path.Combine(Application.StartupPath, "assets", "images", fileName),
-                Path.Combine(Application.StartupPath, "..", "..", "..", "assets", "images", fileName),
-                Path.Combine(Application.StartupPath, "..", "..", "..", "..", "assets", "images", fileName)
-            }
-
-            For Each candidate In candidates
-                Dim fullPath = Path.GetFullPath(candidate)
-                If File.Exists(fullPath) Then
-                    Return Image.FromFile(fullPath)
-                End If
-            Next
-
-            Return fallback
+            Return IconScaler.Load(fileName, MenuIconSize, fallback)
         End Function
 
         Private Shared Function NormalizeRibbonImage(source As Image) As Image

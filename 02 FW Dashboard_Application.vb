@@ -467,21 +467,11 @@ Namespace HelloWorld
             newPageRequestsButton.FlatAppearance.BorderSize = 0
         End Sub
 
+        ''' A dashboard tile is 150 x 118 with the caption below the picture, so the icon is given 80.
+        Private Const DashboardIconSize As Integer = 80
+
         Private Function LoadDashboardIcon(fileName As String, fallback As Image) As Image
-            Dim candidates As String() = {
-                Path.Combine(Application.StartupPath, "assets", "images", fileName),
-                Path.Combine(Application.StartupPath, "..", "..", "..", "assets", "images", fileName),
-                Path.Combine(Application.StartupPath, "..", "..", "..", "..", "assets", "images", fileName)
-            }
-
-            For Each candidate In candidates
-                Dim fullPath = Path.GetFullPath(candidate)
-                If File.Exists(fullPath) Then
-                    Return Image.FromFile(fullPath)
-                End If
-            Next
-
-            Return fallback
+            Return IconScaler.Load(fileName, DashboardIconSize, fallback)
         End Function
 
         Private Sub CloseButton_Click(sender As Object, e As EventArgs)

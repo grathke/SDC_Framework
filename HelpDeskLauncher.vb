@@ -56,7 +56,7 @@ Namespace HelloWorld
                 .TextAlign = ContentAlignment.MiddleRight
             }
             button.Location = New Point(owner.ClientSize.Width - ButtonWidth - EdgeMargin, TopMargin)
-            button.Image = LoadIcon("helpdesk.png")
+            button.Image = IconScaler.Load("helpdesk.png", 18, Nothing)
 
             Dim tip As New ToolTip()
             tip.SetToolTip(button, "Report a problem or ask a question about this page")

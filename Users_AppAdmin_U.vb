@@ -76,7 +76,7 @@ Namespace HelloWorld
             passwordTextBox.UseSystemPasswordChar = False
             y += 42
 
-            addressTextBox = AddField("Address", 62, mode = UserAdminEditMode.ReadMode OrElse mode = UserAdminEditMode.DeleteMode, False, 500)
+            addressTextBox = AddField("Address1", 62, mode = UserAdminEditMode.ReadMode OrElse mode = UserAdminEditMode.DeleteMode, False, 500)
             address2TextBox = AddField("Address2", 104, mode = UserAdminEditMode.ReadMode OrElse mode = UserAdminEditMode.DeleteMode, False, 500)
             cityTextBox = AddField("City", 104, mode = UserAdminEditMode.ReadMode OrElse mode = UserAdminEditMode.DeleteMode, False, 500)
             stateTextBox = AddField("State", 146, mode = UserAdminEditMode.ReadMode OrElse mode = UserAdminEditMode.DeleteMode, False, 500)
@@ -321,7 +321,7 @@ Namespace HelloWorld
             lastNameTextBox.Text = If(UserData.LastName, String.Empty)
             emailTextBox.Text = If(UserData.Email, String.Empty)
             phoneTextBox.Text = If(UserData.Phone, String.Empty)
-            addressTextBox.Text = If(UserData.Address, String.Empty)
+            addressTextBox.Text = If(UserData.Address1, String.Empty)
             address2TextBox.Text = If(UserData.Address2, String.Empty)
             cityTextBox.Text = If(UserData.City, String.Empty)
             stateTextBox.Text = If(UserData.State, String.Empty)
@@ -339,7 +339,7 @@ Namespace HelloWorld
             phoneTextBox.DataBindings.Clear()
             phoneTextBox.DataBindings.Add("Text", UserData, "Phone", True)
             addressTextBox.DataBindings.Clear()
-            addressTextBox.DataBindings.Add("Text", UserData, "Address", True)
+            addressTextBox.DataBindings.Add("Text", UserData, "Address1", True)
             address2TextBox.DataBindings.Clear()
             address2TextBox.DataBindings.Add("Text", UserData, "Address2", True)
             cityTextBox.DataBindings.Clear()
@@ -580,7 +580,7 @@ Namespace HelloWorld
                 .LastName = lastNameTextBox.Text.Trim(),
                 .Email = rawEmail,
                 .Phone = phoneTextBox.Text.Trim(),
-                .Address = addressTextBox.Text.Trim(),
+                .Address1 = addressTextBox.Text.Trim(),
                 .Address2 = address2TextBox.Text.Trim(),
                 .City = cityTextBox.Text.Trim(),
                 .State = stateTextBox.Text.Trim(),
@@ -813,7 +813,7 @@ Namespace HelloWorld
                 .LastFirst = record.LastFirst,
                 .Email = record.Email,
                 .Phone = record.Phone,
-                .Address = record.Address,
+                .Address1 = record.Address1,
                 .Address2 = record.Address2,
                 .City = record.City,
                 .State = record.State,

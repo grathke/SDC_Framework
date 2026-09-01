@@ -1873,9 +1873,81 @@ Namespace HelloWorld
 
         ' â”€â”€ Shared helpers â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
+        ''' <summary>
+        ''' Creates a bound selection field. The same contract as AddField: the field name decides
+        ''' the control name and the label, so a combo cannot be misnamed relative to its column.
+        ''' Fill it through ConfigureLookupCombo.
+        ''' </summary>
+        Protected Function AddComboField(caption As String, y As Integer,
+                                         Optional required As Boolean = False,
+                                         Optional fieldLeft As Integer = 20,
+                                         Optional fieldWidth As Integer = 320) As ComboBox
+            Dim lbl As New Label() With {
+                .Name = "Label_" & caption,
+                .Text = ToPascalCaseDisplay(caption),
+                .Location = New Point(fieldLeft, y + 5),
+                .Size = New Size(120, 26)
+            }
+
+            If required Then
+                If Not lbl.Text.EndsWith(" *", StringComparison.Ordinal) Then
+                    lbl.Text &= " *"
+                End If
+
+                ' App Admin required: declared here on the page, so it applies to every role.
+                lbl.BackColor = Color.FromArgb(221, 235, 247)
+            End If
+
+            Me.Controls.Add(lbl)
+
+            Dim combo As New ComboBox() With {
+                .Name = "ComboBox_" & caption,
+                .Location = New Point(fieldLeft + 130, y),
+                .Size = New Size(fieldWidth, 26),
+                .DropDownStyle = ComboBoxStyle.DropDownList
+            }
+
+            Me.Controls.Add(combo)
+
+            If required Then
+                combo.Tag = "Required"
+
+                Dim borderPanel As New Panel() With {
+                    .BackColor = SystemColors.Control,
+                    .Location = New Point(combo.Left - 1, combo.Top - 1),
+                    .Size = New Size(combo.Width + 2, combo.Height + 2),
+                    .Tag = "LocalRequiredBorder_" & caption
+                }
+
+                Me.Controls.Add(borderPanel)
+                borderPanel.Visible = False
+                borderPanel.BringToFront()
+                combo.BringToFront()
+                requiredBorderPanels(combo) = borderPanel
+
+                Dim refresh = Sub(s As Object, e As EventArgs)
+                                  If Not loading Then MarkRequiredTouched(combo)
+                                  RefreshLocalRequiredBorders()
+                              End Sub
+                AddHandler combo.SelectedIndexChanged, refresh
+                AddHandler combo.TextChanged, refresh
+            End If
+
+            Return combo
+        End Function
+
+        ''' <summary>
+        ''' Creates a bound text field. The field name is the single input: the control becomes
+        ''' TextBox_&lt;field&gt; and its label Label_&lt;field&gt;, so the name a permission is keyed on can
+        ''' never disagree with the control that carries it.
+        ''' </summary>
+        ''' <param name="multiline">A taller box for free text. The caller sets the height it wants.</param>
         Protected Function AddField(caption As String, y As Integer, [readOnly] As Boolean,
                                     Optional required As Boolean = False,
-                                    Optional fieldLeft As Integer = 20) As TextBox
+                                    Optional fieldLeft As Integer = 20,
+                                    Optional multiline As Boolean = False,
+                                    Optional fieldWidth As Integer = 320,
+                                    Optional fieldHeight As Integer = 26) As TextBox
             Dim lbl As New Label() With {
                 .Name = "Label_" & caption,
                 .Text = ToPascalCaseDisplay(caption),
@@ -1900,7 +1972,9 @@ Namespace HelloWorld
             Dim txt As New TextBox() With {
                 .Name = "TextBox_" & caption,
                 .Location = New Point(fieldLeft + 130, y),
-                .Size = New Size(320, 26),
+                .Size = New Size(fieldWidth, If(multiline, fieldHeight, 26)),
+                .Multiline = multiline,
+                .ScrollBars = If(multiline, ScrollBars.Vertical, ScrollBars.None),
                 .ReadOnly = [readOnly],
                 .TabStop = Not [readOnly],
                 .BorderStyle = BorderStyle.FixedSingle,

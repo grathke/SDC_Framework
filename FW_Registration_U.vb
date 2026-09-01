@@ -220,7 +220,7 @@ Namespace HelloWorld
             allowPasswordChangeCheckBox = AddOptionCheckBox("CheckBox_AllowPasswordChangeAtLogin", "Allow Password Change At Login", optionsX, y + 2)
 
             y += rowGap
-            addressTextBox = AddField("Address", y, False, False)
+            addressTextBox = AddField("Address1", y, False, False)
             allowUpdateProfileCheckBox = AddOptionCheckBox("CheckBox_AllowUpdateProfile", "Allow Update My Profile at Main Menu", optionsX, y + 2)
 
             y += rowGap
@@ -373,7 +373,7 @@ Namespace HelloWorld
 
         Private Sub ApplyRecordToForm(record As RegistrationRecord)
             registrationTextBox.Text = SafeText(record.RegName)
-            addressTextBox.Text = SafeText(record.Address)
+            addressTextBox.Text = SafeText(record.Address1)
             address2TextBox.Text = SafeText(record.Address2)
             cityTextBox.Text = SafeText(record.City)
             stateTextBox.Text = SafeText(record.State)
@@ -449,7 +449,7 @@ Namespace HelloWorld
                 .RegName = registrationTextBox.Text.Trim(),
                 .BusinessRuleType = businessRuleType,
                 .RegTypeId = regTypeId,
-                .Address = addressTextBox.Text.Trim(),
+                .Address1 = addressTextBox.Text.Trim(),
                 .Address2 = address2TextBox.Text.Trim(),
                 .City = cityTextBox.Text.Trim(),
                 .State = stateTextBox.Text.Trim(),
@@ -481,7 +481,7 @@ Namespace HelloWorld
                 .RegName = String.Empty,
                 .BusinessRuleType = String.Empty,
                 .RegTypeId = 0,
-                .Address = String.Empty,
+                .Address1 = String.Empty,
                 .Address2 = String.Empty,
                 .City = String.Empty,
                 .State = String.Empty,

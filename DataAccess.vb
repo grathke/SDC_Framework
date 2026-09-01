@@ -3309,7 +3309,7 @@ Namespace HelloWorld
                             .Smarty_UseEmbeddedKey = Convert.ToBoolean(reader("Smarty_UseEmbeddedKey"), CultureInfo.InvariantCulture),
                             .BusinessRuleType = NormalizeBusinessRuleType(SafeString(reader("BusinessRuleType"))),
                             .RegTypeId = If(IsDBNull(reader("RegTypeId")), 0, Convert.ToInt32(reader("RegTypeId"), CultureInfo.InvariantCulture)),
-                            .Address = SafeString(reader("Address")),
+                            .Address1 = SafeString(reader("Address1")),
                             .Address2 = SafeString(reader("Address2")),
                             .City = SafeString(reader("City")),
                             .State = SafeString(reader("State")),
@@ -3365,13 +3365,13 @@ Namespace HelloWorld
                     "INSERT INTO dbo.FW_Registration " &
                     "(RegName, BusinessRuleType, RegTypeId, Address, Address2, City, State, Zip, MainFax, MainPhone, MainEMail, WebLandingPage, Smarty_AuthID, Smarty_AuthToken, Smarty_EmbeddedKey, Smarty_UseEmbeddedKey, DisplayDashboardOnStartUp, AllowMessaging, AllowMultipleRoles, AllowPasswordChangeAtLogin, AllowUpdateMyProfile, AllowUpdateMyProfileEmail, Ribbonbar_InvisibleIcons, Use2FA, IsActive, CreatedBy, CreatedOn, UpdatedBy, UpdatedOn) " &
                     "VALUES " &
-                    "(@RegName, @BusinessRuleType, @RegTypeId, @Address, @Address2, @City, @State, @Zip, @MainFax, @MainPhone, @MainEMail, @WebLandingPage, @Smarty_AuthID, @Smarty_AuthToken, @Smarty_EmbeddedKey, @Smarty_UseEmbeddedKey, @DisplayDashboardOnStartUp, @AllowMessaging, @AllowMultipleRoles, @AllowPasswordChangeAtLogin, @AllowUpdateMyProfile, @AllowUpdateMyProfileEmail, @Ribbonbar_InvisibleIcons, @Use2FA, @IsActive, @CurrentUserId, GETDATE(), @CurrentUserId, GETDATE()); " &
+                    "(@RegName, @BusinessRuleType, @RegTypeId, @Address1, @Address2, @City, @State, @Zip, @MainFax, @MainPhone, @MainEMail, @WebLandingPage, @Smarty_AuthID, @Smarty_AuthToken, @Smarty_EmbeddedKey, @Smarty_UseEmbeddedKey, @DisplayDashboardOnStartUp, @AllowMessaging, @AllowMultipleRoles, @AllowPasswordChangeAtLogin, @AllowUpdateMyProfile, @AllowUpdateMyProfileEmail, @Ribbonbar_InvisibleIcons, @Use2FA, @IsActive, @CurrentUserId, GETDATE(), @CurrentUserId, GETDATE()); " &
                     "SELECT CAST(SCOPE_IDENTITY() AS INT);", conn)
 
                     cmd.Parameters.AddWithValue("@RegName", DbValue(record.RegName))
                     cmd.Parameters.AddWithValue("@BusinessRuleType", normalizedBusinessRuleType)
                     cmd.Parameters.AddWithValue("@RegTypeId", If(record.RegTypeId > 0, CType(record.RegTypeId, Object), DBNull.Value))
-                    cmd.Parameters.AddWithValue("@Address", DbValue(record.Address))
+                    cmd.Parameters.AddWithValue("@Address1", DbValue(record.Address1))
                     cmd.Parameters.AddWithValue("@Address2", DbValue(record.Address2))
                     cmd.Parameters.AddWithValue("@City", DbValue(record.City))
                     cmd.Parameters.AddWithValue("@State", DbValue(record.State))
@@ -3413,7 +3413,7 @@ Namespace HelloWorld
                     "RegName = @RegName, " &
                     "BusinessRuleType = @BusinessRuleType, " &
                     "RegTypeId = @RegTypeId, " &
-                    "Address = @Address, " &
+                    "Address1 = @Address1, " &
                     "Address2 = @Address2, " &
                     "City = @City, " &
                     "State = @State, " &
@@ -3443,7 +3443,7 @@ Namespace HelloWorld
                     cmd.Parameters.AddWithValue("@RegName", DbValue(record.RegName))
                     cmd.Parameters.AddWithValue("@BusinessRuleType", normalizedBusinessRuleType)
                     cmd.Parameters.AddWithValue("@RegTypeId", If(record.RegTypeId > 0, CType(record.RegTypeId, Object), DBNull.Value))
-                    cmd.Parameters.AddWithValue("@Address", DbValue(record.Address))
+                    cmd.Parameters.AddWithValue("@Address1", DbValue(record.Address1))
                     cmd.Parameters.AddWithValue("@Address2", DbValue(record.Address2))
                     cmd.Parameters.AddWithValue("@City", DbValue(record.City))
                     cmd.Parameters.AddWithValue("@State", DbValue(record.State))
@@ -4437,7 +4437,7 @@ Namespace HelloWorld
             Using conn As New SqlConnection(ConnectionString)
                 conn.Open()
                 Using cmd As New SqlCommand(
-                    "SELECT UserID, RegistrationID, FirstName, LastName, FirstLast, LastFirst, Email, Phone, Address1 AS Address, Address2, City, State, Zip, IsActive, SuperAdmin, RowVersion " &
+                    "SELECT UserID, RegistrationID, FirstName, LastName, FirstLast, LastFirst, Email, Phone, Address1, Address2, City, State, Zip, IsActive, SuperAdmin, RowVersion " &
                     "FROM dbo.FW_Users WHERE UserID = @UserID", conn)
                     cmd.Parameters.AddWithValue("@UserID", userId)
                     Using reader = cmd.ExecuteReader()
@@ -4451,7 +4451,7 @@ Namespace HelloWorld
                                 .LastFirst = If(reader("LastFirst") Is DBNull.Value, String.Empty, reader("LastFirst").ToString()),
                                 .Email = If(reader("Email") Is DBNull.Value, String.Empty, reader("Email").ToString()),
                                 .Phone = If(reader("Phone") Is DBNull.Value, String.Empty, reader("Phone").ToString()),
-                                .Address = If(reader("Address") Is DBNull.Value, String.Empty, reader("Address").ToString()),
+                                .Address1 = If(reader("Address1") Is DBNull.Value, String.Empty, reader("Address1").ToString()),
                                 .Address2 = If(reader("Address2") Is DBNull.Value, String.Empty, reader("Address2").ToString()),
                                 .City = If(reader("City") Is DBNull.Value, String.Empty, reader("City").ToString()),
                                 .State = If(reader("State") Is DBNull.Value, String.Empty, reader("State").ToString()),
@@ -4685,7 +4685,7 @@ Namespace HelloWorld
                             cmd.Parameters.AddWithValue("@LastName", CType(If(String.IsNullOrWhiteSpace(record.LastName), DBNull.Value, CObj(record.LastName.Trim())), Object))
                             cmd.Parameters.AddWithValue("@Email", CType(If(String.IsNullOrWhiteSpace(record.Email), DBNull.Value, CObj(record.Email.Trim())), Object))
                             cmd.Parameters.AddWithValue("@Phone", CType(If(String.IsNullOrWhiteSpace(record.Phone), DBNull.Value, CObj(record.Phone.Trim())), Object))
-                            cmd.Parameters.AddWithValue("@Address", CType(If(String.IsNullOrWhiteSpace(record.Address), DBNull.Value, CObj(record.Address.Trim())), Object))
+                            cmd.Parameters.AddWithValue("@Address", CType(If(String.IsNullOrWhiteSpace(record.Address1), DBNull.Value, CObj(record.Address1.Trim())), Object))
                             cmd.Parameters.AddWithValue("@Address2", CType(If(String.IsNullOrWhiteSpace(record.Address2), DBNull.Value, CObj(record.Address2.Trim())), Object))
                             cmd.Parameters.AddWithValue("@City", CType(If(String.IsNullOrWhiteSpace(record.City), DBNull.Value, CObj(record.City.Trim())), Object))
                             cmd.Parameters.AddWithValue("@State", CType(If(String.IsNullOrWhiteSpace(record.State), DBNull.Value, CObj(record.State.Trim())), Object))
@@ -4725,7 +4725,7 @@ Namespace HelloWorld
                     cmd.Parameters.AddWithValue("@LastName", CType(If(String.IsNullOrWhiteSpace(record.LastName), DBNull.Value, CObj(record.LastName.Trim())), Object))
                     cmd.Parameters.AddWithValue("@Email", CType(If(String.IsNullOrWhiteSpace(record.Email), DBNull.Value, CObj(record.Email.Trim())), Object))
                     cmd.Parameters.AddWithValue("@Phone", CType(If(String.IsNullOrWhiteSpace(record.Phone), DBNull.Value, CObj(record.Phone.Trim())), Object))
-                    cmd.Parameters.AddWithValue("@Address", CType(If(String.IsNullOrWhiteSpace(record.Address), DBNull.Value, CObj(record.Address.Trim())), Object))
+                    cmd.Parameters.AddWithValue("@Address", CType(If(String.IsNullOrWhiteSpace(record.Address1), DBNull.Value, CObj(record.Address1.Trim())), Object))
                     cmd.Parameters.AddWithValue("@Address2", CType(If(String.IsNullOrWhiteSpace(record.Address2), DBNull.Value, CObj(record.Address2.Trim())), Object))
                     cmd.Parameters.AddWithValue("@City", CType(If(String.IsNullOrWhiteSpace(record.City), DBNull.Value, CObj(record.City.Trim())), Object))
                     cmd.Parameters.AddWithValue("@State", CType(If(String.IsNullOrWhiteSpace(record.State), DBNull.Value, CObj(record.State.Trim())), Object))

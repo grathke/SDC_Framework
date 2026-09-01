@@ -335,7 +335,7 @@ Namespace HelloWorld
         Public Property LastFirst As String
         Public Property Email As String
         Public Property Phone As String
-        Public Property Address As String
+        Public Property Address1 As String
         Public Property Address2 As String
         Public Property City As String
         Public Property State As String
@@ -354,7 +354,7 @@ Namespace HelloWorld
         Public Property Smarty_UseEmbeddedKey As Boolean
         Public Property BusinessRuleType As String
         Public Property RegTypeId As Integer
-        Public Property Address As String
+        Public Property Address1 As String
         Public Property Address2 As String
         Public Property City As String
         Public Property State As String
