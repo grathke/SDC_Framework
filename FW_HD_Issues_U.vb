@@ -3,6 +3,7 @@ Option Explicit On
 
 Imports System
 Imports System.Collections.Generic
+Imports System.Data
 Imports System.Drawing
 Imports System.Windows.Forms
 
@@ -30,6 +31,18 @@ Namespace HelloWorld
         Private responseLabel As Label
         Private statusLabel As Label
         Private conversationHistoryLabel As Label
+        Private ReadOnly reportingPage As String = String.Empty
+        Private expectedBehaviorLabel As Label
+        Private expectedBehaviorTextBox As TextBox
+        Private expectedBehaviorRequiredBorder As Panel
+        Private stepsToReproduceLabel As Label
+        Private stepsToReproduceTextBox As TextBox
+        Private stepsToReproduceRequiredBorder As Panel
+        Private categoryWantsExpectedBehavior As Boolean
+        Private categoryWantsStepsToReproduce As Boolean
+        Private categoryDescribeThe As String = String.Empty
+        Private categoryTable As DataTable
+        Private copyForClaudeButton As Button
         Private descriptionRequiredBorder As Panel
         Private responseRequiredBorder As Panel
         Private categoryRequiredBorder As Panel
@@ -42,13 +55,22 @@ Namespace HelloWorld
 
         Private Const ConversationSeparator As String = "----------------------------------------"
 
-        Public Sub New(Optional selectedIssueId As Integer = 0, Optional selectedRegistrationId As Integer = 0)
+        Protected Overrides Function BuildMaintenanceTitle() As String
+            Return If(issueId > 0, "Help Desk Issue Maintenance", "Help Desk Issue Maintenance - New")
+        End Function
+
+        Public Sub New(Optional selectedIssueId As Integer = 0, Optional selectedRegistrationId As Integer = 0, Optional reportedFromPage As String = "")
             issueId = selectedIssueId
             registrationId = If(selectedRegistrationId > 0, selectedRegistrationId, ResolveRegistrationId())
-            Me.Text = If(issueId > 0, "Help Desk Issue Maintenance", "Help Desk Issue Maintenance - New")
+
+            ' Empty when the help desk was opened from the main menu rather than from a page. That
+            ' is not a gap to fill in later: it decides which categories can be chosen, because a
+            ' defect cannot be reported without the page it happened on.
+            reportingPage = If(reportedFromPage, String.Empty).Trim()
+
             Me.FormBorderStyle = FormBorderStyle.Sizable
-            Me.MinimumSize = New Size(920, 720)
-            Me.ClientSize = New Size(900, 680)
+            Me.MinimumSize = New Size(920, 900)
+            Me.ClientSize = New Size(900, 880)
             BuildLayout()
             AddHandler Me.Resize, AddressOf HelpDeskIssue_Resize
             ApplyMode()
@@ -79,7 +101,9 @@ Namespace HelloWorld
             originalStatus = issue.Status
             originalPriority = issue.Priority
             CaptureOriginalRowVersion(issue.RowVersion)
-            ConfigureLookupCombo(categoryComboBox, HelpDeskDataAccess.GetCategories(registrationId), "CategoryID", "CategoryName", If(issue.CategoryID, 0))
+            categoryTable = HelpDeskDataAccess.GetCategories(registrationId)
+            ConfigureLookupCombo(categoryComboBox, categoryTable, "CategoryID", "CategoryName", If(issue.CategoryID, 0))
+            ApplyCategoryRules()
             priorityComboBox.SelectedItem = issue.Priority
             statusComboBox.SelectedItem = If(String.IsNullOrWhiteSpace(issue.Status), "New", issue.Status)
             statusValueLabel.DataBindings.Clear()
@@ -103,24 +127,17 @@ Namespace HelloWorld
             responseTextBox.ReadOnly = False
             responseTextBox.Visible = issueId > 0
             responseLabel.Visible = issueId > 0
-            responseRequiredBorder.Visible = issueId > 0 AndAlso String.IsNullOrWhiteSpace(responseTextBox.Text)
+            SetFieldRequired(responseTextBox, issueId > 0)
             UpdateResponseRequiredState()
         End Sub
 
         Protected Overrides Function GetAdditionalValidationMessageLines() As IEnumerable(Of String)
             Dim validationLines As New List(Of String)()
 
-            If GetComboSelectedIdOrZero(categoryComboBox) <= 0 Then validationLines.Add("Category is required.")
-            If priorityComboBox.SelectedItem Is Nothing OrElse String.IsNullOrWhiteSpace(priorityComboBox.SelectedItem.ToString()) Then validationLines.Add("Priority is required.")
+            ' Category, Priority, Status, Subject and the describe fields all carry the Required tag,
+            ' so the shared check names them by caption. Only Status needs saying here: it is shown
+            ' in a label rather than an input, so nothing else notices it is blank.
             If String.IsNullOrWhiteSpace(statusValueLabel.Text) Then validationLines.Add("Status is required.")
-            If String.IsNullOrWhiteSpace(subjectTextBox.Text) Then validationLines.Add("Subject is required.")
-            If issueId = 0 AndAlso String.IsNullOrWhiteSpace(descriptionTextBox.Text) Then
-                validationLines.Add("Request is required.")
-            End If
-
-            If issueId > 0 AndAlso String.IsNullOrWhiteSpace(responseTextBox.Text) Then
-                validationLines.Add("Response is required.")
-            End If
 
             Return validationLines
         End Function
@@ -146,6 +163,9 @@ Namespace HelloWorld
 
             issue.Subject = subjectTextBox.Text.Trim()
             issue.Description = descriptionTextBox.Text.Trim()
+            issue.ExpectedBehavior = If(expectedBehaviorTextBox.Visible, expectedBehaviorTextBox.Text.Trim(), String.Empty)
+            issue.StepsToReproduce = If(stepsToReproduceTextBox.Visible, stepsToReproduceTextBox.Text.Trim(), String.Empty)
+            issue.ReportedFromPage = If(String.IsNullOrWhiteSpace(reportingPage), "MainMenu", reportingPage)
             issue.CategoryID = GetComboSelectedIdOrZero(categoryComboBox)
             If Not issue.CategoryID.HasValue OrElse issue.CategoryID.Value = 0 Then issue.CategoryID = Nothing
             If priorityComboBox.SelectedItem IsNot Nothing Then issue.Priority = priorityComboBox.SelectedItem.ToString()
@@ -182,7 +202,9 @@ Namespace HelloWorld
             }
             AddHandler statusValueLabel.Paint, AddressOf StatusValueLabel_Paint
             subjectTextBox = New TextBox() With {.Name = "TextBox_Subject", .Location = New Point(150, 140), .Size = New Size(700, 26)}
-            descriptionTextBox = New TextBox() With {.Name = "TextBox_Description", .Location = New Point(150, 180), .Size = New Size(700, 70), .Multiline = True, .ScrollBars = ScrollBars.Vertical}
+            descriptionTextBox = New TextBox() With {.Name = "TextBox_Description", .Location = New Point(150, 180), .Size = New Size(700, 70), .Multiline = True, .ScrollBars = ScrollBars.Vertical, .BorderStyle = BorderStyle.FixedSingle}
+            expectedBehaviorTextBox = New TextBox() With {.Name = "TextBox_ExpectedBehavior", .Location = New Point(150, 260), .Size = New Size(700, 70), .Multiline = True, .ScrollBars = ScrollBars.Vertical, .BorderStyle = BorderStyle.FixedSingle}
+            stepsToReproduceTextBox = New TextBox() With {.Name = "TextBox_StepsToReproduce", .Location = New Point(150, 340), .Size = New Size(700, 70), .Multiline = True, .ScrollBars = ScrollBars.Vertical, .BorderStyle = BorderStyle.FixedSingle}
             responseTextBox = New TextBox() With {.Name = "TextBox_Response", .Location = New Point(150, 270), .Size = New Size(700, 90), .Multiline = True, .ScrollBars = ScrollBars.Vertical}
             conversationHistoryPanel = New FlowLayoutPanel() With {
                 .Name = "Panel_ConversationHistory",
@@ -196,11 +218,13 @@ Namespace HelloWorld
                 .Padding = New Padding(6),
                 .TabStop = False
             }
-            categoryLabel = AddLabel("Category *", 20, 20)
-            priorityLabel = AddLabel("Priority *", 20, 60)
-            statusLabel = AddLabel("Status *", 20, 100)
-            subjectLabel = AddLabel("Subject *", 20, 140)
-            descriptionLabel = AddLabel("Request *", 20, 180)
+            categoryLabel = AddLabel("Category *", 20, 20, "CategoryID")
+            priorityLabel = AddLabel("Priority *", 20, 60, "Priority")
+            statusLabel = AddLabel("Status *", 20, 100, "Status")
+            subjectLabel = AddLabel("Subject *", 20, 140, "Subject")
+            descriptionLabel = AddLabel("Describe The Problem *", 20, 180, "Description")
+            expectedBehaviorLabel = AddLabel("How It Should Behave *", 20, 260, "ExpectedBehavior")
+            stepsToReproduceLabel = AddLabel("Steps To Reproduce *", 20, 340, "StepsToReproduce")
             responseLabel = AddLabel("New Response *", 20, 270)
             conversationHistoryLabel = AddLabel("Conversation History", 20, 380)
             Dim requiredLabelBackColor = Color.FromArgb(221, 235, 247)
@@ -209,6 +233,8 @@ Namespace HelloWorld
             statusLabel.BackColor = requiredLabelBackColor
             subjectLabel.BackColor = requiredLabelBackColor
             descriptionLabel.BackColor = Color.FromArgb(221, 235, 247)
+            expectedBehaviorLabel.BackColor = Color.FromArgb(221, 235, 247)
+            stepsToReproduceLabel.BackColor = Color.FromArgb(221, 235, 247)
             responseLabel.BackColor = Color.FromArgb(221, 235, 247)
             Me.Controls.AddRange({categoryComboBox, priorityComboBox, statusComboBox, statusValueLabel, subjectTextBox, descriptionTextBox, conversationHistoryPanel, responseTextBox})
             categoryRequiredBorder = CreateRequiredBorder(categoryComboBox)
@@ -220,22 +246,25 @@ Namespace HelloWorld
             priorityRequiredBorder.SendToBack()
             statusRequiredBorder.SendToBack()
             subjectRequiredBorder.SendToBack()
-            descriptionRequiredBorder = New Panel() With {
-                .BackColor = Color.Red,
-                .Location = New Point(descriptionTextBox.Left - 2, descriptionTextBox.Top - 2),
-                .Size = New Size(descriptionTextBox.Width + 4, descriptionTextBox.Height + 4)
-            }
+            descriptionRequiredBorder = CreateRequiredBorder(descriptionTextBox)
+            expectedBehaviorRequiredBorder = CreateRequiredBorder(expectedBehaviorTextBox)
+            stepsToReproduceRequiredBorder = CreateRequiredBorder(stepsToReproduceTextBox)
+            Me.Controls.AddRange({expectedBehaviorRequiredBorder, stepsToReproduceRequiredBorder,
+                                  expectedBehaviorTextBox, stepsToReproduceTextBox})
+            expectedBehaviorRequiredBorder.SendToBack()
+            stepsToReproduceRequiredBorder.SendToBack()
+            expectedBehaviorTextBox.BringToFront()
+            stepsToReproduceTextBox.BringToFront()
             Me.Controls.Add(descriptionRequiredBorder)
             descriptionRequiredBorder.SendToBack()
             descriptionTextBox.BringToFront()
-            responseRequiredBorder = New Panel() With {
-                .BackColor = Color.Red,
-                .Location = New Point(responseTextBox.Left - 2, responseTextBox.Top - 2),
-                .Size = New Size(responseTextBox.Width + 4, responseTextBox.Height + 4)
-            }
+            responseRequiredBorder = CreateRequiredBorder(responseTextBox)
             Me.Controls.Add(responseRequiredBorder)
             responseRequiredBorder.SendToBack()
             responseTextBox.BringToFront()
+            copyForClaudeButton = New Button() With {.Name = "Button_CopyReport", .Text = "Copy Report", .Location = New Point(470, 525), .Size = New Size(130, 34)}
+            AddHandler copyForClaudeButton.Click, AddressOf CopyForClaudeButton_Click
+            Me.Controls.Add(copyForClaudeButton)
             attachmentButton = New Button() With {.Name = "Button_AttachFile", .Text = "Attach File", .Location = New Point(150, 525), .Size = New Size(130, 34)}
             thinfinityButton = New Button() With {.Name = "Button_AttachViaThinfinity", .Text = "Attach via Thinfinity", .Location = New Point(290, 525), .Size = New Size(170, 34)}
             AddHandler attachmentButton.Click, AddressOf AttachFile_Click
@@ -251,10 +280,22 @@ Namespace HelloWorld
             Dim requestRequired = issueId = 0
             Dim hasRequest = Not String.IsNullOrWhiteSpace(descriptionTextBox.Text)
             descriptionLabel.Visible = requestRequired
-            descriptionRequiredBorder.Visible = requestRequired AndAlso Not hasRequest
+            descriptionTextBox.Visible = requestRequired
+            SetFieldRequired(descriptionTextBox, requestRequired)
+
+            ' Only asked for on the categories flagged for them, and required only while asked for:
+            ' a hidden field must never be the reason a save is refused.
+            Dim wantsExpected = requestRequired AndAlso categoryWantsExpectedBehavior
+            Dim wantsSteps = requestRequired AndAlso categoryWantsStepsToReproduce
+            expectedBehaviorLabel.Visible = wantsExpected
+            expectedBehaviorTextBox.Visible = wantsExpected
+            SetFieldRequired(expectedBehaviorTextBox, wantsExpected)
+            stepsToReproduceLabel.Visible = wantsSteps
+            stepsToReproduceTextBox.Visible = wantsSteps
+            SetFieldRequired(stepsToReproduceTextBox, wantsSteps)
             responseLabel.Visible = responseRequired
             responseTextBox.Visible = responseRequired
-            responseRequiredBorder.Visible = responseRequired AndAlso Not hasResponse
+            SetFieldRequired(responseTextBox, responseRequired)
             attachmentButton.Enabled = Not responseRequired OrElse hasResponse
             thinfinityButton.Enabled = Not responseRequired OrElse hasResponse
         End Sub
@@ -266,9 +307,25 @@ Namespace HelloWorld
         Private Sub LayoutControls()
             If subjectTextBox Is Nothing Then Return
 
-            Dim inputLeft = 150
+            Dim captions As Label() = {categoryLabel, priorityLabel, statusLabel, subjectLabel,
+                                         descriptionLabel, expectedBehaviorLabel, stepsToReproduceLabel,
+                                         responseLabel, conversationHistoryLabel}
+            Dim widestCaption = 0
+            For Each caption In captions
+                If caption Is Nothing Then Continue For
+                widestCaption = Math.Max(widestCaption, caption.Left + caption.PreferredWidth)
+            Next
+
+            Dim inputLeft = Math.Max(150, widestCaption + 12)
             Dim inputRight = 50
             Dim inputWidth = Math.Max(300, ClientSize.Width - inputLeft - inputRight)
+
+            For Each field As Control In New Control() {categoryComboBox, priorityComboBox, statusComboBox,
+                                                       statusValueLabel, subjectTextBox, descriptionTextBox,
+                                                       expectedBehaviorTextBox, stepsToReproduceTextBox,
+                                                       responseTextBox, conversationHistoryPanel}
+                If field IsNot Nothing Then field.Left = inputLeft
+            Next
             Dim actionTop = ClientSize.Height - 80
             Dim attachmentTop = actionTop - 75
 
@@ -276,18 +333,39 @@ Namespace HelloWorld
             descriptionTextBox.Width = inputWidth
             responseTextBox.Width = inputWidth
             conversationHistoryPanel.Width = inputWidth
-            Dim conversationTop = If(issueId > 0, 380, 280)
+            Dim stackTop = descriptionTextBox.Top
+            For Each field As Control In New Control() {descriptionTextBox, expectedBehaviorTextBox, stepsToReproduceTextBox, responseTextBox}
+                If Not field.Visible Then Continue For
+                field.Top = stackTop
+                stackTop = field.Bottom + 30
+            Next
+
+            descriptionLabel.Top = descriptionTextBox.Top
+            expectedBehaviorLabel.Top = expectedBehaviorTextBox.Top
+            stepsToReproduceLabel.Top = stepsToReproduceTextBox.Top
+            responseLabel.Top = responseTextBox.Top
+
+            expectedBehaviorTextBox.Width = inputWidth
+            stepsToReproduceTextBox.Width = inputWidth
+
+            Dim conversationTop = stackTop
             conversationHistoryPanel.Top = conversationTop
             conversationHistoryLabel.Top = conversationTop + 4
-            conversationHistoryPanel.Height = Math.Max(140, attachmentTop - conversationHistoryPanel.Top - 15)
+            conversationHistoryPanel.Height = Math.Max(120, attachmentTop - conversationHistoryPanel.Top - 15)
 
             attachmentButton.Top = attachmentTop
             thinfinityButton.Top = attachmentTop
+            copyForClaudeButton.Top = attachmentTop
+            copyForClaudeButton.Left = thinfinityButton.Right + 10
 
             responseRequiredBorder.Location = New Point(responseTextBox.Left - 2, responseTextBox.Top - 2)
             responseRequiredBorder.Size = New Size(responseTextBox.Width + 4, responseTextBox.Height + 4)
             descriptionRequiredBorder.Location = New Point(descriptionTextBox.Left - 2, descriptionTextBox.Top - 2)
             descriptionRequiredBorder.Size = New Size(descriptionTextBox.Width + 4, descriptionTextBox.Height + 4)
+            expectedBehaviorRequiredBorder.Location = New Point(expectedBehaviorTextBox.Left - 2, expectedBehaviorTextBox.Top - 2)
+            expectedBehaviorRequiredBorder.Size = New Size(expectedBehaviorTextBox.Width + 4, expectedBehaviorTextBox.Height + 4)
+            stepsToReproduceRequiredBorder.Location = New Point(stepsToReproduceTextBox.Left - 2, stepsToReproduceTextBox.Top - 2)
+            stepsToReproduceRequiredBorder.Size = New Size(stepsToReproduceTextBox.Width + 4, stepsToReproduceTextBox.Height + 4)
             categoryRequiredBorder.Location = New Point(categoryComboBox.Left - 2, categoryComboBox.Top - 2)
             categoryRequiredBorder.Size = New Size(categoryComboBox.Width + 4, categoryComboBox.Height + 4)
             priorityRequiredBorder.Location = New Point(priorityComboBox.Left - 2, priorityComboBox.Top - 2)
@@ -353,8 +431,13 @@ Namespace HelloWorld
             conversationHistoryPanel.ResumeLayout()
         End Sub
 
-        Private Function AddLabel(text As String, x As Integer, y As Integer) As Label
+        ''' <param name="fieldName">
+        ''' The field this labels, so the label is named Label_&lt;FieldName&gt; and the shared
+        ''' required message can quote the caption the user is reading rather than a column name.
+        ''' </param>
+        Private Function AddLabel(text As String, x As Integer, y As Integer, Optional fieldName As String = Nothing) As Label
             Dim label = New Label() With {.Text = text, .Location = New Point(x, y + 4), .AutoSize = True}
+            If Not String.IsNullOrWhiteSpace(fieldName) Then label.Name = "Label_" & fieldName.Trim()
             Me.Controls.Add(label)
             Return label
         End Function
@@ -372,6 +455,7 @@ Namespace HelloWorld
             AddHandler responseTextBox.TextChanged, AddressOf MarkDirty
             AddHandler responseTextBox.TextChanged, AddressOf ResponseTextBox_TextChanged
             AddHandler categoryComboBox.SelectedValueChanged, AddressOf HelpDeskFieldChanged
+            AddHandler categoryComboBox.SelectedValueChanged, Sub() ApplyCategoryRules()
             AddHandler priorityComboBox.SelectedValueChanged, AddressOf MarkDirty
             AddHandler priorityComboBox.SelectedValueChanged, AddressOf HelpDeskFieldChanged
             AddHandler statusComboBox.SelectedValueChanged, AddressOf HelpDeskFieldChanged
@@ -393,22 +477,162 @@ Namespace HelloWorld
             UpdateHelpDeskRequiredState()
         End Sub
 
+        ''' Category, Priority, Status and Subject are always required, so there is nothing for this
+        ''' page to decide and nothing for it to paint: Base_U owns their borders once adopted.
         Private Sub UpdateHelpDeskRequiredState()
-            If categoryRequiredBorder Is Nothing Then Return
-            categoryRequiredBorder.Visible = GetComboSelectedIdOrZero(categoryComboBox) <= 0
-            priorityRequiredBorder.Visible = priorityComboBox.SelectedItem Is Nothing OrElse String.IsNullOrWhiteSpace(priorityComboBox.SelectedItem.ToString())
-            statusRequiredBorder.Visible = String.IsNullOrWhiteSpace(statusValueLabel.Text)
-            subjectRequiredBorder.Visible = String.IsNullOrWhiteSpace(subjectTextBox.Text)
         End Sub
 
+        ''' <summary>
+        ''' Which of the describe fields this category asks for. The answer is data - two flags on
+        ''' FW_HD_IssueCategories - so adding a category is a row, not an edit here.
+        ''' </summary>
+        Private Sub ApplyCategoryRules()
+            categoryWantsExpectedBehavior = False
+            categoryWantsStepsToReproduce = False
+            categoryDescribeThe = String.Empty
+
+            If categoryTable IsNot Nothing Then
+                Dim selectedId = GetComboSelectedIdOrZero(categoryComboBox)
+                For Each row As DataRow In categoryTable.Rows
+                    If Convert.ToInt32(row("CategoryID")) <> selectedId Then Continue For
+                    If categoryTable.Columns.Contains("RequiresExpectedBehavior") Then
+                        categoryWantsExpectedBehavior = Convert.ToBoolean(row("RequiresExpectedBehavior"))
+                    End If
+                    If categoryTable.Columns.Contains("RequiresPage") Then
+                        categoryWantsStepsToReproduce = Convert.ToBoolean(row("RequiresPage"))
+                    End If
+                    If categoryTable.Columns.Contains("DescribeThe") Then
+                        categoryDescribeThe = Convert.ToString(row("DescribeThe")).Trim()
+                    End If
+                    Exit For
+                Next
+            End If
+
+            ApplyDescribeCaption()
+            UpdateResponseRequiredState()
+            LayoutControls()
+        End Sub
+
+        ''' <summary>
+        ''' The first box asks about whatever was chosen, so it is named after it: Suggestion gives
+        ''' "Describe The Suggestion", Feature Request gives "Describe The Request". The last word of
+        ''' the category carries the meaning, so that is the word used.
+        ''' </summary>
+        Private Sub ApplyDescribeCaption()
+            If descriptionLabel Is Nothing Then Return
+
+            ' The category names the word, and falls back to its last word when it does not.
+            Dim subject = If(categoryDescribeThe <> String.Empty, categoryDescribeThe, LastWordOf(categoryComboBox.Text))
+            descriptionLabel.Text = If(subject = String.Empty, "Describe The Problem *", "Describe The " & subject & " *")
+        End Sub
+
+        Private Shared Function LastWordOf(caption As String) As String
+            Dim words = If(caption, String.Empty).
+                Split({" "c, "/"c}, StringSplitOptions.RemoveEmptyEntries).
+                Where(Function(word) word.Trim().Length > 0).
+                ToList()
+
+            If words.Count = 0 Then Return String.Empty
+
+            Return words(words.Count - 1).Trim()
+        End Function
+
+        ''' <summary>
+        ''' The whole report as text, for pasting somewhere it can be acted on. It names the page so
+        ''' the file to open is obvious, then states what happened, what should have happened and
+        ''' how to reproduce it - which is the difference between a report that can be worked and
+        ''' one that starts with a round of questions.
+        ''' </summary>
+        Private Function BuildReportText() As String
+            Dim lines As New List(Of String)()
+            Dim page = If(String.IsNullOrWhiteSpace(reportingPage), "Main Menu", reportingPage)
+
+            lines.Add("HELP DESK REPORT")
+            lines.Add(New String("="c, 60))
+            lines.Add("")
+            lines.Add("PAGE: " & page)
+            If Not String.IsNullOrWhiteSpace(reportingPage) Then
+                lines.Add("SOURCE FILE: " & reportingPage & ".vb")
+            End If
+            lines.Add("CATEGORY: " & categoryComboBox.Text)
+            lines.Add("PRIORITY: " & priorityComboBox.Text)
+            lines.Add("STATUS: " & statusValueLabel.Text)
+            If issueId > 0 Then lines.Add("TICKET: " & issueId.ToString(Globalization.CultureInfo.InvariantCulture))
+            lines.Add("REGISTRATION: " & registrationId.ToString(Globalization.CultureInfo.InvariantCulture))
+            lines.Add("REPORTED: " & DateTime.Now.ToString("yyyy-MM-dd HH:mm", Globalization.CultureInfo.InvariantCulture))
+            lines.Add("")
+            lines.Add("SUBJECT")
+            lines.Add(If(String.IsNullOrWhiteSpace(subjectTextBox.Text), "(none given)", subjectTextBox.Text.Trim()))
+            lines.Add("")
+            lines.Add("WHAT IS WRONG")
+            lines.Add(If(String.IsNullOrWhiteSpace(descriptionTextBox.Text), "(none given)", descriptionTextBox.Text.Trim()))
+
+            If expectedBehaviorTextBox.Visible Then
+                lines.Add("")
+                lines.Add("HOW IT SHOULD BEHAVE")
+                lines.Add(If(String.IsNullOrWhiteSpace(expectedBehaviorTextBox.Text), "(none given)", expectedBehaviorTextBox.Text.Trim()))
+            End If
+
+            If stepsToReproduceTextBox.Visible Then
+                lines.Add("")
+                lines.Add("STEPS TO REPRODUCE")
+                lines.Add(If(String.IsNullOrWhiteSpace(stepsToReproduceTextBox.Text), "(none given)", stepsToReproduceTextBox.Text.Trim()))
+            End If
+
+            lines.Add("")
+            lines.Add(New String("-"c, 60))
+            lines.Add("Investigate the page named above before changing anything, confirm the")
+            lines.Add("behaviour described, and say what the fix would be before applying it.")
+
+            Return String.Join(Environment.NewLine, lines)
+        End Function
+
+        Private Sub CopyForClaudeButton_Click(sender As Object, e As EventArgs)
+            Try
+                Clipboard.SetText(BuildReportText())
+                MessageBox.Show(Me,
+                                "THE REPORT HAS BEEN COPIED TO THE CLIPBOARD.",
+                                "COPY REPORT",
+                                MessageBoxButtons.OK,
+                                MessageBoxIcon.Information)
+            Catch ex As Exception
+                MessageBox.Show(Me,
+                                "THE REPORT COULD NOT BE COPIED: " & ex.Message,
+                                "COPY REPORT",
+                                MessageBoxButtons.OK,
+                                MessageBoxIcon.Error)
+            End Try
+        End Sub
+
+        ''' <summary>
+        ''' The border Base_U adopts for this control. Tagging it hands the *when* to the framework -
+        ''' red once visited and empty - while this page keeps the *whether*, by setting or clearing
+        ''' the control's Required tag as its conditional rules change.
+        ''' </summary>
+        ''' The ticket form lays its own fields out in the order they are answered, and it is the
+        ''' form used to report a problem - so neither the tab order manager nor a Help Desk button
+        ''' belongs on it.
+        Protected Overrides Function SupportsTabOrderManager() As Boolean
+            Return False
+        End Function
+
         Private Shared Function CreateRequiredBorder(control As Control) As Panel
+            control.Tag = "Required"
             Return New Panel With {
+                .Tag = "RequiredBorder_" & control.Name,
                 .BackColor = Color.Red,
                 .Location = New Point(control.Left - 2, control.Top - 2),
                 .Size = New Size(control.Width + 4, control.Height + 4),
                 .Visible = False
             }
         End Function
+
+        ''' Marks a control required, or not, for the shared border rule. A control that is not
+        ''' required never goes red however empty it is.
+        Private Shared Sub SetFieldRequired(control As Control, required As Boolean)
+            If control Is Nothing Then Return
+            control.Tag = If(required, "Required", Nothing)
+        End Sub
 
         Private Sub DescriptionTextBox_TextChanged(sender As Object, e As EventArgs)
             UpdateResponseRequiredState()

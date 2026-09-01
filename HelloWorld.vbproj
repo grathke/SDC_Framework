@@ -11,6 +11,12 @@
     <EmbeddedResource Remove="**/*.resx" />
   </ItemGroup>
   <ItemGroup>
+    <!-- Dashboard and menu icons are loaded from disk at runtime, not embedded, so one copy beside
+         the exe serves every application in the folder and a picture can be replaced without a
+         rebuild. Without this the images stay in the source tree and a deployed exe finds none. -->
+    <Content Include="assets\images\**" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+  <ItemGroup>
     <Compile Remove="project-backup/**" />
     <EmbeddedResource Remove="project-backup/**" />
     <None Remove="project-backup/**" />

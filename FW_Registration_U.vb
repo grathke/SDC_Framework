@@ -39,8 +39,11 @@ Namespace HelloWorld
         Private activeRegistrationId As Integer
         Private currentRecord As RegistrationRecord
 
+        Protected Overrides Function BuildMaintenanceTitle() As String
+            Return "Registration Maintenance"
+        End Function
+
         Public Sub New(Optional registrationId As Integer = 0)
-            Me.Text = "Registration Maintenance"
             Me.ClientSize = New Size(980, 720)
             activeRegistrationId = ResolveInitialRegistrationId(registrationId)
 

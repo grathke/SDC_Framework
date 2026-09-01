@@ -842,7 +842,17 @@ Namespace HelloWorld
             MessageBox.Show("Hook your substitute user workflow here.", "Framework Menu", MessageBoxButtons.OK, MessageBoxIcon.Information)
         End Sub
 
+        ''' From the menu an administrator is handling the queue, not reporting against a page, so
+        ''' they get the dashboard with the ticket counts. Everyone else gets the tickets they
+        ''' raised. The Help Desk button on a page is the other route, and always about that page.
         Private Sub HelpDesk_Click(sender As Object, e As EventArgs)
+            If HelpDeskLauncher.OpensSupportListing() Then
+                Using page As New FW_HD_AdminDashboard_B(Nothing)
+                    page.ShowDialog(Me)
+                End Using
+                Return
+            End If
+
             Using page As New FW_HD_Issues_B()
                 page.ShowDialog(Me)
             End Using

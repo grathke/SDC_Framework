@@ -1,4 +1,4 @@
-﻿Option Strict On
+Option Strict On
 Option Explicit On
 
 Imports System
@@ -14,6 +14,10 @@ Namespace HelloWorld
                        If(profile, MenuFormInitializer.BuildAccessProfileForCurrentSession(BuildCurrentUserContext(), "Users_AppAdmin_B")),
                        "FW_Users")
         End Sub
+
+        Protected Overrides Function BuildBrowseListingTitle(registrationId As Integer, tableName As String) As String
+            Return "User Listing"
+        End Function
 
         Protected Overrides Function ResolveCurrentRoleFieldTableName() As String
             Return "FW_Users"

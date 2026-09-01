@@ -28,6 +28,17 @@ Namespace HelloWorld
             Public Property CategoryID As Integer?
             Public Property Subject As String
             Public Property Description As String
+
+            ''' What should have happened. Asked for only on the categories flagged in
+            ''' FW_HD_IssueCategories, because "how it should work" is meaningless on a question.
+            Public Property ExpectedBehavior As String
+
+            ''' How to make it happen again. Asked for on the defect categories only - a suggestion
+            ''' has nothing to reproduce.
+            Public Property StepsToReproduce As String
+
+            ''' The page the report was raised from, captured rather than typed.
+            Public Property ReportedFromPage As String
             Public Property ConversationText As String
             Public Property ConversationEntryCount As Integer
             Public Property Status As String
@@ -62,7 +73,7 @@ Namespace HelloWorld
         Public Shared Function GetIssueById(issueId As Integer, registrationId As Integer) As IssueRecord
             Using conn As New SqlConnection(ConnectionString())
                 conn.Open()
-                Using cmd As New SqlCommand("SELECT TOP 1 IssueID, RegistrationID, ApplicationID, IssueNumber, CategoryID, Subject, Description, ConversationText, ConversationEntryCount, Status, Priority, ClosedBy, ClosedOn, FirstResponseOn, ReporterUserID, AssignedSupportUserID, CreatedBy, CreatedOn, UpdatedBy, UpdatedOn, RowVersion FROM dbo.FW_HD_Issues WHERE IssueID = @IssueID AND RegistrationID = @RegistrationID AND ISNULL(DeletedFlag, 0) = 0", conn)
+                Using cmd As New SqlCommand("SELECT TOP 1 IssueID, RegistrationID, ApplicationID, IssueNumber, CategoryID, Subject, Description, ExpectedBehavior, StepsToReproduce, ReportedFromPage, ConversationText, ConversationEntryCount, Status, Priority, ClosedBy, ClosedOn, FirstResponseOn, ReporterUserID, AssignedSupportUserID, CreatedBy, CreatedOn, UpdatedBy, UpdatedOn, RowVersion FROM dbo.FW_HD_Issues WHERE IssueID = @IssueID AND RegistrationID = @RegistrationID AND ISNULL(DeletedFlag, 0) = 0", conn)
                     cmd.Parameters.AddWithValue("@IssueID", issueId)
                     cmd.Parameters.AddWithValue("@RegistrationID", registrationId)
                     Using reader = cmd.ExecuteReader()
@@ -76,7 +87,7 @@ Namespace HelloWorld
         Public Shared Function GetCategories(registrationId As Integer) As DataTable
             Using conn As New SqlConnection(ConnectionString())
                 conn.Open()
-                Using cmd As New SqlCommand("SELECT CategoryID, CategoryName FROM dbo.FW_HD_IssueCategories WHERE (RegistrationID = @RegistrationID OR RegistrationID IS NULL) AND ISNULL(IsActive, 1) = 1 AND ISNULL(DeletedFlag, 0) = 0 ORDER BY DisplayOrder, CategoryName", conn)
+                Using cmd As New SqlCommand("SELECT CategoryID, CategoryName, ISNULL(DescribeThe, '') AS DescribeThe, ISNULL(RequiresExpectedBehavior, 0) AS RequiresExpectedBehavior, ISNULL(RequiresPage, 0) AS RequiresPage FROM dbo.FW_HD_IssueCategories WHERE (RegistrationID = @RegistrationID OR RegistrationID IS NULL) AND ISNULL(IsActive, 1) = 1 AND ISNULL(DeletedFlag, 0) = 0 ORDER BY DisplayOrder, CategoryName", conn)
                     cmd.Parameters.AddWithValue("@RegistrationID", registrationId)
                     Using adapter As New SqlDataAdapter(cmd)
                         Dim result As New DataTable()
@@ -208,7 +219,10 @@ Namespace HelloWorld
                         If record.IssueID = 0 Then
                             If Not IsCurrentUserSupport() Then record.Status = "New"
                             record.AssignedSupportUserID = ResolveSupportUserIdForNewIssue(record.RegistrationID)
-                            Using cmd As New SqlCommand("INSERT INTO dbo.FW_HD_Issues (RegistrationID, ApplicationID, IssueNumber, CategoryID, Subject, Description, ConversationText, ConversationEntryCount, Status, Priority, ReporterUserID, AssignedSupportUserID, CreatedBy, CreatedOn) VALUES (@RegistrationID, @ApplicationID, @IssueNumber, @CategoryID, @Subject, @Description, @ConversationText, 1, @Status, @Priority, @ReporterUserID, @AssignedSupportUserID, @UserID, SYSUTCDATETIME()); SELECT CAST(SCOPE_IDENTITY() AS INT);", conn, trans)
+                            Using cmd As New SqlCommand("INSERT INTO dbo.FW_HD_Issues (RegistrationID, ApplicationID, IssueNumber, CategoryID, Subject, Description, ExpectedBehavior, StepsToReproduce, ReportedFromPage, ConversationText, ConversationEntryCount, Status, Priority, ReporterUserID, AssignedSupportUserID, CreatedBy, CreatedOn) VALUES (@RegistrationID, @ApplicationID, @IssueNumber, @CategoryID, @Subject, @Description, @ExpectedBehavior, @StepsToReproduce, @ReportedFromPage, @ConversationText, 1, @Status, @Priority, @ReporterUserID, @AssignedSupportUserID, @UserID, SYSUTCDATETIME()); SELECT CAST(SCOPE_IDENTITY() AS INT);", conn, trans)
+                                cmd.Parameters.AddWithValue("@ExpectedBehavior", If(String.IsNullOrWhiteSpace(record.ExpectedBehavior), CType(DBNull.Value, Object), record.ExpectedBehavior.Trim()))
+                                cmd.Parameters.AddWithValue("@StepsToReproduce", If(String.IsNullOrWhiteSpace(record.StepsToReproduce), CType(DBNull.Value, Object), record.StepsToReproduce.Trim()))
+                                cmd.Parameters.AddWithValue("@ReportedFromPage", If(String.IsNullOrWhiteSpace(record.ReportedFromPage), CType(DBNull.Value, Object), record.ReportedFromPage.Trim()))
                                 record.ConversationText = FormatConversationEntry(record, CurrentAuthorName(), record.Description)
                                 AddIssueParameters(cmd, record)
                                 record.IssueID = Convert.ToInt32(cmd.ExecuteScalar(), CultureInfo.InvariantCulture)

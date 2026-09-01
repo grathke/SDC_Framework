@@ -1,4 +1,4 @@
-[CmdletBinding()]
+﻿[CmdletBinding()]
 param(
     [switch]$SkipBuild
 )
@@ -112,6 +112,12 @@ Assert-Absent -Path $maintenancePages -Pattern '"Zip Coder"' -Description "No pa
 Write-Step "Save and concurrency contract"
 Assert-Pattern -Path ".\01 FW_Base_U.vb" -Pattern "CaptureOriginalRowVersion" -Description "RowVersion is captured for concurrency"
 Assert-Pattern -Path ".\01 FW_Base_U.vb" -Pattern "ShowConcurrencyUnavailable" -Description "Missing concurrency protection is surfaced"
+
+# Documented exception: Page Generation is a one-off page whose questions are numbered and laid out
+# in the order they must be answered, so it opts out of the shared tab order manager. The default
+# stays True in Base_U for every other _U page.
+Assert-Pattern -Path ".\01 FW_Base_U.vb" -Pattern "Protected Overridable Function SupportsTabOrderManager" -Description "Tab order manager is opt-out, defaulting to on"
+Assert-Pattern -Path ".\PageGeneration_U.vb" -Pattern "Protected Overrides Function SupportsTabOrderManager" -Description "Page Generation declares its tab order manager exception"
 foreach ($page in $maintenancePages) {
     if (Select-String -Path $page -Pattern "Overrides Function SaveRecord" -SimpleMatch -Quiet) {
         if (-not (Select-String -Path $page -Pattern "CaptureOriginalRowVersion" -SimpleMatch -Quiet) -and

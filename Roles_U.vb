@@ -62,8 +62,14 @@ Namespace HelloWorld
             LoadRoleFieldsGrid()
         End Sub
 
+        ''' Roles_U does not inherit Base_U, so it owns its caption. Kept in one place here for the
+        ''' same reason Base_U pages use BuildMaintenanceTitle.
+        Private Function BuildRolesTitle() As String
+            Return $"Edit Role: {_roleName}"
+        End Function
+
         Private Sub InitializeComponent()
-            Me.Text = $"Edit Role: {_roleName}"
+            Me.Text = BuildRolesTitle()
             Me.ClientSize = New Size(1160, 855)
             Me.StartPosition = FormStartPosition.CenterParent
             Me.FormBorderStyle = FormBorderStyle.FixedDialog
@@ -649,7 +655,7 @@ Namespace HelloWorld
 
             _roleId = selectedRoleId
             _roleName = roleNameComboBox.Text
-            Me.Text = $"Edit Role: {_roleName}"
+            Me.Text = BuildRolesTitle()
             LoadRightGrid()
             LoadDisplayOrder()
             LoadRoleFieldsGrid()
@@ -700,7 +706,7 @@ Namespace HelloWorld
                 DataAccess.UpdateRoleNameAndDisplayOrder(_roleId, newRoleName, newDisplayOrder, isActiveCheckBox.Checked,
                     typApplicationAdminCheckBox.Checked, typCompanyAdminCheckBox.Checked)
                 _roleName = newRoleName
-                Me.Text = $"Edit Role: {_roleName}"
+                Me.Text = BuildRolesTitle()
             Catch ex As Exception
                 MessageBox.Show($"Error saving role settings: {ex.Message}", "Error", MessageBoxButtons.OK, MessageBoxIcon.Error)
             End Try
@@ -764,12 +770,13 @@ Namespace HelloWorld
                 Return
             End If
 
+            ' A field belongs to one role detail. Match on that key rather than on schema and table
+            ' name: the name match cannot tell two rows apart when the same field exists on more
+            ' than one table, and it is at the mercy of how the table name happens to be spelled.
             Dim selectedDetail = rightTable.Rows(selectedRow.Index)
-            Dim schemaId = Convert.ToInt32(selectedDetail("SchemaID"))
-            Dim tableName = Convert.ToString(selectedDetail("DB_Table")).Replace("'", "''")
+            Dim detailId = Convert.ToInt32(selectedDetail("ID"))
             _roleFieldsTable.DefaultView.RowFilter =
-                "SchemaID = " & schemaId.ToString(Globalization.CultureInfo.InvariantCulture) &
-                " AND TableName = '" & tableName & "'"
+                "RoleDetailID = " & detailId.ToString(Globalization.CultureInfo.InvariantCulture)
             roleFieldsGrid.DataSource = _roleFieldsTable.DefaultView
         End Sub
 

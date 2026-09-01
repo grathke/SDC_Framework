@@ -87,6 +87,9 @@ Namespace HelloWorld
             Me.Controls.Add(cancelActionButton)
             Me.Controls.Add(enumButton)
             Me.CancelButton = cancelActionButton
+
+            ' Every maintenance page can raise a report against itself.
+            HelpDeskLauncher.Attach(Me, Me.GetType().Name)
         End Sub
 
         Private Sub FW_Base_U_Shown(sender As Object, e As EventArgs)
@@ -108,9 +111,37 @@ Namespace HelloWorld
                                    End Sub))
         End Sub
 
+        ''' <summary>
+        ''' The page title, decided in one place. The default names what the page is doing and what
+        ''' it is doing it to: "New Entity X", "Edit Entity X", "View Entity X". `_B` and `_U` are a
+        ''' developer convention and never reach the screen.
+        '''
+        ''' A page that needs its own title overrides this instead of assigning Me.Text, so there is
+        ''' exactly one answer to where a caption comes from: this method, on this page. It mirrors
+        ''' BuildBrowseListingTitle on Base_B.
+        ''' </summary>
+        Protected Overridable Function BuildMaintenanceTitle() As String
+            Dim subject = DisplayNameFormatter.ToPageDisplayName(Me.GetType().Name)
+            Dim action = If(IsCreatingNewRecord(), "New", If(IsViewOnly(), "View", "Edit"))
+            Return action & " " & subject
+        End Function
+
+        ''' <summary>
+        ''' Re-asks the page for its title. Call this when something the title is built from changes
+        ''' while the page is open, such as the selected role.
+        ''' </summary>
+        Protected Sub RefreshPageCaption()
+            Me.Text = BuildMaintenanceTitle()
+            Dim titleMatches = Controls.Find("Label_UserTitle", True)
+            If titleMatches.Length = 0 Then titleMatches = Controls.Find("Label_PageTitle", True)
+            If titleMatches.Length > 0 Then titleMatches(0).Text = Me.Text
+        End Sub
+
         Private Sub ApplySharedPageCaption()
             If pageCaptionApplied Then Return
             pageCaptionApplied = True
+
+            Me.Text = BuildMaintenanceTitle()
 
             Dim captionLabel As Label = Nothing
             Dim existingTitle = Controls.Find("Label_UserTitle", True)
@@ -123,6 +154,7 @@ Namespace HelloWorld
                 captionLabel.Font = New Font("Segoe UI", 14.0F, FontStyle.Bold)
                 captionLabel.Location = New Point(20, 15)
                 captionLabel.BringToFront()
+                HelpDeskLauncher.AlignToCaption(Me, captionLabel)
                 Return
             End If
 
@@ -140,6 +172,7 @@ Namespace HelloWorld
             captionLabel.Font = New Font("Segoe UI", 14.0F, FontStyle.Bold)
             captionLabel.Location = New Point(20, 15)
             captionLabel.BringToFront()
+            HelpDeskLauncher.AlignToCaption(Me, captionLabel)
 
             For Each control As Control In Controls
                 If control Is captionLabel OrElse control.Location.Y < 0 Then Continue For
@@ -149,7 +182,7 @@ Namespace HelloWorld
             ClientSize = New Size(ClientSize.Width, ClientSize.Height + 42)
         End Sub
 
-        ' ── Hidden-field row collapse ─────────────────────────────────────
+        ' â”€â”€ Hidden-field row collapse â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
         ''' <summary>
         ''' Vertical tolerance for treating two controls as being on the same row. A label sits
@@ -420,7 +453,28 @@ Namespace HelloWorld
             Next
         End Sub
 
+        ' A page that lays out its own questions in a fixed order has nothing for the tab order
+        ' manager to configure. Overriding this to False suppresses the button and its panel; the
+        ' saved tab order, if any, is still applied.
+        Protected Overridable Function SupportsTabOrderManager() As Boolean
+            Return True
+        End Function
+
+        ''' Centres a header button on the page caption. The caption is placed by
+        ''' ApplySharedPageCaption, which runs before this, so its position is known.
+        Private Sub AlignHeaderButtonToCaption(button As Control)
+            If button Is Nothing Then Return
+
+            Dim matches = Controls.Find("Label_UserTitle", True)
+            If matches.Length = 0 Then matches = Controls.Find("Label_PageTitle", True)
+            If matches.Length = 0 Then Return
+
+            Dim caption = matches(0)
+            button.Top = Math.Max(0, caption.Top + ((caption.Height - button.Height) \ 2))
+        End Sub
+
         Private Sub InitializeTabOrderManager()
+            If Not SupportsTabOrderManager() Then Return
             If Not IsApplicationAdminSession() OrElse tabOrderToggleButton IsNot Nothing Then Return
 
             tabOrderToggleButton = New Button() With {
@@ -430,7 +484,8 @@ Namespace HelloWorld
                 .Anchor = AnchorStyles.Top Or AnchorStyles.Right,
                 .TabStop = False
             }
-            tabOrderToggleButton.Location = New Point(ClientSize.Width - tabOrderToggleButton.Width - 10, 10)
+            tabOrderToggleButton.Location = New Point(ClientSize.Width - tabOrderToggleButton.Width - 10 - HelpDeskLauncher.ReservedWidth, 10)
+            AlignHeaderButtonToCaption(tabOrderToggleButton)
             AddHandler tabOrderToggleButton.Click, AddressOf TabOrderToggleButton_Click
             Controls.Add(tabOrderToggleButton)
             Dim tabOrderToggleToolTip As New ToolTip()
@@ -741,21 +796,17 @@ Namespace HelloWorld
         ''' the row stands for. Browsing the list is not the user filling the form in, so this does
         ''' not count as visiting a required field.
         ''' </summary>
+        ''' <summary>
+        ''' Selecting a row used to focus the control it names, which took focus off the list and put
+        ''' the panel behind the page: the arrow keys stopped moving the selection and the panel the
+        ''' user was working in disappeared. The panel keeps the focus and stays in front instead.
+        ''' </summary>
         Private Sub FocusTabOrderSelection()
             If loadingTabOrderManager Then Return
+            If tabOrderPanel Is Nothing OrElse Not tabOrderPanel.Visible Then Return
 
-            Dim item = TryCast(tabOrderList.SelectedItem, TabOrderManagerItem)
-            If item Is Nothing OrElse item.Control Is Nothing Then Return
-            If Not item.Control.Visible OrElse Not item.Control.Enabled Then Return
-
-            suppressRequiredTouch = True
-            Try
-                item.Control.Focus()
-            Catch
-                ' Focus is a convenience; never let it break the tab order manager.
-            Finally
-                suppressRequiredTouch = False
-            End Try
+            tabOrderPanel.BringToFront()
+            If tabOrderToggleButton IsNot Nothing Then tabOrderToggleButton.BringToFront()
         End Sub
 
         Private Sub TabOrderList_KeyDown(sender As Object, e As KeyEventArgs)
@@ -873,6 +924,7 @@ Namespace HelloWorld
                 If IsFocusIndicatorControl(control) AndAlso Not IsBaseActionButton(control) Then
                     If Not focusOriginalBackColors.ContainsKey(control) Then
                         focusOriginalBackColors(control) = control.BackColor
+                        HostFlowChildForFocusBorder(control)
                         Dim borderPanel = FindExistingRequiredBorderPanel(control)
                         If borderPanel Is Nothing Then
                             borderPanel = New Panel() With {
@@ -905,6 +957,36 @@ Namespace HelloWorld
                     WireFocusIndicators(control)
                 End If
             Next
+        End Sub
+
+        ' A FlowLayoutPanel treats child index as flow position, so a focus border added beside a
+        ' flow child becomes a visible gap in the row, and the SendToBack/BringToFront that give the
+        ' border its z-order silently reorder the row instead. Hosting the control in a plain panel
+        ' first gives the border somewhere to sit that is not the flow, and keeps the control where
+        ' the page put it. This mirrors what pages already do by hand for their required borders.
+        Private Shared Sub HostFlowChildForFocusBorder(control As Control)
+            If control Is Nothing Then Return
+            Dim flow = TryCast(control.Parent, FlowLayoutPanel)
+            If flow Is Nothing Then Return
+
+            Dim flowIndex = flow.Controls.GetChildIndex(control)
+            Dim host As New Panel() With {
+                .Name = "FocusHost_" & control.Name,
+                .AutoSize = True,
+                .AutoSizeMode = AutoSizeMode.GrowAndShrink,
+                .Padding = New Padding(2),
+                .Margin = control.Margin,
+                .TabIndex = control.TabIndex,
+                .TabStop = False
+            }
+
+            flow.Controls.Remove(control)
+            control.Margin = New Padding(0)
+            control.Location = New Point(2, 2)
+            host.Controls.Add(control)
+            control.TabIndex = 0
+            flow.Controls.Add(host)
+            flow.Controls.SetChildIndex(host, flowIndex)
         End Sub
 
         Private Shared Function FindExistingRequiredBorderPanel(control As Control) As Panel
@@ -1072,7 +1154,7 @@ Namespace HelloWorld
             Return firstControl
         End Function
 
-        ' ── Overridable behaviour ─────────────────────────────────────────
+        ' â”€â”€ Overridable behaviour â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
         Protected Overridable Function OkButtonText() As String
             Return "OK"
@@ -1186,13 +1268,13 @@ Namespace HelloWorld
             Return CType(originalRowVersion.Clone(), Byte())
         End Function
 
-        ' ── Must override in child page ───────────────────────────────────
+        ' â”€â”€ Must override in child page â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
         Protected MustOverride Sub BindToFormInternal()
         Protected MustOverride Sub ApplyMode()
         Protected MustOverride Function TryBuildRecord() As Boolean
 
-        ' ── Shared form wiring ────────────────────────────────────────────
+        ' â”€â”€ Shared form wiring â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
         Protected Sub BindToForm()
             loading = True
@@ -1464,8 +1546,21 @@ Namespace HelloWorld
 
         Private Sub EnumButton_Click(sender As Object, e As EventArgs)
             Dim pageName = GetPageName()
-            DataAccess.EnumeratePageControls_U(Me, pageName, GetTableNameOverride())
-            MessageBox.Show("ALL CONTROLS HAVE BEEN ENUMERATED" & vbCrLf & vbCrLf & "Page: " & pageName,
+            Dim written = DataAccess.EnumeratePageControls_U(Me, pageName, GetTableNameOverride())
+
+            If written = 0 Then
+                MessageBox.Show("NO CONTROLS WERE ENUMERATED." & vbCrLf & vbCrLf &
+                                "Page: " & pageName & vbCrLf & vbCrLf &
+                                "Only a data-bound control can be enumerated, and none on this page " &
+                                "was bound when Enum ran. The existing rows were left alone." & vbCrLf & vbCrLf &
+                                "Without rows here, field permissions, the yellow required label and " &
+                                "override captions cannot apply to this page.",
+                                "Nothing Enumerated", MessageBoxButtons.OK, MessageBoxIcon.Warning)
+                Return
+            End If
+
+            MessageBox.Show(written.ToString(Globalization.CultureInfo.InvariantCulture) &
+                            " CONTROLS HAVE BEEN ENUMERATED" & vbCrLf & vbCrLf & "Page: " & pageName,
                             "Enumeration Complete", MessageBoxButtons.OK, MessageBoxIcon.Information)
         End Sub
 
@@ -1776,7 +1871,7 @@ Namespace HelloWorld
             Return String.Empty
         End Function
 
-        ' ── Shared helpers ────────────────────────────────────────────────
+        ' â”€â”€ Shared helpers â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
         Protected Function AddField(caption As String, y As Integer, [readOnly] As Boolean,
                                     Optional required As Boolean = False,
@@ -1792,6 +1887,12 @@ Namespace HelloWorld
                 If Not lbl.Text.EndsWith(" *", StringComparison.Ordinal) Then
                     lbl.Text &= " *"
                 End If
+
+                ' App Admin required: declared here on the page, so it applies to every role. The
+                ' blue label is not decoration - ShouldSkipBrRequiredStyling reads this exact ARGB
+                ' and makes the permission path skip the field, which is how App Admin required
+                ' takes precedence over the yellow FW_RoleFields required.
+                lbl.BackColor = Color.FromArgb(221, 235, 247)
             End If
 
             Me.Controls.Add(lbl)

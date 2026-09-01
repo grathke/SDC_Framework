@@ -37,12 +37,35 @@ Namespace HelloWorld
             SupportPage_Resize(Me, EventArgs.Empty)
         End Sub
 
+        ''' The support side of the same table - named so it cannot be mistaken for the user
+        ''' listing, which the derived name would not distinguish.
+        Protected Overrides Function BuildBrowseListingTitle(registrationId As Integer, tableName As String) As String
+            Return "Help Desk Issues - Support"
+        End Function
+
         Protected Overrides Function ResolveCurrentRoleFieldTableName() As String
             Return "FW_HD_Issues"
         End Function
 
+        ''' <summary>
+        ''' An application or company administrator sees every ticket in the registration. Everyone
+        ''' else sees only the tickets they reported. Applied as a query predicate, so it holds for
+        ''' the grid, QBE and every action that resolves a row from it.
+        ''' </summary>
         Protected Overrides Function GetBrowseUserScopePredicate() As String
-            Return String.Empty
+            If SeesAllRegistrationIssues() Then Return String.Empty
+            Return "i.ReporterUserID = @UserID"
+        End Function
+
+        Protected Overrides Function GetBrowseUserId() As Integer
+            If SeesAllRegistrationIssues() Then Return 0
+            Return CurrentUserId()
+        End Function
+
+        Private Function SeesAllRegistrationIssues() As Boolean
+            If Not SessionState.IsActive OrElse Not SessionState.Current.HasValue Then Return False
+            Dim session = SessionState.Current.Value
+            Return session.IsApplicationAdminRole OrElse session.IsCompanyAdminRole
         End Function
 
         Protected Overrides Function TryGetActiveRegistrationId(ByRef registrationId As Integer) As Boolean
@@ -93,25 +116,24 @@ Namespace HelloWorld
             Return True
         End Function
 
+        Protected Overrides Function HandleCustomCreateAction() As Boolean
+            Dim registrationId As Integer
+            If Not TryGetActiveRegistrationId(registrationId) Then Return True
+
+            Using page As New FW_HD_Issues_U(0, registrationId)
+                If ShouldRefreshAfterMaintenance(page.ShowDialog(Me)) Then RefreshGridForCustomAction()
+            End Using
+            Return True
+        End Function
+
         Private Sub SupportPage_Load(sender As Object, e As EventArgs)
-            HideCreateButton()
             LoadRegistrations()
         End Sub
 
-        Private Sub HideCreateButton()
-            For Each control As Control In Controls
-                Dim button = TryCast(control, Button)
-                If button IsNot Nothing AndAlso String.Equals(button.Text, "New", StringComparison.Ordinal) Then
-                    button.Visible = False
-                    button.Enabled = False
-                    Exit For
-                End If
-            Next
-        End Sub
-
         Private Sub SupportPage_Resize(sender As Object, e As EventArgs)
+            ' Left of the Help Desk button, which owns the top right corner on every page.
             registrationComboBox.Top = 14
-            registrationComboBox.Left = Math.Max(20, ClientSize.Width - 20 - registrationComboBox.Width)
+            registrationComboBox.Left = Math.Max(20, ClientSize.Width - 20 - registrationComboBox.Width - HelpDeskLauncher.ReservedWidth)
             registrationLabel.Top = registrationComboBox.Top + 4
             registrationLabel.Left = registrationComboBox.Left - registrationLabel.PreferredWidth - 8
         End Sub

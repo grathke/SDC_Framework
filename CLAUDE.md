@@ -22,6 +22,31 @@ whether something is expected of them.
   ```
 
 - **Do not launch the application until the user replies `run`.** They may prefer to run it themselves.
+- **`CLOSE THE APP`** — the running application locks `bin\Debug\net10.0-windows\HelloWorld.exe`, so a
+  build, a test run or a restart cannot proceed while it is open. When that happens, end the response
+  with this marker as a heading, naming the process id, rather than burying the request in prose. Get
+  the id with `Get-Process HelloWorld`, never guess it. Example:
+
+  ```
+  ## CLOSE THE APP — PID 40820
+  Then say `run` and I will rebuild and relaunch.
+  ```
+
+  Do not close the application unless the user asks. They may have unsaved work on screen.
+- **`RUN IT ?`** — the request to launch is a heading too, not a line of prose. Whenever the work is
+  ready to exercise, end with this heading and wait. `yes` or `run` is the go-ahead.
+
+  ```
+  ## RUN IT ?
+  ```
+
+- **Combine the two when both apply.** If the application is already running and needs to close before
+  it can be rebuilt and relaunched, that is one prompt, not two:
+
+  ```
+  ## CLOSE THE APP — PID 40820 — THEN RUN IT ?
+  ```
+
 - **`BLOCKED`** — end with this marker instead when work cannot continue without a decision from the
   user. State what is needed and what is assumed if they choose nothing.
 - **`WHATS NEXT ?`** — end with this heading whenever the response hands control back and something
@@ -33,8 +58,15 @@ whether something is expected of them.
   asked of the user is never buried in a paragraph.
 - Finish every part of the work that is not blocked before reporting either marker, and say explicitly
   what was left out and why.
+- **Keep answers and explanations brief.** Lead with the answer. Do not restate the question, recap
+  what was just done, or list options that will not be pursued. Detail is welcome where it changes a
+  decision; length for its own sake is not.
 - Read the full relevant file before changing it. Never apply a generic solution without first
   understanding the existing code.
+- Before editing `01 FW_Base_B.vb` or `01 FW_Base_U.vb`, read the section of `FRAMEWORK_NOTES.md`
+  that covers the behavior being changed. The contracts there are not obvious from a single call
+  site, and getting one backwards is expensive: the required-field colour precedence was argued the
+  wrong way round on 2026-08-31 because the documented rule was never consulted.
 - Before a change that touches multiple files, affects working behavior, or is more than a small
   targeted edit: describe the plan and get confirmation before proceeding.
 - When something looks wrong, investigate the actual page, control or data first. If it is still
@@ -109,6 +141,9 @@ Key areas:
 - `_B` = browse page: a grid listing rows, from which a record is selected to view, edit or delete.
 - `_U` = maintenance page: create, update, read and delete of a single record.
 - `_B` and `_U` pages are normally created as a pair against the same underlying table.
+- `_B` pages inherit `FW_Base_B` and `_U` pages inherit `FW_Base_U`. A page that does not is a
+  documented exception rather than a variant: state the contract it cannot satisfy and add a
+  validation check for it. `Roles_U` is an approved exception.
 - Display text is derived from names by `DisplayNameFormatter.ToDisplayName`. Do not add a second
   formatter; extend the acronym list in `DisplayNameFormatter.vb` instead.
 - Control naming, which the framework depends on to map controls to columns: `Label_<FieldName>`,

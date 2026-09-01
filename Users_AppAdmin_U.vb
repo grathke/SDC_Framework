@@ -40,7 +40,6 @@ Namespace HelloWorld
             mode = editMode
             UserData = CloneRecord(data)
 
-            Me.Text = DialogTitle()
             Me.ClientSize = New Size(860, 664)
 
             ' Hidden key field used by shared audit operation detection.
@@ -709,6 +708,10 @@ Namespace HelloWorld
         Protected Overrides Function OkButtonText() As String
             If mode = UserAdminEditMode.DeleteMode Then Return "Delete"
             Return "OK"
+        End Function
+
+        Protected Overrides Function BuildMaintenanceTitle() As String
+            Return DialogTitle()
         End Function
 
         Private Function DialogTitle() As String

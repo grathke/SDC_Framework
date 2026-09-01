@@ -559,6 +559,10 @@ Namespace HelloWorld
             qbeSplitContainer.Panel2.Controls.Add(layoutToolbarPanel)
             qbeSplitContainer.Panel2.Controls.Add(columnsManagerPanel)
             Me.Controls.Add(titleLabel)
+
+            ' Every browse page can raise a report against itself, in the same screen position as
+            ' the one on a maintenance page.
+            HelpDeskLauncher.Attach(Me, Me.GetType().Name)
             Me.Controls.Add(sqlLabel)
             Me.Controls.Add(sqlTextBox)
             Me.Controls.Add(registrationIdLabel)
@@ -711,11 +715,8 @@ Namespace HelloWorld
                 currentDbTableName = DataAccess.GetDbTableFromRoleTableByWindowOrPage(registrationId, pageName)
                 UpdateShowDeletedButtonState()
 
-                Dim displayTitle = BuildBrowseListingTitle(registrationId, ResolveCurrentRoleFieldTableName())
-                If String.Equals(Me.Text, "Browse Listing", StringComparison.Ordinal) Then
-                    Me.Text = displayTitle
-                End If
-                titleLabel.Text = displayTitle
+                Me.Text = BuildBrowseListingTitle(registrationId, ResolveCurrentRoleFieldTableName())
+                titleLabel.Text = Me.Text
                 
                 ' Try to get SQL from RoleTables
                 Dim sql = DataAccess.GetTableSqlFromRoleTableByWindowOrPage(registrationId, pageName)
@@ -1012,13 +1013,14 @@ Namespace HelloWorld
             titleLabel.Left = contentLeft
             Dim headerCenterY As Integer = Math.Max(0, sqlTextBox.Top \ 2)
             titleLabel.Top = Math.Max(0, headerCenterY - (titleLabel.Height \ 2))
+            HelpDeskLauncher.AlignToCaption(Me, titleLabel)
 
             sqlLabel.Left = contentLeft
             Dim sqlBaseLeft = sqlLabel.Right + 8
             applySqlButton.Left = contentLeft + contentWidth - applySqlButton.Width
             applySqlButton.Top = 78
 
-            registrationComboBox.Left = contentLeft + contentWidth - registrationComboBox.Width
+            registrationComboBox.Left = contentLeft + contentWidth - registrationComboBox.Width - HelpDeskLauncher.ReservedWidth
             registrationComboBox.Top = Math.Max(0, headerCenterY - (registrationComboBox.Height \ 2))
             registrationIdLabel.Left = registrationComboBox.Left - registrationIdLabel.PreferredWidth - 8
             registrationIdLabel.Top = Math.Max(0, headerCenterY - (registrationIdLabel.Height \ 2))

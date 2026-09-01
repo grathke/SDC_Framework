@@ -94,7 +94,7 @@ Assert-Pattern -Path ".\PageGeneration_U.vb" -Pattern 'CheckBox_UseRegistrationI
 Assert-Pattern -Path ".\PageGeneration_U.vb" -Pattern 'WHERE [RegistrationID] = @RegistrationID' -Description "Page Generation generates a parameterized RegistrationID filter when enabled"
 Assert-Pattern -Path ".\PageGeneration_U.vb" -Pattern '9. Browse SQL' -Description "Page Generation SQL question uses Pascal-style display text"
 Assert-Pattern -Path ".\PageGeneration_U.vb" -Pattern '10. Use RegistrationID from selected table' -Description "Page Generation Use RegistrationID question follows Browse SQL"
-Assert-Pattern -Path ".\PageGeneration_U.vb" -Pattern 'New String() {"RequestName", "PageBaseName", "BrowsePageName", "MaintenancePageName", "UnderlyingTableName", "MenuCaller", "BrowseSql"}' -Description "Page Generation Admin Required fields exclude the Use Registration ID checkbox"
+Assert-Pattern -Path ".\PageGeneration_U.vb" -Pattern 'New String() {"RequestName", "PageBaseName", "BrowsePageName", "MaintenancePageName", "UnderlyingTableName", "MenuCaller", "IconFileName", "BrowseSql"}' -Description "Page Generation Admin Required fields exclude the Use Registration ID checkbox"
 Assert-Pattern -Path ".\PageGeneration_U.vb" -Pattern 'Admin Required labels use a trailing *' -Description "Page Generation directions document star-only Admin Required labels"
 Assert-Pattern -Path ".\PageGeneration_U.vb" -Pattern 'labelControl.Text &= " *"' -Description "Page Generation Admin Required labels show an asterisk"
 Assert-Pattern -Path ".\PageGeneration_U.vb" -Pattern 'textBox.Tag = "Required"' -Description "Page Generation Admin Required controls participate in shared validation"
@@ -109,9 +109,9 @@ Assert-Pattern -Path ".\PageGeneration_U.vb" -Pattern 'Run the browse framework 
 Assert-Pattern -Path ".\PageGeneration_U.vb" -Pattern 'Run a duplicate-logic check before generating the pages' -Description "Page Generation directions require duplicate-logic review"
 Assert-Pattern -Path ".\PageGeneration_U.vb" -Pattern 'Run the applicable _B/_U regression checks' -Description "Page Generation directions require _B/_U regression checks"
 Assert-Pattern -Path ".\PageGeneration_U.vb" -Pattern 'Build the application after the regression checks pass' -Description "Page Generation directions require a post-regression build"
-Assert-Pattern -Path ".\01 FW_Base_U.vb" -Pattern 'requiredValidationActivated = True' -Description "Shared AddField required borders activate during validation"
-Assert-Pattern -Path ".\01 FW_Base_U.vb" -Pattern 'pair.Value.BackColor = If(isEmpty, Color.Red, SystemColors.Control)' -Description "Shared AddField required borders refresh color with control values"
-Assert-Pattern -Path ".\01 FW_Base_U.vb" -Pattern 'pair.Value.Visible = requiredValidationActivated AndAlso isEmpty' -Description "Shared AddField required borders remain hidden until validation"
+Assert-Pattern -Path ".\01 FW_Base_U.vb" -Pattern 'touchedRequiredControls.Add(control)' -Description "Shared AddField required borders activate only once a required control is visited"
+Assert-Pattern -Path ".\01 FW_Base_U.vb" -Pattern 'pair.Value.BackColor = If(showWarning, Color.Red, SystemColors.Control)' -Description "Shared AddField required borders refresh color with control values"
+Assert-Pattern -Path ".\01 FW_Base_U.vb" -Pattern 'Return touchedRequiredControls.Contains(control) AndAlso IsEmptyRequiredControl(control)' -Description "Shared AddField required borders stay hidden until a visited required control is empty"
 Assert-Pattern -Path ".\PageGeneration_U.vb" -Pattern 'Generated _U pages must inherit required-field styling and validation from FW_Base_U' -Description "Directions require generated pages to inherit required styling from Base_U"
 Assert-Pattern -Path ".\PageGeneration_U.vb" -Pattern 'must not create page-local red-border panels' -Description "Directions prohibit generated page-local required-border duplication"
 if (Select-String -Path ".\PageGeneration_U.vb" -Pattern '"[0-9]+\. (RequestName|PageBaseName|BrowsePageName|MaintenancePageName|UnderlyingTableName|RegistrationID|EditableFields|ReadOnlyFields|LookupFields|AdminRequiredFields|CreateBehavior|UpdateBehavior|DeleteBehavior|MenuCaller|BrowseSql)"' -Quiet) {
@@ -122,10 +122,10 @@ Write-Host "PASS: Page Generation question labels are not raw database field nam
 Write-Step "Standard _U page hard-code guardrails"
 $standardUpdatePages = Get-ChildItem -Path $repoRoot -Filter "*_U.vb" -File |
     Where-Object { $_.Name -ne "01 FW_Base_U.vb" } |
-    Where-Object { $_.Name -notin @("Registration_U.vb") } |
+    Where-Object { $_.Name -notin @("FW_Registration_U.vb") } |
     Where-Object { Select-String -Path $_.FullName -Pattern "Inherits FW_Base_U" -SimpleMatch -Quiet }
 
-Write-Host "PASS: Registration_U.vb is an approved legacy model-backed maintenance-page exception" -ForegroundColor Yellow
+Write-Host "PASS: FW_Registration_U.vb is an approved legacy model-backed maintenance-page exception" -ForegroundColor Yellow
 
 foreach ($page in $standardUpdatePages) {
     $pageText = Get-Content -Path $page.FullName -Raw
@@ -142,7 +142,7 @@ Assert-Pattern -Path ".\01 FW_Base_B.vb" -Pattern "UpsertRoleTableRecord" -Descr
 Assert-Pattern -Path ".\01 FW_Base_B.vb" -Pattern "EnsureDefaultLayoutExists(registrationId)" -Description "Base browse ensures a shared default layout after the first successful grid load"
 Assert-Pattern -Path ".\01 FW_Base_B.vb" -Pattern "updateButton.PerformClick()" -Description "Base browse double-click invokes the visible Modify button"
 Assert-Pattern -Path ".\Roles_B.vb" -Pattern "modifyButton.PerformClick()" -Description "Roles double-click invokes its visible Modify button"
-Assert-Pattern -Path ".\01 FW_Base_B.vb" -Pattern "Not userChangedLayout" -Description "Base browse does not rewrite Last Used without a user layout change"
+Assert-Pattern -Path ".\01 FW_Base_B.vb" -Pattern "If Not layoutChanged AndAlso Not String.IsNullOrWhiteSpace(existingLastUsed) Then" -Description "Base browse does not rewrite Last Used without a user layout change"
 Assert-Pattern -Path ".\01 FW_Base_B.vb" -Pattern '"LastUsed",' -Description "Base browse upserts Last Used when the grid JSON changed"
 Assert-Pattern -Path ".\01 FW_Base_U.vb" -Pattern "WarnIfMissingRowVersion" -Description "Base maintenance page warns on missing RowVersion"
 Assert-Pattern -Path ".\01 FW_Base_U.vb" -Pattern "CaptureOriginalRowVersion" -Description "Base maintenance page owns the original RowVersion"
@@ -150,12 +150,12 @@ Assert-Pattern -Path ".\01 FW_Base_U.vb" -Pattern "CopyOriginalRowVersion" -Desc
 Assert-Pattern -Path ".\01 FW_Base_B.vb" -Pattern "TableHasRowVersion" -Description "Base browse page checks RowVersion schema"
 Assert-Pattern -Path ".\DataAccess.vb" -Pattern "WHERE ID = @ID AND RowVersion = @OriginalRowVersion" -Description "Entity update uses optimistic concurrency"
 Assert-Pattern -Path ".\DataAccess.vb" -Pattern "WHERE UserID = @UserID AND RowVersion = @OriginalRowVersion" -Description "User update uses optimistic concurrency"
-Assert-Pattern -Path ".\Registration_U.vb" -Pattern "ConfirmConcurrencyOverwrite" -Description "Registration handles concurrency conflicts"
+Assert-Pattern -Path ".\FW_Registration_U.vb" -Pattern "ConfirmConcurrencyOverwrite" -Description "Registration handles concurrency conflicts"
 Assert-Pattern -Path ".\Users_AppAdmin_U.vb" -Pattern "ConfirmConcurrencyOverwrite" -Description "Users handles concurrency conflicts"
 Assert-Pattern -Path ".\FW_EntityCrudAdapter.vb" -Pattern "RecordChanged" -Description "Entity adapter handles concurrency conflicts"
 Assert-Pattern -Path ".\Entity_U.vb" -Pattern "CaptureOriginalRowVersion(EntityData.RowVersion)" -Description "Entity captures its original RowVersion through Base_U"
 Assert-Pattern -Path ".\Users_AppAdmin_U.vb" -Pattern "CaptureOriginalRowVersion(UserData.RowVersion)" -Description "Users captures its original RowVersion through Base_U"
-Assert-Pattern -Path ".\Registration_U.vb" -Pattern "CaptureOriginalRowVersion(currentRecord.RowVersion)" -Description "Registration captures its original RowVersion through Base_U"
+Assert-Pattern -Path ".\FW_Registration_U.vb" -Pattern "CaptureOriginalRowVersion(currentRecord.RowVersion)" -Description "Registration captures its original RowVersion through Base_U"
 Assert-Pattern -Path ".\Roles_U.vb" -Pattern "DataAccess.UpdateRoleField" -Description "Roles_U remains the documented custom immediate-write page"
 Assert-Pattern -Path ".\HelpDeskDataAccess.vb" -Pattern "Public Property UpdatedBy As Integer?" -Description "Help Desk nullable update actor maps to a nullable model property"
 Assert-Pattern -Path ".\HelpDeskDataAccess.vb" -Pattern "Public Property UpdatedOn As DateTime?" -Description "Help Desk nullable update timestamp maps to a nullable model property"

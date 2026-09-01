@@ -442,19 +442,29 @@ missing field. On success: `UnmaskForSave` → `TryBuildRecord` → `RemaskAfter
 
 ### Required-field styling
 
-Two paths, distinguished by the label background:
+Two paths, distinguished by the label background. **App Admin required always beats permission
+required.**
 
-| Label | Owner | Border panel tag |
-|---|---|---|
-| **Yellow** `255,255,224` | metadata (`ApplyControlUpdates`) | `RequiredBorder_<control>` |
-| **Blue** `221,235,247` | the page itself | `LocalRequiredBorder_<field>` |
+| Label | Means | Set by | Border panel tag |
+|---|---|---|---|
+| **Blue** `221,235,247` | **App Admin required** - declared on the page, so it applies to every role | `AddField(required:=True)` in Base_U | `LocalRequiredBorder_<field>` |
+| **Yellow** `255,255,224` | **Permission required** - varies by who is logged in | `ApplyControlUpdates`, from `FW_RoleFields.IsRequired` for the session role and registration | `RequiredBorder_<control>` |
+
+Permissions are processed in full for every field. `ApplyControlUpdates` calls
+`ShouldSkipBrRequiredStyling`, which matches the blue ARGB exactly, and a match suppresses **only**
+the required styling: the metadata required border, and the asterisk-and-yellow repaint. Everything
+else on the row still applies - the field permissions, and the `OverrideCaption`.
+
+That scope matters. The helper used to `Continue For` and abandon the whole row, so a field that
+was both App Admin required and given an `OverrideCaption` silently never received its caption.
+
+The blue is load-bearing, not decoration. A page that declares a field required and leaves the
+label unpainted silently gives up its precedence, and the field is restyled by whatever the role
+says. `FW_HD_Issues_U` paints these labels by hand as well; that predates `AddField` doing it and
+is now redundant rather than special.
 
 Both paths use the **same** red-border rule, applied by `RefreshLocalRequiredBorders` in Base_U.
 Data access creates the metadata panel hidden and does not manage its visibility.
-
-A blue label is an **opt-out switch**: `ShouldSkipBrRequiredStyling` matches that exact ARGB and
-makes the metadata path skip the field entirely — no border panel, no asterisk, no yellow repaint.
-Help Desk uses this for its conditional required rules.
 
 **When a field is red:** it has been *visited* and is empty. Visited means entered, left, or
 edited. The focus the page sets for itself on open does not count, so a blank new record shows no
@@ -467,6 +477,16 @@ DateTimePicker, NumericUpDown and Button (excluding Save, Cancel and the enum bu
 - focus border green `#37B469` (`Color.FromArgb(55, 180, 105)`)
 - visited and empty: red (`Color.Red`) instead, re-evaluated on enter, leave and change
 - hover background `221,235,247`, applied only when the control is not focused
+
+**Controls inside a `FlowLayoutPanel`.** The focus border is a sibling panel sitting behind the
+control, given its z-order by `SendToBack` / `BringToFront`. A FlowLayoutPanel reads child index as
+*flow position*, so both of those are layout changes there, not z-order changes: the border shows up
+as a green block occupying its own slot in the row, and every wired child is dragged to the front of
+the flow, which renders the row in reverse. `WireFocusIndicators` therefore calls
+`HostFlowChildForFocusBorder` first, which moves the control into a plain auto-sizing `Panel` at the
+same flow index and carries its `Margin` and `TabIndex` across. The border then lives inside that
+host, where z-order means z-order. Pages that wrap their own required fields already do this by
+hand — see `ApplyPageRequiredFieldStyling` in `PageGeneration_U.vb`.
 
 Note the blue constant does double duty as both the hover background and the required-label
 opt-out. Painting a label that blue for cosmetic reasons silently disables its required styling.
@@ -510,6 +530,42 @@ There are **two** ways a page pair gets built, and they are not the same thing.
 
 The manual's "What Happens During Implementation" describes the **by hand** path. The generator
 does none of it: no restore point, no build, no regression run, no manual test.
+
+### The two previews on the page request
+
+The footer carries two buttons that sound alike and answer different questions.
+
+| Button | Shows | Answers |
+|---|---|---|
+| `Preview` | `BuildGeneratedPageRequest()` — the filled-in request document | is the *request* well formed |
+| `Preview Code` | `PageGenerator.Preview` — the exact source that would be written | is the *template* going to produce these pages |
+
+`Preview Code` requires a saved request, because the generator reads the saved row rather than the
+form; if there are unsaved edits it offers to save first rather than writing silently. It never
+writes a page file, an `FW_RoleTables` row or a dashboard icon. Its Summary tab lists all three as
+*would be* actions, including whether an existing file would be overwritten and whether the
+`FW_RoleTables` row would be inserted, left alone, have its SQL updated, or be replaced.
+
+`Preview` and `Generate` share one owner: `PageGenerator.BuildPlan` performs every validation and
+emits both sources, `Generate` writes what it produced, and `Preview` displays it. A preview
+therefore cannot disagree with what generation writes. `ClassifyRoleTableAction` is shared the same
+way — `Generate` performs the action and the preview describes it.
+
+### Compile Check
+
+Reading the previewed source does not prove it compiles. The **Compile Check** button inside the
+preview writes both sources plus a scratch `PageGenPreview.vbproj` to `obj\pagegen-preview\`, which
+references the built `bin\Debug\net10.0-windows\HelloWorld.dll`, and runs `dotnet build` on it. The
+generated pages inherit `FW_Base_B` / `FW_Base_U` from that assembly, so this is a real compile and
+reports real `BC` errors with file, line and column. Nothing in the workspace is touched — the SDK
+excludes `obj\` from the application's own compile items.
+
+It compiles **both pages together**, not the tab you are looking at, and the result names what it
+compiled. That is the only scope that works: the generated browse page constructs the maintenance
+page to open a record, so compiling it alone would fail on a type that is not there.
+
+It needs the application to have been built at least once. If the assembly is missing it says so
+instead of failing obscurely.
 
 ### What the generator refuses
 

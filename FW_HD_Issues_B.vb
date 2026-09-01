@@ -9,16 +9,46 @@ Namespace HelloWorld
     Public Class FW_HD_Issues_B
         Inherits FW_Base_B
 
-        Public Sub New()
+        ''' The page the listing is limited to. Empty means every page - the main menu route, where
+        ''' the user is looking at everything they have raised.
+        Private ReadOnly reportingPage As String = String.Empty
+
+        ''' The originating page's own caption, so the title names the page the way the user saw it
+        ''' rather than by its class name.
+        Private ReadOnly reportingPageTitle As String = String.Empty
+
+        Public Sub New(Optional reportedFromPage As String = "", Optional reportedFromPageTitle As String = "")
             MyBase.New(BuildCurrentUserFromSession(),
                        MenuFormInitializer.BuildAccessProfileForCurrentSession(BuildCurrentUserFromSession(), "FW_HD_Issues_B"),
                        "FW_HD_Issues")
-            Me.Text = "Help Desk Issues Listing - USER"
+            reportingPage = If(reportedFromPage, String.Empty).Trim()
+            reportingPageTitle = If(reportedFromPageTitle, String.Empty).Trim()
+            Me.Text = If(reportingPage = String.Empty,
+                         "Help Desk Issues Listing - USER",
+                         "Help Desk Issues - " & DisplayNameFormatter.ToPageDisplayName(reportingPage))
             AddHandler Me.Load, AddressOf UserPage_Load
         End Sub
 
+
+        ''' <summary>
+        ''' Raised from a page the listing is already filtered to it, so the title says so rather
+        ''' than repeating the page name the user just came from. From the menu it is every ticket
+        ''' they raised, and the derived name is right.
+        ''' </summary>
+        Protected Overrides Function BuildBrowseListingTitle(registrationId As Integer, tableName As String) As String
+            If reportingPage = String.Empty Then Return MyBase.BuildBrowseListingTitle(registrationId, tableName)
+            If reportingPageTitle <> String.Empty Then Return "HD Issues Listing For " & reportingPageTitle
+            Return "HD Issues Listing For " & DisplayNameFormatter.ToPageDisplayName(reportingPage)
+        End Function
+
+        ''' <summary>
+        ''' A user sees their own tickets, in their own registration - the registration scope is
+        ''' Base_B's. Raised from a page, the list narrows to that page as well, so the first thing
+        ''' the user sees is whether the thing they are about to report is already reported.
+        ''' </summary>
         Protected Overrides Function GetBrowseUserScopePredicate() As String
-            Return "i.ReporterUserID = @UserID"
+            If reportingPage = String.Empty Then Return "i.ReporterUserID = @UserID"
+            Return "i.ReporterUserID = @UserID AND i.ReportedFromPage = '" & reportingPage.Replace("'", "''") & "'"
         End Function
 
         Protected Overrides Function GetBrowseUserId() As Integer
@@ -26,7 +56,7 @@ Namespace HelloWorld
         End Function
 
         Protected Overrides Function HandleCustomCreateAction() As Boolean
-            Using page As New FW_HD_Issues_U(0, GetSessionRegistrationId())
+            Using page As New FW_HD_Issues_U(0, GetSessionRegistrationId(), reportingPage)
                 If ShouldRefreshAfterMaintenance(page.ShowDialog(Me)) Then
                     RefreshGridForCustomAction()
                     FitUserGridColumns()

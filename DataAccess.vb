@@ -1864,7 +1864,7 @@ Namespace HelloWorld
             Dim writableColumns = New String() {
                 "RequestName", "PageBaseName", "BrowsePageName", "MaintenancePageName", "UnderlyingTableName",
                 "UseRegistrationID", "BrowseFields", "MaintenanceFields", "BrowseSql", "LookupFields", "AdminRequiredFields",
-                "MenuCaller", "GenerateBrowsePage", "GenerateMaintenancePage", "UseQbeOnly"
+                "MenuCaller", "IconFileName", "GenerateBrowsePage", "GenerateMaintenancePage", "UseQbeOnly"
             }
 
             Using conn As New SqlConnection(ConnectionString)
@@ -2639,15 +2639,17 @@ Namespace HelloWorld
             End Try
         End Sub
 
-        Public Shared Sub EnumeratePageControls_U(form As System.Windows.Forms.Form, pageName As String, Optional tableNameOverride As String = Nothing)
+        ''' <returns>
+        ''' How many rows were written. A control only produces a row when it is data-bound, so a
+        ''' page can enumerate to nothing and the caller needs to be able to say so.
+        ''' </returns>
+        Public Shared Function EnumeratePageControls_U(form As System.Windows.Forms.Form, pageName As String, Optional tableNameOverride As String = Nothing) As Integer
             If form Is Nothing OrElse String.IsNullOrWhiteSpace(pageName) Then
-                Return
+                Return 0
             End If
 
             Try
                 Dim userId = If(SessionState.IsActive, SessionState.Current.Value.UserID, 0)
-
-                ClearPageEnumerations_U(pageName)
 
                 ' Derive table name from page name: Entity_U -> FW_Entity, Roles_U -> FW_Roles
                 ' Use override if provided
@@ -2660,15 +2662,24 @@ Namespace HelloWorld
                 Dim emptyMappings As New Dictionary(Of String, String)(StringComparer.OrdinalIgnoreCase)
                 EnumerateControlsRecursive(form, enumerations, tableName, emptyMappings, isForUPages:=True)
 
-                For Each enumeration In enumerations
-                    If Not String.IsNullOrWhiteSpace(enumeration.Item3) Then  ' Only insert if FileLink is populated
-                        InsertEnumeration_U(pageName, enumeration.Item1, enumeration.Item2, enumeration.Item3, enumeration.Item4, userId)
-                    End If
+                ' Only a data-bound control produces a FileLink, and only those become rows. Work
+                ' that out before clearing: wiping the existing rows and then inserting nothing
+                ' leaves the page worse off than not running at all.
+                Dim writable = enumerations.Where(Function(item) Not String.IsNullOrWhiteSpace(item.Item3)).ToList()
+                If writable.Count = 0 Then
+                    Return 0
+                End If
+
+                ClearPageEnumerations_U(pageName)
+                For Each enumeration In writable
+                    InsertEnumeration_U(pageName, enumeration.Item1, enumeration.Item2, enumeration.Item3, enumeration.Item4, userId)
                 Next
+                Return writable.Count
             Catch ex As Exception
                 System.Windows.Forms.MessageBox.Show("Enumeration failed: " & ex.Message, "Error", System.Windows.Forms.MessageBoxButtons.OK, System.Windows.Forms.MessageBoxIcon.Error)
+                Return 0
             End Try
-        End Sub
+        End Function
 
         Private Shared Function ExtractColumnMappingsFromSql(sql As String) As Dictionary(Of String, String)
             Dim mappings As New Dictionary(Of String, String)(StringComparer.OrdinalIgnoreCase)
@@ -4463,10 +4474,14 @@ Namespace HelloWorld
                 Dim sql As String =
                     "SELECT r.ID, r.RoleName, r.DisplayOrder " &
                     "FROM dbo.FW_Roles r " &
-                    "WHERE r.RegistrationID = @RegistrationID AND r.IsActive = 1 "
+                    "WHERE r.RegistrationID = @RegistrationID AND r.IsActive = 1 " &
+                    "  AND ISNULL(r.DeletedFlag, 0) = 0 "
 
                 If userId > 0 Then
-                    sql &= "AND NOT EXISTS (SELECT 1 FROM dbo.FW_UserRoles ur WHERE ur.UserID = @UserID AND ur.RoleID = r.ID) "
+                    ' A soft deleted assignment must not keep a role out of the available list -
+                    ' the user no longer holds it, so it is available again.
+                    sql &= "AND NOT EXISTS (SELECT 1 FROM dbo.FW_UserRoles ur WHERE ur.UserID = @UserID AND ur.RoleID = r.ID " &
+                           "AND ISNULL(ur.DeletedFlag, 0) = 0) "
                 End If
 
                 sql &= "ORDER BY r.DisplayOrder, r.RoleName"
@@ -4512,7 +4527,9 @@ Namespace HelloWorld
                     "WHERE ur.UserID = @UserID " &
                     "  AND ur.RegistrationID = @RegistrationID " &
                     "  AND ISNULL(ur.IsActive, 1) = 1 " &
+                    "  AND ISNULL(ur.DeletedFlag, 0) = 0 " &
                     "  AND ISNULL(r.IsActive, 1) = 1 " &
+                    "  AND ISNULL(r.DeletedFlag, 0) = 0 " &
                     "ORDER BY ISNULL(r.DisplayOrder, 0), r.RoleName", conn)
 
                     cmd.Parameters.AddWithValue("@UserID", userId)
@@ -4833,18 +4850,89 @@ Namespace HelloWorld
             End Using
         End Function
 
+        ''' <summary>
+        ''' What still depends on this role. Call before deleting: a role a registration relies on
+        ''' for its company admin cannot be deleted at all, and a role users hold needs their
+        ''' explicit agreement because the delete takes their assignment with it.
+        ''' </summary>
+        Public Shared Function GetRoleUsage(roleId As Integer) As RoleUsage
+            Dim usage As New RoleUsage()
+            Using conn As New SqlConnection(ConnectionString)
+                conn.Open()
+                Using cmd As New SqlCommand(
+                    "SELECT ISNULL(r.RoleName, '') AS RoleName, " &
+                    "(SELECT COUNT(*) FROM dbo.FW_UserRoles ur WHERE ur.RoleID = @RoleID AND ISNULL(ur.IsActive, 1) = 1 AND ISNULL(ur.DeletedFlag, 0) = 0) AS UserCount, " &
+                    "(SELECT COUNT(*) FROM dbo.FW_Registration g WHERE g.CompanyAdminRoleID = @RoleID) AS RegistrationCount " &
+                    "FROM dbo.FW_Roles r WHERE r.ID = @RoleID", conn)
+                    cmd.Parameters.AddWithValue("@RoleID", roleId)
+                    Using reader = cmd.ExecuteReader()
+                        If reader.Read() Then
+                            usage.RoleName = reader("RoleName").ToString()
+                            usage.UserCount = Convert.ToInt32(reader("UserCount"))
+                            usage.RegistrationCount = Convert.ToInt32(reader("RegistrationCount"))
+                        End If
+                    End Using
+                End Using
+            End Using
+            Return usage
+        End Function
+
         Public Shared Sub DeleteRole(roleId As Integer, Optional updatedBy As Integer = 0)
             Using conn As New SqlConnection(ConnectionString)
                 conn.Open()
 
                 If TableHasColumn("FW_Roles", "DeletedFlag") Then
-                    Using cmd As New SqlCommand(
-                        "UPDATE dbo.FW_Roles " &
-                        "SET IsActive = 0, DeletedFlag = 1, DeletedBy = @UpdatedBy, DeletedOn = SYSUTCDATETIME(), UpdatedBy = @UpdatedBy, UpdatedOn = GETDATE() " &
-                        "WHERE ID = @ID", conn)
-                        cmd.Parameters.AddWithValue("@ID", roleId)
-                        cmd.Parameters.AddWithValue("@UpdatedBy", If(updatedBy > 0, CType(updatedBy, Object), DBNull.Value))
-                        cmd.ExecuteNonQuery()
+                    ' A role is not one row. Its table permissions, its field permissions and the
+                    ' assignments that give it to users all go with it, in one transaction: a
+                    ' partial delete would leave users holding a role that no longer exists, which
+                    ' is how RoleID 16 came to have 133 permission rows and no role.
+                    Dim detailsDeleted = 0
+                    Dim fieldsDeleted = 0
+                    Dim assignmentsDeleted = 0
+
+                    Using trans = conn.BeginTransaction()
+                        Try
+                            Using cmd As New SqlCommand(
+                                "UPDATE dbo.FW_Roles " &
+                                "SET IsActive = 0, DeletedFlag = 1, DeletedBy = @UpdatedBy, DeletedOn = SYSUTCDATETIME(), UpdatedBy = @UpdatedBy, UpdatedOn = GETDATE() " &
+                                "WHERE ID = @ID", conn, trans)
+                                cmd.Parameters.AddWithValue("@ID", roleId)
+                                cmd.Parameters.AddWithValue("@UpdatedBy", If(updatedBy > 0, CType(updatedBy, Object), DBNull.Value))
+                                cmd.ExecuteNonQuery()
+                            End Using
+
+                            Using cmd As New SqlCommand(
+                                "UPDATE dbo.FW_RoleDetails " &
+                                "SET IsActive = 0, DeletedFlag = 1, DeletedBy = @UpdatedBy, DeletedOn = SYSUTCDATETIME(), UpdatedBy = @UpdatedBy, UpdatedOn = GETDATE() " &
+                                "WHERE RoleID = @RoleID AND ISNULL(DeletedFlag, 0) = 0", conn, trans)
+                                cmd.Parameters.AddWithValue("@RoleID", roleId)
+                                cmd.Parameters.AddWithValue("@UpdatedBy", If(updatedBy > 0, CType(updatedBy, Object), DBNull.Value))
+                                detailsDeleted = cmd.ExecuteNonQuery()
+                            End Using
+
+                            Using cmd As New SqlCommand(
+                                "UPDATE dbo.FW_RoleFields " &
+                                "SET IsActive = 0, DeletedFlag = 1, DeletedBy = @UpdatedBy, DeletedOn = SYSUTCDATETIME(), UpdatedBy = @UpdatedBy, UpdatedOn = GETDATE() " &
+                                "WHERE RoleID = @RoleID AND ISNULL(DeletedFlag, 0) = 0", conn, trans)
+                                cmd.Parameters.AddWithValue("@RoleID", roleId)
+                                cmd.Parameters.AddWithValue("@UpdatedBy", If(updatedBy > 0, CType(updatedBy, Object), DBNull.Value))
+                                fieldsDeleted = cmd.ExecuteNonQuery()
+                            End Using
+
+                            Using cmd As New SqlCommand(
+                                "UPDATE dbo.FW_UserRoles " &
+                                "SET IsActive = 0, DeletedFlag = 1, DeletedBy = @UpdatedBy, DeletedOn = SYSUTCDATETIME(), UpdatedBy = @UpdatedBy, UpdatedOn = GETDATE() " &
+                                "WHERE RoleID = @RoleID AND ISNULL(DeletedFlag, 0) = 0", conn, trans)
+                                cmd.Parameters.AddWithValue("@RoleID", roleId)
+                                cmd.Parameters.AddWithValue("@UpdatedBy", If(updatedBy > 0, CType(updatedBy, Object), DBNull.Value))
+                                assignmentsDeleted = cmd.ExecuteNonQuery()
+                            End Using
+
+                            trans.Commit()
+                        Catch
+                            trans.Rollback()
+                            Throw
+                        End Try
                     End Using
 
                     LogUpdateAudit("Roles_B",
@@ -4852,7 +4940,11 @@ Namespace HelloWorld
                                    "Delete",
                                    "AfterSave",
                                    roleId.ToString(CultureInfo.InvariantCulture),
-                                   BuildSoftDeleteAuditSnapshotJson("Soft deleted role record."),
+                                   BuildSoftDeleteAuditSnapshotJson(
+                                       "Soft deleted role record with " &
+                                       detailsDeleted.ToString(CultureInfo.InvariantCulture) & " table permissions, " &
+                                       fieldsDeleted.ToString(CultureInfo.InvariantCulture) & " field permissions and " &
+                                       assignmentsDeleted.ToString(CultureInfo.InvariantCulture) & " user assignments."),
                                    True,
                                    Nothing,
                                    updatedBy)
@@ -5395,7 +5487,7 @@ Namespace HelloWorld
                     "ISNULL(Can_Update, 0) AS Can_Update, ISNULL(IsActive, 0) AS IsActive, " &
                     "ISNULL(IsRequired, 0) AS IsRequired, ISNULL(IsUnique, 0) AS IsUnique, " &
                     "ISNULL(Make_Invisible, 0) AS Make_Invisible, OrderBy, OverrideCaption " &
-                    "FROM dbo.FW_RoleFields WHERE RoleID = @RoleID " &
+                    "FROM dbo.FW_RoleFields WHERE RoleID = @RoleID AND ISNULL(DeletedFlag, 0) = 0 " &
                     "ORDER BY TableName, ISNULL(OrderBy, 9999), FieldName", conn)
                     cmd.Parameters.AddWithValue("@RoleID", roleId)
                     Using da As New SqlDataAdapter(cmd)
@@ -5462,8 +5554,10 @@ Namespace HelloWorld
                     Using cmd2 As New SqlCommand(
                         "IF NOT EXISTS (SELECT 1 FROM dbo.FW_RoleFields WHERE RoleID = @RoleID AND TableName = @TableName AND FieldName = @FieldName) " &
                         "INSERT INTO dbo.FW_RoleFields " &
-                        "(RoleDetailID, RegistrationID, RoleID, SchemaID, TableName, FieldName, FileLink, FriendlyFieldName, Can_Create, Can_Read, Can_Update, IsActive, CreatedBy, CreatedOn) " &
-                        "VALUES (@RoleDetailID, @RegistrationID, @RoleID, @SchemaID, @TableName, @FieldName, @FileLink, @FriendlyFieldName, 1, 1, 1, 0, @CreatedBy, GETDATE())", conn)
+                        "(RoleDetailID, RegistrationID, RoleID, SchemaID, TableName, FieldName, FileLink, FriendlyFieldName, OverrideCaption, Can_Create, Can_Read, Can_Update, IsActive, CreatedBy, CreatedOn) " &
+                        "VALUES (@RoleDetailID, @RegistrationID, @RoleID, @SchemaID, @TableName, @FieldName, @FileLink, @FriendlyFieldName, " &
+                        "(SELECT TOP 1 OverrideCaption FROM dbo.FW_RoleFields WHERE RegistrationID = @RegistrationID AND SchemaID = @SchemaID AND TableName = @TableName AND FieldName = @FieldName AND OverrideCaption IS NOT NULL ORDER BY UpdatedOn DESC, ID DESC), " &
+                        "1, 1, 1, 0, @CreatedBy, GETDATE())", conn)
                         cmd2.Parameters.AddWithValue("@RoleDetailID", roleDetailId)
                         cmd2.Parameters.AddWithValue("@RegistrationID", registrationId)
                         cmd2.Parameters.AddWithValue("@RoleID", roleId)
@@ -6091,13 +6185,16 @@ Namespace HelloWorld
                         ' styling so a hidden or unreadable field is never left interactive.
                         Dim fieldHidden = ApplyFieldPermissions(form, controlName, linkedControl, row, isNewRecord)
 
+                        ' App Admin required is declared on the page and painted blue. It owns the
+                        ' required styling and overrides the permission styling below - and nothing
+                        ' else. The override caption still applies, as does everything else on the
+                        ' row.
+                        Dim appAdminOwnsRequired = ShouldSkipBrRequiredStyling(form, controlName, linkedControl)
+
                         ' Apply required border and live validation events. A hidden field is
                         ' skipped: its border panel would be a stray visible control on a row that
                         ' otherwise has nothing left on it.
-                        If isRequired AndAlso Not fieldHidden AndAlso Not String.IsNullOrWhiteSpace(controlName) Then
-                            If ShouldSkipBrRequiredStyling(form, controlName, linkedControl) Then
-                                Continue For
-                            End If
+                        If isRequired AndAlso Not fieldHidden AndAlso Not appAdminOwnsRequired AndAlso Not String.IsNullOrWhiteSpace(controlName) Then
 
                             Dim matches = form.Controls.Find(controlName, True)
                             If matches.Length > 0 Then
@@ -6125,17 +6222,28 @@ Namespace HelloWorld
                             End If
                         End If
 
-                        ' Update label/linked control caption if override provided
+                        ' The override caption is text and nothing more - it is stored without an
+                        ' asterisk and set here without one. The required marker and the label
+                        ' colour are display decisions, made below by whichever path owns required
+                        ' for this field.
+                        '
+                        ' The one exception is a field the page declared required: that block is
+                        ' skipped for it, and replacing the label text here would drop the marker
+                        ' the page put there, so it is restored.
                         If Not String.IsNullOrWhiteSpace(linkedControl) AndAlso Not String.IsNullOrWhiteSpace(overrideCaption) Then
                             Dim labelMatches = form.Controls.Find(linkedControl, True)
                             If labelMatches.Length > 0 Then
                                 Dim labelCtrl = labelMatches(0)
-                                labelCtrl.Text = EnsureRequiredMarker(overrideCaption)
+                                labelCtrl.Text = If(appAdminOwnsRequired,
+                                                    EnsureRequiredMarker(overrideCaption),
+                                                    overrideCaption.Trim())
                             End If
                         End If
 
-                        ' Add asterisk to the associated label after override caption is applied
-                        If isRequired AndAlso Not String.IsNullOrWhiteSpace(controlName) Then
+                        ' Add asterisk to the associated label after override caption is applied.
+                        ' Skipped when App Admin owns the field: the page already marked it, and
+                        ' repainting the label yellow here would take the precedence away.
+                        If isRequired AndAlso Not appAdminOwnsRequired AndAlso Not String.IsNullOrWhiteSpace(controlName) Then
                             Dim suffix As String = String.Empty
                             If controlName.StartsWith("TextBox_") Then : suffix = controlName.Substring(8)
                             ElseIf controlName.StartsWith("ComboBox_") Then : suffix = controlName.Substring(9)
@@ -6535,9 +6643,19 @@ Namespace HelloWorld
         ''' number is a genuine selection: it must not be treated as empty just because it does
         ''' not parse as an integer.
         ''' </summary>
+        ''' The placeholder every selection combo starts on. Selecting it is selecting nothing.
+        Public Const EmptyComboPlaceholder As String = "Make a Selection"
+
         Public Shared Function IsEmptyComboSelection(combo As System.Windows.Forms.ComboBox) As Boolean
             If combo Is Nothing OrElse combo.SelectedIndex < 0 OrElse String.IsNullOrWhiteSpace(combo.Text) Then
                 Return True
+            End If
+
+            ' A combo filled with plain items has no SelectedValue, so the bound-combo rules below
+            ' would call every selection empty. Judge it on what is selected instead: a real
+            ' selection that is not the placeholder is a value.
+            If combo.DataSource Is Nothing Then
+                Return String.Equals(combo.Text.Trim(), EmptyComboPlaceholder, StringComparison.OrdinalIgnoreCase)
             End If
 
             If combo.SelectedValue Is Nothing OrElse IsDBNull(combo.SelectedValue) Then
@@ -6915,9 +7033,10 @@ Namespace HelloWorld
                         
                         Using cmd As New SqlCommand(
                             "INSERT INTO dbo.FW_RoleFields " &
-                            "(RegistrationID, RoleID, RoleDetailID, SchemaID, TableName, FieldName, FileLink, FriendlyFieldName, " &
+                            "(RegistrationID, RoleID, RoleDetailID, SchemaID, TableName, FieldName, FileLink, FriendlyFieldName, OverrideCaption, " &
                             "Can_Create, Can_Read, Can_Update, IsActive, CreatedBy, CreatedOn) " &
                             "VALUES (@RegistrationID, @RoleID, @RoleDetailID, @SchemaID, @TableName, @FieldName, @FileLink, @FriendlyFieldName, " &
+                            "(SELECT TOP 1 OverrideCaption FROM dbo.FW_RoleFields WHERE RegistrationID = @RegistrationID AND SchemaID = @SchemaID AND TableName = @TableName AND FieldName = @FieldName AND OverrideCaption IS NOT NULL ORDER BY UpdatedOn DESC, ID DESC), " &
                             "1, 1, 1, 0, @UpdatedBy, GETDATE())", conn)
                             cmd.Parameters.AddWithValue("@RegistrationID", registrationId)
                             cmd.Parameters.AddWithValue("@RoleID", roleId)
@@ -7059,9 +7178,10 @@ Namespace HelloWorld
                             
                             Using cmd As New SqlCommand(
                                 "INSERT INTO dbo.FW_RoleFields " &
-                                "(RegistrationID, RoleID, RoleDetailID, SchemaID, TableName, FieldName, FileLink, FriendlyFieldName, " &
+                                "(RegistrationID, RoleID, RoleDetailID, SchemaID, TableName, FieldName, FileLink, FriendlyFieldName, OverrideCaption, " &
                                 "Can_Create, Can_Read, Can_Update, IsActive, CreatedBy, CreatedOn) " &
                                 "VALUES (@RegistrationID, @RoleID, @RoleDetailID, @SchemaID, @TableName, @FieldName, @FileLink, @FriendlyFieldName, " &
+                                "(SELECT TOP 1 OverrideCaption FROM dbo.FW_RoleFields WHERE RegistrationID = @RegistrationID AND SchemaID = @SchemaID AND TableName = @TableName AND FieldName = @FieldName AND OverrideCaption IS NOT NULL ORDER BY UpdatedOn DESC, ID DESC), " &
                                 "1, 1, 1, 0, @UpdatedBy, GETDATE())", conn)
                                 cmd.Parameters.AddWithValue("@RegistrationID", registrationId)
                                 cmd.Parameters.AddWithValue("@RoleID", roleId)

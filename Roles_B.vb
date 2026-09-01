@@ -92,7 +92,7 @@ Namespace HelloWorld
                 .Location = New Point(20, 140),
                 .Size = New Size(Me.ClientSize.Width - 40, Me.ClientSize.Height - 260),
                 .Anchor = AnchorStyles.Top Or AnchorStyles.Bottom Or AnchorStyles.Left Or AnchorStyles.Right,
-                .ReadOnly = False,
+                .ReadOnly = True,
                 .AllowUserToAddRows = False,
                 .AllowUserToDeleteRows = False,
                 .AllowUserToResizeRows = False,
@@ -100,8 +100,7 @@ Namespace HelloWorld
                 .MultiSelect = False,
                 .RowHeadersVisible = False,
                 .AutoSizeColumnsMode = DataGridViewAutoSizeColumnsMode.Fill,
-                .AutoGenerateColumns = True,
-                .EditMode = DataGridViewEditMode.EditOnKeystrokeOrF2
+                .AutoGenerateColumns = True
             }
             ApplyBrowseGridStandard(rolesGrid)
 
@@ -134,7 +133,7 @@ Namespace HelloWorld
             AddHandler closeButton.Click, AddressOf CloseButton_Click
             AddHandler rolesGrid.CellDoubleClick, AddressOf RolesGrid_CellDoubleClick
             AddHandler rolesGrid.SelectionChanged, AddressOf RolesGrid_SelectionChanged
-            AddHandler rolesGrid.CellBeginEdit, AddressOf RolesGrid_CellBeginEdit
+
             AddHandler Me.Resize, AddressOf RolesForm_Resize
             AddHandler Me.FormClosing, AddressOf Roles_B_FormClosing
             AddHandler Me.Load, AddressOf Roles_B_Load
@@ -307,15 +306,6 @@ Namespace HelloWorld
 
 
 
-        Private Sub RolesGrid_CellBeginEdit(sender As Object, e As DataGridViewCellCancelEventArgs)
-            ' Prevent editing RoleName on the first row (\"New Role\" placeholder)
-            If e.RowIndex = 0 AndAlso e.ColumnIndex >= 0 Then
-                Dim col = rolesGrid.Columns(e.ColumnIndex)
-                If col IsNot Nothing AndAlso String.Equals(col.DataPropertyName, "RoleName", StringComparison.OrdinalIgnoreCase) Then
-                    e.Cancel = True
-                End If
-            End If
-        End Sub
 
         Private Sub RolesGrid_CellDoubleClick(sender As Object, e As DataGridViewCellEventArgs)
             If e.RowIndex < 0 Then
@@ -829,7 +819,41 @@ Namespace HelloWorld
             Dim selectedRow = rolesGrid.SelectedRows(0)
             Dim roleName = selectedRow.Cells("RoleName").Value.ToString()
 
-            If MessageBox.Show("Delete this record?", "Confirm Delete", MessageBoxButtons.YesNo, MessageBoxIcon.Question) = DialogResult.Yes Then
+            ' Find out what depends on the role before anything is written. Deleting takes its table
+            ' permissions, its field permissions and every user assignment with it, so the user is
+            ' told what that means before agreeing to it.
+            Dim usage = DataAccess.GetRoleUsage(roleId.Value)
+
+            If usage.IsRegistrationAdminRole Then
+                MessageBox.Show(Me,
+                                ("THIS ROLE CANNOT BE DELETED." & Environment.NewLine & Environment.NewLine &
+                                 roleName & " IS THE COMPANY ADMIN ROLE FOR " &
+                                 usage.RegistrationCount.ToString(Globalization.CultureInfo.InvariantCulture) &
+                                 If(usage.RegistrationCount = 1, " REGISTRATION.", " REGISTRATIONS.") & Environment.NewLine & Environment.NewLine &
+                                 "DELETING IT WOULD LEAVE THAT REGISTRATION WITHOUT AN ADMINISTRATOR. " &
+                                 "ASSIGN A DIFFERENT COMPANY ADMIN ROLE FIRST.").ToUpperInvariant(),
+                                "DELETE ROLE",
+                                MessageBoxButtons.OK,
+                                MessageBoxIcon.Warning)
+                Return
+            End If
+
+            Dim confirmText As String
+            If usage.IsHeldByUsers Then
+                confirmText = (roleName & " IS HELD BY " &
+                               usage.UserCount.ToString(Globalization.CultureInfo.InvariantCulture) &
+                               If(usage.UserCount = 1, " USER.", " USERS.") & Environment.NewLine & Environment.NewLine &
+                               "DELETING THE ROLE WILL REMOVE IT FROM " &
+                               If(usage.UserCount = 1, "THAT USER", "THOSE USERS") &
+                               " AND DELETE ITS TABLE AND FIELD PERMISSIONS." & Environment.NewLine & Environment.NewLine &
+                               "DELETE THE ROLE?").ToUpperInvariant()
+            Else
+                confirmText = (roleName & " IS NOT HELD BY ANY USER." & Environment.NewLine & Environment.NewLine &
+                               "DELETING THE ROLE WILL ALSO DELETE ITS TABLE AND FIELD PERMISSIONS." & Environment.NewLine & Environment.NewLine &
+                               "DELETE THE ROLE?").ToUpperInvariant()
+            End If
+
+            If MessageBox.Show(Me, confirmText, "DELETE ROLE", MessageBoxButtons.YesNo, MessageBoxIcon.Warning) = DialogResult.Yes Then
                 Try
                     Dim updatedBy = If(SessionState.IsActive, SessionState.Current.Value.UserID, 0)
                     DataAccess.DeleteRole(roleId.Value, updatedBy)

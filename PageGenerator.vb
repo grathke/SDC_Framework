@@ -28,6 +28,57 @@ Namespace HelloWorld
         End Sub
     End Class
 
+    Public Enum RoleTableAction
+        None = 0
+        Insert = 1
+        AlreadyCurrent = 2
+        UpdateSql = 3
+        ReplaceRow = 4
+    End Enum
+
+    ''' <summary>
+    ''' The validated request plus the exact source that would be written. Generate writes this;
+    ''' Preview shows it without touching disk or the database.
+    ''' </summary>
+    Public NotInheritable Class PageGenerationPlan
+        Public ReadOnly Property Errors As New List(Of String)()
+        Public Property GenerateBrowsePage As Boolean
+        Public Property GenerateMaintenancePage As Boolean
+        Public Property BrowsePageName As String = String.Empty
+        Public Property MaintenancePageName As String = String.Empty
+        Public Property BrowsePath As String = String.Empty
+        Public Property MaintenancePath As String = String.Empty
+        Public Property BrowseSource As String = String.Empty
+        Public Property MaintenanceSource As String = String.Empty
+        Public Property TableName As String = String.Empty
+        Public Property PrimaryKey As String = String.Empty
+        Public Property TableAlias As String = String.Empty
+        Public Property BrowseSql As String = String.Empty
+        Public Property MenuCaller As String = String.Empty
+        Public Property IconFileName As String = String.Empty
+        Public Property CreatedBy As Integer
+
+        Public ReadOnly Property IsValid As Boolean
+            Get
+                Return Errors.Count = 0
+            End Get
+        End Property
+    End Class
+
+    ''' <summary>
+    ''' Result of compiling the planned source against the built application assembly. This is the
+    ''' only check that proves the emitted pages compile; the preview text alone does not.
+    ''' </summary>
+    Public NotInheritable Class PageCompileResult
+        Public ReadOnly Property Succeeded As Boolean
+        Public ReadOnly Property Messages As IReadOnlyList(Of String)
+
+        Public Sub New(succeeded As Boolean, messages As IEnumerable(Of String))
+            Me.Succeeded = succeeded
+            Me.Messages = messages.ToList().AsReadOnly()
+        End Sub
+    End Class
+
     Public NotInheritable Class PageGenerator
         Private Sub New()
         End Sub
@@ -37,132 +88,502 @@ Namespace HelloWorld
                         Optional overwriteExistingPages As Boolean = False) As PageGenerationResult
             Dim created As New List(Of String)()
             Dim skipped As New List(Of String)()
+
+            Dim plan = BuildPlan(requestId, workspaceRoot)
+            If Not plan.IsValid Then
+                Return New PageGenerationResult(created, skipped, plan.Errors)
+            End If
+
             Dim errors As New List(Of String)()
 
-            If requestId <= 0 Then
-                errors.Add("A saved Page Generation request is required.")
-                Return New PageGenerationResult(created, skipped, errors)
+            If plan.GenerateBrowsePage Then
+                WriteGeneratedPage(plan.BrowsePath, plan.BrowseSource, overwriteExistingPages, created, skipped)
             End If
-            If String.IsNullOrWhiteSpace(workspaceRoot) OrElse Not Directory.Exists(workspaceRoot) Then
-                errors.Add("The workspace folder could not be found.")
-                Return New PageGenerationResult(created, skipped, errors)
-            End If
-
-            Dim request = DataAccess.GetPageGenerationById(requestId)
-            If request Is Nothing Then
-                errors.Add("The Page Generation request could not be found.")
-                Return New PageGenerationResult(created, skipped, errors)
-            End If
-
-            Dim tableName = DbText(request("UnderlyingTableName"))
-            Dim browsePageName = DbText(request("BrowsePageName"))
-            Dim maintenancePageName = DbText(request("MaintenancePageName"))
-            Dim createAsFrameworkPages = ReadGenerationFlag(request, "CreateAsFrameworkPages", False)
-            browsePageName = NormalizeGeneratedPageName(browsePageName, "_B", createAsFrameworkPages)
-            maintenancePageName = NormalizeGeneratedPageName(maintenancePageName, "_U", createAsFrameworkPages)
-            Dim browseFields = ParseFields(DbText(request("BrowseFields")))
-            Dim maintenanceFields = ParseFields(DbText(request("MaintenanceFields")))
-            Dim lookupFields = ParseLookupFields(DbText(request("LookupFields")), errors)
-            Dim requiredFields = ParseFields(DbText(request("AdminRequiredFields")))
-            Dim browseSql = DbText(request("BrowseSql"))
-            Dim menuCaller = DbText(request("MenuCaller"))
-            Dim generateBrowsePage = ReadGenerationFlag(request, "GenerateBrowsePage", True)
-            Dim generateMaintenancePage = ReadGenerationFlag(request, "GenerateMaintenancePage", True)
-            Dim useQbeOnly = ReadGenerationFlag(request, "UseQbeOnly", False)
-            Dim createdBy = If(request.Table.Columns.Contains("CreatedBy") AndAlso Not request.IsNull("CreatedBy"), Convert.ToInt32(request("CreatedBy")), 0)
-            Dim tableAlias = DeriveTableAlias(tableName)
-
-            If Not generateBrowsePage AndAlso Not generateMaintenancePage Then
-                errors.Add("At least one page target must be selected.")
-            End If
-            If generateBrowsePage Then ValidateName(browsePageName, "Browse page name", "_B", errors)
-            If generateMaintenancePage Then ValidateName(maintenancePageName, "Maintenance page name", "_U", errors)
-            If String.IsNullOrWhiteSpace(tableName) Then errors.Add("The underlying table is required.")
-            If generateBrowsePage AndAlso browseFields.Count = 0 Then errors.Add("At least one _B field is required.")
-            If generateMaintenancePage AndAlso maintenanceFields.Count = 0 Then errors.Add("At least one _U field is required.")
-            If generateBrowsePage AndAlso String.IsNullOrWhiteSpace(browseSql) Then errors.Add("Browse SQL is required.")
-
-            ' Only an explicit alias named PK is accepted as the row key - there is no fallback to
-            ' ID or <Table>ID. Without it the generated page opens with a missing-key warning and
-            ' Read, Update and Delete hidden, which is far cheaper to catch here than at runtime.
-            If generateBrowsePage AndAlso Not String.IsNullOrWhiteSpace(browseSql) AndAlso
-               Not Regex.IsMatch(browseSql, "\bAS\s+PK\b", RegexOptions.IgnoreCase) Then
-                errors.Add("Browse SQL must alias the primary key as PK, for example " &
-                           "'" & tableName & ".SomeID AS PK'. Without it the browse page cannot open a record.")
-            End If
-            If errors.Count > 0 Then Return New PageGenerationResult(created, skipped, errors)
-
-            Dim schemaFields = DataAccess.GetTableFieldNames(tableName)
-            If schemaFields.Count = 0 Then
-                errors.Add("The underlying dbo table does not exist or has no columns: " & tableName)
-                Return New PageGenerationResult(created, skipped, errors)
-            End If
-            Dim primaryKey = DataAccess.GetPrimaryKeyFieldName(tableName)
-            If String.IsNullOrWhiteSpace(primaryKey) Then errors.Add("The underlying table does not have a primary key: " & tableName)
-            If generateBrowsePage Then ValidateFields(browseFields, schemaFields, "_B", errors)
-            If generateMaintenancePage Then
-                ValidateFields(maintenanceFields, schemaFields, "_U", errors)
-                ValidateFields(lookupFields.Select(Function(item) item.FieldName), maintenanceFields, "Lookup", errors)
-                ValidateFields(requiredFields, maintenanceFields, "Admin Required", errors)
-            End If
-            If errors.Count > 0 Then Return New PageGenerationResult(created, skipped, errors)
-
-            Dim browsePath = Path.Combine(workspaceRoot, browsePageName & ".vb")
-            Dim maintenancePath = Path.Combine(workspaceRoot, maintenancePageName & ".vb")
-
-            If generateBrowsePage Then
-                WriteGeneratedPage(browsePath, BuildBrowseSource(browsePageName,
-                                                                  tableName,
-                                                                  primaryKey,
-                                                                  useQbeOnly,
-                                                                  generateMaintenancePage),
-                                   overwriteExistingPages,
-                                   created,
-                                   skipped)
-            End If
-            If generateMaintenancePage Then
-                Dim maintenanceSource = BuildMaintenanceSource(maintenancePageName, tableName, primaryKey, maintenanceFields, requiredFields, lookupFields)
-                If WriteGeneratedPage(maintenancePath, maintenanceSource, overwriteExistingPages, created, skipped) Then
-                    If Not SaveMaintenanceBaseline(requestId, maintenanceSource, errors) Then
+            If plan.GenerateMaintenancePage Then
+                If WriteGeneratedPage(plan.MaintenancePath, plan.MaintenanceSource, overwriteExistingPages, created, skipped) Then
+                    If Not SaveMaintenanceBaseline(requestId, plan.MaintenanceSource, errors) Then
                         errors.Add("The generated maintenance source baseline could not be saved.")
                     End If
                 End If
             End If
 
-            If generateBrowsePage Then
-                Dim existingRoleTable = DataAccess.GetRoleTableMetadata(browsePageName)
-                If existingRoleTable Is Nothing Then
-                    If DataAccess.UpsertRoleTableRecord(0, browsePageName, tableName, tableAlias, browseSql, createdBy) Then
-                        created.Add("FW_RoleTables:" & browsePageName)
-                    Else
-                        errors.Add("The generated browse SQL could not be registered in FW_RoleTables.")
-                    End If
-                ElseIf String.Equals(DbText(existingRoleTable("DB_Table")).Trim(), tableName.Trim(), StringComparison.OrdinalIgnoreCase) Then
-                    If String.Equals(DbText(existingRoleTable("Table_SQL")).Trim(), browseSql.Trim(), StringComparison.Ordinal) Then
-                        skipped.Add("FW_RoleTables:" & browsePageName)
-                    ElseIf DataAccess.UpdateRoleTableSql(browsePageName, browseSql) Then
-                        created.Add("FW_RoleTables SQL UPDATED:" & browsePageName)
-                    Else
-                        errors.Add("The existing FW_RoleTables SQL could not be updated for " & browsePageName & ".")
-                    End If
-                Else
-                    If DataAccess.UpsertRoleTableRecord(0, browsePageName, tableName, tableAlias, browseSql, createdBy) Then
-                        created.Add("FW_RoleTables UPDATED:" & browsePageName)
-                    Else
-                        errors.Add("The existing FW_RoleTables row could not be updated for " & browsePageName & ".")
-                    End If
-                End If
+            If plan.GenerateBrowsePage Then
+                Select Case ClassifyRoleTableAction(plan.BrowsePageName, plan.TableName, plan.BrowseSql)
+                    Case RoleTableAction.Insert
+                        If DataAccess.UpsertRoleTableRecord(0, plan.BrowsePageName, plan.TableName, plan.TableAlias, plan.BrowseSql, plan.CreatedBy) Then
+                            created.Add("FW_RoleTables:" & plan.BrowsePageName)
+                        Else
+                            errors.Add("The generated browse SQL could not be registered in FW_RoleTables.")
+                        End If
+                    Case RoleTableAction.AlreadyCurrent
+                        skipped.Add("FW_RoleTables:" & plan.BrowsePageName)
+                    Case RoleTableAction.UpdateSql
+                        If DataAccess.UpdateRoleTableSql(plan.BrowsePageName, plan.BrowseSql) Then
+                            created.Add("FW_RoleTables SQL UPDATED:" & plan.BrowsePageName)
+                        Else
+                            errors.Add("The existing FW_RoleTables SQL could not be updated for " & plan.BrowsePageName & ".")
+                        End If
+                    Case Else
+                        If DataAccess.UpsertRoleTableRecord(0, plan.BrowsePageName, plan.TableName, plan.TableAlias, plan.BrowseSql, plan.CreatedBy) Then
+                            created.Add("FW_RoleTables UPDATED:" & plan.BrowsePageName)
+                        Else
+                            errors.Add("The existing FW_RoleTables row could not be updated for " & plan.BrowsePageName & ".")
+                        End If
+                End Select
             End If
 
-            If generateBrowsePage AndAlso String.Equals(menuCaller, "Dashboard_Application", StringComparison.OrdinalIgnoreCase) Then
+            If plan.GenerateBrowsePage AndAlso IsDashboardCaller(plan.MenuCaller) Then
                 Try
-                    EnsureDashboardIcon(workspaceRoot, browsePageName, maintenancePageName, created, skipped, errors)
+                    EnsureDashboardIcon(workspaceRoot, plan.MenuCaller, plan.IconFileName, plan.BrowsePageName, plan.MaintenancePageName, created, skipped, errors)
                 Catch ex As Exception
                     errors.Add("ICON WARNING: " & ex.Message)
                 End Try
             End If
 
             Return New PageGenerationResult(created, skipped, errors)
+        End Function
+
+        ' Builds the same plan Generate would act on, without writing a file, a database row or a
+        ' dashboard icon. Use this to show exactly what generation would produce.
+        Public Shared Function Preview(requestId As Integer, workspaceRoot As String) As PageGenerationPlan
+            Return BuildPlan(requestId, workspaceRoot)
+        End Function
+
+        ' Single owner of request validation and source emission. Generate and Preview both go
+        ' through here so a preview can never disagree with what generation writes.
+        Private Shared Function BuildPlan(requestId As Integer, workspaceRoot As String) As PageGenerationPlan
+            Dim plan As New PageGenerationPlan()
+
+            If requestId <= 0 Then
+                plan.Errors.Add("A saved Page Generation request is required.")
+                Return plan
+            End If
+            If String.IsNullOrWhiteSpace(workspaceRoot) OrElse Not Directory.Exists(workspaceRoot) Then
+                plan.Errors.Add("The workspace folder could not be found.")
+                Return plan
+            End If
+
+            Dim request = DataAccess.GetPageGenerationById(requestId)
+            If request Is Nothing Then
+                plan.Errors.Add("The Page Generation request could not be found.")
+                Return plan
+            End If
+
+            Dim createAsFrameworkPages = ReadGenerationFlag(request, "CreateAsFrameworkPages", False)
+            plan.TableName = DbText(request("UnderlyingTableName"))
+            plan.BrowsePageName = NormalizeGeneratedPageName(DbText(request("BrowsePageName")), "_B", createAsFrameworkPages)
+            plan.MaintenancePageName = NormalizeGeneratedPageName(DbText(request("MaintenancePageName")), "_U", createAsFrameworkPages)
+            plan.BrowseSql = DbText(request("BrowseSql"))
+            plan.MenuCaller = DbText(request("MenuCaller"))
+            plan.IconFileName = If(request.Table.Columns.Contains("IconFileName"), DbText(request("IconFileName")), String.Empty)
+            plan.GenerateBrowsePage = ReadGenerationFlag(request, "GenerateBrowsePage", True)
+            plan.GenerateMaintenancePage = ReadGenerationFlag(request, "GenerateMaintenancePage", True)
+            plan.TableAlias = DeriveTableAlias(plan.TableName)
+            plan.CreatedBy = If(request.Table.Columns.Contains("CreatedBy") AndAlso Not request.IsNull("CreatedBy"), Convert.ToInt32(request("CreatedBy")), 0)
+
+            Dim browseFields = ParseFields(DbText(request("BrowseFields")))
+            Dim maintenanceFields = ParseFields(DbText(request("MaintenanceFields")))
+            Dim lookupFields = ParseLookupFields(DbText(request("LookupFields")), plan.Errors)
+            Dim requiredFields = ParseFields(DbText(request("AdminRequiredFields")))
+            Dim useQbeOnly = ReadGenerationFlag(request, "UseQbeOnly", False)
+
+            If Not plan.GenerateBrowsePage AndAlso Not plan.GenerateMaintenancePage Then
+                plan.Errors.Add("At least one page target must be selected.")
+            End If
+            If plan.GenerateBrowsePage Then ValidateName(plan.BrowsePageName, "Browse page name", "_B", plan.Errors)
+            If plan.GenerateMaintenancePage Then ValidateName(plan.MaintenancePageName, "Maintenance page name", "_U", plan.Errors)
+            If String.IsNullOrWhiteSpace(plan.TableName) Then plan.Errors.Add("The underlying table is required.")
+            If plan.GenerateBrowsePage AndAlso browseFields.Count = 0 Then plan.Errors.Add("At least one _B field is required.")
+            If plan.GenerateMaintenancePage AndAlso maintenanceFields.Count = 0 Then plan.Errors.Add("At least one _U field is required.")
+            If plan.GenerateBrowsePage AndAlso String.IsNullOrWhiteSpace(plan.BrowseSql) Then plan.Errors.Add("Browse SQL is required.")
+
+            ' Only an explicit alias named PK is accepted as the row key - there is no fallback to
+            ' ID or <Table>ID. Without it the generated page opens with a missing-key warning and
+            ' Read, Update and Delete hidden, which is far cheaper to catch here than at runtime.
+            If plan.GenerateBrowsePage AndAlso Not String.IsNullOrWhiteSpace(plan.BrowseSql) AndAlso
+               Not Regex.IsMatch(plan.BrowseSql, "\bAS\s+PK\b", RegexOptions.IgnoreCase) Then
+                plan.Errors.Add("Browse SQL must alias the primary key as PK, for example " &
+                                "'" & plan.TableName & ".SomeID AS PK'. Without it the browse page cannot open a record.")
+            End If
+            If Not plan.IsValid Then Return plan
+
+            Dim schemaFields = DataAccess.GetTableFieldNames(plan.TableName)
+            If schemaFields.Count = 0 Then
+                plan.Errors.Add("The underlying dbo table does not exist or has no columns: " & plan.TableName)
+                Return plan
+            End If
+            plan.PrimaryKey = DataAccess.GetPrimaryKeyFieldName(plan.TableName)
+            If String.IsNullOrWhiteSpace(plan.PrimaryKey) Then plan.Errors.Add("The underlying table does not have a primary key: " & plan.TableName)
+            If plan.GenerateBrowsePage Then ValidateFields(browseFields, schemaFields, "_B", plan.Errors)
+            If plan.GenerateMaintenancePage Then
+                ValidateFields(maintenanceFields, schemaFields, "_U", plan.Errors)
+                ValidateFields(lookupFields.Select(Function(item) item.FieldName), maintenanceFields, "Lookup", plan.Errors)
+                ValidateFields(requiredFields, maintenanceFields, "Admin Required", plan.Errors)
+            End If
+            If Not plan.IsValid Then Return plan
+
+            plan.BrowsePath = Path.Combine(workspaceRoot, plan.BrowsePageName & ".vb")
+            plan.MaintenancePath = Path.Combine(workspaceRoot, plan.MaintenancePageName & ".vb")
+
+            If plan.GenerateBrowsePage Then
+                plan.BrowseSource = BuildBrowseSource(plan.BrowsePageName,
+                                                      plan.TableName,
+                                                      plan.PrimaryKey,
+                                                      useQbeOnly,
+                                                      plan.GenerateMaintenancePage)
+            End If
+            If plan.GenerateMaintenancePage Then
+                plan.MaintenanceSource = BuildMaintenanceSource(plan.MaintenancePageName,
+                                                                plan.TableName,
+                                                                plan.PrimaryKey,
+                                                                maintenanceFields,
+                                                                requiredFields,
+                                                                lookupFields)
+            End If
+
+            Return plan
+        End Function
+
+        ' Decides what generation would do to FW_RoleTables. Generate performs the action and
+        ' Preview describes it, so the two cannot drift apart.
+        Private Shared Function ClassifyRoleTableAction(browsePageName As String, tableName As String, browseSql As String) As RoleTableAction
+            Dim existingRoleTable = DataAccess.GetRoleTableMetadata(browsePageName)
+            If existingRoleTable Is Nothing Then Return RoleTableAction.Insert
+            If Not String.Equals(DbText(existingRoleTable("DB_Table")).Trim(), tableName.Trim(), StringComparison.OrdinalIgnoreCase) Then
+                Return RoleTableAction.ReplaceRow
+            End If
+            If String.Equals(DbText(existingRoleTable("Table_SQL")).Trim(), browseSql.Trim(), StringComparison.Ordinal) Then
+                Return RoleTableAction.AlreadyCurrent
+            End If
+            Return RoleTableAction.UpdateSql
+        End Function
+
+        ' Everything generation would change, in the order it would change it, so the preview covers
+        ' the database row and the dashboard icon and not only the page files.
+        Public Shared Function DescribePlannedWork(plan As PageGenerationPlan, workspaceRoot As String) As List(Of String)
+            Dim lines As New List(Of String)()
+            If plan Is Nothing Then Return lines
+
+            lines.Add("PAGE FILES")
+            If plan.GenerateBrowsePage Then
+                lines.Add("  " & Path.GetFileName(plan.BrowsePath) & If(File.Exists(plan.BrowsePath), "   (EXISTS - WOULD BE OVERWRITTEN)", "   (NEW FILE)"))
+            Else
+                lines.Add("  BROWSE PAGE NOT SELECTED")
+            End If
+            If plan.GenerateMaintenancePage Then
+                lines.Add("  " & Path.GetFileName(plan.MaintenancePath) & If(File.Exists(plan.MaintenancePath), "   (EXISTS - WOULD BE OVERWRITTEN)", "   (NEW FILE)"))
+            Else
+                lines.Add("  MAINTENANCE PAGE NOT SELECTED")
+            End If
+
+            lines.Add(String.Empty)
+            lines.Add("DATABASE")
+            lines.Add("  UNDERLYING TABLE: " & plan.TableName & "   PRIMARY KEY: " & plan.PrimaryKey)
+            If plan.GenerateBrowsePage Then
+                Select Case ClassifyRoleTableAction(plan.BrowsePageName, plan.TableName, plan.BrowseSql)
+                    Case RoleTableAction.Insert
+                        lines.Add("  FW_RoleTables: NEW ROW FOR " & plan.BrowsePageName & " (ALIAS " & plan.TableAlias & ")")
+                    Case RoleTableAction.AlreadyCurrent
+                        lines.Add("  FW_RoleTables: ALREADY CURRENT, NO CHANGE")
+                    Case RoleTableAction.UpdateSql
+                        lines.Add("  FW_RoleTables: SQL WOULD BE UPDATED FOR " & plan.BrowsePageName)
+                    Case Else
+                        lines.Add("  FW_RoleTables: ROW WOULD BE REPLACED FOR " & plan.BrowsePageName & " (TABLE CHANGED)")
+                End Select
+            End If
+            If plan.GenerateMaintenancePage Then
+                lines.Add("  FW_PageGeneration: MAINTENANCE SOURCE BASELINE WOULD BE SAVED")
+            End If
+
+            lines.Add(String.Empty)
+            lines.Add("DASHBOARD ICON")
+            If Not plan.GenerateBrowsePage OrElse Not IsDashboardCaller(plan.MenuCaller) Then
+                lines.Add("  NONE. MENU CALLER IS " & If(String.IsNullOrWhiteSpace(plan.MenuCaller), "NOT SET", plan.MenuCaller) & ", WHICH IS NOT A DASHBOARD")
+            ElseIf DashboardIconExists(workspaceRoot, plan.MenuCaller, plan.BrowsePageName) Then
+                lines.Add("  ALREADY PRESENT ON " & DashboardSourceFileName(plan.MenuCaller) & ", NO CHANGE")
+            Else
+                lines.Add("  WOULD BE ADDED TO " & DashboardSourceFileName(plan.MenuCaller) & " FOR " & plan.BrowsePageName)
+                lines.Add("  IMAGE: " & If(String.IsNullOrWhiteSpace(plan.IconFileName),
+                                           "NONE CHOSEN, THE DEFAULT GLYPH IS USED",
+                                           plan.IconFileName))
+            End If
+
+            Return lines
+        End Function
+
+        ' Compiles the planned source against the built application assembly in a scratch folder.
+        ' Nothing in the workspace is written. This is what proves the pages would build.
+        Public Shared Function CompileCheck(plan As PageGenerationPlan, workspaceRoot As String) As PageCompileResult
+            Dim messages As New List(Of String)()
+            If plan Is Nothing OrElse Not plan.IsValid Then
+                messages.Add("THE REQUEST MUST BE VALID BEFORE THE GENERATED SOURCE CAN BE COMPILED.")
+                Return New PageCompileResult(False, messages)
+            End If
+
+            Dim referenceAssembly = Path.Combine(workspaceRoot, "bin", "Debug", "net10.0-windows", "HelloWorld.dll")
+            If Not File.Exists(referenceAssembly) Then
+                messages.Add("THE APPLICATION ASSEMBLY WAS NOT FOUND AT " & referenceAssembly & ".")
+                messages.Add("BUILD THE PROJECT ONCE, THEN RUN THE COMPILE CHECK AGAIN.")
+                Return New PageCompileResult(False, messages)
+            End If
+
+            ' Both pages compile together rather than one per tab: the generated browse page
+            ' constructs the maintenance page to open a record, so compiling it alone would fail on
+            ' a type that is not there.
+            Dim targets As New List(Of String)()
+            If plan.GenerateBrowsePage Then targets.Add(plan.BrowsePageName & ".vb")
+            If plan.GenerateMaintenancePage Then targets.Add(plan.MaintenancePageName & ".vb")
+            Dim targetText = String.Join(" AND ", targets).ToUpperInvariant()
+
+            Dim scratchRoot = Path.Combine(workspaceRoot, "obj", "pagegen-preview")
+            Try
+                If Directory.Exists(scratchRoot) Then Directory.Delete(scratchRoot, True)
+                Directory.CreateDirectory(scratchRoot)
+
+                If plan.GenerateBrowsePage Then
+                    File.WriteAllText(Path.Combine(scratchRoot, plan.BrowsePageName & ".vb"), plan.BrowseSource, New UTF8Encoding(False))
+                End If
+                If plan.GenerateMaintenancePage Then
+                    File.WriteAllText(Path.Combine(scratchRoot, plan.MaintenancePageName & ".vb"), plan.MaintenanceSource, New UTF8Encoding(False))
+                End If
+
+                File.WriteAllText(Path.Combine(scratchRoot, "PageGenPreview.vbproj"),
+                                  BuildCompileCheckProject(referenceAssembly),
+                                  New UTF8Encoding(False))
+
+                Dim startInfo As New Diagnostics.ProcessStartInfo("dotnet", "build PageGenPreview.vbproj --nologo -v q") With {
+                    .WorkingDirectory = scratchRoot,
+                    .UseShellExecute = False,
+                    .RedirectStandardOutput = True,
+                    .RedirectStandardError = True,
+                    .CreateNoWindow = True
+                }
+
+                Using compiler = Diagnostics.Process.Start(startInfo)
+                    Dim standardOutput = compiler.StandardOutput.ReadToEnd()
+                    Dim standardError = compiler.StandardError.ReadToEnd()
+                    compiler.WaitForExit()
+
+                    Dim reported = (standardOutput & Environment.NewLine & standardError).
+                        Split({Environment.NewLine, vbLf}, StringSplitOptions.None).
+                        Select(Function(line) line.Trim()).
+                        Where(Function(line) line.Length > 0).
+                        ToList()
+
+                    Dim succeeded = compiler.ExitCode = 0
+                    messages.Add(If(succeeded, "COMPILE CHECK PASSED.", "COMPILE CHECK FAILED."))
+                    messages.Add(String.Empty)
+
+                    ' The pages compile as one project, but the report is split per page: every
+                    ' diagnostic names its file, so which page is broken is the useful answer.
+                    Dim accountedFor As New List(Of String)()
+                    For Each target In targets
+                        Dim pageLines = reported.
+                            Where(Function(line) line.IndexOf(target, StringComparison.OrdinalIgnoreCase) >= 0 AndAlso IsDiagnosticLine(line)).
+                            Select(Function(line) FormatDiagnostic(line, scratchRoot, target)).
+                            ToList()
+                        accountedFor.AddRange(reported.Where(Function(line) line.IndexOf(target, StringComparison.OrdinalIgnoreCase) >= 0))
+
+                        messages.Add(target.ToUpperInvariant() & "   " &
+                                     If(pageLines.Count = 0,
+                                        "OK",
+                                        pageLines.Count.ToString(Globalization.CultureInfo.InvariantCulture) & If(pageLines.Count = 1, " ERROR", " ERRORS")))
+                        For Each pageLine In pageLines.Take(15)
+                            messages.Add("    " & pageLine)
+                        Next
+                        If pageLines.Count > 15 Then
+                            messages.Add("    ... AND " & (pageLines.Count - 15).ToString(Globalization.CultureInfo.InvariantCulture) & " MORE")
+                        End If
+                    Next
+
+                    Dim unattributed = reported.
+                        Where(Function(line) IsDiagnosticLine(line) AndAlso Not accountedFor.Contains(line)).
+                        ToList()
+                    If unattributed.Count > 0 Then
+                        messages.Add(String.Empty)
+                        messages.Add("NOT TIED TO A PAGE:")
+                        For Each line In unattributed.Take(10)
+                            messages.Add("    " & FormatDiagnostic(line, scratchRoot, String.Empty))
+                        Next
+                    End If
+
+                    If succeeded Then
+                        messages.Add(String.Empty)
+                        messages.Add("THE GENERATED SOURCE BUILDS AGAINST THE APPLICATION.")
+                    End If
+                    If targets.Count > 1 Then
+                        messages.Add(String.Empty)
+                        messages.Add("THE PAGES COMPILE AS ONE PROJECT BECAUSE THE BROWSE PAGE OPENS THE MAINTENANCE PAGE.")
+                    End If
+
+                    Return New PageCompileResult(succeeded, messages)
+                End Using
+            Catch ex As Exception
+                messages.Add("THE COMPILE CHECK COULD NOT BE RUN: " & ex.Message)
+                Return New PageCompileResult(False, messages)
+            End Try
+        End Function
+
+        Private Shared Function IsDiagnosticLine(line As String) As Boolean
+            Return line.IndexOf(": error ", StringComparison.OrdinalIgnoreCase) >= 0 OrElse
+                   line.IndexOf(": warning ", StringComparison.OrdinalIgnoreCase) >= 0
+        End Function
+
+        ' Turns a full MSBuild diagnostic into the part worth reading: the scratch path and the
+        ' trailing project reference say nothing the reader does not already know.
+        Private Shared Function FormatDiagnostic(line As String, scratchRoot As String, pageFileName As String) As String
+            Dim trimmed = line.Trim()
+            Dim pathStart = trimmed.IndexOf(scratchRoot, StringComparison.OrdinalIgnoreCase)
+            If pathStart >= 0 Then
+                trimmed = trimmed.Substring(pathStart + scratchRoot.Length).TrimStart("\"c, "/"c)
+            End If
+            If pageFileName.Length > 0 AndAlso trimmed.StartsWith(pageFileName, StringComparison.OrdinalIgnoreCase) Then
+                trimmed = trimmed.Substring(pageFileName.Length)
+            End If
+            Dim projectStart = trimmed.LastIndexOf(" [", StringComparison.Ordinal)
+            If projectStart > 0 AndAlso trimmed.EndsWith("]", StringComparison.Ordinal) Then
+                trimmed = trimmed.Substring(0, projectStart)
+            End If
+            Return trimmed.Trim()
+        End Function
+
+        Private Shared Function BuildCompileCheckProject(referenceAssembly As String) As String
+            Return String.Join(Environment.NewLine, {
+                "<Project Sdk=""Microsoft.NET.Sdk"">",
+                "  <PropertyGroup>",
+                "    <OutputType>Library</OutputType>",
+                "    <TargetFramework>net10.0-windows</TargetFramework>",
+                "    <UseWindowsForms>true</UseWindowsForms>",
+                "    <RootNamespace>HelloWorld</RootNamespace>",
+                "  </PropertyGroup>",
+                "  <ItemGroup>",
+                "    <Reference Include=""HelloWorld"">",
+                "      <HintPath>" & referenceAssembly & "</HintPath>",
+                "    </Reference>",
+                "  </ItemGroup>",
+                "</Project>",
+                ""
+            })
+        End Function
+
+        ''' A dashboard is a class named Dashboard_<Name>, and its source file is
+        ''' "02 FW Dashboard_<Name>.vb". Both halves are convention, so adding a dashboard needs no
+        ''' edit here and none in the Menu Caller list: create the pair and it becomes a valid
+        ''' target. DashboardCallers discovers the classes; DashboardSourceFileName derives the file.
+        Public Const DashboardCallerPrefix As String = "Dashboard_"
+
+        ''' <summary>
+        ''' Marks an icon choice as one of the built-in Windows glyphs rather than a file in
+        ''' assets\images. Stored in the request so the two can never be confused: a bare name that
+        ''' happens to match no file would otherwise look like a missing image.
+        ''' </summary>
+        Public Const SystemIconPrefix As String = "system:"
+
+        ''' The built-in glyphs offered alongside the image files.
+        Public Shared ReadOnly SystemIconNames As String() = {
+            "Application", "Asterisk", "Error", "Exclamation", "Hand",
+            "Information", "Question", "Shield", "Warning", "WinLogo"
+        }
+
+        Public Shared Function IsSystemIcon(iconFileName As String) As Boolean
+            Return Not String.IsNullOrWhiteSpace(iconFileName) AndAlso
+                   iconFileName.Trim().StartsWith(SystemIconPrefix, StringComparison.OrdinalIgnoreCase)
+        End Function
+
+        ''' The glyph name from a system: choice, or empty when the choice is not one, or names a
+        ''' glyph that does not exist.
+        Public Shared Function SystemIconName(iconFileName As String) As String
+            If Not IsSystemIcon(iconFileName) Then Return String.Empty
+            Dim name = iconFileName.Trim().Substring(SystemIconPrefix.Length).Trim()
+            Return If(SystemIconNames.Any(Function(candidate) String.Equals(candidate, name, StringComparison.OrdinalIgnoreCase)), name, String.Empty)
+        End Function
+
+        ''' The VB expression a generated dashboard button uses for its picture.
+        ''' How a chosen icon reads in the generation result.
+        Public Shared Function DescribeIcon(iconFileName As String) As String
+            Dim systemName = SystemIconName(iconFileName)
+            If systemName.Length > 0 Then Return systemName & " (system)"
+            If String.IsNullOrWhiteSpace(iconFileName) Then Return "default glyph"
+            Return iconFileName.Trim()
+        End Function
+
+        Public Shared Function DashboardImageExpression(iconFileName As String) As String
+            Dim systemName = SystemIconName(iconFileName)
+            If systemName.Length > 0 Then Return "SystemIcons." & systemName & ".ToBitmap()"
+            If String.IsNullOrWhiteSpace(iconFileName) Then Return "SystemIcons.Application.ToBitmap()"
+            Return "LoadDashboardIcon(""" & EscapeLiteral(iconFileName.Trim()) & """, SystemIcons.Application.ToBitmap())"
+        End Function
+
+        Public Shared Function DashboardCallers() As List(Of String)
+            Dim candidates As Type()
+            Try
+                candidates = GetType(PageGenerator).Assembly.GetTypes()
+            Catch ex As Reflection.ReflectionTypeLoadException
+                ' One unloadable type must not empty the Menu Caller list. Whatever did load is
+                ' still a truthful answer, and a dashboard that failed to load could not be a
+                ' target anyway.
+                candidates = ex.Types.Where(Function(candidate) candidate IsNot Nothing).ToArray()
+            End Try
+
+            Return candidates.
+                Where(Function(candidate) candidate.IsClass AndAlso
+                                          candidate.Name.StartsWith(DashboardCallerPrefix, StringComparison.Ordinal)).
+                Select(Function(candidate) candidate.Name).
+                Distinct(StringComparer.OrdinalIgnoreCase).
+                OrderBy(Function(name) name, StringComparer.OrdinalIgnoreCase).
+                ToList()
+        End Function
+
+        Private Shared Function IsDashboardCaller(menuCaller As String) As Boolean
+            If String.IsNullOrWhiteSpace(menuCaller) Then Return False
+            Return DashboardCallers().Any(Function(name) String.Equals(name, menuCaller.Trim(), StringComparison.OrdinalIgnoreCase))
+        End Function
+
+        Private Shared Function DashboardSourceFileName(menuCaller As String) As String
+            If Not IsDashboardCaller(menuCaller) Then Return String.Empty
+            Return "02 FW " & menuCaller.Trim() & ".vb"
+        End Function
+
+        ''' <summary>
+        ''' Rewrites the .Image line of an existing generated button. Returns True when the file was
+        ''' changed, False when there was nothing to change.
+        ''' </summary>
+        Private Shared Function UpdateDashboardIconImage(dashboardPath As String, browsePageName As String, iconFileName As String) As Boolean
+            If String.IsNullOrWhiteSpace(iconFileName) OrElse Not File.Exists(dashboardPath) Then Return False
+
+            Dim source = File.ReadAllText(dashboardPath)
+            Dim anchor = ".Name = ""GeneratedPageActionKey_" & browsePageName & """"
+            Dim anchorIndex = source.IndexOf(anchor, StringComparison.OrdinalIgnoreCase)
+            If anchorIndex < 0 Then Return False
+
+            ' Stay inside this button's initializer: the search stops at its closing brace so a
+            ' neighbouring button's image can never be rewritten by mistake.
+            Dim blockEnd = source.IndexOf("}", anchorIndex, StringComparison.Ordinal)
+            If blockEnd < 0 Then Return False
+
+            Dim imageIndex = source.IndexOf(".Image = ", anchorIndex, StringComparison.Ordinal)
+            If imageIndex < 0 OrElse imageIndex > blockEnd Then Return False
+
+            Dim lineEnd = source.IndexOf(Environment.NewLine, imageIndex, StringComparison.Ordinal)
+            If lineEnd < 0 Then Return False
+
+            Dim existingLine = source.Substring(imageIndex, lineEnd - imageIndex)
+            Dim replacement = ".Image = " & DashboardImageExpression(iconFileName) & ","
+            If String.Equals(existingLine.Trim(), replacement, StringComparison.Ordinal) Then Return False
+
+            source = source.Substring(0, imageIndex) & replacement & source.Substring(lineEnd)
+            File.WriteAllText(dashboardPath, source, New UTF8Encoding(False))
+            Return True
+        End Function
+
+        Private Shared Function DashboardIconExists(workspaceRoot As String, menuCaller As String, browsePageName As String) As Boolean
+            Dim fileName = DashboardSourceFileName(menuCaller)
+            If fileName.Length = 0 Then Return False
+            Dim dashboardPath = Path.Combine(workspaceRoot, fileName)
+            If Not File.Exists(dashboardPath) Then Return False
+            Dim source = File.ReadAllText(dashboardPath)
+            Return source.IndexOf("GeneratedPageActionKey_" & browsePageName, StringComparison.OrdinalIgnoreCase) >= 0 OrElse
+                   source.IndexOf("New " & browsePageName & "_B", StringComparison.OrdinalIgnoreCase) >= 0
         End Function
 
         Private Shared Function ReadGenerationFlag(request As DataRow, columnName As String, defaultValue As Boolean) As Boolean
@@ -189,22 +610,36 @@ Namespace HelloWorld
         End Function
 
         Private Shared Sub EnsureDashboardIcon(workspaceRoot As String,
+                                                menuCaller As String,
+                                                iconFileName As String,
                                                 browsePageName As String,
                                                 maintenancePageName As String,
                                                 created As List(Of String),
                                                 skipped As List(Of String),
                                                 errors As List(Of String))
-            Dim dashboardPath = Path.Combine(workspaceRoot, "02 FW Dashboard_Application.vb")
+            Dim dashboardFileName = DashboardSourceFileName(menuCaller)
+            If dashboardFileName.Length = 0 Then
+                errors.Add("ICON WARNING: " & menuCaller & " is not a dashboard, so no icon was generated.")
+                Return
+            End If
+
+            Dim dashboardPath = Path.Combine(workspaceRoot, dashboardFileName)
             If Not File.Exists(dashboardPath) Then
-                errors.Add("Dashboard_Application.vb could not be found for icon generation.")
+                errors.Add(dashboardFileName & " could not be found for icon generation.")
                 Return
             End If
 
             Dim source = File.ReadAllText(dashboardPath)
             Dim actionKey = "Generated_" & browsePageName
-            If source.IndexOf("GeneratedPageActionKey_" & browsePageName, StringComparison.OrdinalIgnoreCase) >= 0 OrElse
-               source.IndexOf("New " & browsePageName & "_B", StringComparison.OrdinalIgnoreCase) >= 0 Then
-                skipped.Add("Dashboard_Application icon: " & actionKey)
+            If DashboardIconExists(workspaceRoot, menuCaller, browsePageName) Then
+                ' The button is already on the dashboard, so it is not rebuilt - that would move it
+                ' to another grid cell. Only the picture is brought up to date, in place, and only
+                ' when the request now names a different one.
+                If UpdateDashboardIconImage(dashboardPath, browsePageName, iconFileName) Then
+                    created.Add(menuCaller & " icon image updated: " & actionKey & " - " & DescribeIcon(iconFileName))
+                Else
+                    skipped.Add(menuCaller & " icon: " & actionKey & " - " & DescribeIcon(iconFileName) & ", unchanged")
+                End If
                 Return
             End If
 
@@ -228,7 +663,7 @@ Namespace HelloWorld
                 "                .UseVisualStyleBackColor = False,",
                 "                .FlatStyle = FlatStyle.Flat,",
                 "                .Font = New Font(""Segoe UI"", 13.0F, FontStyle.Regular),",
-                "                .Image = SystemIcons.Application.ToBitmap(),",
+                "                .Image = " & DashboardImageExpression(iconFileName) & ",",
                 "                .TextImageRelation = TextImageRelation.ImageAboveText,",
                 "                .ImageAlign = ContentAlignment.TopCenter,",
                 "                .TextAlign = ContentAlignment.BottomCenter,",
@@ -238,7 +673,7 @@ Namespace HelloWorld
                 "            generated" & browsePageName & "Button.FlatAppearance.MouseOverBackColor = Color.Transparent",
                 "            generated" & browsePageName & "Button.FlatAppearance.MouseDownBackColor = Color.Transparent"
             }) & Environment.NewLine
-            source = InsertBefore(source, "            AddHandler Me.Load, AddressOf Dashboard_Application_Load", construction)
+            source = InsertBefore(source, "            AddHandler Me.Load, AddressOf " & menuCaller.Trim() & "_Load", construction)
 
             Dim handlers = String.Join(Environment.NewLine, {
                 "            AddHandler generated" & browsePageName & "Button.MouseEnter, AddressOf IconButton_MouseEnter",
@@ -252,7 +687,7 @@ Namespace HelloWorld
             Dim baselineAnchor = "            rolesButton.Top = DashboardGridLayout.CellTop(1)"
             Dim baselineIndex = source.IndexOf(baselineAnchor, StringComparison.Ordinal)
             If baselineIndex < 0 Then
-                errors.Add("Dashboard_Application row baseline could not be found for icon generation.")
+                errors.Add(dashboardFileName & " row baseline could not be found for icon generation.")
                 Return
             End If
             Dim baselineLineEnd = source.IndexOf(Environment.NewLine, baselineIndex, StringComparison.Ordinal)
@@ -274,7 +709,7 @@ Namespace HelloWorld
             })
             source = InsertBefore(source, "        Private Sub IconButton_MouseEnter", clickHandler)
             File.WriteAllText(dashboardPath, source, New UTF8Encoding(False))
-            created.Add("Dashboard_Application icon: " & actionKey)
+            created.Add(menuCaller & " icon: " & actionKey & " - " & DescribeIcon(iconFileName))
         End Sub
 
         Private Shared Function FindNextDashboardGridCell(source As String) As Point
@@ -504,7 +939,9 @@ Namespace HelloWorld
             output.AppendLine("            recordId = id")
             output.AppendLine("            currentUser = user")
             output.AppendLine("            accessProfile = profile")
-            output.AppendLine("            Text = """ & EscapeLiteral(pageName) & """")
+            ' No Text assignment: Base_U builds the caption from the page name and the mode, so a
+            ' generated page opens as "Edit Entity X" rather than "EntityX_U". A generated page that
+            ' needs its own wording overrides BuildMaintenanceTitle.
             output.AppendLine("            ClientSize = New Size(600, " & Math.Max(120, 55 + fields.Count * 42).ToString() & ")")
             output.AppendLine("            okButton.Location = New Point(ClientSize.Width - 270, ClientSize.Height - 46)")
             output.AppendLine("            cancelActionButton.Location = New Point(ClientSize.Width - 135, ClientSize.Height - 46)")

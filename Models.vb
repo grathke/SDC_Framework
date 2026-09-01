@@ -9,6 +9,27 @@ Namespace HelloWorld
     ''' Who soft-deleted a record and when, for the message shown to a user whose save found the
     ''' record already deleted.
     ''' </summary>
+    ''' <summary>
+    ''' What still depends on a role. Checked before a delete so the user is told what the delete
+    ''' would take with it, and so a role a registration depends on cannot be removed at all.
+    ''' </summary>
+    Public NotInheritable Class RoleUsage
+    Public Property RoleName As String = String.Empty
+    Public Property UserCount As Integer
+    Public Property RegistrationCount As Integer
+
+    Public ReadOnly Property IsHeldByUsers As Boolean
+        Get
+            Return UserCount > 0
+        End Get
+    End Property
+
+    Public ReadOnly Property IsRegistrationAdminRole As Boolean
+        Get
+            Return RegistrationCount > 0
+        End Get
+    End Property
+    End Class
     Public Class SoftDeleteInfo
         Public Property DeletedByName As String = String.Empty
         Public Property DeletedOn As Date?

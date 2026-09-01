@@ -9,6 +9,7 @@ Imports System.IO
 Imports System.Security.Cryptography
 Imports System.Text.RegularExpressions
 Imports System.Text
+Imports System.Threading.Tasks
 Imports System.Windows.Forms
 
 Namespace HelloWorld
@@ -35,7 +36,10 @@ Namespace HelloWorld
         Private directionsTextBox As ListBox
         Private lookupFieldsTextBox As TextBox
         Private adminRequiredFieldsTextBox As TextBox
-        Private menuCallerTextBox As TextBox
+        Private menuCallerComboBox As ComboBox
+        Private iconFileNameTextBox As TextBox
+        Private selectIconButton As Button
+        Private iconPreviewBox As PictureBox
         Private pageRequestIdTextBox As TextBox
         Private createdByTextBox As TextBox
         Private createdOnTextBox As TextBox
@@ -45,9 +49,24 @@ Namespace HelloWorld
         Private validateSqlButton As Button
         Private copyRequestButton As Button
         Private generatePagesButton As Button
+        Private previewCodeButton As Button
         Private selectTableButton As Button
         Private selectFieldsButton As Button
+        ' The caption line the base class draws on the form: caption at y=15, Tab Order button at
+        ' y=10, both about 28 tall. Questions start below it, and the form is taller by the delta
+        ' against the 12 the layout used before.
+        Private Const MakeASelection As String = DataAccess.EmptyComboPlaceholder
+
+        Private Const PageHeaderBandHeight As Integer = 50
+        Private Const PageHeaderBandDelta As Integer = 38
+
+        ''' Extra room for the Browse SQL editor, and the matching growth in the form so nothing
+        ''' below it is squeezed.
+        Private Const BrowseSqlExtraHeight As Integer = 60
+
         Private tableSelectionPanel As FlowLayoutPanel
+        Private fieldSelectionPanel As FlowLayoutPanel
+        Private iconSelectionPanel As FlowLayoutPanel
         Private directionsPanel As Panel
         Private directionsToggleButton As Button
         Private originalRowVersion As Byte()
@@ -66,10 +85,10 @@ Namespace HelloWorld
             accessProfile = profile
             isNewRecord = id <= 0
 
-            Text = If(isNewRecord, "New Page Generation Request", "Edit Page Generation Request")
+
             StartPosition = FormStartPosition.CenterParent
-            ClientSize = New Size(1100, 705)
-            MinimumSize = New Size(900, 675)
+            ClientSize = New Size(1100, 705 + PageHeaderBandDelta + BrowseSqlExtraHeight)
+            MinimumSize = New Size(900, 675 + PageHeaderBandDelta + BrowseSqlExtraHeight)
 
             BuildLayout()
             BindToForm()
@@ -91,12 +110,26 @@ Namespace HelloWorld
             Return If(isNewRecord, "Create", "Update")
         End Function
 
+        ''' The manual-changes warning is part of the title, not something appended to it after the
+        ''' fact, so it survives a refresh.
+        Protected Overrides Function BuildMaintenanceTitle() As String
+            Dim title = If(isNewRecord, "New Page Generation Request", "Edit Page Generation Request")
+            If pageHasManualChanges Then title &= " - MANUAL PAGE CHANGES DETECTED"
+            Return title
+        End Function
+
         Protected Overrides Function ShouldWarnOnCancel() As Boolean
             Return True
         End Function
 
+        ' The questions are numbered and laid out in the order they must be answered, so there is
+        ' no tab order for a user to rearrange.
+        Protected Overrides Function SupportsTabOrderManager() As Boolean
+            Return False
+        End Function
+
         Private Sub BuildLayout()
-            Dim root As New TableLayoutPanel With {.Dock = DockStyle.Fill, .ColumnCount = 1, .RowCount = 3, .Padding = New Padding(12, 12, 12, 8), .AutoScroll = True}
+            Dim root As New TableLayoutPanel With {.Dock = DockStyle.Fill, .ColumnCount = 1, .RowCount = 3, .Padding = New Padding(12, PageHeaderBandHeight, 12, 8), .AutoScroll = True}
             root.RowStyles.Add(New RowStyle(SizeType.AutoSize))
             root.RowStyles.Add(New RowStyle(SizeType.AutoSize))
             root.RowStyles.Add(New RowStyle(SizeType.AutoSize))
@@ -109,12 +142,8 @@ Namespace HelloWorld
 
             pageRequestIdTextBox = New TextBox With {.Name = "TextBox_PageRequestID", .Visible = False}
             Controls.Add(pageRequestIdTextBox)
-            browseFieldsTextBox = New TextBox With {.Name = "TextBox_BrowseFields", .Visible = False}
-            maintenanceFieldsTextBox = New TextBox With {.Name = "TextBox_MaintenanceFields", .Visible = False}
-            Controls.Add(browseFieldsTextBox)
-            Controls.Add(maintenanceFieldsTextBox)
-            requestNameTextBox = AddEntryField(fields, "RequestName", False, 34, 520, False, "1. Request Name")
-            pageBaseNameTextBox = AddEntryField(fields, "PageBaseName", False, 34, 520, False, "2. Pages To Generate")
+            requestNameTextBox = AddEntryField(fields, "RequestName", False, 34, 150, False, "1. Request Name")
+            pageBaseNameTextBox = AddEntryField(fields, "PageBaseName", False, 34, 150, False, "2. Pages To Generate")
             createAsFrameworkPagesCheckBox = New CheckBox With {
                 .Name = "CheckBox_CreateAsFrameworkPages",
                 .Text = "Create as Framework Pages",
@@ -123,8 +152,8 @@ Namespace HelloWorld
                 .Margin = New Padding(8, 6, 0, 0)
             }
             AddControlBesideField(fields, pageBaseNameTextBox, createAsFrameworkPagesCheckBox)
-            browsePageNameTextBox = AddEntryField(fields, "BrowsePageName", False, 34, 520, False, "3. Browse Page Name")
-            maintenancePageNameTextBox = AddEntryField(fields, "MaintenancePageName", False, 34, 520, False, "4. Maintenance Page Name")
+            browsePageNameTextBox = AddEntryField(fields, "BrowsePageName", False, 34, 150, False, "3. Browse Page Name")
+            maintenancePageNameTextBox = AddEntryField(fields, "MaintenancePageName", False, 34, 150, False, "4. Maintenance Page Name")
             generateBrowsePageCheckBox = New CheckBox With {.Text = "Generate", .Checked = False, .AutoSize = True, .Margin = New Padding(8, 6, 0, 0)}
             useQbeOnlyCheckBox = New CheckBox With {.Name = "CheckBox_UseQbeOnly", .Text = "Use QBE only", .Checked = False, .AutoSize = True, .Margin = New Padding(8, 6, 0, 0)}
             generateMaintenancePageCheckBox = New CheckBox With {.Text = "Generate", .Checked = False, .AutoSize = True, .Margin = New Padding(8, 6, 0, 0)}
@@ -141,50 +170,118 @@ Namespace HelloWorld
             AddHandler pageBaseNameTextBox.Leave, AddressOf PageBaseNameTextBox_Leave
             AddHandler createAsFrameworkPagesCheckBox.CheckedChanged, AddressOf CreateAsFrameworkPagesCheckBox_CheckedChanged
             AddHandler generateBrowsePageCheckBox.CheckedChanged, AddressOf GenerateBrowsePageCheckBox_CheckedChanged
-            underlyingTableNameTextBox = AddEntryField(fields, "UnderlyingTableName", False, 34, 520, False, "5. Underlying Table Name")
+            underlyingTableNameTextBox = AddEntryField(fields, "UnderlyingTableName", True, 34, 150, False, "5. Underlying Table Name")
             AddHandler underlyingTableNameTextBox.TextChanged, AddressOf UnderlyingTableNameTextBox_TextChanged
             Dim underlyingTableRow = fields.GetRow(underlyingTableNameTextBox)
             fields.Controls.Remove(underlyingTableNameTextBox)
+            ' Question 5 stacks the chosen table under the button that chose it. Both live in a
+            ' FlowLayoutPanel so the framework hosts their focus borders instead of adding a panel
+            ' to the question grid.
             tableSelectionPanel = New FlowLayoutPanel With {
+                .Dock = DockStyle.Fill,
+                .AutoSize = False,
+                .WrapContents = False,
+                .FlowDirection = FlowDirection.TopDown,
+                .Padding = New Padding(0)
+            }
+            selectTableButton = New Button With {
+                .Text = "Select Table",
+                .Size = New Size(110, 32),
+                .FlatStyle = FlatStyle.Standard,
+                .UseVisualStyleBackColor = True,
+                .Margin = New Padding(0, 1, 0, 4)
+            }
+            AddHandler selectTableButton.Click, AddressOf SelectTableButton_Click
+            tableSelectionPanel.Controls.Add(selectTableButton)
+            tableSelectionPanel.Controls.Add(underlyingTableNameTextBox)
+            fields.Controls.Add(tableSelectionPanel, 1, underlyingTableRow)
+            fields.RowStyles(underlyingTableRow).Height = 80
+
+            ' Question 6 is the Select Fields button. The four fields it fills hang off it as
+            ' bullets rather than questions of their own, because none of them is answered by
+            ' typing - the popup writes all four.
+            fieldSelectionPanel = New FlowLayoutPanel With {
                 .Dock = DockStyle.Fill,
                 .AutoSize = False,
                 .WrapContents = False,
                 .FlowDirection = FlowDirection.LeftToRight,
                 .Padding = New Padding(0)
             }
-            tableSelectionPanel.Controls.Add(underlyingTableNameTextBox)
-            selectTableButton = New Button With {
-                .Text = "Select Table",
-                .Size = New Size(110, 32),
-                .FlatStyle = FlatStyle.Standard,
-                .UseVisualStyleBackColor = True,
-                .Margin = New Padding(8, 1, 0, 1)
-            }
-            AddHandler selectTableButton.Click, AddressOf SelectTableButton_Click
-            tableSelectionPanel.Controls.Add(selectTableButton)
             selectFieldsButton = New Button With {
                 .Text = "Select Fields",
                 .Size = New Size(110, 32),
                 .FlatStyle = FlatStyle.Standard,
                 .UseVisualStyleBackColor = True,
-                .Margin = New Padding(8, 1, 0, 1)
+                .Margin = New Padding(0, 1, 8, 1)
             }
             AddHandler selectFieldsButton.Click, AddressOf SelectFieldsButton_Click
-            tableSelectionPanel.Controls.Add(selectFieldsButton)
-            fields.Controls.Add(tableSelectionPanel, 1, underlyingTableRow)
-            lookupFieldsTextBox = AddEntryField(fields, "LookupFields", False, 34, 780, False, "8. Lookup Fields")
-            adminRequiredFieldsTextBox = AddEntryField(fields, "AdminRequiredFields", False, 34, 780, False, "9. Admin Required Fields")
-            menuCallerTextBox = AddEntryField(fields, "MenuCaller", False, 34, 520, False, "10. Menu Caller")
-            AddHandler menuCallerTextBox.Leave, AddressOf MenuCallerTextBox_Leave
-            browseSqlTextBox = AddEntryField(fields, "BrowseSql", False, 165, 780, True, "11. Browse SQL")
+            fieldSelectionPanel.Controls.Add(selectFieldsButton)
+            AddQuestionRow(fields, "SelectFields", "6. Select Fields", fieldSelectionPanel, 46)
+
+            browseFieldsTextBox = AddEntryField(fields, "BrowseFields", True, 34, 780, False, "   " & ChrW(8226) & " _B Fields")
+            maintenanceFieldsTextBox = AddEntryField(fields, "MaintenanceFields", True, 34, 780, False, "   " & ChrW(8226) & " _U Fields")
+            lookupFieldsTextBox = AddEntryField(fields, "LookupFields", True, 34, 780, False, "   " & ChrW(8226) & " Lookup Fields")
+            adminRequiredFieldsTextBox = AddEntryField(fields, "AdminRequiredFields", True, 34, 780, False, "   " & ChrW(8226) & " Admin Required Fields")
+            ' Menu Caller is chosen, not typed. The value has to match a real caller for the
+            ' generator to place a dashboard icon, and a typo used to produce no icon silently.
+            menuCallerComboBox = New ComboBox With {
+                .Name = "ComboBox_MenuCaller",
+                .DropDownStyle = ComboBoxStyle.DropDownList,
+                .Width = 260,
+                .Anchor = AnchorStyles.Left Or AnchorStyles.Top,
+                .Margin = New Padding(0, 1, 0, 1)
+            }
+            menuCallerComboBox.Items.Add(MakeASelection)
+            For Each callerOption In GetMainMenuCallerOptions()
+                menuCallerComboBox.Items.Add(callerOption)
+            Next
+            For Each callerOption In GetDashboardCallerOptions()
+                menuCallerComboBox.Items.Add(callerOption)
+            Next
+            menuCallerComboBox.SelectedIndex = 0
+            AddHandler menuCallerComboBox.SelectedIndexChanged, AddressOf MenuCallerComboBox_SelectedIndexChanged
+            AddQuestionRow(fields, "MenuCaller", "7. Menu Caller", menuCallerComboBox, 46)
+            ' The dashboard button picture. Chosen from assets\images rather than typed, because a
+            ' name that does not match a file there produces a button with the default glyph and no
+            ' explanation. Only the file name is stored; the images live beside the exe.
+            iconFileNameTextBox = AddEntryField(fields, "IconFileName", True, 34, 200, False, "8. Dashboard Icon")
+            Dim iconRow = fields.GetRow(iconFileNameTextBox)
+            fields.Controls.Remove(iconFileNameTextBox)
+            iconSelectionPanel = New FlowLayoutPanel With {
+                .Dock = DockStyle.Fill,
+                .AutoSize = False,
+                .WrapContents = False,
+                .FlowDirection = FlowDirection.LeftToRight,
+                .Padding = New Padding(0)
+            }
+            selectIconButton = New Button With {
+                .Text = "Select Icon",
+                .Size = New Size(110, 32),
+                .FlatStyle = FlatStyle.Standard,
+                .UseVisualStyleBackColor = True,
+                .Margin = New Padding(0, 1, 8, 1)
+            }
+            AddHandler selectIconButton.Click, AddressOf SelectIconButton_Click
+            iconPreviewBox = New PictureBox With {
+                .Size = New Size(32, 32),
+                .SizeMode = PictureBoxSizeMode.Zoom,
+                .Margin = New Padding(8, 1, 0, 1)
+            }
+            iconSelectionPanel.Controls.Add(selectIconButton)
+            iconSelectionPanel.Controls.Add(iconFileNameTextBox)
+            iconSelectionPanel.Controls.Add(iconPreviewBox)
+            fields.Controls.Add(iconSelectionPanel, 1, iconRow)
+            fields.RowStyles(iconRow).Height = 46
+
+            browseSqlTextBox = AddEntryField(fields, "BrowseSql", False, 165 + BrowseSqlExtraHeight, 780, True, "9. Browse SQL")
             AddHandler browseSqlTextBox.TextChanged, AddressOf BrowseSqlTextBox_TextChanged
             Dim browseSqlRow = fields.GetRow(browseSqlTextBox)
             fields.Controls.Remove(browseSqlTextBox)
-            fields.RowStyles(browseSqlRow).Height = 205
+            fields.RowStyles(browseSqlRow).Height = 205 + BrowseSqlExtraHeight
             Dim browseSqlPanel As New Panel With {
                 .Dock = DockStyle.Fill,
                 .Width = 780,
-                .Height = 205
+                .Height = 205 + BrowseSqlExtraHeight
             }
             browseSqlTextBox.Dock = DockStyle.Top
             browseSqlTextBox.Height = 165
@@ -205,7 +302,7 @@ Namespace HelloWorld
                 .Anchor = AnchorStyles.Left Or AnchorStyles.Top,
                 .Margin = New Padding(0, 4, 0, 0)
             }
-            AddFieldControl(fields, useRegistrationIdCheckBox, "12. Use RegistrationID from selected table")
+            AddFieldControl(fields, useRegistrationIdCheckBox, "10. Use RegistrationID from selected table")
             UpdateRegistrationOptionState()
             AddHandler useRegistrationIdCheckBox.CheckedChanged, AddressOf UseRegistrationIdCheckBox_CheckedChanged
             ApplyPageRequiredFieldStyling()
@@ -270,6 +367,15 @@ Namespace HelloWorld
             AddHandler copyRequestButton.Click, AddressOf PreviewRequestButton_Click
             footer.Controls.Add(copyRequestButton)
 
+            previewCodeButton = New Button With {
+                .Text = "Preview Code",
+                .Size = New Size(130, 36),
+                .Location = New Point(footer.Width - 560, 8),
+                .Anchor = AnchorStyles.Top Or AnchorStyles.Right
+            }
+            AddHandler previewCodeButton.Click, AddressOf PreviewGeneratedCodeButton_Click
+            footer.Controls.Add(previewCodeButton)
+
             generatePagesButton = New Button With {
                 .Text = "Save && Generate",
                 .Size = New Size(145, 36),
@@ -310,6 +416,12 @@ Namespace HelloWorld
                 Return
             End If
 
+            ' Validate before anything is asked or written. Prompting to overwrite page files for a
+            ' request that cannot be generated asks the user to authorise work that will not happen.
+            If Not ValidateAndBuildForSave() Then
+                Return
+            End If
+
             Dim browsePagePath = Path.Combine(Environment.CurrentDirectory, browsePageNameTextBox.Text.Trim() & ".vb")
             Dim maintenancePagePath = Path.Combine(Environment.CurrentDirectory, maintenancePageNameTextBox.Text.Trim() & ".vb")
             Dim overwriteExistingPages = False
@@ -331,10 +443,6 @@ Namespace HelloWorld
                     Return
                 End If
                 overwriteExistingPages = True
-            End If
-
-            If Not ValidateAndBuildForSave() Then
-                Return
             End If
 
             suppressSaveConfirmation = True
@@ -464,7 +572,7 @@ Namespace HelloWorld
             Next
             cancelActionButton.Enabled = True
             cancelActionButton.Text = "Close"
-            Text = Text & " - MANUAL PAGE CHANGES DETECTED"
+            RefreshPageCaption()
             MessageBox.Show(Me,
                             "THE GENERATED _U PAGE HAS BEEN CHANGED IN VS CODE." & Environment.NewLine & Environment.NewLine &
                             "SAVE AND SAVE & GENERATE ARE DISABLED TO PROTECT THE MANUAL CHANGES." & Environment.NewLine &
@@ -500,7 +608,10 @@ Namespace HelloWorld
         Private Shared Function GetGenerationResults(results As IReadOnlyList(Of String), iconResults As Boolean) As List(Of String)
             Dim selected As New List(Of String)()
             For Each result In results
-                Dim isIconResult = result.IndexOf("Dashboard_Application icon:", StringComparison.OrdinalIgnoreCase) >= 0
+                ' Matched on the word, not on one dashboard name and one exact phrasing. The old
+                ' test missed "icon image updated" and every Dashboard_Company entry, and a
+                ' misclassified line lands under CREATED with no ICON heading above it.
+                Dim isIconResult = result.IndexOf(" icon", StringComparison.OrdinalIgnoreCase) >= 0
                 If isIconResult = iconResults Then
                     selected.Add(result)
                 End If
@@ -537,20 +648,34 @@ Namespace HelloWorld
 
             If tableSelectionPanel IsNot Nothing Then
                 tableSelectionPanel.TabIndex = 4
-                underlyingTableNameTextBox.TabIndex = 0
-                selectTableButton.TabIndex = 1
-                selectFieldsButton.TabIndex = 2
+                selectTableButton.TabIndex = 0
+                underlyingTableNameTextBox.TabIndex = 1
             End If
 
-            SetFocusTargetTabIndex(lookupFieldsTextBox, 5)
-            SetFocusTargetTabIndex(adminRequiredFieldsTextBox, 6)
-            SetFocusTargetTabIndex(menuCallerTextBox, 7)
-            SetFocusTargetTabIndex(browseSqlTextBox, 8)
-            SetFocusTargetTabIndex(useRegistrationIdCheckBox, 9)
-            copyRequestButton.TabIndex = 10
-            generatePagesButton.TabIndex = 11
-            okButton.TabIndex = 12
-            cancelActionButton.TabIndex = 13
+            If fieldSelectionPanel IsNot Nothing Then
+                fieldSelectionPanel.TabIndex = 5
+                selectFieldsButton.TabIndex = 0
+            End If
+
+            SetFocusTargetTabIndex(browseFieldsTextBox, 6)
+            SetFocusTargetTabIndex(maintenanceFieldsTextBox, 7)
+            SetFocusTargetTabIndex(lookupFieldsTextBox, 8)
+            SetFocusTargetTabIndex(adminRequiredFieldsTextBox, 9)
+            SetFocusTargetTabIndex(menuCallerComboBox, 10)
+
+            If iconSelectionPanel IsNot Nothing Then
+                iconSelectionPanel.TabIndex = 11
+                selectIconButton.TabIndex = 0
+                iconFileNameTextBox.TabIndex = 1
+            End If
+
+            SetFocusTargetTabIndex(browseSqlTextBox, 12)
+            SetFocusTargetTabIndex(useRegistrationIdCheckBox, 13)
+            copyRequestButton.TabIndex = 14
+            previewCodeButton.TabIndex = 15
+            generatePagesButton.TabIndex = 16
+            okButton.TabIndex = 17
+            cancelActionButton.TabIndex = 18
         End Sub
 
         Private Shared Sub SetFocusTargetTabIndex(control As Control, tabIndex As Integer)
@@ -592,6 +717,37 @@ Namespace HelloWorld
             directionsPanel.Height = If(directionsTextBox.Visible, 240, 38)
         End Sub
 
+        ' A drop-down left on its placeholder is empty, the same as a blank text box. This is the
+        ' page-local required rule; the framework has its own for metadata-driven required fields.
+        Private Shared Function IsPageRequiredFieldEmpty(control As Control) As Boolean
+            If control Is Nothing Then Return True
+
+            Dim combo = TryCast(control, ComboBox)
+            If combo IsNot Nothing Then
+                If combo.SelectedIndex <= 0 Then Return True
+                Return String.Equals(combo.Text.Trim(), MakeASelection, StringComparison.OrdinalIgnoreCase)
+            End If
+
+            Return String.IsNullOrWhiteSpace(control.Text)
+        End Function
+
+        Private Function AddQuestionRow(parent As TableLayoutPanel, caption As String, labelCaption As String, content As Control, rowHeight As Integer) As Integer
+            Dim row = parent.RowCount
+            parent.RowCount += 1
+            parent.RowStyles.Add(New RowStyle(SizeType.Absolute, rowHeight))
+            parent.Controls.Add(New Label With {
+                .Name = "Label_" & caption,
+                .Text = labelCaption,
+                .AutoSize = False,
+                .Size = New Size(215, 26),
+                .Anchor = AnchorStyles.Left Or AnchorStyles.Top,
+                .Margin = New Padding(0),
+                .TextAlign = ContentAlignment.MiddleLeft
+            }, 0, row)
+            parent.Controls.Add(content, 1, row)
+            Return row
+        End Function
+
         Private Function AddEntryField(parent As TableLayoutPanel, caption As String, readOnlyValue As Boolean, rowHeight As Integer, width As Integer, Optional multiline As Boolean = False, Optional labelCaption As String = Nothing) As TextBox
             Dim row = parent.RowCount
             parent.RowCount += 1
@@ -612,9 +768,12 @@ Namespace HelloWorld
         End Function
 
         Private Sub ApplyPageRequiredFieldStyling()
-            For Each fieldName In New String() {"RequestName", "PageBaseName", "BrowsePageName", "MaintenancePageName", "UnderlyingTableName", "MenuCaller", "BrowseSql"}
+            For Each fieldName In New String() {"RequestName", "PageBaseName", "BrowsePageName", "MaintenancePageName", "UnderlyingTableName", "MenuCaller", "IconFileName", "BrowseSql"}
                 Dim labelMatches = Controls.Find("Label_" & fieldName, True)
                 Dim controlMatches = Controls.Find("TextBox_" & fieldName, True)
+                If controlMatches.Length = 0 Then
+                    controlMatches = Controls.Find("ComboBox_" & fieldName, True)
+                End If
                 If labelMatches.Length = 0 OrElse controlMatches.Length = 0 Then
                     Continue For
                 End If
@@ -672,7 +831,7 @@ Namespace HelloWorld
                 AddHandler textBox.TextChanged,
                     Sub(borderSender, borderEventArgs)
                         If pageRequiredValidationActivated Then
-                            SetPageRequiredVisual(capturedTextBox, capturedBorderPanel, String.IsNullOrWhiteSpace(capturedTextBox.Text))
+                            SetPageRequiredVisual(capturedTextBox, capturedBorderPanel, IsPageRequiredFieldEmpty(capturedTextBox))
                         End If
                     End Sub
 
@@ -686,10 +845,13 @@ Namespace HelloWorld
                 Dim fieldName = borderPanel.Tag.ToString().Replace("PageRequiredBorder_", String.Empty, StringComparison.Ordinal)
                 Dim matches = Controls.Find("TextBox_" & fieldName, True)
                 If matches.Length = 0 Then
+                    matches = Controls.Find("ComboBox_" & fieldName, True)
+                End If
+                If matches.Length = 0 Then
                     Continue For
                 End If
 
-                SetPageRequiredVisual(matches(0), borderPanel, String.IsNullOrWhiteSpace(matches(0).Text))
+                SetPageRequiredVisual(matches(0), borderPanel, IsPageRequiredFieldEmpty(matches(0)))
             Next
             If String.IsNullOrWhiteSpace(requestNameTextBox.Text) Then
                 validationLines.Add("REQUESTNAME IS REQUIRED.")
@@ -798,83 +960,49 @@ Namespace HelloWorld
             End If
         End Sub
 
-        Private Sub MenuCallerTextBox_Leave(sender As Object, e As EventArgs)
-            If loading OrElse suppressMenuCallerPrompt Then
-                Return
-            End If
-
-            ResolveMenuCallerAmbiguity()
+        Private Sub MenuCallerComboBox_SelectedIndexChanged(sender As Object, e As EventArgs)
+            If loading Then Return
+            MarkDirty(sender, e)
+            RefreshSavedPageDocumentTemplate()
         End Sub
 
-        Private Sub ResolveMenuCallerAmbiguity()
-            Dim originalValue = menuCallerTextBox.Text.Trim()
-            If originalValue = String.Empty Then
-                Return
+        Private Function SelectedMenuCaller() As String
+            If menuCallerComboBox Is Nothing OrElse menuCallerComboBox.SelectedIndex <= 0 Then
+                Return String.Empty
             End If
+            Return menuCallerComboBox.SelectedItem.ToString()
+        End Function
 
-            Dim mainMenuOptions = GetMainMenuCallerOptions()
-            Dim dashboardOptions = GetDashboardCallerOptions()
-            If IsExactCandidate(originalValue, mainMenuOptions) OrElse IsExactCandidate(originalValue, dashboardOptions) Then
-                Return
-            End If
-
-            Dim normalized = originalValue.ToUpperInvariant()
-            Dim candidates As List(Of String) = Nothing
-            Dim title As String = String.Empty
-            If normalized = "MAIN MENU" OrElse normalized = "MENU" Then
-                candidates = mainMenuOptions
-                title = "Select Main Menu Caller"
-            ElseIf normalized = "DASHBOARD" OrElse
-                   normalized = "DASHBOARDS" OrElse
-                   normalized = "APP ADMIN DASHBOARD" OrElse
-                   normalized = "APP ADMIN DASHBOARDS" Then
-                candidates = dashboardOptions
-                title = "Select Dashboard Caller"
-            End If
-
-            If candidates Is Nothing OrElse candidates.Count = 0 Then
-                Return
-            End If
-
-            Dim selected = PromptForCallerSelection(title, originalValue, candidates)
-            If selected = String.Empty Then
-                Return
-            End If
-
-            suppressMenuCallerPrompt = True
-            Try
-                menuCallerTextBox.Text = selected
-                RefreshSavedPageDocumentTemplate()
-            Finally
-                suppressMenuCallerPrompt = False
-            End Try
-        End Sub
-
-        Private Shared Function IsExactCandidate(value As String, candidates As IEnumerable(Of String)) As Boolean
-            For Each candidate In candidates
-                If String.Equals(value, candidate, StringComparison.OrdinalIgnoreCase) Then
-                    Return True
+        Private Sub SelectMenuCaller(value As String)
+            If menuCallerComboBox Is Nothing Then Return
+            Dim wanted = If(value, String.Empty).Trim()
+            For index As Integer = 0 To menuCallerComboBox.Items.Count - 1
+                If String.Equals(menuCallerComboBox.Items(index).ToString(), wanted, StringComparison.OrdinalIgnoreCase) Then
+                    menuCallerComboBox.SelectedIndex = index
+                    Return
                 End If
             Next
 
-            Return False
-        End Function
-
+            ' A saved request may name a caller that is no longer offered. Keep the value visible
+            ' rather than silently reverting it to Make a Selection.
+            If wanted <> String.Empty Then
+                menuCallerComboBox.Items.Add(wanted)
+                menuCallerComboBox.SelectedIndex = menuCallerComboBox.Items.Count - 1
+            Else
+                menuCallerComboBox.SelectedIndex = 0
+            End If
+        End Sub
         Private Shared Function GetMainMenuCallerOptions() As List(Of String)
             Return New List(Of String) From {
-                "Main Menu",
-                "MainMenu"
+                "Main Menu"
             }
         End Function
 
+        ' Discovered from the compiled classes rather than listed here, so the drop-down cannot
+        ' drift from what the generator can actually place an icon on. Window controls and browse
+        ' pages are deliberately absent: neither can take a generated icon.
         Private Shared Function GetDashboardCallerOptions() As List(Of String)
-            Return New List(Of String) From {
-                "Dashboard_Application",
-                "Dashboard_Company",
-                "FW_HD_AdminDashboard_B",
-                "General Dashboard",
-                "Acme Dashboard"
-            }
+            Return PageGenerator.DashboardCallers()
         End Function
 
         Private Function PromptForCallerSelection(title As String, typedValue As String, candidates As List(Of String)) As String
@@ -1047,7 +1175,8 @@ Namespace HelloWorld
                 browseSqlTextBox.Text = DbText(row("BrowseSql"))
                 lookupFieldsTextBox.Text = DbText(row("LookupFields"))
                 adminRequiredFieldsTextBox.Text = DbText(row("AdminRequiredFields"))
-                menuCallerTextBox.Text = DbText(row("MenuCaller"))
+                SelectMenuCaller(DbText(row("MenuCaller")))
+                SetIconFileName(If(row.Table.Columns.Contains("IconFileName"), DbText(row("IconFileName")), String.Empty))
                 createdByTextBox.Text = DbText(row("CreatedBy"))
                 createdOnTextBox.Text = DbText(row("CreatedOn"))
                 updatedByTextBox.Text = DbText(row("UpdatedBy"))
@@ -1075,7 +1204,7 @@ Namespace HelloWorld
         End Function
 
         Private Sub BindFormControls()
-            For Each control In New Control() {requestNameTextBox, pageBaseNameTextBox, browsePageNameTextBox, maintenancePageNameTextBox, underlyingTableNameTextBox, browseFieldsTextBox, maintenanceFieldsTextBox, lookupFieldsTextBox, adminRequiredFieldsTextBox, menuCallerTextBox}
+            For Each control In New Control() {requestNameTextBox, pageBaseNameTextBox, browsePageNameTextBox, maintenancePageNameTextBox, underlyingTableNameTextBox, browseFieldsTextBox, maintenanceFieldsTextBox, lookupFieldsTextBox, adminRequiredFieldsTextBox}
                 Dim fieldName = control.Name.Substring("TextBox_".Length)
                 control.DataBindings.Clear()
                 control.DataBindings.Add("Text", formBindingSource, fieldName, True, DataSourceUpdateMode.Never)
@@ -1142,6 +1271,161 @@ Namespace HelloWorld
             MessageBox.Show(Me, "SQL VALIDATION PASSED. SAVE AND GENERATE PAGES ARE ENABLED.", "VALIDATE SQL", MessageBoxButtons.OK, MessageBoxIcon.Information)
         End Sub
 
+
+        ' Shows exactly what "Save && Generate" would produce - the emitted source for each page and
+        ' every file, database row and dashboard change it would make - without writing anything.
+        Private Sub PreviewGeneratedCodeButton_Click(sender As Object, e As EventArgs)
+            If Not generateBrowsePageCheckBox.Checked AndAlso Not generateMaintenancePageCheckBox.Checked Then
+                MessageBox.Show(Me, "SELECT AT LEAST ONE PAGE TARGET TO PREVIEW.", "PREVIEW CODE", MessageBoxButtons.OK, MessageBoxIcon.Information)
+                Return
+            End If
+
+            ' The generator reads the saved request, so a preview of unsaved edits would show stale
+            ' code. Saving is an explicit choice here rather than a silent side effect of previewing.
+            If isNewRecord OrElse hasUnsavedChanges Then
+                Dim saveChoice = MessageBox.Show(Me,
+                                                 "THE PAGE REQUEST MUST BE SAVED BEFORE ITS GENERATED CODE CAN BE PREVIEWED." & Environment.NewLine & Environment.NewLine &
+                                                 "YES: SAVE THE REQUEST AND PREVIEW THE CODE." & Environment.NewLine &
+                                                 "NO: RETURN WITHOUT SAVING.",
+                                                 "PREVIEW CODE",
+                                                 MessageBoxButtons.YesNo,
+                                                 MessageBoxIcon.Question)
+                If saveChoice <> DialogResult.Yes Then Return
+                If Not ValidateAndBuildForSave() Then Return
+                suppressSaveConfirmation = True
+                Try
+                    If Not SaveRecord() Then Return
+                Finally
+                    suppressSaveConfirmation = False
+                End Try
+            End If
+
+            Dim previewRequestId = If(isNewRecord,
+                                      DataAccess.GetPageGenerationId(requestNameTextBox.Text, browsePageNameTextBox.Text, maintenancePageNameTextBox.Text),
+                                      recordId)
+            If previewRequestId <= 0 Then
+                MessageBox.Show(Me, "THE PAGE REQUEST ID COULD NOT BE RESOLVED.", "PREVIEW CODE", MessageBoxButtons.OK, MessageBoxIcon.Error)
+                Return
+            End If
+
+            Dim workspaceRoot = Environment.CurrentDirectory
+            Dim plan = PageGenerator.Preview(previewRequestId, workspaceRoot)
+            If Not plan.IsValid Then
+                MessageBox.Show(Me,
+                                ("GENERATION WOULD STOP WITH THESE ERRORS:" & Environment.NewLine & Environment.NewLine &
+                                 String.Join(Environment.NewLine, plan.Errors)).ToUpperInvariant(),
+                                "PREVIEW CODE",
+                                MessageBoxButtons.OK,
+                                MessageBoxIcon.Error)
+                Return
+            End If
+
+            ShowGeneratedCodePreview(plan, workspaceRoot)
+        End Sub
+
+        Private Sub ShowGeneratedCodePreview(plan As PageGenerationPlan, workspaceRoot As String)
+            Using preview As New Form With {
+                .Text = "Generated Code Preview",
+                .StartPosition = FormStartPosition.CenterParent,
+                .ClientSize = New Size(1000, 700),
+                .MinimizeBox = False,
+                .MaximizeBox = True,
+                .ShowInTaskbar = False
+            }
+                Dim tabs As New TabControl With {.Dock = DockStyle.Fill}
+
+                Dim summaryTab As New TabPage("Summary")
+                summaryTab.Controls.Add(BuildPreviewTextBox(String.Join(Environment.NewLine, PageGenerator.DescribePlannedWork(plan, workspaceRoot))))
+                tabs.TabPages.Add(summaryTab)
+
+                If plan.GenerateBrowsePage Then
+                    Dim browseTab As New TabPage(PreviewTabCaption(plan.BrowsePageName, plan.BrowseSource))
+                    browseTab.Controls.Add(BuildPreviewTextBox(plan.BrowseSource))
+                    tabs.TabPages.Add(browseTab)
+                End If
+                If plan.GenerateMaintenancePage Then
+                    Dim maintenanceTab As New TabPage(PreviewTabCaption(plan.MaintenancePageName, plan.MaintenanceSource))
+                    maintenanceTab.Controls.Add(BuildPreviewTextBox(plan.MaintenanceSource))
+                    tabs.TabPages.Add(maintenanceTab)
+                End If
+
+                Dim previewFooter As New Panel With {.Dock = DockStyle.Bottom, .Height = 54, .Padding = New Padding(12, 8, 12, 8)}
+
+                ' The footer shows on every tab, so a bare "Compile Check" reads as belonging to
+                ' whichever tab is open. The caption carries the scope instead.
+                Dim compileScope = If(plan.GenerateBrowsePage AndAlso plan.GenerateMaintenancePage,
+                                      "Compile Both Pages",
+                                      "Compile Page")
+                Dim compileButton As New Button With {
+                    .Text = compileScope,
+                    .Size = New Size(160, 36),
+                    .Location = New Point(12, 8),
+                    .Anchor = AnchorStyles.Top Or AnchorStyles.Left
+                }
+                AddHandler compileButton.Click,
+                    Sub()
+                        RunCompileCheck(preview, plan, workspaceRoot)
+                    End Sub
+                previewFooter.Controls.Add(compileButton)
+
+                Dim closeButton As New Button With {
+                    .Text = "Close",
+                    .Size = New Size(115, 36),
+                    .Location = New Point(preview.ClientSize.Width - 135, 8),
+                    .Anchor = AnchorStyles.Top Or AnchorStyles.Right,
+                    .DialogResult = DialogResult.OK
+                }
+                previewFooter.Controls.Add(closeButton)
+
+                preview.Controls.Add(tabs)
+                preview.Controls.Add(previewFooter)
+                preview.AcceptButton = closeButton
+                preview.CancelButton = closeButton
+                preview.ShowDialog(Me)
+            End Using
+        End Sub
+
+        ' A generated _B page is short by design - FW_Base_B does the work - so the line count is
+        ' stated on the tab rather than left to look like a truncated preview.
+        Private Shared Function PreviewTabCaption(pageName As String, source As String) As String
+            Dim lineCount = If(String.IsNullOrEmpty(source), 0, source.Split({Environment.NewLine, vbLf}, StringSplitOptions.None).Length)
+            Return pageName & ".vb  (" & lineCount.ToString(Globalization.CultureInfo.InvariantCulture) & " lines)"
+        End Function
+
+        Private Shared Function BuildPreviewTextBox(content As String) As TextBox
+            Return New TextBox With {
+                .Dock = DockStyle.Fill,
+                .Multiline = True,
+                .ReadOnly = True,
+                .WordWrap = False,
+                .ScrollBars = ScrollBars.Both,
+                .Font = New Font("Consolas", 9.0F),
+                .BackColor = Color.White,
+                .Text = content
+            }
+        End Function
+
+        ' Only a real compile proves the emitted pages would build. The preview text on its own
+        ' cannot show a template mistake that the compiler would reject.
+        Private Shared Sub RunCompileCheck(owner As Form, plan As PageGenerationPlan, workspaceRoot As String)
+            Dim result As PageCompileResult = Nothing
+            Dim work = Task.Run(Sub()
+                                    result = PageGenerator.CompileCheck(plan, workspaceRoot)
+                                End Sub)
+            FW_BusyDialog.WaitFor(owner, work, "COMPILE CHECK", "COMPILING THE GENERATED SOURCE...")
+
+            If result Is Nothing Then
+                MessageBox.Show(owner, "THE COMPILE CHECK DID NOT RETURN A RESULT.", "COMPILE CHECK", MessageBoxButtons.OK, MessageBoxIcon.Error)
+                Return
+            End If
+
+            MessageBox.Show(owner,
+                            String.Join(Environment.NewLine, result.Messages),
+                            "COMPILE CHECK",
+                            MessageBoxButtons.OK,
+                            If(result.Succeeded, MessageBoxIcon.Information, MessageBoxIcon.Error))
+        End Sub
+
         Private Sub PreviewRequestButton_Click(sender As Object, e As EventArgs)
             If Not ValidateRequiredPageFields("PREVIEW") Then
                 Return
@@ -1194,6 +1478,213 @@ Namespace HelloWorld
             Return False
         End Function
 
+        Private Shared Function DashboardImagesFolder() As String
+            Dim candidates As String() = {
+                Path.Combine(Application.StartupPath, "assets", "images"),
+                Path.Combine(Application.StartupPath, "..", "..", "..", "assets", "images"),
+                Path.Combine(Application.StartupPath, "..", "..", "..", "..", "assets", "images")
+            }
+            For Each candidate In candidates
+                Dim fullPath = Path.GetFullPath(candidate)
+                If Directory.Exists(fullPath) Then Return fullPath
+            Next
+            Return String.Empty
+        End Function
+
+        ''' A choice is either a file in assets\images or one of the built-in glyphs, marked with
+        ''' the system: prefix. One place resolves both to a picture.
+        Private Shared Function ResolveIconImage(choice As String) As Image
+            Dim wanted = If(choice, String.Empty).Trim()
+            If wanted = String.Empty Then Return Nothing
+
+            Dim systemName = PageGenerator.SystemIconName(wanted)
+            If systemName.Length > 0 Then
+                Select Case systemName.ToUpperInvariant()
+                    Case "APPLICATION" : Return SystemIcons.Application.ToBitmap()
+                    Case "ASTERISK" : Return SystemIcons.Asterisk.ToBitmap()
+                    Case "ERROR" : Return SystemIcons.Error.ToBitmap()
+                    Case "EXCLAMATION" : Return SystemIcons.Exclamation.ToBitmap()
+                    Case "HAND" : Return SystemIcons.Hand.ToBitmap()
+                    Case "INFORMATION" : Return SystemIcons.Information.ToBitmap()
+                    Case "QUESTION" : Return SystemIcons.Question.ToBitmap()
+                    Case "SHIELD" : Return SystemIcons.Shield.ToBitmap()
+                    Case "WARNING" : Return SystemIcons.Warning.ToBitmap()
+                    Case "WINLOGO" : Return SystemIcons.WinLogo.ToBitmap()
+                    Case Else : Return Nothing
+                End Select
+            End If
+
+            Dim folder = DashboardImagesFolder()
+            If folder = String.Empty Then Return Nothing
+            Dim fullPath = Path.Combine(folder, wanted)
+            If Not File.Exists(fullPath) Then Return Nothing
+
+            Try
+                ' Read through a stream so the preview does not lock the file.
+                Using stream As New FileStream(fullPath, FileMode.Open, FileAccess.Read)
+                    Return Image.FromStream(stream)
+                End Using
+            Catch
+                Return Nothing
+            End Try
+        End Function
+
+        ''' What the user sees in the list for a stored choice.
+        Private Shared Function IconChoiceDisplay(choice As String) As String
+            Dim systemName = PageGenerator.SystemIconName(choice)
+            Return If(systemName.Length > 0, systemName & " (system)", If(choice, String.Empty).Trim())
+        End Function
+
+        ''' What is stored for a displayed choice.
+        Private Shared Function IconChoiceValue(display As String) As String
+            Dim text = If(display, String.Empty).Trim()
+            If text.EndsWith(" (system)", StringComparison.OrdinalIgnoreCase) Then
+                Return PageGenerator.SystemIconPrefix & text.Substring(0, text.Length - " (system)".Length)
+            End If
+            Return text
+        End Function
+
+        Private Sub SetIconFileName(fileName As String)
+            iconFileNameTextBox.Text = IconChoiceDisplay(fileName)
+            iconPreviewBox.Image = ResolveIconImage(fileName)
+        End Sub
+
+        ''' One tile per icon, laid out like the dashboard it is choosing for: system glyphs on the
+        ''' left, the files in assets\images on the right. Picking by sight beats picking a file
+        ''' name and then finding out what it looks like.
+        Private Sub SelectIconButton_Click(sender As Object, e As EventArgs)
+            Dim folder = DashboardImagesFolder()
+            Dim files As New List(Of String)()
+            If folder <> String.Empty Then
+                files = Directory.GetFiles(folder).
+                    Where(Function(item) {".png", ".jpg", ".jpeg", ".bmp", ".gif", ".ico"}.
+                        Contains(Path.GetExtension(item).ToLowerInvariant())).
+                    Select(Function(item) Path.GetFileName(item)).
+                    OrderBy(Function(item) item, StringComparer.OrdinalIgnoreCase).
+                    ToList()
+            End If
+
+            Dim chosen = IconChoiceValue(iconFileNameTextBox.Text)
+            Dim tiles As New List(Of Panel)()
+
+            Using dialog As New Form With {
+                .Text = "Select Dashboard Icon",
+                .StartPosition = FormStartPosition.CenterParent,
+                .ClientSize = New Size(780, 560),
+                .MinimizeBox = False,
+                .MaximizeBox = False,
+                .FormBorderStyle = FormBorderStyle.FixedDialog
+            }
+                Dim layout As New TableLayoutPanel With {
+                    .Dock = DockStyle.Fill,
+                    .ColumnCount = 2,
+                    .RowCount = 2,
+                    .Padding = New Padding(10)
+                }
+                layout.ColumnStyles.Add(New ColumnStyle(SizeType.Percent, 50))
+                layout.ColumnStyles.Add(New ColumnStyle(SizeType.Percent, 50))
+                layout.RowStyles.Add(New RowStyle(SizeType.Percent, 100))
+                layout.RowStyles.Add(New RowStyle(SizeType.Absolute, 48))
+
+                Dim systemGroup As New GroupBox With {.Text = "System Icons", .Dock = DockStyle.Fill}
+                Dim fileGroup As New GroupBox With {.Text = "File Graphics", .Dock = DockStyle.Fill}
+                Dim systemFlow As New FlowLayoutPanel With {.Dock = DockStyle.Fill, .AutoScroll = True, .Padding = New Padding(8)}
+                Dim fileFlow As New FlowLayoutPanel With {.Dock = DockStyle.Fill, .AutoScroll = True, .Padding = New Padding(8)}
+                systemGroup.Controls.Add(systemFlow)
+                fileGroup.Controls.Add(fileFlow)
+
+                Dim applyButton As New Button With {.Text = "Select", .DialogResult = DialogResult.OK, .AutoSize = True, .Enabled = chosen <> String.Empty}
+
+                Dim highlight = Sub()
+                                    For Each tile In tiles
+                                        Dim value = Convert.ToString(tile.Tag)
+                                        Dim isChosen = String.Equals(value, chosen, StringComparison.OrdinalIgnoreCase)
+                                        tile.BackColor = If(isChosen, Color.FromArgb(221, 235, 247), SystemColors.Control)
+                                        tile.BorderStyle = If(isChosen, BorderStyle.FixedSingle, BorderStyle.None)
+                                    Next
+                                    applyButton.Enabled = chosen <> String.Empty
+                                End Sub
+
+                Dim addTile = Sub(host As FlowLayoutPanel, value As String, caption As String)
+                                  Dim tile As New Panel With {
+                                      .Size = New Size(104, 104),
+                                      .Margin = New Padding(6),
+                                      .Tag = value,
+                                      .Cursor = Cursors.Hand
+                                  }
+                                  Dim picture As New PictureBox With {
+                                      .Size = New Size(48, 48),
+                                      .Location = New Point(28, 10),
+                                      .SizeMode = PictureBoxSizeMode.Zoom,
+                                      .Image = ResolveIconImage(value)
+                                  }
+                                  Dim captionLabel As New Label With {
+                                      .Text = caption,
+                                      .AutoSize = False,
+                                      .Size = New Size(100, 32),
+                                      .Location = New Point(2, 64),
+                                      .TextAlign = ContentAlignment.TopCenter
+                                  }
+                                  tile.Controls.Add(picture)
+                                  tile.Controls.Add(captionLabel)
+
+                                  ' The picture and the caption fill the tile, so the click has to be
+                                  ' taken on all three or half the tile would be dead.
+                                  For Each clickable As Control In New Control() {tile, picture, captionLabel}
+                                      AddHandler clickable.Click, Sub()
+                                                                      chosen = value
+                                                                      highlight()
+                                                                  End Sub
+                                      AddHandler clickable.DoubleClick, Sub()
+                                                                            chosen = value
+                                                                            dialog.DialogResult = DialogResult.OK
+                                                                            dialog.Close()
+                                                                        End Sub
+                                  Next
+
+                                  tiles.Add(tile)
+                                  host.Controls.Add(tile)
+                              End Sub
+
+                For Each systemName In PageGenerator.SystemIconNames
+                    addTile(systemFlow, PageGenerator.SystemIconPrefix & systemName, systemName)
+                Next
+                For Each fileName In files
+                    addTile(fileFlow, fileName, fileName)
+                Next
+
+                If files.Count = 0 Then
+                    fileFlow.Controls.Add(New Label With {
+                        .Text = "No images found in assets\images.",
+                        .AutoSize = True,
+                        .ForeColor = Color.DimGray,
+                        .Margin = New Padding(6)
+                    })
+                End If
+
+                Dim actions As New FlowLayoutPanel With {.Dock = DockStyle.Fill, .FlowDirection = FlowDirection.RightToLeft}
+                Dim cancelButton As New Button With {.Text = "Cancel", .DialogResult = DialogResult.Cancel, .AutoSize = True}
+                actions.Controls.Add(cancelButton)
+                actions.Controls.Add(applyButton)
+
+                layout.Controls.Add(systemGroup, 0, 0)
+                layout.Controls.Add(fileGroup, 1, 0)
+                layout.Controls.Add(actions, 1, 1)
+                dialog.Controls.Add(layout)
+                dialog.AcceptButton = applyButton
+                dialog.CancelButton = cancelButton
+
+                highlight()
+
+                If dialog.ShowDialog(Me) = DialogResult.OK AndAlso chosen <> String.Empty Then
+                    If Not String.Equals(IconChoiceValue(iconFileNameTextBox.Text), chosen, StringComparison.OrdinalIgnoreCase) Then
+                        SetIconFileName(chosen)
+                        MarkDirty(sender, e)
+                        RefreshSavedPageDocumentTemplate()
+                    End If
+                End If
+            End Using
+        End Sub
         Private Sub SelectFieldsButton_Click(sender As Object, e As EventArgs)
             Dim tableName = underlyingTableNameTextBox.Text.Trim()
             If tableName.StartsWith("dbo.", StringComparison.OrdinalIgnoreCase) Then
@@ -1204,7 +1695,7 @@ Namespace HelloWorld
                 OrderBy(Function(field) field, StringComparer.OrdinalIgnoreCase).
                 ToList()
             If fields.Count = 0 Then
-                MessageBox.Show(Me, "ENTER A VALID DBO TABLE NAME FIRST.", "SELECT FIELDS", MessageBoxButtons.OK, MessageBoxIcon.Warning)
+                MessageBox.Show(Me, "CHOOSE A TABLE FIRST WITH SELECT TABLE.", "SELECT FIELDS", MessageBoxButtons.OK, MessageBoxIcon.Warning)
                 Return
             End If
             UpdateRegistrationOptionState(fields)
@@ -1324,9 +1815,17 @@ Namespace HelloWorld
                             End If
                         ElseIf eventArgs.ColumnIndex = maintenanceGrid.Columns("Required").Index OrElse
                                eventArgs.ColumnIndex = maintenanceGrid.Columns("Lookup").Index Then
+                            ' One-directional on purpose. Ticking Required or Lookup means the field
+                            ' has to be on the page, so Include is switched on. Unticking implies
+                            ' nothing - a field is quite normally included and not required - so
+                            ' Include is left alone. Assigning the expression here instead cleared
+                            ' Include, and the row was then sorted back down with the unselected
+                            ' fields as though it had never been chosen.
                             Dim isRequired = Convert.ToBoolean(row.Cells("Required").Value)
                             Dim isLookup = Convert.ToBoolean(row.Cells("Lookup").Value)
-                            row.Cells("Include").Value = isRequired OrElse isLookup
+                            If isRequired OrElse isLookup Then
+                                row.Cells("Include").Value = True
+                            End If
                         End If
                         NormalizeSelectionGridOrder(maintenanceGrid)
                     End Sub
@@ -1728,7 +2227,8 @@ Namespace HelloWorld
                     {"BrowseSql", DbSaveValue(browseSqlTextBox.Text)},
                     {"LookupFields", DbSaveValue(lookupFieldsTextBox.Text)},
                     {"AdminRequiredFields", DbSaveValue(adminRequiredFieldsTextBox.Text)},
-                    {"MenuCaller", DbSaveValue(menuCallerTextBox.Text)}
+                    {"MenuCaller", DbSaveValue(SelectedMenuCaller())},
+                    {"IconFileName", DbSaveValue(IconChoiceValue(iconFileNameTextBox.Text))}
                 }
                 If Not DataAccess.SavePageGeneration(isNewRecord, Integer.Parse(If(String.IsNullOrWhiteSpace(pageRequestIdTextBox.Text), "0", pageRequestIdTextBox.Text)), values, originalRowVersion) Then
                     ' A deleted record is not a conflict to overwrite.
@@ -1789,7 +2289,7 @@ Namespace HelloWorld
                 Replace("{{UNDERLYING_TABLE}}", ValueOrDefault(underlyingTableNameTextBox.Text), StringComparison.Ordinal).
                 Replace("{{LOOKUP_FIELDS}}", ValueOrDefault(lookupFieldsTextBox.Text), StringComparison.Ordinal).
                 Replace("{{ADMIN_REQUIRED_FIELDS}}", ValueOrDefault(adminRequiredFieldsTextBox.Text), StringComparison.Ordinal).
-                Replace("{{MENU_CALLER}}", ValueOrDefault(menuCallerTextBox.Text), StringComparison.Ordinal).
+                Replace("{{MENU_CALLER}}", ValueOrDefault(SelectedMenuCaller()), StringComparison.Ordinal).
                 Replace("{{BROWSE_SQL}}", browseSqlTextBox.Text.Trim(), StringComparison.Ordinal).
                 Replace("{{BROWSE_FIELDS}}", ValueOrDefault(browseFieldsTextBox.Text), StringComparison.Ordinal).
                 Replace("{{MAINTENANCE_FIELDS}}", ValueOrDefault(maintenanceFieldsTextBox.Text), StringComparison.Ordinal).

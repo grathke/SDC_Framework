@@ -33,7 +33,6 @@ Namespace HelloWorld
             EntityData = CloneRecord(data)
             entityTableName = If(String.IsNullOrWhiteSpace(tableName), "FW_Entity", tableName.Trim())
 
-            Me.Text = DialogTitle()
             Me.ClientSize = New Size(600, 550)
 
             Dim y = 20
@@ -385,6 +384,12 @@ Namespace HelloWorld
                 Case Else
                     Return String.Empty
             End Select
+        End Function
+
+        ''' The Entity table can be renamed per registration, so the title comes from the
+        ''' registration display name rather than the class name.
+        Protected Overrides Function BuildMaintenanceTitle() As String
+            Return DialogTitle()
         End Function
 
         Private Function DialogTitle() As String

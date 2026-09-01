@@ -34,6 +34,20 @@ Namespace HelloWorld
         ''' True for table-derived text (column headers, page titles, entity aliases) where the
         ''' FW_ prefix is noise. False for control captions, which are already field names.
         ''' </param>
+        ''' <summary>
+        ''' The name a user sees for a page. `_B` and `_U` are a developer naming convention, not
+        ''' something to put on screen, so the suffix is dropped before formatting: EntityX_B and
+        ''' EntityX_U both become "Entity X". Callers add the word for what the page is doing.
+        ''' </summary>
+        Public Function ToPageDisplayName(pageName As String) As String
+            Dim text = If(pageName, String.Empty).Trim()
+            If text.EndsWith("_B", StringComparison.OrdinalIgnoreCase) OrElse
+               text.EndsWith("_U", StringComparison.OrdinalIgnoreCase) Then
+                text = text.Substring(0, text.Length - 2)
+            End If
+            Return ToDisplayName(text, stripFrameworkPrefix:=True)
+        End Function
+
         Public Function ToDisplayName(name As String,
                                       Optional stripFrameworkPrefix As Boolean = True) As String
             If String.IsNullOrWhiteSpace(name) Then

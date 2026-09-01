@@ -208,6 +208,29 @@ Namespace HelloWorldTests
             End Using
         End Sub
 
+        <TestMethod>
+        Public Sub UnboundPlaceholderSelection_IsEmpty()
+            Using combo As New ComboBox()
+                combo.Items.AddRange(New Object() {DataAccess.EmptyComboPlaceholder, "Dashboard_Application"})
+                combo.SelectedIndex = 0
+                Assert.IsTrue(DataAccess.IsEmptyComboSelection(combo),
+                              "Sitting on the placeholder is selecting nothing.")
+            End Using
+        End Sub
+
+        <TestMethod>
+        Public Sub UnboundRealSelection_IsNotEmpty()
+            ' The defect this pins: a combo filled with plain items has no SelectedValue, so the
+            ' bound-combo rules called every selection empty and the field stayed red however the
+            ' user answered it.
+            Using combo As New ComboBox()
+                combo.Items.AddRange(New Object() {DataAccess.EmptyComboPlaceholder, "Dashboard_Application"})
+                combo.SelectedIndex = 1
+                Assert.IsFalse(DataAccess.IsEmptyComboSelection(combo),
+                               "An item selected from an unbound list is a genuine selection.")
+            End Using
+        End Sub
+
     End Class
 
 End Namespace

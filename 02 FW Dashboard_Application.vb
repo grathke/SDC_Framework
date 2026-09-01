@@ -33,6 +33,7 @@ Namespace HelloWorld
         Private ReadOnly newPageRequestsButton As DashboardIconButton
         Private ReadOnly databaseConfigButton As DashboardIconButton
         Private ReadOnly closeIconButton As Button
+        Private ReadOnly generatedEntityX_BButton As DashboardIconButton
         Private ReadOnly generatedFW_UserAccessExplanation_BButton As DashboardIconButton
 
         Public Sub New(user As UserContext, Optional profile As AccessProfile = Nothing)
@@ -248,6 +249,25 @@ Namespace HelloWorld
             generatedFW_UserAccessExplanation_BButton.FlatAppearance.BorderSize = 0
             generatedFW_UserAccessExplanation_BButton.FlatAppearance.MouseOverBackColor = Color.Transparent
             generatedFW_UserAccessExplanation_BButton.FlatAppearance.MouseDownBackColor = Color.Transparent
+
+            generatedEntityX_BButton = New DashboardIconButton() With {
+                .Name = "GeneratedPageActionKey_EntityX_B",
+                .Text = "EntityX",
+                .Location = DashboardGridLayout.CellLocation(1, 5),
+                .Size = New Size(150, 118),
+                .BackColor = Color.Transparent,
+                .UseVisualStyleBackColor = False,
+                .FlatStyle = FlatStyle.Flat,
+                .Font = New Font("Segoe UI", 13.0F, FontStyle.Regular),
+                .Image = SystemIcons.Exclamation.ToBitmap(),
+                .TextImageRelation = TextImageRelation.ImageAboveText,
+                .ImageAlign = ContentAlignment.TopCenter,
+                .TextAlign = ContentAlignment.BottomCenter,
+                .TabStop = False
+            }
+            generatedEntityX_BButton.FlatAppearance.BorderSize = 0
+            generatedEntityX_BButton.FlatAppearance.MouseOverBackColor = Color.Transparent
+            generatedEntityX_BButton.FlatAppearance.MouseDownBackColor = Color.Transparent
             AddHandler Me.Load, AddressOf Dashboard_Application_Load
             AddHandler Me.Resize, AddressOf Dashboard_Application_Resize
             AddHandler rolesButton.MouseEnter, AddressOf IconButton_MouseEnter
@@ -277,8 +297,12 @@ Namespace HelloWorld
             AddHandler generatedFW_UserAccessExplanation_BButton.MouseEnter, AddressOf IconButton_MouseEnter
             AddHandler generatedFW_UserAccessExplanation_BButton.MouseLeave, AddressOf IconButton_MouseLeave
             AddHandler generatedFW_UserAccessExplanation_BButton.Click, AddressOf GeneratedFW_UserAccessExplanation_BButton_Click
+            AddHandler generatedEntityX_BButton.MouseEnter, AddressOf IconButton_MouseEnter
+            AddHandler generatedEntityX_BButton.MouseLeave, AddressOf IconButton_MouseLeave
+            AddHandler generatedEntityX_BButton.Click, AddressOf GeneratedEntityX_BButton_Click
             AddHandler closeIconButton.Click, AddressOf CloseButton_Click
             Me.Controls.Add(generatedFW_UserAccessExplanation_BButton)
+            Me.Controls.Add(generatedEntityX_BButton)
             Me.Controls.Add(topStripLabel)
             Me.Controls.Add(closeIconButton)
             Me.Controls.Add(headerLabel)
@@ -304,6 +328,8 @@ Namespace HelloWorld
 
         Private Sub Dashboard_Application_Resize(sender As Object, e As EventArgs)
             rolesButton.Top = DashboardGridLayout.CellTop(1)
+            generatedEntityX_BButton.Left = DashboardGridLayout.CellLeft(5)
+            generatedEntityX_BButton.Top = DashboardGridLayout.CellTop(1)
             generatedFW_UserAccessExplanation_BButton.Left = DashboardGridLayout.CellLeft(4)
             generatedFW_UserAccessExplanation_BButton.Top = DashboardGridLayout.CellTop(1)
             userAdminButton.Top = DashboardGridLayout.CellTop(1)
@@ -393,6 +419,13 @@ Namespace HelloWorld
         Private Sub GeneratedFW_UserAccessExplanation_BButton_Click(sender As Object, e As EventArgs)
             ResetIconButtonVisuals()
             Using page As New FW_UserAccessExplanation_B(currentUser, accessProfile)
+                page.ShowDialog(Me)
+            End Using
+        End Sub
+
+        Private Sub GeneratedEntityX_BButton_Click(sender As Object, e As EventArgs)
+            ResetIconButtonVisuals()
+            Using page As New EntityX_B(currentUser, accessProfile)
                 page.ShowDialog(Me)
             End Using
         End Sub

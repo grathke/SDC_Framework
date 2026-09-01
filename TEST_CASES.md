@@ -76,6 +76,7 @@ Mostly verified on `Users_AppAdmin_U` during 2026-08-29/30. Re-run after changes
 | U-18 | Tab order cancel | Reorder and untick, then Cancel or collapse — order and ticks revert. | pass 2026-08-30 |
 | U-19 | Tab order OK | Changes persist, and reopening plus Cancel does not undo them. | pass 2026-08-30 |
 | U-20 | Zip Coder visibility | Shown when Smarty embedded lookup is off, hidden when on. | pass 2026-08-30 |
+| U-21 | Focus border in a flow row | A green border on a control inside a `FlowLayoutPanel` sits behind that control, adds no gap, and leaves the row in its authored left-to-right order. | untested |
 
 ---
 
@@ -110,14 +111,22 @@ compiled**.
 
 | ID | Case | Expected | Status |
 |---|---|---|---|
-| GEN-01 | Generated pages compile | The emitted `_B` and `_U` build with no errors. | untested |
+| GEN-01 | Generated pages compile | The emitted `_B` and `_U` build with no errors. | pass 2026-08-31 — EntityX_B/_U generated to the workspace, project builds 0 errors |
 | GEN-02 | Browse SQL without `AS PK` | Generation is refused with a message naming the expected form. | untested |
 | GEN-03 | Malformed lookup | An entry not matching `<Field> -> <Table>.<Value> displayed as <Display>` is reported. | untested |
 | GEN-04 | Valid lookup | The field becomes a combo with a "Make a Selection" placeholder and saves the selected ID. | untested |
 | GEN-05 | Cancel warns | Editing a generated page then cancelling prompts before discarding. | untested |
 | GEN-06 | Save conflict | A conflict offers overwrite rather than a dead-end failure. | untested |
 | GEN-07 | `FW_RoleTables` | A row is created, or an existing row's SQL updated when the table matches. | untested |
-| GEN-08 | Dashboard icon | Added when `MenuCaller` is `Dashboard_Application`. `ICON_CATALOG.md` is **not** updated — still manual. | untested |
+| GEN-08 | Dashboard icon | Added when `MenuCaller` is `Dashboard_Application`. `ICON_CATALOG.md` is **not** updated — still manual. | pass 2026-08-31 — GeneratedPageActionKey_EntityX_B present |
+| GEN-09 | Preview Code writes nothing | `Preview Code` shows both sources and the Summary, and no page file, `FW_RoleTables` row or dashboard icon changes. | untested |
+| GEN-10 | Compile Check passes | Compile Check on a valid request reports the generated source builds against the application assembly. | pass 2026-08-31 — scratch project produced PageGenPreview.dll |
+| GEN-11 | Compile Check reports errors | A template fault is reported with file, line, column and `BC` code rather than a bare failure. | untested |
+| GEN-12 | Preview Code needs a saved request | With unsaved edits it offers to save first, and returns without writing when the offer is declined. | untested |
+| GEN-13 | Unticking Admin Required keeps the field | In Select Fields, unticking Admin Required or Lookup leaves Use in _U ticked and the row in place; unticking Use in _U still clears both. | pass 2026-08-31 |
+| GEN-14 | Menu Caller lists the dashboards | The drop-down holds Make a Selection, Main Menu, and every `Dashboard_*` class found by reflection - four entries today. Window controls and browse pages are absent. | pass 2026-08-31 |
+| GEN-15 | Menu Caller required clears on selection | Choosing a caller clears the red required border. The combo is unbound, so `IsEmptyComboSelection` judges it on the selected item rather than `SelectedValue`. | pass 2026-08-31 |
+| GEN-16 | Save && Generate validates first | With a required field blank, validation reports before any overwrite prompt, so no overwrite is authorised for a request that cannot generate. | untested |
 
 ---
 
