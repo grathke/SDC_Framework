@@ -146,10 +146,8 @@ Namespace HelloWorld
                               lastNameTextBox,
                               emailTextBox,
                               phoneTextBox,
-                              enumButton,
                               okButton,
                               cancelActionButton)
-            enumButton.TabStop = False
             okButton.TabStop = False
             cancelActionButton.TabStop = False
         End Sub

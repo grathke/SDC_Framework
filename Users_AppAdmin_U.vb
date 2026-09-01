@@ -179,7 +179,6 @@ Namespace HelloWorld
             ' Move base buttons down
             okButton.Location = New Point(580, 614)
             cancelActionButton.Location = New Point(720, 614)
-            enumButton.Location = New Point(20, 614)
 
             registrationLabel = New Label() With {
                 .Name = "Label_RegistrationID",
@@ -226,7 +225,6 @@ Namespace HelloWorld
                               passwordTextBox,
                               activeCheckBox,
                               superAdminCheckBox,
-                              enumButton,
                               okButton,
                               cancelActionButton)
             availableRolesGrid.TabStop = False

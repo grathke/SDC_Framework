@@ -4678,14 +4678,14 @@ Namespace HelloWorld
 
                         Using cmd As New SqlCommand(
                             "INSERT INTO dbo.FW_Users (RegistrationID, FirstName, LastName, Email, Phone, Address1, Address2, City, State, Zip, IsActive, SuperAdmin, CreatedBy, CreatedOn) " &
-                            "VALUES (@RegistrationID, @FirstName, @LastName, @Email, @Phone, @Address, @Address2, @City, @State, @Zip, @IsActive, @SuperAdmin, @CreatedBy, GETDATE()); " &
+                            "VALUES (@RegistrationID, @FirstName, @LastName, @Email, @Phone, @Address1, @Address2, @City, @State, @Zip, @IsActive, @SuperAdmin, @CreatedBy, GETDATE()); " &
                             "SELECT CAST(SCOPE_IDENTITY() as int)", conn, trans)
                             cmd.Parameters.AddWithValue("@RegistrationID", record.RegistrationID)
                             cmd.Parameters.AddWithValue("@FirstName", CType(If(String.IsNullOrWhiteSpace(record.FirstName), DBNull.Value, CObj(record.FirstName.Trim())), Object))
                             cmd.Parameters.AddWithValue("@LastName", CType(If(String.IsNullOrWhiteSpace(record.LastName), DBNull.Value, CObj(record.LastName.Trim())), Object))
                             cmd.Parameters.AddWithValue("@Email", CType(If(String.IsNullOrWhiteSpace(record.Email), DBNull.Value, CObj(record.Email.Trim())), Object))
                             cmd.Parameters.AddWithValue("@Phone", CType(If(String.IsNullOrWhiteSpace(record.Phone), DBNull.Value, CObj(record.Phone.Trim())), Object))
-                            cmd.Parameters.AddWithValue("@Address", CType(If(String.IsNullOrWhiteSpace(record.Address1), DBNull.Value, CObj(record.Address1.Trim())), Object))
+                            cmd.Parameters.AddWithValue("@Address1", CType(If(String.IsNullOrWhiteSpace(record.Address1), DBNull.Value, CObj(record.Address1.Trim())), Object))
                             cmd.Parameters.AddWithValue("@Address2", CType(If(String.IsNullOrWhiteSpace(record.Address2), DBNull.Value, CObj(record.Address2.Trim())), Object))
                             cmd.Parameters.AddWithValue("@City", CType(If(String.IsNullOrWhiteSpace(record.City), DBNull.Value, CObj(record.City.Trim())), Object))
                             cmd.Parameters.AddWithValue("@State", CType(If(String.IsNullOrWhiteSpace(record.State), DBNull.Value, CObj(record.State.Trim())), Object))
@@ -4717,7 +4717,7 @@ Namespace HelloWorld
                 conn.Open()
                 Using cmd As New SqlCommand(
                     "UPDATE dbo.FW_Users SET FirstName = @FirstName, LastName = @LastName, Email = @Email, Phone = @Phone, " &
-                    "Address1 = @Address, Address2 = @Address2, City = @City, State = @State, Zip = @Zip, " &
+                    "Address1 = @Address1, Address2 = @Address2, City = @City, State = @State, Zip = @Zip, " &
                     "IsActive = @IsActive, SuperAdmin = @SuperAdmin, UpdatedBy = @UpdatedBy, UpdatedOn = GETDATE() " &
                     "WHERE UserID = @UserID AND RowVersion = @OriginalRowVersion", conn)
                     cmd.Parameters.AddWithValue("@UserID", record.UserID)
@@ -4725,7 +4725,7 @@ Namespace HelloWorld
                     cmd.Parameters.AddWithValue("@LastName", CType(If(String.IsNullOrWhiteSpace(record.LastName), DBNull.Value, CObj(record.LastName.Trim())), Object))
                     cmd.Parameters.AddWithValue("@Email", CType(If(String.IsNullOrWhiteSpace(record.Email), DBNull.Value, CObj(record.Email.Trim())), Object))
                     cmd.Parameters.AddWithValue("@Phone", CType(If(String.IsNullOrWhiteSpace(record.Phone), DBNull.Value, CObj(record.Phone.Trim())), Object))
-                    cmd.Parameters.AddWithValue("@Address", CType(If(String.IsNullOrWhiteSpace(record.Address1), DBNull.Value, CObj(record.Address1.Trim())), Object))
+                    cmd.Parameters.AddWithValue("@Address1", CType(If(String.IsNullOrWhiteSpace(record.Address1), DBNull.Value, CObj(record.Address1.Trim())), Object))
                     cmd.Parameters.AddWithValue("@Address2", CType(If(String.IsNullOrWhiteSpace(record.Address2), DBNull.Value, CObj(record.Address2.Trim())), Object))
                     cmd.Parameters.AddWithValue("@City", CType(If(String.IsNullOrWhiteSpace(record.City), DBNull.Value, CObj(record.City.Trim())), Object))
                     cmd.Parameters.AddWithValue("@State", CType(If(String.IsNullOrWhiteSpace(record.State), DBNull.Value, CObj(record.State.Trim())), Object))
@@ -6183,6 +6183,63 @@ Namespace HelloWorld
             Return String.Empty
         End Function
 
+        ''' <summary>
+        ''' Field-shaped controls on a page that map to no column of its table.
+        '''
+        ''' With the mapping derived rather than stored, a control named for a column that does not
+        ''' exist is the one remaining way a field can fail silently: it simply never receives a
+        ''' permission, exactly as Address1 did for six weeks. Reporting it is the whole reason the
+        ''' derivation is safe to rely on.
+        '''
+        ''' A page may legitimately carry an input that is not a column of its own table -
+        ''' FW_HD_Issues_U's new-response box writes to the conversation table - so those are
+        ''' declared by the page and passed in here rather than guessed at.
+        ''' </summary>
+        Public Shared Function FindUnmappedFieldControls(form As System.Windows.Forms.Form,
+                                                         tableName As String,
+                                                         declaredUnbound As HashSet(Of String)) As List(Of String)
+            Dim unmapped As New List(Of String)()
+            If form Is Nothing Then Return unmapped
+
+            Dim normalizedTable = NormalizeTableName(tableName)
+            If normalizedTable = String.Empty Then Return unmapped
+
+            ' No table means no verdict. A page whose table is missing has a bigger problem, and
+            ' reporting every field on it as unmapped would bury that.
+            Dim columns = GetTableColumnNames(normalizedTable)
+            If columns.Count = 0 Then Return unmapped
+
+            CollectUnmappedControls(form, columns, declaredUnbound, unmapped)
+            unmapped.Sort(StringComparer.OrdinalIgnoreCase)
+            Return unmapped
+        End Function
+
+        Private Shared Sub CollectUnmappedControls(container As System.Windows.Forms.Control,
+                                                   columns As HashSet(Of String),
+                                                   declaredUnbound As HashSet(Of String),
+                                                   unmapped As List(Of String))
+            If container Is Nothing OrElse container.Controls Is Nothing Then Return
+
+            For Each ctrl As System.Windows.Forms.Control In container.Controls
+                If ctrl Is Nothing Then Continue For
+
+                Dim fieldName = BoundFieldNameFromControlName(ctrl.Name)
+                If fieldName <> String.Empty AndAlso
+                   Not columns.Contains(fieldName) AndAlso
+                   (declaredUnbound Is Nothing OrElse Not declaredUnbound.Contains(ctrl.Name)) AndAlso
+                   Not unmapped.Contains(ctrl.Name) Then
+                    unmapped.Add(ctrl.Name)
+                End If
+
+                CollectUnmappedControls(ctrl, columns, declaredUnbound, unmapped)
+            Next
+        End Sub
+
+        ''' <summary>The column a control name maps to, for reporting. Empty if not field-shaped.</summary>
+        Public Shared Function ColumnNameFromControlName(controlName As String) As String
+            Return BoundFieldNameFromControlName(controlName)
+        End Function
+
         ''' <summary>Column names of a table, for deciding which controls are field-shaped.</summary>
         Private Shared Function GetTableColumnNames(tableName As String) As HashSet(Of String)
             Dim columns As New HashSet(Of String)(StringComparer.OrdinalIgnoreCase)
@@ -7247,7 +7304,7 @@ Namespace HelloWorld
                     ' 1. Get all current FW_RoleFields for this SchemaID, RegistrationID, and RoleID
                     Dim currentFields As New HashSet(Of String)()
                     Using cmd As New SqlCommand(
-                        "SELECT DISTINCT FieldName FROM dbo.FW_RoleFields WHERE SchemaID = @SchemaID AND RegistrationID = @RegistrationID AND RoleID = @RoleID", conn)
+                        "SELECT DISTINCT FieldName FROM dbo.FW_RoleFields WHERE SchemaID = @SchemaID AND RegistrationID = @RegistrationID AND RoleID = @RoleID AND ISNULL(DeletedFlag, 0) = 0", conn)
                         cmd.Parameters.AddWithValue("@SchemaID", schemaId)
                         cmd.Parameters.AddWithValue("@RegistrationID", registrationId)
                         cmd.Parameters.AddWithValue("@RoleID", roleId)
@@ -7297,11 +7354,21 @@ Namespace HelloWorld
                     End Using
                     debugLog.Add($"[QUERY3] Schema columns in table: {schemaColumns.Count} ({String.Join(", ", schemaColumns.Take(5))}...)")
                     
-                    ' 3. DELETE obsolete fields (in FW_RoleFields but NOT in schema) for this role
+                    ' 3. Soft delete obsolete fields (in FW_RoleFields but NOT in schema) for this
+                    ' role. This used to be a physical DELETE, which meant a renamed column silently
+                    ' discarded whatever had been configured for it - required, hidden, captions,
+                    ' the lot - with no way back. The shared soft-delete policy applies here as
+                    ' everywhere else, and the insert below revives a soft-deleted row rather than
+                    ' creating a second one, so renaming a column away and back restores its
+                    ' settings instead of resetting them.
                     For Each fieldToDelete In currentFields
                         If Not schemaColumns.Contains(fieldToDelete) Then
                             Using cmd As New SqlCommand(
-                                "DELETE FROM dbo.FW_RoleFields WHERE SchemaID = @SchemaID AND RegistrationID = @RegistrationID AND RoleID = @RoleID AND UPPER(FieldName) = @FieldName", conn)
+                                "UPDATE dbo.FW_RoleFields " &
+                                "SET DeletedFlag = 1, DeletedBy = @UpdatedBy, DeletedOn = GETDATE() " &
+                                "WHERE SchemaID = @SchemaID AND RegistrationID = @RegistrationID AND RoleID = @RoleID " &
+                                "AND UPPER(FieldName) = @FieldName AND ISNULL(DeletedFlag, 0) = 0", conn)
+                                cmd.Parameters.AddWithValue("@UpdatedBy", updatedBy)
                                 cmd.Parameters.AddWithValue("@SchemaID", schemaId)
                                 cmd.Parameters.AddWithValue("@RegistrationID", registrationId)
                                 cmd.Parameters.AddWithValue("@RoleID", roleId)
@@ -7337,6 +7404,32 @@ Namespace HelloWorld
                                 End If
                             End Using
                             
+                            ' A soft-deleted row for this field is revived rather than replaced, so
+                            ' a column that comes back brings its configuration with it.
+                            Dim revived As Integer
+                            Using reviveCmd As New SqlCommand(
+                                "UPDATE dbo.FW_RoleFields " &
+                                "SET DeletedFlag = 0, DeletedBy = NULL, DeletedOn = NULL, " &
+                                "    FileLink = @FileLink, TableName = @TableName, " &
+                                "    UpdatedBy = @UpdatedBy, UpdatedOn = GETDATE() " &
+                                "WHERE SchemaID = @SchemaID AND RegistrationID = @RegistrationID AND RoleID = @RoleID " &
+                                "AND UPPER(FieldName) = @FieldNameUpper AND ISNULL(DeletedFlag, 0) = 1", conn)
+                                reviveCmd.Parameters.AddWithValue("@FileLink", FileLink)
+                                reviveCmd.Parameters.AddWithValue("@TableName", tableName)
+                                reviveCmd.Parameters.AddWithValue("@UpdatedBy", updatedBy)
+                                reviveCmd.Parameters.AddWithValue("@SchemaID", schemaId)
+                                reviveCmd.Parameters.AddWithValue("@RegistrationID", registrationId)
+                                reviveCmd.Parameters.AddWithValue("@RoleID", roleId)
+                                reviveCmd.Parameters.AddWithValue("@FieldNameUpper", fieldToInsert)
+                                revived = reviveCmd.ExecuteNonQuery()
+                            End Using
+
+                            If revived > 0 Then
+                                debugLog.Add($"[INSERT] Revived soft-deleted field: {properCasedField}")
+                                insertedCount += revived
+                                Continue For
+                            End If
+
                             Using cmd As New SqlCommand(
                                 "INSERT INTO dbo.FW_RoleFields " &
                                 "(RegistrationID, RoleID, RoleDetailID, SchemaID, TableName, FieldName, FileLink, FriendlyFieldName, OverrideCaption, " &

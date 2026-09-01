@@ -77,6 +77,12 @@ Mostly verified on `Users_AppAdmin_U` during 2026-08-29/30. Re-run after changes
 | U-19 | Tab order OK | Changes persist, and reopening plus Cancel does not undo them. | pass 2026-08-30 |
 | U-20 | Zip Coder visibility | Shown when Smarty embedded lookup is off, hidden when on. | pass 2026-08-30 |
 | U-21 | Focus border in a flow row | A green border on a control inside a `FlowLayoutPanel` sits behind that control, adds no gap, and leaves the row in its authored left-to-right order. | untested |
+| U-22 | Permission on a control added since the page was written | Set a field required by permission on any `_U` page and open it: the yellow label and override caption apply immediately, with no Enum press. Field permissions are derived from the control name, so no stored enumeration has to be refreshed. | pass 2026-09-01 — `FW_Users.Address1` on `Users_AppAdmin_U`, inert since July, showed `Address X` and the yellow |
+| U-23 | Renamed column leaves no silent gap | Rename a column and re-open its page. Any `FW_RoleFields` row still naming the old column stops matching, and a control still named for it is reported rather than ignored. | pass 2026-09-01 — the four `FW_Users.Address` rows were found by query; the report path is untested against a live mismatch |
+| U-24 | Control mapping to no column | A field-shaped control whose name is not a column shows `N/A` in place of the control with its label intact, OK is disabled with the tooltip `SAVE IS NOT AVAILABLE, FIELD ON PAGE NOT MAPPED`, and an admin session also gets a copyable report. | untested — no page currently has an undeclared mismatch, so this needs one introduced deliberately |
+| U-25 | Intentional unbound control | A control declared with `DeclareUnboundField` is not reported and does not disable saving. Declaring one without a reason throws. | pass 2026-09-01 — `TextBox_Response` on `FW_HD_Issues_U` |
+| U-26 | Case-differing table declaration | A page declaring its table in different casing from the stored rows still resolves its permissions. | pass 2026-09-01 — `EntityX_U` declares `FW_ENTITY`, rows say `FW_Entity`; hidden Address1 and required First X both held |
+| U-27 | Silent `Controls.Find` miss | A page looking up a control by a name that no longer exists must not fail silently. `Controls.Find` returns empty and most callers just return, so a renamed control leaves layout or captions quietly unapplied. | untested — found by inspection on 2026-09-01, when `Users_AppAdmin_U` had been positioning `Label_Address` since the rename to `Address1` |
 
 ---
 

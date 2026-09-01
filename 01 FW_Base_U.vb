@@ -34,7 +34,6 @@ Namespace HelloWorld
         Private ReadOnly readOnlyMouseHandled As New HashSet(Of Control)()
         Protected ReadOnly okButton As Button
         Protected ReadOnly cancelActionButton As Button
-        Protected ReadOnly enumButton As Button
         Private tabOrderToggleButton As Button
         Private tabOrderPanel As Panel
         Private tabOrderList As CheckedListBox
@@ -71,21 +70,14 @@ Namespace HelloWorld
                 .Location = New Point(465, 500),
                 .Size = New Size(120, 36)
             }
-            enumButton = New Button() With {
-                .Text = "Enum",
-                .Location = New Point(20, 500),
-                .Size = New Size(70, 36)
-            }
 
             AddHandler okButton.Click, AddressOf OkButton_Click
             AddHandler cancelActionButton.Click, AddressOf CancelButton_Click
-            AddHandler enumButton.Click, AddressOf EnumButton_Click
             AddHandler Me.FormClosing, AddressOf FW_Base_U_FormClosing
             AddHandler Me.Shown, AddressOf FW_Base_U_Shown
 
             Me.Controls.Add(okButton)
             Me.Controls.Add(cancelActionButton)
-            Me.Controls.Add(enumButton)
             Me.CancelButton = cancelActionButton
 
             ' Every maintenance page can raise a report against itself.
@@ -97,7 +89,6 @@ Namespace HelloWorld
                                        ApplySharedPageCaption()
                                        RemoveReadOnlyControlsFromTabOrder(Me)
                                        WireFocusIndicators(Me)
-                                       enumButton.TabStop = False
                                        okButton.TabStop = False
                                        cancelActionButton.TabStop = False
                                        CollapseHiddenFieldRows()
@@ -263,7 +254,7 @@ Namespace HelloWorld
                     control.Location = New Point(control.Location.X, control.Location.Y - trailingShift)
                 Next
 
-                For Each actionButton As Control In New Control() {enumButton, okButton, cancelActionButton}
+                For Each actionButton As Control In New Control() {okButton, cancelActionButton}
                     If actionButton Is Nothing Then Continue For
                     actionButton.Location = New Point(actionButton.Location.X, actionButton.Location.Y - trailingShift)
                 Next
@@ -393,7 +384,7 @@ Namespace HelloWorld
                 Return False
             End If
 
-            Return Not (control Is enumButton OrElse control Is okButton OrElse control Is cancelActionButton)
+            Return Not (control Is okButton OrElse control Is cancelActionButton)
         End Function
 
         ''' <summary>
@@ -617,7 +608,7 @@ Namespace HelloWorld
                 Return False
             End If
 
-            If control Is enumButton OrElse control Is okButton OrElse control Is cancelActionButton Then
+            If control Is okButton OrElse control Is cancelActionButton Then
                 Return False
             End If
 
@@ -1031,7 +1022,7 @@ Namespace HelloWorld
         ''' appearance, so they are left out of the focus indicator.
         ''' </summary>
         Private Function IsBaseActionButton(control As Control) As Boolean
-            Return control Is okButton OrElse control Is cancelActionButton OrElse control Is enumButton
+            Return control Is okButton OrElse control Is cancelActionButton
         End Function
 
         Private Shared Function IsEmptyRequiredControl(control As Control) As Boolean
@@ -1283,6 +1274,7 @@ Namespace HelloWorld
             loading = False
             hasUnsavedChanges = False
             DataAccess.ApplyControlUpdates(Me, Me.GetType().Name, ResolveTableNameForConstraints(), IsCreatingNewRecord())
+            ReportUnmappedFieldControls()
             AdoptRequiredBorderPanels()
             NormalizeTextInputsForSave()
             baselineControlSnapshotJson = CaptureControlSnapshotJson()
@@ -1544,26 +1536,6 @@ Namespace HelloWorld
             Me.DialogResult = DialogResult.Cancel
         End Sub
 
-        Private Sub EnumButton_Click(sender As Object, e As EventArgs)
-            Dim pageName = GetPageName()
-            Dim written = DataAccess.EnumeratePageControls_U(Me, pageName, GetTableNameOverride())
-
-            If written = 0 Then
-                MessageBox.Show("NO CONTROLS WERE ENUMERATED." & vbCrLf & vbCrLf &
-                                "Page: " & pageName & vbCrLf & vbCrLf &
-                                "Only a data-bound control can be enumerated, and none on this page " &
-                                "was bound when Enum ran. The existing rows were left alone." & vbCrLf & vbCrLf &
-                                "Without rows here, field permissions, the yellow required label and " &
-                                "override captions cannot apply to this page.",
-                                "Nothing Enumerated", MessageBoxButtons.OK, MessageBoxIcon.Warning)
-                Return
-            End If
-
-            MessageBox.Show(written.ToString(Globalization.CultureInfo.InvariantCulture) &
-                            " CONTROLS HAVE BEEN ENUMERATED" & vbCrLf & vbCrLf & "Page: " & pageName,
-                            "Enumeration Complete", MessageBoxButtons.OK, MessageBoxIcon.Information)
-        End Sub
-
         ''' <summary>Override to specify a custom page name for enumeration/business rules. Defaults to class name.</summary>
         Protected Overridable Function GetPageName() As String
             Return Me.GetType().Name
@@ -1665,6 +1637,155 @@ Namespace HelloWorld
 
             Return String.Empty
         End Function
+
+        ''' <summary>
+        ''' Controls this page carries deliberately that are not columns of its own table.
+        ''' </summary>
+        Private ReadOnly declaredUnboundControls As New HashSet(Of String)(StringComparer.OrdinalIgnoreCase)
+
+        ''' <summary>
+        ''' Declares a field-shaped control that is not a column of this page's table, so the
+        ''' unmapped-field check does not report it.
+        '''
+        ''' The reason is required and is shown in the report, because an undocumented exception is
+        ''' indistinguishable from the defect this check exists to find. Call it before the record
+        ''' is bound.
+        ''' </summary>
+        Protected Sub DeclareUnboundField(controlName As String, reason As String)
+            If String.IsNullOrWhiteSpace(controlName) Then
+                Throw New ArgumentException("An unbound field declaration needs the control name.", NameOf(controlName))
+            End If
+
+            If String.IsNullOrWhiteSpace(reason) Then
+                Throw New ArgumentException("An unbound field declaration needs a reason.", NameOf(reason))
+            End If
+
+            declaredUnboundControls.Add(controlName.Trim())
+        End Sub
+
+        ''' <summary>
+        ''' Reports controls whose name maps to no column, and stops the page saving.
+        '''
+        ''' Field permissions are derived from control names, so a control named for a column that
+        ''' does not exist silently receives nothing - no caption, no required marker, no hiding.
+        ''' The value it holds cannot round-trip either, which is why the save is blocked rather
+        ''' than merely flagged: a page that looks like it saved and did not is worse than one that
+        ''' says it cannot.
+        '''
+        ''' An administrator gets the detail and can copy it. Everyone else gets a page that plainly
+        ''' shows which field is unavailable and a Help Desk to report it to.
+        ''' </summary>
+        Private Sub ReportUnmappedFieldControls()
+            Dim unmapped = DataAccess.FindUnmappedFieldControls(Me, ResolveTableNameForConstraints(), declaredUnboundControls)
+            If unmapped.Count = 0 Then Return
+
+            For Each controlName In unmapped
+                ReplaceUnmappedControlWithPlaceholder(controlName)
+            Next
+
+            okButton.Enabled = False
+            Dim unavailableToolTip As New ToolTip()
+            unavailableToolTip.SetToolTip(okButton,
+                                          "SAVE IS NOT AVAILABLE, FIELD ON PAGE NOT MAPPED." & vbCrLf & vbCrLf &
+                                          "PLEASE REPORT IT TO THE HELP DESK")
+
+            If Not IsAdministratorSession() Then Return
+
+            Dim report As New System.Text.StringBuilder()
+            report.AppendLine("PAGE: " & GetPageName())
+            report.AppendLine("TABLE: " & ResolveTableNameForConstraints())
+            report.AppendLine()
+            report.AppendLine("These controls are named for a column the table does not have, so no")
+            report.AppendLine("field permission can reach them and their values cannot be saved:")
+            report.AppendLine()
+            For Each controlName In unmapped
+                report.AppendLine("    " & controlName & "   ->   no column " &
+                                  DataAccess.ColumnNameFromControlName(controlName))
+            Next
+            report.AppendLine()
+            report.AppendLine("Either rename the control to match its column, or declare it on the page")
+            report.AppendLine("with DeclareUnboundField if it is deliberately not a column of this table.")
+
+            ShowUnmappedFieldReport(report.ToString())
+        End Sub
+
+        Private Shared Function IsAdministratorSession() As Boolean
+            If Not SessionState.IsActive OrElse Not SessionState.Current.HasValue Then Return False
+            Dim session = SessionState.Current.Value
+            Return session.IsApplicationAdminRole OrElse session.IsCompanyAdminRole
+        End Function
+
+        ''' <summary>
+        ''' Puts an N/A marker where the control was, keeping the label so the row still reads as a
+        ''' field rather than silently vanishing.
+        ''' </summary>
+        Private Sub ReplaceUnmappedControlWithPlaceholder(controlName As String)
+            Dim matches = Controls.Find(controlName, True)
+            If matches.Length = 0 Then Return
+
+            Dim ctrl = matches(0)
+            Dim placeholder As New Label() With {
+                .Name = "Label_Unmapped_" & controlName,
+                .Text = "N/A",
+                .Location = ctrl.Location,
+                .Size = ctrl.Size,
+                .TextAlign = ContentAlignment.MiddleLeft,
+                .BackColor = SystemColors.Control,
+                .ForeColor = SystemColors.GrayText,
+                .BorderStyle = BorderStyle.FixedSingle
+            }
+
+            Dim host = If(ctrl.Parent, CType(Me, Control))
+            host.Controls.Add(placeholder)
+            placeholder.BringToFront()
+            ctrl.Visible = False
+        End Sub
+
+        Private Sub ShowUnmappedFieldReport(reportText As String)
+            Using dialog As New Form() With {
+                .Text = "Fields Not Mapped - " & GetPageName(),
+                .StartPosition = FormStartPosition.CenterParent,
+                .Size = New Size(640, 420),
+                .MinimizeBox = False,
+                .MaximizeBox = False
+            }
+                Dim body As New TextBox() With {
+                    .Multiline = True,
+                    .ReadOnly = True,
+                    .ScrollBars = ScrollBars.Vertical,
+                    .Dock = DockStyle.Fill,
+                    .Text = reportText,
+                    .BackColor = Color.White
+                }
+
+                Dim buttonRow As New Panel() With {.Dock = DockStyle.Bottom, .Height = 52}
+
+                Dim copyButton As New Button() With {
+                    .Text = "Copy",
+                    .Size = New Size(120, 32),
+                    .Location = New Point(12, 10)
+                }
+                AddHandler copyButton.Click,
+                    Sub()
+                        Clipboard.SetText(reportText)
+                        copyButton.Text = "Copied"
+                    End Sub
+
+                Dim closeButton As New Button() With {
+                    .Text = "Close",
+                    .Size = New Size(120, 32),
+                    .Location = New Point(dialog.ClientSize.Width - 132, 10),
+                    .Anchor = AnchorStyles.Top Or AnchorStyles.Right,
+                    .DialogResult = DialogResult.OK
+                }
+
+                buttonRow.Controls.AddRange({copyButton, closeButton})
+                dialog.Controls.Add(body)
+                dialog.Controls.Add(buttonRow)
+                dialog.AcceptButton = closeButton
+                dialog.ShowDialog(Me)
+            End Using
+        End Sub
 
         Private Function ResolveTableNameForConstraints() As String
             Dim tableName = If(GetTableNameOverride(), String.Empty).Trim()

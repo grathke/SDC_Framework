@@ -39,7 +39,6 @@ Namespace HelloWorld
         Private ReadOnly updateButton As Button
         Private ReadOnly deleteButton As Button
         Private ReadOnly toggleQbeButton As Button
-        Private ReadOnly enumButton As Button
         Private ReadOnly findButton As Button
         Private ReadOnly clearFiltersButton As Button
         Private ReadOnly saveQbeButton As Button
@@ -318,7 +317,6 @@ Namespace HelloWorld
             deleteButton = New Button() With {.Text = "Delete", .Size = New Size(90, 36), .Location = New Point(320, 112)}
             closeButton = New Button() With {.Text = "Close", .Size = New Size(90, 36), .Location = New Point(520, 112)}
             toggleQbeButton = New Button() With {.Text = QbeCollapsedText, .Size = New Size(110, 36), .Location = New Point(620, 112)}
-            enumButton = New Button() With {.Text = "Enum", .Size = New Size(90, 36), .Location = New Point(740, 112)}
 
             qbeSplitContainer = New SplitContainer() With {
                 .Location = New Point(20, 162),
@@ -499,7 +497,6 @@ Namespace HelloWorld
             AddHandler updateButton.Click, AddressOf UpdateButton_Click
             AddHandler deleteButton.Click, AddressOf DeleteButton_Click
             AddHandler toggleQbeButton.Click, AddressOf ToggleQbeButton_Click
-            AddHandler enumButton.Click, AddressOf EnumButton_Click
             AddHandler findButton.Click, AddressOf FindButton_Click
             AddHandler clearFiltersButton.Click, AddressOf ClearFiltersButton_Click
             AddHandler saveQbeButton.Click, AddressOf SaveQbeButton_Click
@@ -577,7 +574,6 @@ Namespace HelloWorld
             Me.Controls.Add(showDeletedButton)
             Me.Controls.Add(showNormalButton)
             Me.Controls.Add(toggleQbeButton)
-            Me.Controls.Add(enumButton)
             Me.Controls.Add(qbeSplitContainer)
 
             AddHandler Me.Load, AddressOf ContactsForm_Load
@@ -634,7 +630,6 @@ Namespace HelloWorld
             sqlTextBox.Visible = showAdminQueryControls AndAlso Not OnlyUseQbe()
             UpdateRegistrationSelectorVisibility(IsAppAdminSession())
             applySqlButton.Visible = showAdminQueryControls AndAlso Not OnlyUseQbe()
-            enumButton.Visible = showAdminQueryControls AndAlso Not OnlyUseQbe()
 
             If Not UseRoleBasedCrudAccess() Then
                 createButton.Visible = Not OnlyUseQbe()
@@ -1057,8 +1052,6 @@ Namespace HelloWorld
             showNormalButton.Top = actionTop
             showNormalButton.Left = restoreButton.Right + 2
 
-            enumButton.Top = actionTop
-            enumButton.Left = deletedActionLeft - enumButton.Width - actionGap
 
             qbeSplitContainer.Left = contentLeft
             qbeSplitContainer.Top = If(adminQueryControlsVisible, 162, 92)
@@ -3935,13 +3928,6 @@ Namespace HelloWorld
             Catch
                 ' Ignore close persistence errors to avoid blocking form close.
             End Try
-        End Sub
-
-        Private Sub EnumButton_Click(sender As Object, e As EventArgs)
-            Dim pageName = Me.GetType().Name
-            Dim activeSql = GetActiveBaseSql()
-            DataAccess.EnumeratePageControls(Me, pageName, currentUser.UserId, activeSql)
-            System.Windows.Forms.MessageBox.Show("ALL CONTROLS HAVE BEEN ENUMERATED" & vbCrLf & vbCrLf & "Page: " & pageName, "Enumeration Complete", System.Windows.Forms.MessageBoxButtons.OK, System.Windows.Forms.MessageBoxIcon.Information)
         End Sub
     End Class
 End Namespace

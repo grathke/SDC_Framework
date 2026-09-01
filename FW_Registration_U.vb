@@ -51,7 +51,6 @@ Namespace HelloWorld
 
             okButton.Location = New Point(700, 660)
             cancelActionButton.Location = New Point(835, 660)
-            enumButton.Location = New Point(20, 660)
 
             ApplyMode()
             BindToForm()

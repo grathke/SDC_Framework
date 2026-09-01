@@ -41,8 +41,6 @@ Namespace HelloWorld
         Private categoryDescribeThe As String = String.Empty
         Private categoryTable As DataTable
         Private copyForClaudeButton As Button
-        Private categoryRequiredBorder As Panel
-        Private priorityRequiredBorder As Panel
         Private statusRequiredBorder As Panel
         Private attachmentButton As Button
         Private thinfinityButton As Button
@@ -181,9 +179,14 @@ Namespace HelloWorld
         End Function
 
         Private Sub BuildLayout()
-            categoryComboBox = New ComboBox() With {.Name = "ComboBox_CategoryID", .Location = New Point(150, 20), .Size = New Size(300, 26), .DropDownStyle = ComboBoxStyle.DropDownList}
-            priorityComboBox = New ComboBox() With {.Name = "ComboBox_Priority", .Location = New Point(150, 60), .Size = New Size(300, 26), .DropDownStyle = ComboBoxStyle.DropDownList}
+            categoryComboBox = AddComboField("CategoryID", 20, True, 20, 300, "Category")
+            priorityComboBox = AddComboField("Priority", 60, True, 20, 300)
             priorityComboBox.Items.AddRange(New Object() {"Low", "Normal", "High", "Critical"})
+
+            ' Status is the documented exception. The combo is never shown - it holds the value while
+            ' statusValueLabel displays it and a chooser dialog sets it - so the required border has
+            ' to track the label the user actually sees. AddComboField owns a border for its own
+            ' combo, which here would be a red rectangle behind an invisible control.
             statusComboBox = New ComboBox() With {.Name = "ComboBox_Status", .Location = New Point(150, 100), .Size = New Size(300, 26), .DropDownStyle = ComboBoxStyle.DropDownList}
             statusComboBox.Items.AddRange(New Object() {"New", "Assigned", "In Progress", "Waiting for User", "Resolved", "Closed", "Reopened"})
             statusValueLabel = New Label() With {
@@ -201,6 +204,10 @@ Namespace HelloWorld
             expectedBehaviorTextBox = AddField("ExpectedBehavior", 260, False, True, 20, True, 700, 70, "How It Should Behave")
             stepsToReproduceTextBox = AddField("StepsToReproduce", 340, False, True, 20, True, 700, 70, "Steps To Reproduce")
             responseTextBox = AddField("Response", 270, False, True, 20, True, 700, 90, "New Response")
+
+            ' A new response is written to the conversation table against the issue, not to a column
+            ' of FW_HD_Issues, so this control maps to nothing by design.
+            DeclareUnboundField("TextBox_Response", "New responses are rows in the issue conversation, not a column of FW_HD_Issues.")
             conversationHistoryPanel = New FlowLayoutPanel() With {
                 .Name = "Panel_ConversationHistory",
                 .Location = New Point(150, 380),
@@ -213,31 +220,26 @@ Namespace HelloWorld
                 .Padding = New Padding(6),
                 .TabStop = False
             }
-            categoryLabel = AddLabel("Category *", 20, 20, "CategoryID")
-            priorityLabel = AddLabel("Priority *", 20, 60, "Priority")
             statusLabel = AddLabel("Status *", 20, 100, "Status")
             conversationHistoryLabel = AddLabel("Conversation History", 20, 380)
 
             ' The labels the helpers created, kept so the page can position them and rename the
             ' first one as the category changes.
+            categoryLabel = FieldLabel("CategoryID")
+            priorityLabel = FieldLabel("Priority")
             subjectLabel = FieldLabel("Subject")
             descriptionLabel = FieldLabel("Description")
             expectedBehaviorLabel = FieldLabel("ExpectedBehavior")
             stepsToReproduceLabel = FieldLabel("StepsToReproduce")
             responseLabel = FieldLabel("Response")
 
-            Dim requiredLabelBackColor = Color.FromArgb(221, 235, 247)
-            categoryLabel.BackColor = requiredLabelBackColor
-            priorityLabel.BackColor = requiredLabelBackColor
-            statusLabel.BackColor = requiredLabelBackColor
+            ' Category and Priority are painted by AddComboField. Status is not, because its label
+            ' is the page's own.
+            statusLabel.BackColor = Color.FromArgb(221, 235, 247)
 
-            Me.Controls.AddRange({categoryComboBox, priorityComboBox, statusComboBox, statusValueLabel, conversationHistoryPanel})
-            categoryRequiredBorder = CreateRequiredBorder(categoryComboBox)
-            priorityRequiredBorder = CreateRequiredBorder(priorityComboBox)
+            Me.Controls.AddRange({statusComboBox, statusValueLabel, conversationHistoryPanel})
             statusRequiredBorder = CreateRequiredBorder(statusComboBox)
-            Me.Controls.AddRange({categoryRequiredBorder, priorityRequiredBorder, statusRequiredBorder})
-            categoryRequiredBorder.SendToBack()
-            priorityRequiredBorder.SendToBack()
+            Me.Controls.Add(statusRequiredBorder)
             statusRequiredBorder.SendToBack()
             copyForClaudeButton = New Button() With {.Name = "Button_CopyReport", .Text = "Copy Report", .Location = New Point(470, 525), .Size = New Size(130, 34)}
             AddHandler copyForClaudeButton.Click, AddressOf CopyForClaudeButton_Click
@@ -335,18 +337,14 @@ Namespace HelloWorld
             copyForClaudeButton.Top = attachmentTop
             copyForClaudeButton.Left = thinfinityButton.Right + 10
 
-            ' The framework re-seats every border it owns behind its control after this layout pass.
-            categoryRequiredBorder.Location = New Point(categoryComboBox.Left - 2, categoryComboBox.Top - 2)
-            categoryRequiredBorder.Size = New Size(categoryComboBox.Width + 4, categoryComboBox.Height + 4)
-            priorityRequiredBorder.Location = New Point(priorityComboBox.Left - 2, priorityComboBox.Top - 2)
-            priorityRequiredBorder.Size = New Size(priorityComboBox.Width + 4, priorityComboBox.Height + 4)
+            ' The framework re-seats the borders it owns. Status is the page's own, and tracks the
+            ' label the user sees rather than the hidden combo it belongs to.
             statusRequiredBorder.Location = New Point(statusValueLabel.Left - 2, statusValueLabel.Top - 2)
             statusRequiredBorder.Size = New Size(statusValueLabel.Width + 4, statusValueLabel.Height + 4)
             RefreshRequiredBorderGeometry()
 
             cancelActionButton.Location = New Point(ClientSize.Width - 20 - cancelActionButton.Width, actionTop)
             okButton.Location = New Point(cancelActionButton.Left - 10 - okButton.Width, actionTop)
-            enumButton.Location = New Point(20, actionTop)
 
             If issue IsNot Nothing Then
                 RenderConversationHistory(issue.ConversationText)

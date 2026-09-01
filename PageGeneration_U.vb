@@ -320,7 +320,7 @@ Namespace HelloWorld
                 .UseVisualStyleBackColor = True
             }
             directionsTextBox = New ListBox With {
-                .Name = "TextBox_Directions",
+                .Name = "ListBox_Directions",
                 .Dock = DockStyle.Fill,
                 .Visible = False,
                 .Margin = New Padding(0, 6, 0, 0),
@@ -386,8 +386,6 @@ Namespace HelloWorld
             AddHandler generatePagesButton.Click, AddressOf GeneratePagesButton_Click
             footer.Controls.Add(generatePagesButton)
 
-            Controls.Remove(enumButton)
-            enumButton.Visible = False
             okButton.Location = New Point(footer.Width - 270, 8)
             okButton.Anchor = AnchorStyles.Top Or AnchorStyles.Right
             footer.Controls.Add(okButton)

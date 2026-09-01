@@ -323,22 +323,19 @@ Namespace HelloWorld
                 Return
             End If
 
-            Dim enumButton = FindButtonByText(Me, "Enum")
             Dim qbeButton = FindButtonStartingWithText(Me, "QBE")
             Dim closeButton = FindButtonByText(Me, "Close")
-            If enumButton IsNot Nothing Then
-                If qbeButton IsNot Nothing Then
-                    Dim rightAnchor = If(closeButton, qbeButton)
-                    registrationComboBox.Left = rightAnchor.Left + rightAnchor.Width - registrationComboBox.Width
-                    registrationComboBox.Top = 42
-                    registrationLabel.Left = Math.Max(8, registrationComboBox.Left - registrationLabel.PreferredWidth - 8)
-                    registrationLabel.Top = registrationComboBox.Top + 5
-                Else
-                    registrationComboBox.Left = enumButton.Left
-                    registrationComboBox.Top = 42
-                    registrationLabel.Left = Math.Max(8, registrationComboBox.Left - registrationLabel.PreferredWidth - 8)
-                    registrationLabel.Top = registrationComboBox.Top + 5
-                End If
+
+            ' Anchored to whichever action button is actually present. This used to hang off the Enum
+            ' button and did nothing at all when that button was absent - a lookup by caption fails
+            ' silently, so the combo would simply have stayed where it was built with nothing to say
+            ' why. The Enum button has since been removed entirely.
+            Dim rightAnchor As Control = If(closeButton, qbeButton)
+            If rightAnchor IsNot Nothing Then
+                registrationComboBox.Left = rightAnchor.Left + rightAnchor.Width - registrationComboBox.Width
+                registrationComboBox.Top = 42
+                registrationLabel.Left = Math.Max(8, registrationComboBox.Left - registrationLabel.PreferredWidth - 8)
+                registrationLabel.Top = registrationComboBox.Top + 5
             End If
 
             Dim browseSplit = FindBrowseSplitContainer(Me)

@@ -945,7 +945,6 @@ Namespace HelloWorld
             output.AppendLine("            ClientSize = New Size(600, " & Math.Max(120, 55 + fields.Count * 42).ToString() & ")")
             output.AppendLine("            okButton.Location = New Point(ClientSize.Width - 270, ClientSize.Height - 46)")
             output.AppendLine("            cancelActionButton.Location = New Point(ClientSize.Width - 135, ClientSize.Height - 46)")
-            output.AppendLine("            enumButton.Location = New Point(20, ClientSize.Height - 46)")
             Dim y = 20
             For Each field In fields
                 Dim isRequired = requiredFields.Any(Function(item) String.Equals(item, field, StringComparison.OrdinalIgnoreCase))
@@ -965,7 +964,7 @@ Namespace HelloWorld
 
                 y += 42
             Next
-            output.AppendLine("            SetManualTabOrder(" & String.Join(", ", fields.Select(Function(field) FieldControlVariable(field, lookupFields)).Concat({"enumButton", "okButton", "cancelActionButton"})) & ")")
+            output.AppendLine("            SetManualTabOrder(" & String.Join(", ", fields.Select(Function(field) FieldControlVariable(field, lookupFields)).Concat({"okButton", "cancelActionButton"})) & ")")
             output.AppendLine("            BindToForm()")
             output.AppendLine("            ApplyMode()")
             output.AppendLine("        End Sub")
