@@ -23,10 +23,10 @@
 
     Deliberately not declared
     -------------------------
-    AssignedManagerID, UserID and OwnerID point at FW_Users, and the three RegistrationID columns
-    point at FW_Registration. All six would pass - 048 cleared the sentinels that blocked two of
-    them - but they are left for a later decision rather than added because they happen to be
-    possible. Adding one is two lines, following the pattern below.
+    UserID and OwnerID point at FW_Users, and the three RegistrationID columns point at
+    FW_Registration. All five would pass - 048 cleared the sentinels that blocked one of them - but
+    they are left for a later decision rather than added because they happen to be possible.
+    Adding one is two lines, following the pattern above.
 
     Rollback
     --------
@@ -40,10 +40,21 @@ ALTER TABLE dbo.FW_ENTITY WITH CHECK
 GO
 
 /*
+    AssignedManagerID is the lookup no naming convention can derive - the column says "manager",
+    the table says FW_Users - so declaring it is what makes that lookup discoverable at all.
+    Went in cleanly because 048 had already cleared its six sentinel rows.
+*/
+ALTER TABLE dbo.FW_ENTITY WITH CHECK
+    ADD CONSTRAINT FK_FW_ENTITY_AssignedManagerID_FW_Users
+    FOREIGN KEY (AssignedManagerID) REFERENCES dbo.FW_Users (UserId);
+GO
+
+/*
     ----------------------------------------------------------------------------------------------
     ROLLBACK
     ----------------------------------------------------------------------------------------------
 
+ALTER TABLE dbo.FW_ENTITY DROP CONSTRAINT FK_FW_ENTITY_AssignedManagerID_FW_Users;
 ALTER TABLE dbo.FW_ENTITY DROP CONSTRAINT FK_FW_ENTITY_GenderID_FW_GENDER;
 GO
 */
