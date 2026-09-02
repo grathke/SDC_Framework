@@ -42,7 +42,7 @@ Namespace HelloWorld
             Return New AccessProfile()
         End Function
 
-        Public Sub Configure(menu As MainMenu, user As UserContext, Optional forceRefresh As Boolean = False)
+        Public Sub Configure(menu As FW_MainMenu, user As UserContext, Optional forceRefresh As Boolean = False)
             If menu Is Nothing Then
                 Return
             End If
@@ -93,7 +93,7 @@ Namespace HelloWorld
             ApplyRegionAccess(menu, profile)
         End Sub
 
-        Private Sub ApplyActionAccess(menu As MainMenu, profile As AccessProfile)
+        Private Sub ApplyActionAccess(menu As FW_MainMenu, profile As AccessProfile)
             If menu Is Nothing OrElse profile Is Nothing Then
                 Return
             End If
@@ -138,22 +138,22 @@ Namespace HelloWorld
                 isEnabled:=True)
         End Sub
 
-        Private Sub ApplyRegionAccess(menu As MainMenu, profile As AccessProfile)
+        Private Sub ApplyRegionAccess(menu As FW_MainMenu, profile As AccessProfile)
             If menu Is Nothing OrElse profile Is Nothing Then
                 Return
             End If
 
-            LoadRegionAlways(menu, profile, MainMenu.MenuRegion.Messages, TableMessaging, Function() New MessagesWindowControl(), "Messages")
-            LoadRegionAlways(menu, profile, MainMenu.MenuRegion.GeneralDashboard, TableFrameworkDashboard, Function() New GeneralDashboardWindowControl(), "General Dashboard")
-            LoadRegionAlways(menu, profile, MainMenu.MenuRegion.AcmeDashboard, TableRegistrationDashboard, Function() New AcmeDashboardWindowControl(), "Acme Dashboard")
-            LoadRegionAlways(menu, profile, MainMenu.MenuRegion.UsersAndLists, TableRoles, Function() New UsersListsWindowControl(), "Users & Lists")
-            menu.SetRegionHeader(MainMenu.MenuRegion.Chart, "Evolution of Acme Products")
-            menu.SetRegionVisible(MainMenu.MenuRegion.Chart, True)
+            LoadRegionAlways(menu, profile, FW_MainMenu.MenuRegion.Messages, TableMessaging, Function() New MessagesWindowControl(), "Messages")
+            LoadRegionAlways(menu, profile, FW_MainMenu.MenuRegion.GeneralDashboard, TableFrameworkDashboard, Function() New GeneralDashboardWindowControl(), "General Dashboard")
+            LoadRegionAlways(menu, profile, FW_MainMenu.MenuRegion.AcmeDashboard, TableRegistrationDashboard, Function() New AcmeDashboardWindowControl(), "Acme Dashboard")
+            LoadRegionAlways(menu, profile, FW_MainMenu.MenuRegion.UsersAndLists, TableRoles, Function() New UsersListsWindowControl(), "Users & Lists")
+            menu.SetRegionHeader(FW_MainMenu.MenuRegion.Chart, "Evolution of Acme Products")
+            menu.SetRegionVisible(FW_MainMenu.MenuRegion.Chart, True)
         End Sub
 
-        Private Sub LoadRegionAlways(menu As MainMenu,
+        Private Sub LoadRegionAlways(menu As FW_MainMenu,
                                      profile As AccessProfile,
-                                     region As MainMenu.MenuRegion,
+                                     region As FW_MainMenu.MenuRegion,
                                      tableName As String,
                                      controlFactory As Func(Of Control),
                                      headerText As String)
@@ -169,9 +169,9 @@ Namespace HelloWorld
             menu.SetRegionVisible(region, True)
         End Sub
 
-        Private Sub LoadRegionByAccess(menu As MainMenu,
+        Private Sub LoadRegionByAccess(menu As FW_MainMenu,
                                        profile As AccessProfile,
-                           region As MainMenu.MenuRegion,
+                           region As FW_MainMenu.MenuRegion,
                                        tableName As String,
                                        required As AccessCapability,
                                        controlFactory As Func(Of Control),

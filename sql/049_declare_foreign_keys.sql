@@ -32,6 +32,18 @@
     --------
     At the bottom of this file. Dropping the constraint does not restore the values 048 cleared;
     run that script's rollback as well if those are wanted back.
+
+    CORRECTION (see 056)
+    --------------------
+    The first statement below is wrong and never ran. FW_GENDER has no column named ID; its key is
+    GenderID, an identity carrying PK_Gender, and the 050 rename wave did not touch this table -
+    the name was wrong when it was written. The statement failed, the GO after it let the second
+    batch run, and this script therefore left exactly one of its two foreign keys behind:
+    AssignedManagerID -> FW_Users.UserId is present and trusted; the gender one was absent, with no
+    error surviving to say so.
+
+    056 declares it correctly, against FW_Gender.GenderID. Left as it stands here rather than
+    edited, because a migration is a record of what ran.
 */
 
 ALTER TABLE dbo.FW_ENTITY WITH CHECK

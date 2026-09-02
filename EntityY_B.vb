@@ -50,7 +50,7 @@ Namespace HelloWorld
             End If
 
             Dim failure = DataAccess.SoftDeleteGeneratedPageRecord("FW_ENTITY",
-                                                                  "ID",
+                                                                  "EntityID",
                                                                   recordId.Value,
                                                                   If(SessionState.IsActive, SessionState.Current.Value.UserID, 0),
                                                                   NameOf(EntityY_B))

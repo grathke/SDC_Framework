@@ -9,16 +9,6 @@ Namespace HelloWorld
     Public Class Dashboard_Application
         Inherits Form
 
-        Private Class DashboardIconButton
-            Inherits Button
-
-            Protected Overrides ReadOnly Property ShowFocusCues As Boolean
-                Get
-                    Return False
-                End Get
-            End Property
-        End Class
-
         Private ReadOnly currentUser As UserContext
         Private ReadOnly accessProfile As AccessProfile
 
@@ -32,10 +22,12 @@ Namespace HelloWorld
         Private ReadOnly helpDeskSupportButton As DashboardIconButton
         Private ReadOnly newPageRequestsButton As DashboardIconButton
         Private ReadOnly databaseConfigButton As DashboardIconButton
+        Private ReadOnly companyDashboardButton As DashboardIconButton
         Private ReadOnly closeIconButton As Button
         Private ReadOnly generatedEntityY_BButton As DashboardIconButton
         Private ReadOnly generatedEntityX_BButton As DashboardIconButton
         Private ReadOnly generatedFW_UserAccessExplanation_BButton As DashboardIconButton
+        Private iconDragController As DashboardIconDragController
 
         Public Sub New(user As UserContext, Optional profile As AccessProfile = Nothing)
             currentUser = user
@@ -88,12 +80,12 @@ Namespace HelloWorld
                 .Name = "ActionKey_Roles",
                 .Text = "Roles",
                 .Location = DashboardGridLayout.CellLocation(1, 1),
-                .Size = New Size(130, 118),
+                .Size = New Size(DashboardGridLayout.IconWidth, DashboardGridLayout.IconHeight),
                 .BackColor = Color.Transparent,
                 .UseVisualStyleBackColor = False,
                 .FlatStyle = FlatStyle.Flat,
                 .Font = New Font("Segoe UI", 13.0F, FontStyle.Regular),
-                .Image = SystemIcons.Information.ToBitmap(),
+                .Image = LoadDashboardIcon("Color_Shield.png", SystemIcons.Application.ToBitmap()),
                 .TextImageRelation = TextImageRelation.ImageAboveText,
                 .ImageAlign = ContentAlignment.TopCenter,
                 .TextAlign = ContentAlignment.BottomCenter,
@@ -107,12 +99,12 @@ Namespace HelloWorld
                 .Name = "ActionKey_UserAdmin",
                 .Text = "User Admin",
                 .Location = DashboardGridLayout.CellLocation(1, 2),
-                .Size = New Size(130, 118),
+                .Size = New Size(DashboardGridLayout.IconWidth, DashboardGridLayout.IconHeight),
                 .BackColor = Color.Transparent,
                 .UseVisualStyleBackColor = False,
                 .FlatStyle = FlatStyle.Flat,
                 .Font = New Font("Segoe UI", 13.0F, FontStyle.Regular),
-                .Image = SystemIcons.Shield.ToBitmap(),
+                .Image = LoadDashboardIcon("Color_Favorites.png", SystemIcons.Application.ToBitmap()),
                 .TextImageRelation = TextImageRelation.ImageAboveText,
                 .ImageAlign = ContentAlignment.TopCenter,
                 .TextAlign = ContentAlignment.BottomCenter,
@@ -126,12 +118,12 @@ Namespace HelloWorld
                 .Name = "ActionKey_Registration",
                 .Text = "Registration",
                 .Location = DashboardGridLayout.CellLocation(1, 3),
-                .Size = New Size(130, 118),
+                .Size = New Size(DashboardGridLayout.IconWidth, DashboardGridLayout.IconHeight),
                 .BackColor = Color.Transparent,
                 .UseVisualStyleBackColor = False,
                 .FlatStyle = FlatStyle.Flat,
                 .Font = New Font("Segoe UI", 13.0F, FontStyle.Regular),
-                .Image = SystemIcons.Application.ToBitmap(),
+                .Image = LoadDashboardIcon("Color_New.png", SystemIcons.Application.ToBitmap()),
                 .TextImageRelation = TextImageRelation.ImageAboveText,
                 .ImageAlign = ContentAlignment.TopCenter,
                 .TextAlign = ContentAlignment.BottomCenter,
@@ -145,12 +137,12 @@ Namespace HelloWorld
                 .Name = "ActionKey_AuditHistory",
                 .Text = "Audit History",
                 .Location = DashboardGridLayout.CellLocation(2, 1),
-                .Size = New Size(130, 118),
+                .Size = New Size(DashboardGridLayout.IconWidth, DashboardGridLayout.IconHeight),
                 .BackColor = Color.Transparent,
                 .UseVisualStyleBackColor = False,
                 .FlatStyle = FlatStyle.Flat,
                 .Font = New Font("Segoe UI", 13.0F, FontStyle.Regular),
-                .Image = SystemIcons.Warning.ToBitmap(),
+                .Image = LoadDashboardIcon("Color_Search.png", SystemIcons.Application.ToBitmap()),
                 .TextImageRelation = TextImageRelation.ImageAboveText,
                 .ImageAlign = ContentAlignment.TopCenter,
                 .TextAlign = ContentAlignment.BottomCenter,
@@ -164,12 +156,12 @@ Namespace HelloWorld
                 .Name = "ActionKey_HelpDesk",
                 .Text = "Help Desk",
                 .Location = DashboardGridLayout.CellLocation(2, 2),
-                .Size = New Size(130, 118),
+                .Size = New Size(DashboardGridLayout.IconWidth, DashboardGridLayout.IconHeight),
                 .BackColor = Color.Transparent,
                 .UseVisualStyleBackColor = False,
                 .FlatStyle = FlatStyle.Flat,
                 .Font = New Font("Segoe UI", 13.0F, FontStyle.Regular),
-                .Image = SystemIcons.Question.ToBitmap(),
+                .Image = LoadDashboardIcon("Color_Help_Desk.png", SystemIcons.Application.ToBitmap()),
                 .TextImageRelation = TextImageRelation.ImageAboveText,
                 .ImageAlign = ContentAlignment.TopCenter,
                 .TextAlign = ContentAlignment.BottomCenter,
@@ -183,12 +175,12 @@ Namespace HelloWorld
                 .Name = "ActionKey_HelpDeskSupport",
                 .Text = "HD Support Tickets",
                 .Location = DashboardGridLayout.CellLocation(2, 3),
-                .Size = New Size(130, 118),
+                .Size = New Size(DashboardGridLayout.IconWidth, DashboardGridLayout.IconHeight),
                 .BackColor = Color.Transparent,
                 .UseVisualStyleBackColor = False,
                 .FlatStyle = FlatStyle.Flat,
                 .Font = New Font("Segoe UI", 11.0F, FontStyle.Regular),
-                .Image = SystemIcons.Question.ToBitmap(),
+                .Image = LoadDashboardIcon("Color_Question.png", SystemIcons.Application.ToBitmap()),
                 .TextImageRelation = TextImageRelation.ImageAboveText,
                 .ImageAlign = ContentAlignment.TopCenter,
                 .TextAlign = ContentAlignment.BottomCenter,
@@ -202,12 +194,12 @@ Namespace HelloWorld
                 .Name = "ActionKey_DatabaseConfig",
                 .Text = "Database Config",
                 .Location = DashboardGridLayout.CellLocation(2, 4),
-                .Size = New Size(150, 118),
+                .Size = New Size(DashboardGridLayout.IconWidth, DashboardGridLayout.IconHeight),
                 .BackColor = Color.Transparent,
                 .UseVisualStyleBackColor = False,
                 .FlatStyle = FlatStyle.Flat,
                 .Font = New Font("Segoe UI", 13.0F, FontStyle.Regular),
-                .Image = SystemIcons.WinLogo.ToBitmap(),
+                .Image = LoadDashboardIcon("Color_Settings.png", SystemIcons.Application.ToBitmap()),
                 .TextImageRelation = TextImageRelation.ImageAboveText,
                 .ImageAlign = ContentAlignment.TopCenter,
                 .TextAlign = ContentAlignment.BottomCenter,
@@ -217,16 +209,35 @@ Namespace HelloWorld
             databaseConfigButton.FlatAppearance.MouseOverBackColor = Color.Transparent
             databaseConfigButton.FlatAppearance.MouseDownBackColor = Color.Transparent
 
-            newPageRequestsButton = New DashboardIconButton() With {
-                .Name = "ActionKey_PageGeneration",
-                .Text = "Page Gen _B _U",
-                .Location = DashboardGridLayout.CellLocation(3, 1),
-                .Size = New Size(150, 118),
+            companyDashboardButton = New DashboardIconButton() With {
+                .Name = "ActionKey_DashboardCompany",
+                .Text = "Company" & Environment.NewLine & "Dashboard",
+                .Location = DashboardGridLayout.CellLocation(3, 2),
+                .Size = New Size(DashboardGridLayout.IconWidth, DashboardGridLayout.IconHeight),
                 .BackColor = Color.Transparent,
                 .UseVisualStyleBackColor = False,
                 .FlatStyle = FlatStyle.Flat,
                 .Font = New Font("Segoe UI", 13.0F, FontStyle.Regular),
-                .Image = SystemIcons.Application.ToBitmap(),
+                .Image = LoadDashboardIcon("Fluent_Home.png", SystemIcons.Application.ToBitmap()),
+                .TextImageRelation = TextImageRelation.ImageAboveText,
+                .ImageAlign = ContentAlignment.TopCenter,
+                .TextAlign = ContentAlignment.BottomCenter,
+                .TabStop = False
+            }
+            companyDashboardButton.FlatAppearance.BorderSize = 0
+            companyDashboardButton.FlatAppearance.MouseOverBackColor = Color.Transparent
+            companyDashboardButton.FlatAppearance.MouseDownBackColor = Color.Transparent
+
+            newPageRequestsButton = New DashboardIconButton() With {
+                .Name = "ActionKey_PageGeneration",
+                .Text = "Page Gen _B _U",
+                .Location = DashboardGridLayout.CellLocation(3, 1),
+                .Size = New Size(DashboardGridLayout.IconWidth, DashboardGridLayout.IconHeight),
+                .BackColor = Color.Transparent,
+                .UseVisualStyleBackColor = False,
+                .FlatStyle = FlatStyle.Flat,
+                .Font = New Font("Segoe UI", 13.0F, FontStyle.Regular),
+                .Image = LoadDashboardIcon("Color_Add.png", SystemIcons.Application.ToBitmap()),
                 .TextImageRelation = TextImageRelation.ImageAboveText,
                 .ImageAlign = ContentAlignment.TopCenter,
                 .TextAlign = ContentAlignment.BottomCenter,
@@ -244,7 +255,7 @@ Namespace HelloWorld
                 .Name = "ActionKey_FW_UserAccessExplanation_B",
                 .Text = "User Access Explanation",
                 .Location = DashboardGridLayout.CellLocation(1, 4),
-                .Size = New Size(150, 118),
+                .Size = New Size(DashboardGridLayout.IconWidth, DashboardGridLayout.IconHeight),
                 .BackColor = Color.Transparent,
                 .UseVisualStyleBackColor = False,
                 .FlatStyle = FlatStyle.Flat,
@@ -263,7 +274,7 @@ Namespace HelloWorld
                 .Name = "ActionKey_EntityX_B",
                 .Text = "EntityX",
                 .Location = DashboardGridLayout.CellLocation(1, 5),
-                .Size = New Size(150, 118),
+                .Size = New Size(DashboardGridLayout.IconWidth, DashboardGridLayout.IconHeight),
                 .BackColor = Color.Transparent,
                 .UseVisualStyleBackColor = False,
                 .FlatStyle = FlatStyle.Flat,
@@ -282,7 +293,7 @@ Namespace HelloWorld
                 .Name = "ActionKey_EntityY_B",
                 .Text = "EntityY",
                 .Location = DashboardGridLayout.CellLocation(2, 5),
-                .Size = New Size(150, 118),
+                .Size = New Size(DashboardGridLayout.IconWidth, DashboardGridLayout.IconHeight),
                 .BackColor = Color.Transparent,
                 .UseVisualStyleBackColor = False,
                 .FlatStyle = FlatStyle.Flat,
@@ -304,6 +315,9 @@ Namespace HelloWorld
             AddHandler databaseConfigButton.MouseEnter, AddressOf IconButton_MouseEnter
             AddHandler databaseConfigButton.MouseLeave, AddressOf IconButton_MouseLeave
             AddHandler databaseConfigButton.Click, AddressOf DatabaseConfigButton_Click
+            AddHandler companyDashboardButton.MouseEnter, AddressOf IconButton_MouseEnter
+            AddHandler companyDashboardButton.MouseLeave, AddressOf IconButton_MouseLeave
+            AddHandler companyDashboardButton.Click, AddressOf CompanyDashboardButton_Click
             AddHandler userAdminButton.MouseEnter, AddressOf IconButton_MouseEnter
             AddHandler userAdminButton.MouseLeave, AddressOf IconButton_MouseLeave
             AddHandler userAdminButton.Click, AddressOf UserAdminButton_Click
@@ -339,6 +353,7 @@ Namespace HelloWorld
             Me.Controls.Add(closeIconButton)
             Me.Controls.Add(headerLabel)
             Me.Controls.Add(databaseConfigButton)
+            Me.Controls.Add(companyDashboardButton)
             Me.Controls.Add(rolesButton)
             Me.Controls.Add(userAdminButton)
             Me.Controls.Add(registrationButton)
@@ -349,6 +364,18 @@ Namespace HelloWorld
         End Sub
 
         Private Sub Dashboard_Application_Load(sender As Object, e As EventArgs)
+            ' Icons can be dragged between cells and stay where they are put. Wired here rather
+            ' than in the constructor so the arrangement is read once the session is settled, and
+            ' handed every icon on the form so a generated one is draggable without being listed.
+            ' No session test: the arrangement is not scoped to a registration, and the user id is
+            ' only stamped on the audit columns, so a missing session is worth nothing more than a
+            ' zero there. Refusing to wire the drag over it would disable the feature for no reason.
+            Dim session = SessionState.Current
+            iconDragController = New DashboardIconDragController(Me,
+                                                                 "Dashboard_Application",
+                                                                 If(session.HasValue, session.Value.UserID, 0))
+            iconDragController.Attach(Me.Controls.OfType(Of DashboardIconButton)().Cast(Of Control)())
+
             rolesButton.Enabled = True
             userAdminButton.Enabled = True
             registrationButton.Enabled = True
@@ -373,6 +400,11 @@ Namespace HelloWorld
             helpDeskSupportButton.Top = DashboardGridLayout.CellTop(2)
             newPageRequestsButton.Left = rolesButton.Left
             newPageRequestsButton.Top = DashboardGridLayout.CellTop(3)
+
+            ' Last, because everything above pins icons to the cells written in this file. Anything
+            ' that has been dragged elsewhere is laid back over the top; anything untouched keeps
+            ' the position just set.
+            iconDragController?.ApplySavedPositions()
         End Sub
 
         Private Sub RolesButton_Click(sender As Object, e As EventArgs)
@@ -381,7 +413,7 @@ Namespace HelloWorld
                 roles.ShowDialog(Me)
             End Using
 
-            Dim ownerMenu = TryCast(Me.Owner, MainMenu)
+            Dim ownerMenu = TryCast(Me.Owner, FW_MainMenu)
             If ownerMenu IsNot Nothing Then
                 MenuFormInitializer.Configure(ownerMenu, currentUser, True)
             End If
@@ -427,6 +459,17 @@ Namespace HelloWorld
         ''' already Application Admin only; the prompt is there so this is never opened by a stray
         ''' click, since a wrong entry here takes the application off its database.
         ''' </summary>
+        Private Sub CompanyDashboardButton_Click(sender As Object, e As EventArgs)
+            ResetIconButtonVisuals()
+
+            ' The user and access profile go through, as they do to every other page opened from
+            ' here. A dashboard created without them would be a screen with no idea who is looking
+            ' at it.
+            Using dashboard As New Dashboard_Company(currentUser, accessProfile)
+                dashboard.ShowDialog(Me)
+            End Using
+        End Sub
+
         Private Sub DatabaseConfigButton_Click(sender As Object, e As EventArgs)
             ResetIconButtonVisuals()
 

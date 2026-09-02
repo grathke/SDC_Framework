@@ -9,7 +9,7 @@ Imports System.Linq
 Imports System.Windows.Forms
 
 Namespace HelloWorld
-    Public Class MainMenu
+    Public Class FW_MainMenu
         Inherits Form
 
         Public Enum MenuRegion
@@ -63,7 +63,7 @@ Namespace HelloWorld
             Me.New(user, Nothing)
         End Sub
 
-        Public Sub New(user As UserContext, initializeMenu As Action(Of MainMenu, UserContext))
+        Public Sub New(user As UserContext, initializeMenu As Action(Of FW_MainMenu, UserContext))
             currentUser = user
 
             Me.Text = "Main Menu"
@@ -237,10 +237,10 @@ Namespace HelloWorld
             AddActionTile("application-settings", "Application" & Environment.NewLine & "Settings", AddressOf ApplicationSettings_Click, LoadMenuIcon("gear.png", SystemIcons.Shield.ToBitmap()))
             AddActionTile("users", "Users", AddressOf Users_Click, LoadMenuIcon("users.png", SystemIcons.Information.ToBitmap()))
             AddActionTile("entity", "Entity", AddressOf Clients_Click, LoadMenuIcon("clients.png", SystemIcons.Asterisk.ToBitmap()))
-            AddActionTile("my-profile", "My Profile", AddressOf MyProfile_Click, LoadMenuIcon("my-profile.png", SystemIcons.Question.ToBitmap()))
+            AddActionTile("my-profile", "My" & Environment.NewLine & "Profile", AddressOf MyProfile_Click, LoadMenuIcon("my-profile.png", SystemIcons.Question.ToBitmap()))
             AddActionTile("login-as-substitute", "LOGIN AS SUBSTITUE USER", AddressOf LoginAsSubstitute_Click, LoadMenuIcon("substitute-user.png", SystemIcons.Warning.ToBitmap()))
             AddActionTile("select-role", "Select a Role (Application Admin)", AddressOf SelectRole_Click, LoadMenuIcon("users.png", SystemIcons.WinLogo.ToBitmap()))
-            AddActionTile("help-desk", "Help Desk", AddressOf HelpDesk_Click, LoadMenuIcon("helpdesk.png", SystemIcons.Question.ToBitmap()))
+            AddActionTile("help-desk", "Help" & Environment.NewLine & "Desk", AddressOf HelpDesk_Click, LoadMenuIcon("Color_Help_Desk.png", SystemIcons.Question.ToBitmap()))
 
             AddHandler ribbonPanel.Resize, AddressOf RibbonPanel_Resize
 
@@ -637,9 +637,9 @@ Namespace HelloWorld
                 tile.Button.Location = New Point(left, 0)
                 tile.Button.Size = New Size(122, 96)
                 If String.Equals(key, "help-desk", StringComparison.OrdinalIgnoreCase) Then
-                    tile.Button.Text = "Help Desk"
+                    tile.Button.Text = "Help" & Environment.NewLine & "Desk"
                     tile.Button.Padding = New Padding(0, 2, 0, 0)
-                    tile.Button.Image = NormalizeActionIcon("help-desk", LoadMenuIcon("helpdesk.png", SystemIcons.Question.ToBitmap()))
+                    tile.Button.Image = NormalizeActionIcon("help-desk", LoadMenuIcon("Color_Help_Desk.png", SystemIcons.Question.ToBitmap()))
                 End If
                 left += tile.Button.Width
             Next

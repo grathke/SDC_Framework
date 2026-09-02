@@ -1,22 +1,13 @@
 Option Strict On
 Option Explicit On
 
+Imports System.Linq
 Imports System.Drawing
 Imports System.Windows.Forms
 
 Namespace HelloWorld
     Public Class Dashboard_Company
         Inherits Form
-
-        Private Class DashboardIconButton
-            Inherits Button
-
-            Protected Overrides ReadOnly Property ShowFocusCues As Boolean
-                Get
-                    Return False
-                End Get
-            End Property
-        End Class
 
         Private ReadOnly currentUser As UserContext
         Private ReadOnly accessProfile As AccessProfile
@@ -26,6 +17,7 @@ Namespace HelloWorld
         Private ReadOnly rolesButton As DashboardIconButton
         Private ReadOnly userAdminButton As DashboardIconButton
         Private ReadOnly userDiagnosticButton As DashboardIconButton
+        Private iconDragController As DashboardIconDragController
         Private ReadOnly closeIconButton As Button
 
         Public Sub New(user As UserContext, Optional profile As AccessProfile = Nothing)
@@ -76,9 +68,10 @@ Namespace HelloWorld
             }
 
             rolesButton = New DashboardIconButton() With {
+                .Name = "ActionKey_Roles",
                 .Text = "Roles",
                 .Location = DashboardGridLayout.CellLocation(1, 1),
-                .Size = New Size(130, 118),
+                .Size = New Size(DashboardGridLayout.IconWidth, DashboardGridLayout.IconHeight),
                 .BackColor = Color.Transparent,
                 .UseVisualStyleBackColor = False,
                 .FlatStyle = FlatStyle.Flat,
@@ -94,9 +87,10 @@ Namespace HelloWorld
             rolesButton.FlatAppearance.MouseDownBackColor = Color.Transparent
 
             userAdminButton = New DashboardIconButton() With {
+                .Name = "ActionKey_UserAdmin",
                 .Text = "User Admin",
                 .Location = DashboardGridLayout.CellLocation(1, 2),
-                .Size = New Size(130, 118),
+                .Size = New Size(DashboardGridLayout.IconWidth, DashboardGridLayout.IconHeight),
                 .BackColor = Color.Transparent,
                 .UseVisualStyleBackColor = False,
                 .FlatStyle = FlatStyle.Flat,
@@ -115,7 +109,7 @@ Namespace HelloWorld
                 .Name = "ActionKey_FW_UserAccessExplanation_B",
                 .Text = "User Access Explanation",
                 .Location = DashboardGridLayout.CellLocation(1, 4),
-                .Size = New Size(150, 118),
+                .Size = New Size(DashboardGridLayout.IconWidth, DashboardGridLayout.IconHeight),
                 .BackColor = Color.Transparent,
                 .UseVisualStyleBackColor = False,
                 .FlatStyle = FlatStyle.Flat,
@@ -152,6 +146,13 @@ Namespace HelloWorld
         End Sub
 
         Private Sub Dashboard_Company_Load(sender As Object, e As EventArgs)
+            ' The same arrangement behaviour as the admin dashboard, from the same controller.
+            Dim session = SessionState.Current
+            iconDragController = New DashboardIconDragController(Me,
+                                                                 "Dashboard_Company",
+                                                                 If(session.HasValue, session.Value.UserID, 0))
+            iconDragController.Attach(Me.Controls.OfType(Of DashboardIconButton)().Cast(Of Control)())
+
             rolesButton.Enabled = True
             userAdminButton.Enabled = True
             userDiagnosticButton.Enabled = True
@@ -161,6 +162,9 @@ Namespace HelloWorld
             rolesButton.Top = DashboardGridLayout.CellTop(1)
             userAdminButton.Top = rolesButton.Top
             userDiagnosticButton.Top = rolesButton.Top
+
+            ' Last, so a dragged arrangement is laid back over the cells this file pins.
+            iconDragController?.ApplySavedPositions()
         End Sub
 
         Private Sub RolesButton_Click(sender As Object, e As EventArgs)
@@ -169,7 +173,7 @@ Namespace HelloWorld
                 roles.ShowDialog(Me)
             End Using
 
-            Dim ownerMenu = TryCast(Me.Owner, MainMenu)
+            Dim ownerMenu = TryCast(Me.Owner, FW_MainMenu)
             If ownerMenu IsNot Nothing Then
                 MenuFormInitializer.Configure(ownerMenu, currentUser, True)
             End If

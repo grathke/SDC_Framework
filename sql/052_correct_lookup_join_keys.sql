@@ -22,6 +22,17 @@
     because the same bare key name belongs to a different table on either side of a join.
 
     Rollback at the bottom, though restoring a query that cannot run has little to recommend it.
+
+    CORRECTION (see 056)
+    --------------------
+    The premise above is false. G.[ID] is not FW_Gender's key: that table's key is GenderID, an
+    identity carrying PK_Gender, and it has never had a column named ID. 051 turned G.[ID] into
+    G.[EntityID] and this script turned it back, so one invalid column name was swapped for
+    another - the join could not run either way. GenderID was correct throughout.
+
+    The wrong name originates in 049, which tried to declare the foreign key against FW_GENDER.ID
+    and silently failed. Nothing carries either spelling now: the affected pages have since been
+    regenerated, and every stored browse query binds. 056 declares the relationship correctly.
 */
 
 UPDATE dbo.FW_RoleTables

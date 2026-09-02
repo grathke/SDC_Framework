@@ -662,10 +662,10 @@ Namespace HelloWorld
                 Return
             End If
 
+            ' No height to arrange. The dashboard measures its own icons when it opens and grows to
+            ' fit the lowest one, so a fourth row needs nothing written here - and needs no rebuild
+            ' before it can be seen, which editing a constant in DashboardGridLayout.vb did.
             Dim gridCell = FindNextDashboardGridCell(source)
-            If gridCell.Y > 3 Then
-                EnsureDashboardGridHeight(workspaceRoot, gridCell.Y, created, errors)
-            End If
 
             Dim buttonField = "        Private ReadOnly generated" & browsePageName & "Button As DashboardIconButton" & newLine
             Dim fieldAnchor = "        Private ReadOnly closeIconButton As Button" & newLine
@@ -677,7 +677,7 @@ Namespace HelloWorld
                 "                .Name = ""ActionKey_" & browsePageName & """,",
                 "                .Text = """ & DisplayPageCaption(browsePageName) & """,",
                 "                .Location = DashboardGridLayout.CellLocation(" & gridCell.Y.ToString(Globalization.CultureInfo.InvariantCulture) & ", " & gridCell.X.ToString(Globalization.CultureInfo.InvariantCulture) & "),",
-                "                .Size = New Size(150, 118),",
+                "                .Size = New Size(DashboardGridLayout.IconWidth, DashboardGridLayout.IconHeight),",
                 "                .BackColor = Color.Transparent,",
                 "                .UseVisualStyleBackColor = False,",
                 "                .FlatStyle = FlatStyle.Flat,",
@@ -742,33 +742,6 @@ Namespace HelloWorld
             Next
             Throw New InvalidOperationException("No dashboard grid position is available for the generated icon.")
         End Function
-
-        Private Shared Sub EnsureDashboardGridHeight(workspaceRoot As String, requiredRow As Integer, created As List(Of String), errors As List(Of String))
-            Dim layoutPath = Path.Combine(workspaceRoot, "DashboardGridLayout.vb")
-            If Not File.Exists(layoutPath) Then
-                errors.Add("DashboardGridLayout.vb could not be found while adding a dashboard row.")
-                Return
-            End If
-
-            Dim source = File.ReadAllText(layoutPath)
-            Dim match = Regex.Match(source, "Public Const StandardClientHeight As Integer = (?<height>\d+)")
-            If Not match.Success Then
-                errors.Add("The shared dashboard height could not be found while adding a dashboard row.")
-                Return
-            End If
-
-            Dim currentHeight = Integer.Parse(match.Groups("height").Value, Globalization.CultureInfo.InvariantCulture)
-            Dim requiredHeight = currentHeight
-            If requiredRow > 3 Then
-                requiredHeight = Math.Max(currentHeight, 560 + ((requiredRow - 3) * DashboardGridLayout.RowGap))
-            End If
-            If requiredHeight = currentHeight Then Return
-
-            source = source.Replace(match.Value,
-                                    "Public Const StandardClientHeight As Integer = " & requiredHeight.ToString(Globalization.CultureInfo.InvariantCulture),
-                                    StringComparison.Ordinal)
-            File.WriteAllText(layoutPath, source, New UTF8Encoding(False))
-        End Sub
 
         Private Shared Function InsertAfter(source As String, anchor As String, insertion As String) As String
             Dim index = source.IndexOf(anchor, StringComparison.Ordinal)

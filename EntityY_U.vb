@@ -15,7 +15,7 @@ Namespace HelloWorld
         Private ReadOnly currentUser As UserContext
         Private ReadOnly accessProfile As AccessProfile
         Private ReadOnly tableName As String = "FW_ENTITY"
-        Private ReadOnly primaryKey As String = "ID"
+        Private ReadOnly primaryKey As String = "EntityID"
         Private record As DataRow
         Private ReadOnly formBindingSource As New BindingSource()
         Private originalRowVersion As Byte()

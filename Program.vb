@@ -14,8 +14,34 @@ Namespace HelloWorld
             File.AppendAllText(logPath, DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss") & " - " & message & Environment.NewLine)
         End Sub
 
+        ''' <summary>
+        ''' An exception that reached the message loop: logged, and shown.
+        '''
+        ''' Logging alone made a failure invisible. A generated page whose lookup named a renamed
+        ''' column threw here on load, and the window simply never opened - no message, nothing on
+        ''' screen to say why, and startup.log the only record that anything had happened at all.
+        '''
+        ''' The message and the log path, not the stack: the stack is already in the file, and a
+        ''' dialog nobody can read is barely better than no dialog. Showing it does not make the
+        ''' failure recoverable - whatever was being opened has still failed - it makes it visible.
+        ''' </summary>
         Private Sub OnThreadException(sender As Object, e As ThreadExceptionEventArgs)
             Log("ThreadException: " & e.Exception.ToString())
+
+            Try
+                Dim detail = If(e.Exception Is Nothing, "Unknown error.", e.Exception.Message)
+                MessageBox.Show("Something went wrong and the action could not complete." &
+                                Environment.NewLine & Environment.NewLine &
+                                detail &
+                                Environment.NewLine & Environment.NewLine &
+                                "Full details are in:" & Environment.NewLine & logPath,
+                                "Unexpected Error",
+                                MessageBoxButtons.OK,
+                                MessageBoxIcon.Error)
+            Catch
+                ' A handler that throws replaces one failure with another and loses both. The log
+                ' line above is already written, so there is nothing left worth risking here.
+            End Try
         End Sub
 
         Private Sub OnUnhandledException(sender As Object, e As UnhandledExceptionEventArgs)

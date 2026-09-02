@@ -15,7 +15,7 @@ Namespace HelloWorld
         Private ReadOnly currentUser As UserContext
         Private ReadOnly accessProfile As AccessProfile
         Private ReadOnly tableName As String = "FW_ENTITY"
-        Private ReadOnly primaryKey As String = "ID"
+        Private ReadOnly primaryKey As String = "EntityID"
         Private record As DataRow
         Private ReadOnly formBindingSource As New BindingSource()
         Private originalRowVersion As Byte()
@@ -81,7 +81,7 @@ Namespace HelloWorld
                 control.DataBindings.Add("Text", formBindingSource, fieldName, True, DataSourceUpdateMode.Never)
                 If record.Table.Columns.Contains(fieldName) Then control.Text = If(record(fieldName) Is DBNull.Value, String.Empty, Convert.ToString(record(fieldName)))
             Next
-            ConfigureLookupCombo(genderIDComboBox, DataAccess.GetLookupTable("FW_GENDER", "ID", "GenderDescription", True), "ID", "GenderDescription", CurrentLookupId("GenderID"))
+            ConfigureLookupCombo(genderIDComboBox, DataAccess.GetLookupTable("FW_Gender", "GenderID", "GenderDescription", True), "GenderID", "GenderDescription", CurrentLookupId("GenderID"))
             ConfigureLookupCombo(assignedManagerIDComboBox, DataAccess.GetLookupTable("FW_USERS", "UserId", "FirstLast", True), "UserId", "FirstLast", CurrentLookupId("AssignedManagerID"))
             If record.Table.Columns.Contains("RowVersion") AndAlso Not record.IsNull("RowVersion") Then originalRowVersion = CType(DirectCast(record("RowVersion"), Byte()).Clone(), Byte())
             CaptureOriginalRowVersion(originalRowVersion)

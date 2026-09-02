@@ -622,9 +622,19 @@ Namespace HelloWorld
                         If effectiveSql.Contains("@RegistrationID", StringComparison.OrdinalIgnoreCase) Then
                             cmd.Parameters.AddWithValue("@RegistrationID", registrationId)
                         End If
-                        Using da As New SqlDataAdapter(cmd)
-                            da.Fill(table)
-                        End Using
+                        Try
+                            Using da As New SqlDataAdapter(cmd)
+                                da.Fill(table)
+                            End Using
+                        Catch ex As Exception
+                            ' The query that runs is not the query that was stored - the registration
+                            ' value is substituted into it and a scope predicate may have been
+                            ' appended - so "invalid column name" on its own leaves nothing to look
+                            ' at. The text that actually failed goes into the message.
+                            Throw New InvalidOperationException(
+                                ex.Message & Environment.NewLine & Environment.NewLine &
+                                "SQL THAT FAILED:" & Environment.NewLine & effectiveSql, ex)
+                        End Try
                     End Using
 
                     If registrationId > 0 AndAlso Not hasExplicitRegistrationPredicate AndAlso
@@ -1566,6 +1576,86 @@ Namespace HelloWorld
             End Using
 
             Return fields
+        End Function
+
+        ''' <summary>
+        ''' Where a dashboard's icons have been dragged to, as ActionKey -> (column, row).
+        '''
+        ''' Only icons that have been moved appear. Anything missing is still where its source put
+        ''' it, which is what makes a newly generated icon land at the generator's cell rather than
+        ''' at the origin.
+        ''' </summary>
+        Public Shared Function GetDashboardIconPositions(dashboardName As String) As Dictionary(Of String, Point)
+            Dim positions As New Dictionary(Of String, Point)(StringComparer.OrdinalIgnoreCase)
+            If String.IsNullOrWhiteSpace(dashboardName) Then Return positions
+            ' Missing-schema guard, phrased through the existing helper: the column exists only if the
+            ' table does, so a database without 054 applied simply has no saved arrangement.
+            If Not TableHasColumn("FW_DashboardLayouts", "ActionKey") Then Return positions
+
+            Using conn As New SqlConnection(ConnectionString)
+                conn.Open()
+                Using cmd As New SqlCommand(
+                    "SELECT ActionKey, GridRow, GridColumn FROM dbo.FW_DashboardLayouts " &
+                    "WHERE DashboardName = @DashboardName AND ISNULL(DeletedFlag, 0) = 0", conn)
+                    cmd.Parameters.AddWithValue("@DashboardName", dashboardName.Trim())
+                    Using reader = cmd.ExecuteReader()
+                        While reader.Read()
+                            positions(Convert.ToString(reader("ActionKey"))) =
+                                New Point(Convert.ToInt32(reader("GridColumn"), CultureInfo.InvariantCulture),
+                                          Convert.ToInt32(reader("GridRow"), CultureInfo.InvariantCulture))
+                        End While
+                    End Using
+                End Using
+            End Using
+
+            Return positions
+        End Function
+
+        ''' <summary>
+        ''' Records where icons now sit, as ActionKey -> (column, row).
+        '''
+        ''' Takes a set rather than one icon because a drop onto an occupied cell moves two of them,
+        ''' and half a swap is worse than no swap: both rows commit or neither does.
+        ''' </summary>
+        Public Shared Function SaveDashboardIconPositions(
+                                                          dashboardName As String,
+                                                          positions As IEnumerable(Of KeyValuePair(Of String, Point)),
+                                                          userId As Integer) As Boolean
+            If String.IsNullOrWhiteSpace(dashboardName) OrElse positions Is Nothing Then Return False
+            If Not TableHasColumn("FW_DashboardLayouts", "ActionKey") Then Return False
+
+            Dim moved = positions.Where(Function(pair) Not String.IsNullOrWhiteSpace(pair.Key)).ToList()
+            If moved.Count = 0 Then Return False
+
+            Using conn As New SqlConnection(ConnectionString)
+                conn.Open()
+                Using transaction = conn.BeginTransaction()
+                    Try
+                        For Each pair In moved
+                            Using cmd As New SqlCommand(
+                                "UPDATE dbo.FW_DashboardLayouts " &
+                                "SET GridRow = @GridRow, GridColumn = @GridColumn, DeletedFlag = 0, UpdatedBy = @UserID, UpdatedOn = GETDATE() " &
+                                "WHERE DashboardName = @DashboardName AND ActionKey = @ActionKey; " &
+                                "IF @@ROWCOUNT = 0 " &
+                                "INSERT INTO dbo.FW_DashboardLayouts (DashboardName, ActionKey, GridRow, GridColumn, CreatedBy, CreatedOn) " &
+                                "VALUES (@DashboardName, @ActionKey, @GridRow, @GridColumn, @UserID, GETDATE());", conn, transaction)
+                                cmd.Parameters.AddWithValue("@DashboardName", dashboardName.Trim())
+                                cmd.Parameters.AddWithValue("@ActionKey", pair.Key.Trim())
+                                cmd.Parameters.AddWithValue("@GridRow", pair.Value.Y)
+                                cmd.Parameters.AddWithValue("@GridColumn", pair.Value.X)
+                                cmd.Parameters.AddWithValue("@UserID", userId)
+                                cmd.ExecuteNonQuery()
+                            End Using
+                        Next
+
+                        transaction.Commit()
+                        Return True
+                    Catch
+                        transaction.Rollback()
+                        Return False
+                    End Try
+                End Using
+            End Using
         End Function
 
         Public Shared Function GetPrimaryKeyFieldName(tableName As String) As String
@@ -3079,7 +3169,7 @@ Namespace HelloWorld
             Using conn As New SqlConnection(ConnectionString)
                 conn.Open()
                 Using cmd As New SqlCommand(
-                    "SELECT ID, ISNULL(GenderDescription, '') AS GenderDescription " &
+                    "SELECT GenderID, ISNULL(GenderDescription, '') AS GenderDescription " &
                     "FROM dbo.FW_Gender " &
                     "WHERE RegistrationID = @RegistrationID " &
                     "ORDER BY GenderDescription", conn)
@@ -4103,11 +4193,18 @@ Namespace HelloWorld
             Return table
         End Function
 
+        ''' <summary>
+        ''' Hydrates DeletedFlag for a browse result that does not select it.
+        '''
+        ''' The fourth argument is FW_Entity's own key column and has to track the table: it became
+        ''' EntityID in sql/050. The names after it are candidates in the *result set*, a different
+        ''' list - a browse query aliases its key AS PK, and older stored SQL still calls it ID.
+        ''' </summary>
         Private Shared Function ApplyEntityDeletedFilterFallback(source As DataTable, showDeletedOnly As Boolean) As DataTable
             Return ApplyDeletedFilterWithSourceHydration(source,
                                                          showDeletedOnly,
                                                          "FW_Entity",
-                                                         "ID",
+                                                         "EntityID",
                                                          "PK",
                                                          "ID",
                                                          "EntityID")

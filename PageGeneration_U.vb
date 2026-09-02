@@ -2441,23 +2441,70 @@ Namespace HelloWorld
         Private seedingSelectionGrids As Boolean
 
         ''' <summary>
-        ''' Joins the lookup fields in the form the generator expects. A ticked field with no target
-        ''' is dropped rather than written as a bare name: the generator refuses a bare name, so
-        ''' writing one would turn a mis-click into a failed generation later instead of nothing now.
+        ''' The lookup specs to save, rebuilt from the declared relationship rather than replayed
+        ''' from the sentence they were loaded with.
+        '''
+        ''' A stored spec names a table and a key, and a key can be renamed after it is written.
+        ''' FW_Gender.ID became GenderID and every saved spec still said ID, which the generator
+        ''' then emitted into a maintenance page that threw on load. Re-saving could not correct it
+        ''' because the sentence was only ever loaded and written back; the schema was consulted
+        ''' just once, when the Lookup box was first ticked.
+        '''
+        ''' LookupTarget is refreshed from the foreign keys every time this dialog is built, and is
+        ''' already what the browse SQL reads. Reading it here gives both sides one owner, so they
+        ''' cannot describe the same relationship differently.
+        '''
+        ''' A lookup with no declared relationship keeps the spec it was given. It cannot be
+        ''' rebuilt from a schema that never described it, and dropping it would delete the answer
+        ''' rather than preserve it.
         ''' </summary>
         Private Function JoinLookupFields(grid As DataGridView) As String
             Dim specs As New List(Of String)()
+            Dim registrationCache As New Dictionary(Of String, Boolean)(StringComparer.OrdinalIgnoreCase)
+
             For Each row As DataGridViewRow In grid.Rows
                 If Not Convert.ToBoolean(row.Cells("Include").Value) Then Continue For
                 If Not Convert.ToBoolean(row.Cells("Lookup").Value) Then Continue For
 
                 Dim fieldName = Convert.ToString(row.Cells("FieldName").Value)
+                If String.IsNullOrWhiteSpace(fieldName) Then Continue For
+
+                Dim rebuilt = BuildLookupSpecFromTarget(grid, row, fieldName, registrationCache)
+                If Not String.IsNullOrWhiteSpace(rebuilt) Then
+                    specs.Add(rebuilt)
+                    Continue For
+                End If
+
                 Dim spec As String = Nothing
                 If lookupTargets.TryGetValue(fieldName, spec) AndAlso Not String.IsNullOrWhiteSpace(spec) Then
                     specs.Add(spec)
                 End If
             Next
             Return String.Join(", ", specs)
+        End Function
+
+        ''' <summary>
+        ''' The spec a row's own relationship describes, or empty where the row points nowhere.
+        ''' </summary>
+        Private Shared Function BuildLookupSpecFromTarget(grid As DataGridView,
+                                                          row As DataGridViewRow,
+                                                          fieldName As String,
+                                                          registrationCache As Dictionary(Of String, Boolean)) As String
+            If grid Is Nothing OrElse Not grid.Columns.Contains("LookupTarget") Then Return String.Empty
+
+            Dim target = Convert.ToString(row.Cells("LookupTarget").Value)
+            If String.IsNullOrWhiteSpace(target) Then Return String.Empty
+
+            Dim pieces = target.Split("."c)
+            If pieces.Length <> 2 Then Return String.Empty
+
+            Return BuildLookupSpecFromRelationship(fieldName,
+                                                   New DataAccess.ColumnRelationship With {
+                                                       .LookupTable = pieces(0),
+                                                       .KeyColumn = pieces(1)
+                                                   },
+                                                   Convert.ToString(row.Cells("Displays").Value),
+                                                   registrationCache)
         End Function
 
         ''' <summary>The display column each saved lookup spec names, keyed by its field.</summary>

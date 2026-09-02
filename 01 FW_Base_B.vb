@@ -1716,7 +1716,12 @@ Namespace HelloWorld
                     hasBaselineLayoutSnapshot = True
                 End If
             Catch ex As Exception
-                MessageBox.Show("Failed to load page data: " & ex.Message, "Error", MessageBoxButtons.OK, MessageBoxIcon.Error)
+                ' The message alone says what went wrong but never where. The first stack frame
+                ' names the method, which is the difference between reading this and guessing at it.
+                Dim origin = If(ex.StackTrace, String.Empty).Split({Environment.NewLine, vbLf}, StringSplitOptions.RemoveEmptyEntries).FirstOrDefault()
+                MessageBox.Show("Failed to load page data: " & ex.Message &
+                                Environment.NewLine & Environment.NewLine & If(origin, String.Empty).Trim(),
+                                "Error", MessageBoxButtons.OK, MessageBoxIcon.Error)
             End Try
         End Sub
 

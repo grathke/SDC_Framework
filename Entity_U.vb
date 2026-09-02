@@ -217,7 +217,7 @@ Namespace HelloWorld
                     If genders IsNot Nothing Then
                         ConfigureLookupCombo(genderComboBox,
                                              genders,
-                                             "ID",
+                                             "GenderID",
                                              "GenderDescription",
                                              EntityData.GenderID,
                                              "Make a Selection")

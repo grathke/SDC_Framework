@@ -124,6 +124,22 @@ Icon files live in `assets/images/`.
   accepted values are compiled in and a .NET assembly can be decompiled. The dashboard being
   Application Admin only is the actual protection.
 
+## dashboard-company
+
+- placement: Application dashboard (`02 FW Dashboard_Application.vb`), grid cell 3,2
+- ActionType: Navigation / dialog
+- target: `Dashboard_Company`, opened with `ShowDialog`
+- caption source: fixed (`Company` / `Dashboard`, on two lines)
+- icon file: `Fluent_Home.png`, falling back to `SystemIcons.Application`
+- visibility rule: the Application dashboard is Application Admin only; the icon is always shown
+  there
+- click behavior: passes the owning dashboard's `currentUser` and `accessProfile` through to the
+  company dashboard, so it opens knowing who is looking at it
+
+Note on placement: cell 3,2 is where this icon sits in the source. Icons on both dashboards can be
+dragged to other cells and their positions are stored in `FW_DashboardLayouts`, so a cell recorded
+here is the default rather than necessarily where it will be found.
+
 ---
 
 ## Gaps

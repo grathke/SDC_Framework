@@ -431,7 +431,7 @@ Namespace HelloWorld
 
             Dim menuDialogResult As DialogResult = DialogResult.None
 
-            Using menu As New MainMenu(user, AddressOf MenuFormInitializer.Configure)
+            Using menu As New FW_MainMenu(user, AddressOf MenuFormInitializer.Configure)
                 Me.Hide()
                 menuDialogResult = menu.ShowDialog(Me)
             End Using
