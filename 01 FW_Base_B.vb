@@ -3544,8 +3544,6 @@ Namespace HelloWorld
             ClearQbeFilters()
             RefreshGrid(Nothing, True)
             UpdateRegistrationSelectorVisibility(IsAppAdminSession())
-            Dim activeSql = GetActiveBaseSql()
-            DataAccess.EnumeratePageControls(Me, Me.GetType().Name, currentUser.UserId, activeSql)
         End Sub
 
         Private Sub UpdateRegistrationSelectorVisibility(adminControlsVisible As Boolean)
