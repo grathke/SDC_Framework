@@ -577,7 +577,8 @@ Namespace HelloWorld
                                                          Optional additionalScopePredicate As String = Nothing,
                                                          Optional scopeUserId As Integer = 0,
                                                          Optional maxRows As Integer = 0,
-                                                         Optional overrideExplicitRegistrationPredicate As Boolean = False) As DataTable
+                                                         Optional overrideExplicitRegistrationPredicate As Boolean = False,
+                                                         Optional sourceTableName As String = Nothing) As DataTable
             Dim table As New DataTable("FW_Entity")
 
             Using conn As New SqlConnection(ConnectionString)
@@ -642,7 +643,7 @@ Namespace HelloWorld
                         table = FilterBrowseRowsByRegistration(table, registrationId)
                     End If
 
-                    table = ApplyEntityDeletedFilterFallback(table, showDeletedOnly)
+                    table = ApplyBrowseDeletedFilterFallback(table, showDeletedOnly, sourceTableName)
 
                     If filters IsNot Nothing AndAlso filters.Count > 0 Then
                         Dim filterExpr = BuildDataViewFilterExpression(table, filters)
@@ -756,7 +757,7 @@ Namespace HelloWorld
                 End Using
             End Using
 
-            table = ApplyEntityDeletedFilterFallback(table, showDeletedOnly)
+            table = ApplyBrowseDeletedFilterFallback(table, showDeletedOnly, "FW_Entity")
             Return LimitBrowseRows(table, maxRows)
         End Function
 
@@ -4194,20 +4195,43 @@ Namespace HelloWorld
         End Function
 
         ''' <summary>
-        ''' Hydrates DeletedFlag for a browse result that does not select it.
+        ''' Hydrates DeletedFlag for a browse result that does not select it, from the page's own
+        ''' table.
         '''
-        ''' The fourth argument is FW_Entity's own key column and has to track the table: it became
-        ''' EntityID in sql/050. The names after it are candidates in the *result set*, a different
-        ''' list - a browse query aliases its key AS PK, and older stored SQL still calls it ID.
+        ''' The table has to be passed in. This named FW_Entity unconditionally, for every browse
+        ''' page rather than only the entity ones, so a page's keys were looked up in a table it has
+        ''' nothing to do with. FW_Entity 8 was soft-deleted and FW_Users 8 was not, and that was
+        ''' enough to drop Alan Smith from both user access pages - the two rows shared a number and
+        ''' nothing else.
+        '''
+        ''' No table means no answer: returning the rows unfiltered is right, because guessing a
+        ''' table is exactly what caused the defect.
+        '''
+        ''' The DeletedFlag test is repeated here rather than left to the hydration, so a result
+        ''' that already carries the column costs no primary-key lookup.
         ''' </summary>
-        Private Shared Function ApplyEntityDeletedFilterFallback(source As DataTable, showDeletedOnly As Boolean) As DataTable
+        Private Shared Function ApplyBrowseDeletedFilterFallback(source As DataTable,
+                                                                 showDeletedOnly As Boolean,
+                                                                 sourceTableName As String) As DataTable
+            If source Is Nothing Then Return source
+            If source.Columns IsNot Nothing AndAlso source.Columns.Contains("DeletedFlag") Then
+                Return ApplyDeletedFlagFilter(source, showDeletedOnly)
+            End If
+
+            Dim normalized = NormalizeTableName(sourceTableName)
+            If normalized = String.Empty Then Return source
+
+            Dim keyColumn = GetPrimaryKeyFieldName(normalized)
+            If String.IsNullOrWhiteSpace(keyColumn) Then Return source
+
+            ' PK first, because every browse query aliases its key that way. The table's own key
+            ' name is the fallback, for a query that selects it plainly.
             Return ApplyDeletedFilterWithSourceHydration(source,
                                                          showDeletedOnly,
-                                                         "FW_Entity",
-                                                         "EntityID",
+                                                         normalized,
+                                                         keyColumn,
                                                          "PK",
-                                                         "ID",
-                                                         "EntityID")
+                                                         keyColumn)
         End Function
 
         Private Shared Function ApplyDeletedFilterWithSourceHydration(source As DataTable,

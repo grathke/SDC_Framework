@@ -109,6 +109,7 @@ Mostly verified on `Users_AppAdmin_U` during 2026-08-29/30. Re-run after changes
 | B-11 | Deleted view | Show Deleted lists only deleted rows; disabled when the result has no `DeletedFlag`. | untested |
 | B-12 | Registration selector | Visible only with `ViewAllRecords`; seeded to the session; changing it re-scopes data and CRUD captions but **not** field captions. | untested |
 | B-13 | No `FW_RoleTables` row | Opening creates the row with the right `WindowOrPage`, `DB_Table`, alias and `CreatedBy`. | untested |
+| B-14 | Deleted state comes from the page's own table | A browse result with no `DeletedFlag` column has one hydrated from the table the page reads, keyed on that table's own primary key. **Was a defect:** the hydration named `FW_Entity` unconditionally, for all 11 of the 12 registered browse queries that lack a `DeletedFlag` column, so each page's keys were looked up in a table it has nothing to do with. `FW_Entity` 8 was soft-deleted and `FW_Users` 8 was not, which silently dropped Alan Smith from `FW_UserAccessDiagnostic_B` and `FW_UserAccessExplanation_B`. Only `Users_AppAdmin_B` escaped, because its `SELECT UserID AS PK, *` happens to pull `DeletedFlag` in. `Roles_B` was never affected — it passes its own table and key to `ExecuteCustomQuery`. | pass 2026-09-02 — fixed; re-check by soft-deleting an entity and confirming the same-numbered row still shows on a non-entity browse page |
 
 ---
 

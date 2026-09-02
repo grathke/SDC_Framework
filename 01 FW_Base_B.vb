@@ -1662,7 +1662,8 @@ Namespace HelloWorld
                                                                browseScopePredicate,
                                                                browseScopeUserId,
                                                                maxRows,
-                                                               registrationId > 0)
+                                                               registrationId > 0,
+                                                               ResolveCurrentRoleFieldTableName())
                 lastRefreshExceededRowLimit = maxRows > 0 AndAlso
                                               dt.ExtendedProperties.ContainsKey("BrowseRowsLimited") AndAlso
                                               Convert.ToBoolean(dt.ExtendedProperties("BrowseRowsLimited"))
