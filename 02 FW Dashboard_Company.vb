@@ -32,7 +32,7 @@ Namespace HelloWorld
             currentUser = user
             accessProfile = profile
 
-            Me.Text = "Dashboard_Company"
+            Me.Text = "DASHBOARD: COMPANY"
             Me.StartPosition = FormStartPosition.CenterParent
             Me.FormBorderStyle = FormBorderStyle.FixedDialog
             Me.MaximizeBox = False
@@ -42,7 +42,7 @@ Namespace HelloWorld
             Me.BackColor = Color.White
 
             topStripLabel = New Label() With {
-                .Text = "Dashboard_Company",
+                .Text = "DASHBOARD: COMPANY",
                 .Location = New Point(0, 0),
                 .Size = New Size(Me.ClientSize.Width, 28),
                 .Anchor = AnchorStyles.Top Or AnchorStyles.Left Or AnchorStyles.Right,
@@ -66,7 +66,7 @@ Namespace HelloWorld
             closeIconButton.FlatAppearance.BorderSize = 0
 
             headerLabel = New Label() With {
-                .Text = "Dashboard_Company",
+                .Text = "DASHBOARD: COMPANY",
                 .Location = New Point(0, 48),
                 .Size = New Size(Me.ClientSize.Width, 38),
                 .Anchor = AnchorStyles.Top Or AnchorStyles.Left Or AnchorStyles.Right,
@@ -112,7 +112,7 @@ Namespace HelloWorld
             userAdminButton.FlatAppearance.MouseDownBackColor = Color.Transparent
 
             userDiagnosticButton = New DashboardIconButton() With {
-                .Name = "GeneratedPageActionKey_FW_UserAccessExplanation_B",
+                .Name = "ActionKey_FW_UserAccessExplanation_B",
                 .Text = "User Access Explanation",
                 .Location = DashboardGridLayout.CellLocation(1, 4),
                 .Size = New Size(150, 118),

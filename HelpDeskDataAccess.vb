@@ -135,7 +135,7 @@ Namespace HelloWorld
             Return ExecuteDashboardQuery(
                 "SELECT issue.RegistrationID, ISNULL(registration.RegName, 'Unknown account') AS Bucket, COUNT(*) AS TicketCount " &
                 "FROM dbo.FW_HD_Issues AS issue " &
-                "LEFT JOIN dbo.FW_Registration AS registration ON registration.ID = issue.RegistrationID " &
+                "LEFT JOIN dbo.FW_Registration AS registration ON registration.RegistrationID = issue.RegistrationID " &
                 "WHERE ISNULL(issue.DeletedFlag, 0) = 0 " &
                 "GROUP BY issue.RegistrationID, ISNULL(registration.RegName, 'Unknown account') ORDER BY TicketCount DESC, Bucket")
         End Function
@@ -145,7 +145,7 @@ Namespace HelloWorld
                 "SELECT TOP 10 issue.IssueID, issue.IssueNumber, issue.Subject, " &
                 "ISNULL(registration.RegName, 'Unknown account') AS AccountName, issue.Status, issue.Priority, issue.CreatedOn " &
                 "FROM dbo.FW_HD_Issues AS issue " &
-                "LEFT JOIN dbo.FW_Registration AS registration ON registration.ID = issue.RegistrationID " &
+                "LEFT JOIN dbo.FW_Registration AS registration ON registration.RegistrationID = issue.RegistrationID " &
                 "WHERE ISNULL(issue.DeletedFlag, 0) = 0 AND issue.Status IN ('New', 'Reopened') " &
                 "ORDER BY issue.CreatedOn")
         End Function

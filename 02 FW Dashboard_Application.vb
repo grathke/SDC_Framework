@@ -41,7 +41,7 @@ Namespace HelloWorld
             currentUser = user
             accessProfile = profile
 
-            Me.Text = "Dashboard_Application"
+            Me.Text = "DASHBOARD: ADMIN"
             Me.StartPosition = FormStartPosition.CenterParent
             Me.FormBorderStyle = FormBorderStyle.FixedDialog
             Me.MaximizeBox = False
@@ -51,7 +51,7 @@ Namespace HelloWorld
             Me.BackColor = Color.White
 
             topStripLabel = New Label() With {
-                .Text = "Dashboard_Application",
+                .Text = "DASHBOARD: ADMIN",
                 .Location = New Point(0, 0),
                 .Size = New Size(Me.ClientSize.Width, 28),
                 .Anchor = AnchorStyles.Top Or AnchorStyles.Left Or AnchorStyles.Right,
@@ -75,7 +75,7 @@ Namespace HelloWorld
             closeIconButton.FlatAppearance.BorderSize = 0
 
             headerLabel = New Label() With {
-                .Text = "Dashboard_Application",
+                .Text = "DASHBOARD: ADMIN",
                 .Location = New Point(0, 48),
                 .Size = New Size(Me.ClientSize.Width, 38),
                 .Anchor = AnchorStyles.Top Or AnchorStyles.Left Or AnchorStyles.Right,
@@ -85,6 +85,7 @@ Namespace HelloWorld
             }
 
             rolesButton = New DashboardIconButton() With {
+                .Name = "ActionKey_Roles",
                 .Text = "Roles",
                 .Location = DashboardGridLayout.CellLocation(1, 1),
                 .Size = New Size(130, 118),
@@ -103,6 +104,7 @@ Namespace HelloWorld
             rolesButton.FlatAppearance.MouseDownBackColor = Color.Transparent
 
             userAdminButton = New DashboardIconButton() With {
+                .Name = "ActionKey_UserAdmin",
                 .Text = "User Admin",
                 .Location = DashboardGridLayout.CellLocation(1, 2),
                 .Size = New Size(130, 118),
@@ -121,6 +123,7 @@ Namespace HelloWorld
             userAdminButton.FlatAppearance.MouseDownBackColor = Color.Transparent
 
             registrationButton = New DashboardIconButton() With {
+                .Name = "ActionKey_Registration",
                 .Text = "Registration",
                 .Location = DashboardGridLayout.CellLocation(1, 3),
                 .Size = New Size(130, 118),
@@ -139,6 +142,7 @@ Namespace HelloWorld
             registrationButton.FlatAppearance.MouseDownBackColor = Color.Transparent
 
             auditHistoryButton = New DashboardIconButton() With {
+                .Name = "ActionKey_AuditHistory",
                 .Text = "Audit History",
                 .Location = DashboardGridLayout.CellLocation(2, 1),
                 .Size = New Size(130, 118),
@@ -157,6 +161,7 @@ Namespace HelloWorld
             auditHistoryButton.FlatAppearance.MouseDownBackColor = Color.Transparent
 
             helpDeskButton = New DashboardIconButton() With {
+                .Name = "ActionKey_HelpDesk",
                 .Text = "Help Desk",
                 .Location = DashboardGridLayout.CellLocation(2, 2),
                 .Size = New Size(130, 118),
@@ -175,6 +180,7 @@ Namespace HelloWorld
             helpDeskButton.FlatAppearance.MouseDownBackColor = Color.Transparent
 
             helpDeskSupportButton = New DashboardIconButton() With {
+                .Name = "ActionKey_HelpDeskSupport",
                 .Text = "HD Support Tickets",
                 .Location = DashboardGridLayout.CellLocation(2, 3),
                 .Size = New Size(130, 118),
@@ -193,6 +199,7 @@ Namespace HelloWorld
             helpDeskSupportButton.FlatAppearance.MouseDownBackColor = Color.Transparent
 
             databaseConfigButton = New DashboardIconButton() With {
+                .Name = "ActionKey_DatabaseConfig",
                 .Text = "Database Config",
                 .Location = DashboardGridLayout.CellLocation(2, 4),
                 .Size = New Size(150, 118),
@@ -211,6 +218,7 @@ Namespace HelloWorld
             databaseConfigButton.FlatAppearance.MouseDownBackColor = Color.Transparent
 
             newPageRequestsButton = New DashboardIconButton() With {
+                .Name = "ActionKey_PageGeneration",
                 .Text = "Page Gen _B _U",
                 .Location = DashboardGridLayout.CellLocation(3, 1),
                 .Size = New Size(150, 118),
@@ -233,7 +241,7 @@ Namespace HelloWorld
 
 
             generatedFW_UserAccessExplanation_BButton = New DashboardIconButton() With {
-                .Name = "GeneratedPageActionKey_FW_UserAccessExplanation_B",
+                .Name = "ActionKey_FW_UserAccessExplanation_B",
                 .Text = "User Access Explanation",
                 .Location = DashboardGridLayout.CellLocation(1, 4),
                 .Size = New Size(150, 118),
@@ -252,7 +260,7 @@ Namespace HelloWorld
             generatedFW_UserAccessExplanation_BButton.FlatAppearance.MouseDownBackColor = Color.Transparent
 
             generatedEntityX_BButton = New DashboardIconButton() With {
-                .Name = "GeneratedPageActionKey_EntityX_B",
+                .Name = "ActionKey_EntityX_B",
                 .Text = "EntityX",
                 .Location = DashboardGridLayout.CellLocation(1, 5),
                 .Size = New Size(150, 118),
@@ -260,7 +268,7 @@ Namespace HelloWorld
                 .UseVisualStyleBackColor = False,
                 .FlatStyle = FlatStyle.Flat,
                 .Font = New Font("Segoe UI", 13.0F, FontStyle.Regular),
-                .Image = LoadDashboardIcon("Add 128 x 128.png", SystemIcons.Application.ToBitmap()),
+                .Image = LoadDashboardIcon("Color_Warning.png", SystemIcons.Application.ToBitmap()),
                 .TextImageRelation = TextImageRelation.ImageAboveText,
                 .ImageAlign = ContentAlignment.TopCenter,
                 .TextAlign = ContentAlignment.BottomCenter,
@@ -271,7 +279,7 @@ Namespace HelloWorld
             generatedEntityX_BButton.FlatAppearance.MouseDownBackColor = Color.Transparent
 
             generatedEntityY_BButton = New DashboardIconButton() With {
-                .Name = "GeneratedPageActionKey_EntityY_B",
+                .Name = "ActionKey_EntityY_B",
                 .Text = "EntityY",
                 .Location = DashboardGridLayout.CellLocation(2, 5),
                 .Size = New Size(150, 118),

@@ -552,11 +552,25 @@ Namespace HelloWorld
         ''' Rewrites the .Image line of an existing generated button. Returns True when the file was
         ''' changed, False when there was nothing to change.
         ''' </summary>
+        Private Shared ReadOnly NewLineCharacters As Char() = {ChrW(13), ChrW(10)}
+
+        ''' <summary>
+        ''' The line ending the file already uses, rather than this machine's.
+        '''
+        ''' Source files here are a mix: this dashboard is LF throughout while its sibling is CRLF.
+        ''' An anchor built with Environment.NewLine is simply not present in an LF file, and the
+        ''' edit then reports nothing to do instead of failing - which is how a chosen icon could be
+        ''' saved, generated without complaint, and never actually appear on the button.
+        ''' </summary>
+        Private Shared Function SourceNewLine(source As String) As String
+            Return If(If(source, String.Empty).Contains(vbCrLf, StringComparison.Ordinal), vbCrLf, vbLf)
+        End Function
+
         Private Shared Function UpdateDashboardIconImage(dashboardPath As String, browsePageName As String, iconFileName As String) As Boolean
             If String.IsNullOrWhiteSpace(iconFileName) OrElse Not File.Exists(dashboardPath) Then Return False
 
             Dim source = File.ReadAllText(dashboardPath)
-            Dim anchor = ".Name = ""GeneratedPageActionKey_" & browsePageName & """"
+            Dim anchor = ".Name = ""ActionKey_" & browsePageName & """"
             Dim anchorIndex = source.IndexOf(anchor, StringComparison.OrdinalIgnoreCase)
             If anchorIndex < 0 Then Return False
 
@@ -568,8 +582,8 @@ Namespace HelloWorld
             Dim imageIndex = source.IndexOf(".Image = ", anchorIndex, StringComparison.Ordinal)
             If imageIndex < 0 OrElse imageIndex > blockEnd Then Return False
 
-            Dim lineEnd = source.IndexOf(Environment.NewLine, imageIndex, StringComparison.Ordinal)
-            If lineEnd < 0 Then Return False
+            Dim lineEnd = source.IndexOfAny(NewLineCharacters, imageIndex)
+            If lineEnd < 0 Then lineEnd = source.Length
 
             Dim existingLine = source.Substring(imageIndex, lineEnd - imageIndex)
             Dim replacement = ".Image = " & DashboardImageExpression(iconFileName) & ","
@@ -586,7 +600,7 @@ Namespace HelloWorld
             Dim dashboardPath = Path.Combine(workspaceRoot, fileName)
             If Not File.Exists(dashboardPath) Then Return False
             Dim source = File.ReadAllText(dashboardPath)
-            Return source.IndexOf("GeneratedPageActionKey_" & browsePageName, StringComparison.OrdinalIgnoreCase) >= 0 OrElse
+            Return source.IndexOf("ActionKey_" & browsePageName, StringComparison.OrdinalIgnoreCase) >= 0 OrElse
                    source.IndexOf("New " & browsePageName & "_B", StringComparison.OrdinalIgnoreCase) >= 0
         End Function
 
@@ -634,7 +648,8 @@ Namespace HelloWorld
             End If
 
             Dim source = File.ReadAllText(dashboardPath)
-            Dim actionKey = "Generated_" & browsePageName
+            Dim newLine = SourceNewLine(source)
+            Dim actionKey = "ActionKey_" & browsePageName   ' the control name, so the report names what the dashboard addresses
             If DashboardIconExists(workspaceRoot, menuCaller, browsePageName) Then
                 ' The button is already on the dashboard, so it is not rebuilt - that would move it
                 ' to another grid cell. Only the picture is brought up to date, in place, and only
@@ -652,14 +667,14 @@ Namespace HelloWorld
                 EnsureDashboardGridHeight(workspaceRoot, gridCell.Y, created, errors)
             End If
 
-            Dim buttonField = "        Private ReadOnly generated" & browsePageName & "Button As DashboardIconButton" & Environment.NewLine
-            Dim fieldAnchor = "        Private ReadOnly closeIconButton As Button" & Environment.NewLine
+            Dim buttonField = "        Private ReadOnly generated" & browsePageName & "Button As DashboardIconButton" & newLine
+            Dim fieldAnchor = "        Private ReadOnly closeIconButton As Button" & newLine
             source = InsertAfter(source, fieldAnchor, buttonField)
 
-            Dim construction = String.Join(Environment.NewLine, {
+            Dim construction = String.Join(newLine, {
                 "",
                 "            generated" & browsePageName & "Button = New DashboardIconButton() With {",
-                "                .Name = ""GeneratedPageActionKey_" & browsePageName & """,",
+                "                .Name = ""ActionKey_" & browsePageName & """,",
                 "                .Text = """ & DisplayPageCaption(browsePageName) & """,",
                 "                .Location = DashboardGridLayout.CellLocation(" & gridCell.Y.ToString(Globalization.CultureInfo.InvariantCulture) & ", " & gridCell.X.ToString(Globalization.CultureInfo.InvariantCulture) & "),",
                 "                .Size = New Size(150, 118),",
@@ -676,17 +691,17 @@ Namespace HelloWorld
                 "            generated" & browsePageName & "Button.FlatAppearance.BorderSize = 0",
                 "            generated" & browsePageName & "Button.FlatAppearance.MouseOverBackColor = Color.Transparent",
                 "            generated" & browsePageName & "Button.FlatAppearance.MouseDownBackColor = Color.Transparent"
-            }) & Environment.NewLine
+            }) & newLine
             source = InsertBefore(source, "            AddHandler Me.Load, AddressOf " & menuCaller.Trim() & "_Load", construction)
 
-            Dim handlers = String.Join(Environment.NewLine, {
+            Dim handlers = String.Join(newLine, {
                 "            AddHandler generated" & browsePageName & "Button.MouseEnter, AddressOf IconButton_MouseEnter",
                 "            AddHandler generated" & browsePageName & "Button.MouseLeave, AddressOf IconButton_MouseLeave",
                 "            AddHandler generated" & browsePageName & "Button.Click, AddressOf Generated" & browsePageName & "Button_Click",
                 ""
             })
             source = InsertBefore(source, "            AddHandler closeIconButton.Click, AddressOf CloseButton_Click", handlers)
-            source = InsertBefore(source, "            Me.Controls.Add(topStripLabel)", "            Me.Controls.Add(generated" & browsePageName & "Button)" & Environment.NewLine)
+            source = InsertBefore(source, "            Me.Controls.Add(topStripLabel)", "            Me.Controls.Add(generated" & browsePageName & "Button)" & newLine)
 
             Dim baselineAnchor = "            rolesButton.Top = DashboardGridLayout.CellTop(1)"
             Dim baselineIndex = source.IndexOf(baselineAnchor, StringComparison.Ordinal)
@@ -694,14 +709,14 @@ Namespace HelloWorld
                 errors.Add(dashboardFileName & " row baseline could not be found for icon generation.")
                 Return
             End If
-            Dim baselineLineEnd = source.IndexOf(Environment.NewLine, baselineIndex, StringComparison.Ordinal)
+            Dim baselineLineEnd = source.IndexOf(newLine, baselineIndex, StringComparison.Ordinal)
             If baselineLineEnd < 0 Then baselineLineEnd = source.Length
             source = source.Insert(baselineLineEnd,
-                                   Environment.NewLine &
-                                   "            generated" & browsePageName & "Button.Left = DashboardGridLayout.CellLeft(" & gridCell.X.ToString(Globalization.CultureInfo.InvariantCulture) & ")" & Environment.NewLine &
+                                   newLine &
+                                   "            generated" & browsePageName & "Button.Left = DashboardGridLayout.CellLeft(" & gridCell.X.ToString(Globalization.CultureInfo.InvariantCulture) & ")" & newLine &
                                    "            generated" & browsePageName & "Button.Top = DashboardGridLayout.CellTop(" & gridCell.Y.ToString(Globalization.CultureInfo.InvariantCulture) & ")")
 
-            Dim clickHandler = String.Join(Environment.NewLine, {
+            Dim clickHandler = String.Join(newLine, {
                 "",
                 "        Private Sub Generated" & browsePageName & "Button_Click(sender As Object, e As EventArgs)",
                 "            ResetIconButtonVisuals()",
@@ -1076,7 +1091,7 @@ Namespace HelloWorld
             output.AppendLine("            Dim values As New Dictionary(Of String, Object)(StringComparer.OrdinalIgnoreCase)")
             For Each field In fields
                 If IsLookupField(field, lookupFields) Then
-                    output.AppendLine("            values(""" & EscapeLiteral(field) & """) = GetComboSelectedIdOrZero(" & LookupControlVariable(field) & ")")
+                    output.AppendLine("            values(""" & EscapeLiteral(field) & """) = GetComboSelectedIdOrNull(" & LookupControlVariable(field) & ")")
                 Else
                     output.AppendLine("            values(""" & EscapeLiteral(field) & """) = " & ControlVariable(field) & ".Text")
                 End If

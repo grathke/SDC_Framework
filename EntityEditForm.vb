@@ -43,7 +43,7 @@ Namespace HelloWorld
             Me.ClientSize = New Size(500, 500)
 
             Dim y = 20
-            idTextBox = AddField("ID", y, True, False)
+            idTextBox = AddField("EntityID", y, True, False)
             y += 42
             registrationIdTextBox = AddField("RegistrationID", y, False, False)
             y += 42

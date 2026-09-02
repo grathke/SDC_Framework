@@ -144,6 +144,20 @@ Key areas:
 - `_B` pages inherit `FW_Base_B` and `_U` pages inherit `FW_Base_U`. A page that does not is a
   documented exception rather than a variant: state the contract it cannot satisfy and add a
   validation check for it. `Roles_U` is an approved exception.
+- **Primary key: `<Stem>ID`** — the table name past `FW_`, singular, no underscore, `ID` uppercase.
+  `FW_Gender` takes `GenderID`, `FW_Entity` takes `EntityID`. Not a bare `ID`: that is the one name
+  that cannot survive a join, since two of them collide in a single result set, which is why browse
+  SQL has always had to alias the key `AS PK`.
+- **Foreign key: exactly the primary key name it points at.** A join then reads
+  `E.GenderID = G.GenderID`, and a column identifies its own target — which is what lets a
+  relationship be suggested where none has been declared.
+- **Two references to the same target take a role prefix**, `<Role><TargetPK>`:
+  `AssignedManagerUserID`, `OwnerUserID`, `ReporterUserID`. Strip the role and the target is still
+  derivable, so the rule survives the case that usually breaks these schemes.
+- These apply to **new** tables. Existing tables keep the names they have; they work because their
+  relationships are declared in the database rather than inferred from a name. Rename one only when
+  it is being reworked anyway — a primary key name reaches every SQL statement, model property,
+  `TextBox_<Field>` control name, and the `FW_RoleFields.FileLink` rows keyed `Table.Field`.
 - Display text is derived from names by `DisplayNameFormatter.ToDisplayName`. Do not add a second
   formatter; extend the acronym list in `DisplayNameFormatter.vb` instead.
 - Control naming, which the framework depends on to map controls to columns: `Label_<FieldName>`,
@@ -156,6 +170,11 @@ Known exceptions in the current codebase, to be resolved rather than copied:
 - Browse-only pages with no `_U` partner: `FW_AuditTrail_B`, `FW_HD_Admin_B`,
   `FW_HD_AdminDashboard_B`, `FW_UserAccessDiagnostic_B`, `FW_UserAccessExplanation_B`.
 - `FW_HD_Issues_B` and `FW_HD_Issues_Support_B` share a single `FW_HD_Issues_U`.
+- Primary keys follow five conventions at once: bare `ID` (`FW_Entity`, `FW_Gender`), `<Table>ID`
+  (`AuditTrailID`), `<Table>_ID` (`BusinessRuleType_ID`), all-caps
+  (`APPLICATION_SETTINGS_DASHBOARDID`), and names unrelated to their table (`Attachment` holds
+  `DocumentID`, `FW_AuditTrail` holds `UpdateAuditLogID`). `FW_Users.UserId` also spells `Id` in
+  lower case where everything else uses `ID`.
 
 ## Build, run, validate
 

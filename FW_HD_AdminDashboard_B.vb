@@ -225,7 +225,7 @@ Namespace HelloWorld
             If issue IsNot Nothing Then Return issue.RegistrationID
 
             For Each registration As DataRow In DataAccess.GetAllRegistrations().Rows
-                Dim registrationId = Convert.ToInt32(registration("ID"), CultureInfo.InvariantCulture)
+                Dim registrationId = Convert.ToInt32(registration("RegistrationID"), CultureInfo.InvariantCulture)
                 issue = HelpDeskDataAccess.GetIssueById(issueId, registrationId)
                 If issue IsNot Nothing Then Return issue.RegistrationID
             Next

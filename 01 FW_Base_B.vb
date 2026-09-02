@@ -99,6 +99,29 @@ Namespace HelloWorld
         Private Shared ReadOnly ColumnsUsageHintKey As String = "FW_Base_B.ColumnsUsage"
         Private Const EmptyQbeResultLimit As Integer = 10
 
+        ''' <summary>
+        ''' How hard a QBE status message argues for attention.
+        '''
+        ''' Passing and Attention both describe something that just happened and is over once read,
+        ''' so their flashing ends. Critical describes a condition that is still true - and keeps
+        ''' flashing for as long as it stays true, because a warning that stops is a warning that
+        ''' gets lived with.
+        ''' </summary>
+        Private Enum BrowseStatusSeverity
+            Passing = 0
+            Attention = 1
+            Critical = 2
+        End Enum
+
+        Private retrievalStatusSeverity As BrowseStatusSeverity = BrowseStatusSeverity.Passing
+        Private usingDefaultSql As Boolean
+
+        ' Two lines at the status label's height, and it shares that space with whatever else the
+        ' QBE reports - so it says the whole thing in as few words as carry it. "No SQL saved"
+        ' already implies the stand-in is not saved either; saying so twice cost the last line.
+        Private Const DefaultSqlNoticeText As String =
+            "NO SQL SAVED FOR THIS PAGE - SHOWING EVERY COLUMN"
+
         Private Function GetEmptyQbeRowLimit() As Integer
             Dim session = SessionState.Current
             If session.HasValue Then
@@ -1035,6 +1058,39 @@ Namespace HelloWorld
             applySqlButton.Enabled = True
 
             LayoutQbeSection()
+            ApplyNoSqlLockdown()
+        End Sub
+
+        ''' <summary>
+        ''' While the page runs on a stand-in query, Close is the only button that does anything -
+        ''' whoever is looking at it and whatever their role allows.
+        '''
+        ''' The rows are there to be read, and that is the whole of what the page offers: nobody
+        ''' should be filing work through a page nobody has finished, and a layout or a saved QBE
+        ''' recorded now would be keyed to columns that vanish the moment real SQL is written.
+        '''
+        ''' Called at the end of the routines that set button state rather than once at startup,
+        ''' because those routines run again on every refresh and would otherwise switch the
+        ''' buttons back on behind it.
+        ''' </summary>
+        Private Sub ApplyNoSqlLockdown()
+            If Not usingDefaultSql Then Return
+
+            Dim buttons As New List(Of Button)()
+            CollectButtons(Me, buttons)
+            For Each button In buttons
+                button.Enabled = button Is closeButton
+            Next
+        End Sub
+
+        Private Shared Sub CollectButtons(parent As Control, found As List(Of Button))
+            If parent Is Nothing OrElse parent.Controls Is Nothing Then Return
+
+            For Each child As Control In parent.Controls
+                Dim button = TryCast(child, Button)
+                If button IsNot Nothing Then found.Add(button)
+                CollectButtons(child, found)
+            Next
         End Sub
 
         Private Sub LoadSqlFromRoleTable()
@@ -1070,7 +1126,11 @@ Namespace HelloWorld
                     Dim parentRoleTableId As Integer? = If(copiedExistingTableSql,
                                                            DataAccess.GetRoleTableIdByTable(registrationId, fallbackTableName),
                                                            Nothing)
-                    If String.IsNullOrWhiteSpace(fallbackSql) Then
+                    ' Built here, kept here. Nothing writes this query to FW_RoleTables, so the row
+                    ' never claims an answer nobody gave: a page's SQL is written by hand or by the
+                    ' page generator, and anything else is a stand-in that says so every time.
+                    Dim usingUnsavedDefaultSql = String.IsNullOrWhiteSpace(fallbackSql)
+                    If usingUnsavedDefaultSql Then
                         fallbackSql = BuildDefaultSqlForBrowse(registrationId)
                     End If
                     sqlTextBox.Text = fallbackSql
@@ -1080,7 +1140,9 @@ Namespace HelloWorld
                     sqlLoadedFromRoleTable = False
 
                     Dim fallbackUserId = If(activeSession.Value.UserID > 0, activeSession.Value.UserID, 0)
-                    If Not String.IsNullOrWhiteSpace(fallbackTableName) AndAlso
+                    If usingUnsavedDefaultSql Then
+                        ShowUnsavedDefaultSqlNotice(pageName, fallbackTableName)
+                    ElseIf Not String.IsNullOrWhiteSpace(fallbackTableName) AndAlso
                        Not String.IsNullOrWhiteSpace(fallbackSql) Then
                         Dim persisted = DataAccess.UpsertRoleTableRecord(registrationId,
                                                                          pageName,
@@ -1091,23 +1153,24 @@ Namespace HelloWorld
                                                                          fallbackSql,
                                                                          fallbackUserId)
                         If persisted AndAlso DataAccess.CheckIfRoleTableRecordExists(registrationId, pageName) Then
+                            ' Only the copied case reaches here now, so the message says so plainly
+                            ' rather than choosing between two stories.
                             MessageBox.Show(Me,
-                                                          ("FW_ROLETABLES RECORD CREATED FOR " & pageName & ". " &
-                                            If(copiedExistingTableSql,
-                                                              "SQL WAS COPIED FROM PARENT RECORD PK " & If(parentRoleTableId.HasValue, parentRoleTableId.Value.ToString(), "UNKNOWN") & ".",
-                                                              "DEFAULT SQL WAS CREATED FOR " & fallbackTableName & ".")).ToUpperInvariant(),
-                                                          "BROWSE PAGE REGISTERED",
+                                            ("FW_ROLETABLES RECORD CREATED FOR " & pageName &
+                                             ". SQL WAS COPIED FROM PARENT RECORD PK " &
+                                             If(parentRoleTableId.HasValue, parentRoleTableId.Value.ToString(), "UNKNOWN") & ".").ToUpperInvariant(),
+                                            "BROWSE PAGE REGISTERED",
                                             MessageBoxButtons.OK,
                                             MessageBoxIcon.Information)
+
+                            DataAccess.LogFallbackUsage("SQL_Fallback_CopiedFromTable",
+                                                        "No role SQL for page; copied the SQL registered against " & fallbackTableName & ".",
+                                                        ResolveBrowsePageName(),
+                                                        registrationId)
                         Else
                             Throw New InvalidOperationException("FW_RoleTables did not create a record for " & pageName & ".")
                         End If
                     End If
-
-                    DataAccess.LogFallbackUsage("SQL_Fallback_DefaultBuilder",
-                                                "No role SQL for page; persisted BuildDefaultSqlForBrowse result for editing.",
-                                                ResolveBrowsePageName(),
-                                                registrationId)
                 End If
             Catch ex As Exception
                 DataAccess.LogFallbackUsage("SQL_Fallback_LoadSqlException",
@@ -1117,17 +1180,65 @@ Namespace HelloWorld
             End Try
         End Sub
 
+        ''' <summary>
+        ''' Says the page is running on a stand-in query, every time it opens, until someone saves
+        ''' one. Deliberately repetitive: a warning shown once is a warning forgotten, and the whole
+        ''' point of not saving the default is that its absence stays visible.
+        ''' </summary>
+        Private Sub ShowUnsavedDefaultSqlNotice(pageName As String, tableName As String)
+            ' No dialog. One is dismissed on the way past and then the page looks normal for the
+            ' rest of the session; the QBE line goes on flashing until the SQL is written.
+            usingDefaultSql = True
+            If retrievalStatusLabel IsNot Nothing Then SetRetrievalStatus(String.Empty, False)
+            ApplyNoSqlLockdown()
+
+            DataAccess.LogFallbackUsage("SQL_Fallback_UnsavedDefault",
+                                        "No role SQL for page; showed every column of " & tableName & " without saving the query.",
+                                        pageName)
+        End Sub
+
+        ''' <summary>
+        ''' A query to look at the table with, built in memory and never saved. A page reaches this
+        ''' only when nobody has written its SQL - so it shows every column, which is honest about
+        ''' being a stand-in rather than a considered answer.
+        '''
+        ''' The key is aliased AS PK because the browse framework resolves the record key by that
+        ''' name and no other. Without it the grid lists rows that Modify, Read and Delete cannot
+        ''' act on - a page that looks like it works and does not. The key appears twice as a
+        ''' result, which costs nothing: PK is hidden from the grid and from QBE.
+        '''
+        ''' The registration predicate goes in only where the column exists, since a table without
+        ''' one is not scoped by registration at all.
+        ''' </summary>
         Private Function BuildDefaultSqlForBrowse(registrationId As Integer) As String
             Dim tableName = ResolveCurrentRoleFieldTableName()
             If String.IsNullOrWhiteSpace(tableName) Then
                 Return String.Empty
             End If
 
-            If tableName.Contains(".") Then
-                Return "SELECT * FROM " & tableName
+            Dim qualifiedName = If(tableName.Contains("."), tableName, "dbo." & tableName)
+            Dim sql As New StringBuilder()
+
+            ' The session's no-QBE limit, applied in the query rather than to the rows it returns.
+            ' Every other page's SQL was written knowing what it was against; this one is pointed at
+            ' a table nobody has vetted, so it does not fetch the whole of it to then show a corner.
+            Dim rowLimit = GetEmptyQbeRowLimit()
+            Dim topClause = If(rowLimit > 0, "TOP " & rowLimit.ToString(Globalization.CultureInfo.InvariantCulture) & " ", String.Empty)
+
+            Dim primaryKey = DataAccess.GetPrimaryKeyFieldName(tableName)
+            If String.IsNullOrWhiteSpace(primaryKey) Then
+                ' No key to alias. The grid still fills; the maintenance buttons will report the
+                ' missing key themselves rather than being told a wrong one.
+                sql.Append("SELECT ").Append(topClause).Append("t.* FROM ").Append(qualifiedName).Append(" AS t")
+            Else
+                sql.Append("SELECT ").Append(topClause).Append("t.[").Append(primaryKey).Append("] AS PK, t.* FROM ").Append(qualifiedName).Append(" AS t")
             End If
 
-            Return "SELECT * FROM dbo." & tableName
+            If DataAccess.TableHasColumn(tableName, "RegistrationID") Then
+                sql.Append(" WHERE t.[RegistrationID] = @RegistrationID")
+            End If
+
+            Return sql.ToString()
         End Function
 
         Protected Overridable Function ResolveBrowsePageName() As String
@@ -2385,6 +2496,8 @@ Namespace HelloWorld
             If Not hasManageableColumns Then
                 SetColumnsPanelVisible(False)
             End If
+
+            ApplyNoSqlLockdown()
         End Sub
 
         Private Function NormalizeLayoutName(layoutName As String) As String
@@ -3682,7 +3795,19 @@ Namespace HelloWorld
         End Sub
 
         Private Sub SetRetrievalStatus(message As String, isError As Boolean, Optional flashRed As Boolean = False)
-            retrievalStatusLabel.Text = If(message, String.Empty).Trim().ToUpperInvariant()
+            Dim text = If(message, String.Empty).Trim()
+            Dim severity = If(flashRed, BrowseStatusSeverity.Attention, BrowseStatusSeverity.Passing)
+
+            ' A page running on a stand-in query says so above everything else the QBE reports, and
+            ' keeps saying it: prepended rather than substituted, so the record count still gets
+            ' through, and reapplied on every status change so no later message can bury it.
+            If usingDefaultSql Then
+                text = If(text = String.Empty, DefaultSqlNoticeText, DefaultSqlNoticeText & "   -   " & text)
+                severity = BrowseStatusSeverity.Critical
+            End If
+
+            retrievalStatusSeverity = severity
+            retrievalStatusLabel.Text = text.ToUpperInvariant()
             retrievalStatusLabel.ForeColor = Color.Red
             retrievalStatusLabel.Visible = retrievalStatusLabel.Text <> String.Empty
             retrievalStatusFlashRed = flashRed
@@ -3695,6 +3820,13 @@ Namespace HelloWorld
         End Sub
 
         Private Sub ClearRetrievalStatus()
+            ' Clearing the filters clears the status, but not the warning: the query is still a
+            ' stand-in, so the notice is put straight back rather than dismissed by a side effect.
+            If usingDefaultSql Then
+                SetRetrievalStatus(String.Empty, False)
+                Return
+            End If
+
             retrievalStatusFlashTimer.Stop()
             retrievalStatusLabel.Text = String.Empty
             retrievalStatusLabel.Visible = False
@@ -3703,6 +3835,17 @@ Namespace HelloWorld
         Private retrievalStatusFlashStep As Integer
 
         Private Sub RetrievalStatusFlashTimer_Tick(sender As Object, e As EventArgs)
+            ' A critical status does not settle. Everything else the QBE reports is about what just
+            ' happened and is over once read - "retrieved 12 records" earns a flash and then stops
+            ' asking for attention. A critical one describes a condition that is still true, and
+            ' goes on flashing for exactly as long as it stays true.
+            If retrievalStatusSeverity = BrowseStatusSeverity.Critical Then
+                retrievalStatusLabel.ForeColor = Color.Red
+                retrievalStatusLabel.Visible = Not retrievalStatusLabel.Visible
+                retrievalStatusFlashTimer.Interval = If(retrievalStatusLabel.Visible, 750, 250)
+                Return
+            End If
+
             Select Case retrievalStatusFlashStep
                 Case 0
                     retrievalStatusLabel.ForeColor = Color.Red
@@ -3872,6 +4015,7 @@ Namespace HelloWorld
             showNormalButton.Enabled = showSplitDeletedActions
 
             ApplyCrudVisibilityForCurrentState()
+            ApplyNoSqlLockdown()
         End Sub
 
         Private Sub ApplyCrudVisibilityForCurrentState()

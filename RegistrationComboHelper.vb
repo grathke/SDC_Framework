@@ -26,7 +26,7 @@ Namespace HelloWorld
             If selectedRegistrationId > 0 Then
                 For Each row As DataRow In registrations.Rows
                     Dim rowId As Integer = 0
-                    If Integer.TryParse(Convert.ToString(row("ID"), CultureInfo.InvariantCulture), NumberStyles.Integer, CultureInfo.InvariantCulture, rowId) AndAlso
+                    If Integer.TryParse(Convert.ToString(row("RegistrationID"), CultureInfo.InvariantCulture), NumberStyles.Integer, CultureInfo.InvariantCulture, rowId) AndAlso
                        rowId = selectedRegistrationId Then
                         hasSelectedRegistration = True
                         Exit For
@@ -35,7 +35,7 @@ Namespace HelloWorld
 
                 If Not hasSelectedRegistration Then
                     Dim selectedRow = registrations.NewRow()
-                    selectedRow("ID") = selectedRegistrationId
+                    selectedRow("RegistrationID") = selectedRegistrationId
                     selectedRow("RegName") = "Registration " & selectedRegistrationId.ToString(CultureInfo.InvariantCulture)
                     If registrations.Columns.Contains("RegistrationType") Then
                         selectedRow("RegistrationType") = String.Empty
@@ -46,14 +46,14 @@ Namespace HelloWorld
 
             If includePlaceholder Then
                 Dim placeholder = registrations.NewRow()
-                placeholder("ID") = 0
+                placeholder("RegistrationID") = 0
                 placeholder("RegName") = placeholderText
                 registrations.Rows.InsertAt(placeholder, 0)
             End If
 
             combo.DataSource = Nothing
             combo.DisplayMember = "RegName"
-            combo.ValueMember = "ID"
+            combo.ValueMember = "RegistrationID"
             combo.DataSource = registrations
 
             If selectedRegistrationId > 0 Then

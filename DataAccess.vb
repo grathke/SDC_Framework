@@ -141,7 +141,7 @@ Namespace HelloWorld
                         "ISNULL(LTRIM(RTRIM(BTN_Read_Caption)), '') AS BTN_Read_Caption, " &
                         "ISNULL(LTRIM(RTRIM(BTN_Update_Caption)), '') AS BTN_Update_Caption, " &
                         "ISNULL(LTRIM(RTRIM(BTN_Delete_Caption)), '') AS BTN_Delete_Caption " &
-                        "FROM dbo.FW_Registration WHERE ID = @RegID", conn)
+                        "FROM dbo.FW_Registration WHERE RegistrationID = @RegID", conn)
                         cmd.Parameters.AddWithValue("@RegID", registrationId)
 
                         Using reader = cmd.ExecuteReader()
@@ -652,7 +652,7 @@ Namespace HelloWorld
 
                 ' DEFAULT SQL PATH: Standard query with optional QBE filters
                 Dim sql As New StringBuilder()
-                sql.Append("SELECT ID, RegistrationID, FirstName, MiddleName, LastName, FirstLast, LastFirst, EMail1, Phone1, IsActive, AssignedManagerID, GenderID, DeletedFlag, UpdatedOn ")
+                sql.Append("SELECT EntityID, RegistrationID, FirstName, MiddleName, LastName, FirstLast, LastFirst, EMail1, Phone1, IsActive, AssignedManagerID, GenderID, DeletedFlag, UpdatedOn ")
                 sql.Append("FROM dbo.FW_Entity WHERE RegistrationID = @RegistrationID")
 
                 Dim parsedFilters As New List(Of Tuple(Of String, QbeComparisonOperator, String))()
@@ -688,10 +688,10 @@ Namespace HelloWorld
                     Dim value = parsedFilter.Item3
 
                     Select Case fieldName
-                        Case "ID"
+                        Case "EntityID"
                             Dim parsed As Integer
                             If Integer.TryParse(value, parsed) Then
-                                sql.Append(" AND ID").Append(" ").Append(GetSqlOperator(comparisonOperator, QbeFieldKind.NumericField)).Append(" @").Append(fieldName)
+                                sql.Append(" AND EntityID").Append(" ").Append(GetSqlOperator(comparisonOperator, QbeFieldKind.NumericField)).Append(" @").Append(fieldName)
                             End If
                         Case "AssignedManagerID"
                             Dim parsed As Integer
@@ -708,7 +708,7 @@ Namespace HelloWorld
                     End Select
                 Next
 
-                sql.Append(" ORDER BY ID")
+                sql.Append(" ORDER BY EntityID")
 
                 ' Execute default query with filters and parameters
                 Using cmd As New SqlCommand(sql.ToString(), conn)
@@ -720,7 +720,7 @@ Namespace HelloWorld
                         Dim value = parsedFilter.Item3
 
                         Select Case fieldName
-                            Case "ID"
+                            Case "EntityID"
                                 Dim parsed As Integer
                                 If Integer.TryParse(value, parsed) Then
                                     cmd.Parameters.AddWithValue("@" & fieldName, parsed)
@@ -2040,8 +2040,8 @@ Namespace HelloWorld
             Using conn As New SqlConnection(ConnectionString)
                 conn.Open()
                 Using cmd As New SqlCommand(
-                    "SELECT ID, RegistrationID, AssignedManagerID, GenderID, FirstName, MiddleName, LastName, FirstLast, LastFirst, EMail1, Phone1, IsActive, RowVersion " &
-                    "FROM dbo.FW_Entity WHERE ID = @ID", conn)
+                    "SELECT EntityID, RegistrationID, AssignedManagerID, GenderID, FirstName, MiddleName, LastName, FirstLast, LastFirst, EMail1, Phone1, IsActive, RowVersion " &
+                    "FROM dbo.FW_Entity WHERE EntityID = @ID", conn)
                     cmd.Parameters.AddWithValue("@ID", entityId)
                     Using reader = cmd.ExecuteReader()
                         If Not reader.Read() Then
@@ -2054,7 +2054,7 @@ Namespace HelloWorld
                         End If
 
                         Return New EntityRecord With {
-                            .ID = Convert.ToInt32(reader("ID"), CultureInfo.InvariantCulture),
+                            .ID = Convert.ToInt32(reader("EntityID"), CultureInfo.InvariantCulture),
                             .RegistrationID = Convert.ToInt32(reader("RegistrationID"), CultureInfo.InvariantCulture),
                             .AssignedManagerID = Convert.ToInt32(reader("AssignedManagerID"), CultureInfo.InvariantCulture),
                             .GenderID = genderId,
@@ -2074,7 +2074,10 @@ Namespace HelloWorld
         End Function
 
         Public Shared Function CreateEntity(record As EntityRecord, currentUserId As Integer) As Integer
-            Dim assignedManager = If(record.AssignedManagerID > 0, record.AssignedManagerID, currentUserId)
+            ' No manager chosen writes NULL, the same as gender below. It used to fall back to the
+            ' user doing the creating, which assigned a manager the page never showed and nobody
+            ' asked for - and is now refused outright by the foreign key on the column.
+            Dim assignedManager As Object = If(record.AssignedManagerID > 0, CType(record.AssignedManagerID, Object), DBNull.Value)
             Dim genderIdValue As Object = If(record.GenderID > 0, CType(record.GenderID, Object), DBNull.Value)
 
             Using conn As New SqlConnection(ConnectionString)
@@ -2122,11 +2125,11 @@ Namespace HelloWorld
                     "IsActive = @IsActive, " &
                     "UpdatedBy = @CurrentUserId, " &
                     "UpdatedOn = GETDATE() " &
-                    "WHERE ID = @ID AND RowVersion = @OriginalRowVersion", conn)
+                    "WHERE EntityID = @ID AND RowVersion = @OriginalRowVersion", conn)
 
                     cmd.Parameters.AddWithValue("@ID", record.ID)
                     cmd.Parameters.AddWithValue("@RegistrationID", record.RegistrationID)
-                    cmd.Parameters.AddWithValue("@AssignedManager", record.AssignedManagerID)
+                    cmd.Parameters.AddWithValue("@AssignedManager", If(record.AssignedManagerID > 0, CType(record.AssignedManagerID, Object), DBNull.Value))
                     cmd.Parameters.AddWithValue("@GenderID", If(record.GenderID > 0, CType(record.GenderID, Object), DBNull.Value))
                     cmd.Parameters.AddWithValue("@FirstName", DbValue(record.FirstName))
                     cmd.Parameters.AddWithValue("@MiddleName", DbValue(record.MiddleName))
@@ -2157,7 +2160,7 @@ Namespace HelloWorld
                     Using cmd As New SqlCommand(
                         "UPDATE dbo.FW_Entity " &
                         "SET IsActive = 0, DeletedFlag = 1, DeletedBy = @UpdatedBy, DeletedOn = SYSUTCDATETIME(), UpdatedBy = @UpdatedBy, UpdatedOn = GETDATE() " &
-                        "WHERE ID = @ID", conn)
+                        "WHERE EntityID = @ID", conn)
                         cmd.Parameters.AddWithValue("@ID", entityId)
                         cmd.Parameters.AddWithValue("@UpdatedBy", If(updatedBy > 0, CType(updatedBy, Object), DBNull.Value))
                         cmd.ExecuteNonQuery()
@@ -2175,7 +2178,7 @@ Namespace HelloWorld
                     Return
                 End If
 
-                Using cmd As New SqlCommand("DELETE FROM dbo.FW_Entity WHERE ID = @ID", conn)
+                Using cmd As New SqlCommand("DELETE FROM dbo.FW_Entity WHERE EntityID = @ID", conn)
                     cmd.Parameters.AddWithValue("@ID", entityId)
                     cmd.ExecuteNonQuery()
                 End Using
@@ -2247,7 +2250,7 @@ Namespace HelloWorld
                     Using cmd As New SqlCommand(
                         "UPDATE dbo.FW_Entity " &
                         "SET IsActive = 1, DeletedFlag = 0, DeletedBy = NULL, DeletedOn = NULL, UpdatedBy = @UpdatedBy, UpdatedOn = GETDATE() " &
-                        "WHERE ID = @ID", conn)
+                        "WHERE EntityID = @ID", conn)
                         cmd.Parameters.AddWithValue("@ID", entityId)
                         cmd.Parameters.AddWithValue("@UpdatedBy", If(updatedBy > 0, CType(updatedBy, Object), DBNull.Value))
                         cmd.ExecuteNonQuery()
@@ -2266,7 +2269,7 @@ Namespace HelloWorld
                 End If
 
                 Using cmd As New SqlCommand(
-                    "UPDATE dbo.FW_Entity SET IsActive = 1, UpdatedBy = @UpdatedBy, UpdatedOn = GETDATE() WHERE ID = @ID", conn)
+                    "UPDATE dbo.FW_Entity SET IsActive = 1, UpdatedBy = @UpdatedBy, UpdatedOn = GETDATE() WHERE EntityID = @ID", conn)
                     cmd.Parameters.AddWithValue("@ID", entityId)
                     cmd.Parameters.AddWithValue("@UpdatedBy", If(updatedBy > 0, CType(updatedBy, Object), DBNull.Value))
                     cmd.ExecuteNonQuery()
@@ -2364,7 +2367,7 @@ Namespace HelloWorld
                     Using ctxCmd As New SqlCommand(
                         "SELECT TOP 1 cu.RegistrationID, ISNULL(cu.RegName, '') AS RegistrationName, r.LicenseExpiration_Date AS LicenseValue " &
                         "FROM dbo.vw_FW_CurrentUser cu " &
-                        "LEFT JOIN dbo.FW_Registration r ON r.ID = cu.RegistrationID " &
+                        "LEFT JOIN dbo.FW_Registration r ON r.RegistrationID = cu.RegistrationID " &
                         "WHERE cu.UserID = @UserID", conn)
                         ctxCmd.Parameters.AddWithValue("@UserID", userId)
 
@@ -3115,7 +3118,7 @@ Namespace HelloWorld
             Using conn As New SqlConnection(ConnectionString)
                 conn.Open()
                 Using cmd As New SqlCommand(
-                    "SELECT TOP 1 ID, RegName, Smarty_AuthID, Smarty_AuthToken, Smarty_EmbeddedKey, ISNULL(Smarty_UseEmbeddedKey, 0) AS Smarty_UseEmbeddedKey, ISNULL(LTRIM(RTRIM(BusinessRuleType)), '') AS BusinessRuleType, RegTypeId, Address1, Address2, City, State, Zip, MainFax, MainPhone, MainEMail, WebLandingPage, " &
+                    "SELECT TOP 1 RegistrationID, RegName, Smarty_AuthID, Smarty_AuthToken, Smarty_EmbeddedKey, ISNULL(Smarty_UseEmbeddedKey, 0) AS Smarty_UseEmbeddedKey, ISNULL(LTRIM(RTRIM(BusinessRuleType)), '') AS BusinessRuleType, RegTypeId, Address1, Address2, City, State, Zip, MainFax, MainPhone, MainEMail, WebLandingPage, " &
                     "ISNULL(DisplayDashboardOnStartUp, 0) AS DisplayDashboardOnStartUp, " &
                     "ISNULL(AllowMessaging, 0) AS AllowMessaging, " &
                     "ISNULL(AllowMultipleRoles, 0) AS AllowMultipleRoles, " &
@@ -3127,7 +3130,7 @@ Namespace HelloWorld
                     "ISNULL(HDUserSupport, 0) AS HDUserSupport, " &
                     "ISNULL(HDApplicationSupport, 0) AS HDApplicationSupport, " &
                     "ISNULL(IsActive, 1) AS IsActive, RowVersion " &
-                    "FROM dbo.FW_Registration WHERE ID = @ID", conn)
+                    "FROM dbo.FW_Registration WHERE RegistrationID = @ID", conn)
 
                     cmd.Parameters.AddWithValue("@ID", registrationId)
 
@@ -3137,7 +3140,7 @@ Namespace HelloWorld
                         End If
 
                         Return New RegistrationRecord With {
-                            .ID = Convert.ToInt32(reader("ID"), CultureInfo.InvariantCulture),
+                            .ID = Convert.ToInt32(reader("RegistrationID"), CultureInfo.InvariantCulture),
                             .RegName = SafeString(reader("RegName")),
                             .Smarty_AuthID = SafeString(reader("Smarty_AuthID")),
                             .Smarty_AuthToken = SafeString(reader("Smarty_AuthToken")),
@@ -3181,7 +3184,7 @@ Namespace HelloWorld
 
             Using conn As New SqlConnection(ConnectionString)
                 conn.Open()
-                Using cmd As New SqlCommand("SELECT TOP 1 ISNULL(HDUserSupport, 0), ISNULL(HDApplicationSupport, 0) FROM dbo.FW_Registration WHERE ID = @ID", conn)
+                Using cmd As New SqlCommand("SELECT TOP 1 ISNULL(HDUserSupport, 0), ISNULL(HDApplicationSupport, 0) FROM dbo.FW_Registration WHERE RegistrationID = @ID", conn)
                     cmd.Parameters.AddWithValue("@ID", registrationId)
                     Using reader = cmd.ExecuteReader()
                         If Not reader.Read() Then Return False
@@ -3273,7 +3276,7 @@ Namespace HelloWorld
                     "IsActive = @IsActive, " &
                     "UpdatedBy = @CurrentUserId, " &
                     "UpdatedOn = GETDATE() " &
-                    "WHERE ID = @ID AND RowVersion = @OriginalRowVersion", conn)
+                    "WHERE RegistrationID = @ID AND RowVersion = @OriginalRowVersion", conn)
 
                     cmd.Parameters.AddWithValue("@ID", record.ID)
                     cmd.Parameters.AddWithValue("@RegName", DbValue(record.RegName))
@@ -3316,7 +3319,7 @@ Namespace HelloWorld
             Using conn As New SqlConnection(ConnectionString)
                 conn.Open()
                 Using cmd As New SqlCommand(
-                    "SELECT LicenseExpiration_Date AS LicenseValue FROM dbo.FW_Registration WHERE ID = @ID", conn)
+                    "SELECT LicenseExpiration_Date AS LicenseValue FROM dbo.FW_Registration WHERE RegistrationID = @ID", conn)
                     cmd.Parameters.AddWithValue("@ID", registrationId)
                     Dim result = cmd.ExecuteScalar()
                     If result IsNot Nothing AndAlso Not IsDBNull(result) Then
@@ -3333,7 +3336,7 @@ Namespace HelloWorld
             Using conn As New SqlConnection(ConnectionString)
                 conn.Open()
                 Using cmd As New SqlCommand(
-                    "SELECT r.ID, r.RegName, ISNULL(rt.RegTypeName, '') AS RegistrationType " &
+                    "SELECT r.RegistrationID, r.RegName, ISNULL(rt.RegTypeName, '') AS RegistrationType " &
                     "FROM dbo.FW_Registration r " &
                     "LEFT JOIN dbo.FW_RegistrationType rt ON rt.RegTypeID = r.RegTypeID " &
                     "ORDER BY r.RegName", conn)
@@ -3360,7 +3363,7 @@ Namespace HelloWorld
                 Using conn As New SqlConnection(ConnectionString)
                     conn.Open()
                     Using cmd As New SqlCommand(
-                        "SELECT TOP 1 ISNULL(LTRIM(RTRIM(BusinessRuleType)), '') FROM dbo.FW_Registration WHERE ID = @ID", conn)
+                        "SELECT TOP 1 ISNULL(LTRIM(RTRIM(BusinessRuleType)), '') FROM dbo.FW_Registration WHERE RegistrationID = @ID", conn)
                         cmd.Parameters.AddWithValue("@ID", registrationId)
                         Dim result = cmd.ExecuteScalar()
                         Dim rawValue = If(result Is Nothing OrElse IsDBNull(result), String.Empty, result.ToString())
@@ -3389,7 +3392,7 @@ Namespace HelloWorld
                     Using cmd As New SqlCommand(
                         "UPDATE dbo.FW_Registration " &
                         "SET BusinessRuleType = @BusinessRuleType, UpdatedBy = @UpdatedBy, UpdatedOn = GETDATE() " &
-                        "WHERE ID = @ID", conn)
+                        "WHERE RegistrationID = @ID", conn)
                         cmd.Parameters.AddWithValue("@BusinessRuleType", normalized)
                         cmd.Parameters.AddWithValue("@UpdatedBy", updatedBy)
                         cmd.Parameters.AddWithValue("@ID", registrationId)
@@ -3778,7 +3781,7 @@ Namespace HelloWorld
                     "ISNULL(r.RegName, '') AS RegistrationDisplay " &
                     "FROM dbo.FW_AuditTrail a " &
                     "LEFT JOIN dbo.FW_Users u ON u.UserID = a.UserID " &
-                    "LEFT JOIN dbo.FW_Registration r ON r.ID = a.RegistrationID " &
+                    "LEFT JOIN dbo.FW_Registration r ON r.RegistrationID = a.RegistrationID " &
                     "WHERE a.Phase = 'AfterSave'"
 
                 If supportsDeletedFlag Then
@@ -3878,7 +3881,7 @@ Namespace HelloWorld
                             "ISNULL(LTRIM(RTRIM(BTN_Read_Caption)), '') AS BTN_Read_Caption, " &
                             "ISNULL(LTRIM(RTRIM(BTN_Update_Caption)), '') AS BTN_Update_Caption, " &
                             "ISNULL(LTRIM(RTRIM(BTN_Delete_Caption)), '') AS BTN_Delete_Caption " &
-                            "FROM dbo.FW_Registration WHERE ID = @ID", conn)
+                            "FROM dbo.FW_Registration WHERE RegistrationID = @ID", conn)
                             cmd.Parameters.AddWithValue("@ID", registrationId)
 
                             Using reader = cmd.ExecuteReader()
@@ -3938,7 +3941,7 @@ Namespace HelloWorld
                     conn.Open()
                     Using cmd As New SqlCommand(
                         "SELECT TOP 1 ISNULL(MaxRecordsNoQBE, 10) AS MaxRecords " &
-                        "FROM dbo.FW_Registration WHERE ID = @ID", conn)
+                        "FROM dbo.FW_Registration WHERE RegistrationID = @ID", conn)
                         cmd.Parameters.AddWithValue("@ID", registrationId)
 
                         Dim result = cmd.ExecuteScalar()
@@ -4504,7 +4507,7 @@ Namespace HelloWorld
                     Try
                         Using limitCommand As New SqlCommand(
                             "DECLARE @MaxUsers smallint; " &
-                            "SELECT @MaxUsers = MaxUsers FROM dbo.FW_Registration WITH (UPDLOCK, HOLDLOCK) WHERE ID = @RegistrationID; " &
+                            "SELECT @MaxUsers = MaxUsers FROM dbo.FW_Registration WITH (UPDLOCK, HOLDLOCK) WHERE RegistrationID = @RegistrationID; " &
                             "IF ISNULL(@MaxUsers, 0) > 0 AND " &
                             "(SELECT COUNT(*) FROM dbo.FW_Users WHERE RegistrationID = @RegistrationID AND ISNULL(DeletedFlag, 0) = 0) >= @MaxUsers " &
                             "THROW 52300, 'USER LIMIT REACHED. NO ADDITIONAL USERS CAN BE CREATED FOR THIS REGISTRATION.', 1;", conn, trans)
@@ -6038,6 +6041,102 @@ Namespace HelloWorld
         ''' <summary>The column a control name maps to, for reporting. Empty if not field-shaped.</summary>
         Public Shared Function ColumnNameFromControlName(controlName As String) As String
             Return BoundFieldNameFromControlName(controlName)
+        End Function
+
+        ''' <summary>
+        ''' What a column points at: the lookup table and the key it references.
+        ''' </summary>
+        Public NotInheritable Class ColumnRelationship
+            Public Property LookupTable As String
+            Public Property KeyColumn As String
+        End Class
+
+        ''' <summary>
+        ''' The declared relationships of a table, keyed by the column that holds the reference.
+        '''
+        ''' Read from the foreign keys rather than guessed from names. A name can only be guessed
+        ''' when it happens to match - GenderID to FW_Gender does, AssignedManagerID to FW_Users
+        ''' never could - so a declared relationship is the only thing that finds the second kind.
+        '''
+        ''' Single-column keys only. A composite foreign key does not describe a lookup a combo box
+        ''' can offer, so including it would propose something unbuildable.
+        ''' </summary>
+        Public Shared Function GetColumnRelationships(tableName As String) As Dictionary(Of String, ColumnRelationship)
+            Dim relationships As New Dictionary(Of String, ColumnRelationship)(StringComparer.OrdinalIgnoreCase)
+            Dim normalized = NormalizeTableName(tableName)
+            If normalized = String.Empty Then Return relationships
+
+            Try
+                Using conn As New SqlConnection(ConnectionString)
+                    conn.Open()
+                    Using cmd As New SqlCommand(
+                        "SELECT pc.name AS FromColumn, rt.name AS LookupTable, rc.name AS KeyColumn " &
+                        "FROM sys.foreign_keys fk " &
+                        "JOIN sys.foreign_key_columns fkc ON fkc.constraint_object_id = fk.object_id " &
+                        "JOIN sys.columns pc ON pc.object_id = fkc.parent_object_id AND pc.column_id = fkc.parent_column_id " &
+                        "JOIN sys.tables rt ON rt.object_id = fkc.referenced_object_id " &
+                        "JOIN sys.columns rc ON rc.object_id = fkc.referenced_object_id AND rc.column_id = fkc.referenced_column_id " &
+                        "WHERE fk.parent_object_id = OBJECT_ID('dbo.' + @TableName) " &
+                        "AND (SELECT COUNT(*) FROM sys.foreign_key_columns x WHERE x.constraint_object_id = fk.object_id) = 1", conn)
+                        cmd.Parameters.AddWithValue("@TableName", normalized)
+                        Using reader = cmd.ExecuteReader()
+                            While reader.Read()
+                                relationships(SafeString(reader("FromColumn"))) = New ColumnRelationship With {
+                                    .LookupTable = SafeString(reader("LookupTable")),
+                                    .KeyColumn = SafeString(reader("KeyColumn"))
+                                }
+                            End While
+                        End Using
+                    End Using
+                End Using
+            Catch
+                ' No relationships found means every field is offered plainly, which is how the
+                ' generator behaved before this existed.
+            End Try
+
+            Return relationships
+        End Function
+
+        ''' <summary>
+        ''' The column of a lookup table most likely to be its label.
+        '''
+        ''' A relationship gives the key and never says which column is the name, so this is a
+        ''' suggestion the user overrides. Measured against this schema it is right for FW_Gender
+        ''' (GenderDescription), FW_Roles (RoleName) and FW_HD_IssueCategories (CategoryName), and
+        ''' wrong for FW_Users, where the label is FirstLast - a business decision no rule derives.
+        ''' </summary>
+        Public Shared Function SuggestDisplayColumn(tableName As String) As String
+            Dim columns = GetTableColumnList(tableName)
+            If columns.Count = 0 Then Return String.Empty
+
+            Dim skip As New HashSet(Of String)(StringComparer.OrdinalIgnoreCase) From {
+                "CreatedBy", "CreatedOn", "UpdatedBy", "UpdatedOn", "ModifiedBy", "ModifiedOn",
+                "DeletedBy", "DeletedOn", "DeletedFlag", "RowVersion", "IsActive", "RegistrationID",
+                "Password", "PasswordHash", "TOTPKey"
+            }
+
+            Dim textColumns = GetTextColumnMaxLengths(tableName)
+            Dim candidates = columns.Where(Function(c) textColumns.ContainsKey(c) AndAlso Not skip.Contains(c)).ToList()
+            If candidates.Count = 0 Then Return String.Empty
+
+            ' A column named for the table beats column order: GenderDescription over whatever
+            ' happens to be declared first.
+            Dim stem = If(normalizeStem(tableName), String.Empty)
+            Dim named = candidates.FirstOrDefault(Function(c) stem <> String.Empty AndAlso
+                                                              c.StartsWith(stem, StringComparison.OrdinalIgnoreCase))
+            If Not String.IsNullOrWhiteSpace(named) Then Return named
+
+            Dim descriptive = candidates.FirstOrDefault(Function(c) c.EndsWith("Name", StringComparison.OrdinalIgnoreCase) OrElse
+                                                                     c.EndsWith("Description", StringComparison.OrdinalIgnoreCase))
+            If Not String.IsNullOrWhiteSpace(descriptive) Then Return descriptive
+
+            Return candidates(0)
+        End Function
+
+        Private Shared Function normalizeStem(tableName As String) As String
+            Dim name = NormalizeTableName(tableName)
+            If name.StartsWith("FW_", StringComparison.OrdinalIgnoreCase) Then name = name.Substring(3)
+            Return name
         End Function
 
         ''' <summary>

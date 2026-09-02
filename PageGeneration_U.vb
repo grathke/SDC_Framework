@@ -1591,6 +1591,25 @@ Namespace HelloWorld
             Return False
         End Function
 
+        ''' <summary>
+        ''' The icon families, in the order they are offered. They are chosen from as sets - a page
+        ''' takes its picture from one style or the other - so they are kept whole and in this
+        ''' order rather than sorted into each other. Plain alphabetical order let the loose files
+        ''' fall between them: dashboard.png sat in the gap between Color and Fluent.
+        '''
+        ''' A family listed here that has no files simply contributes nothing.
+        ''' </summary>
+        Private Shared ReadOnly IconFamilyOrder As String() = {"Color_", "Fluent_"}
+
+        Private Shared Function IconFamilyRank(fileName As String) As Integer
+            For index = 0 To IconFamilyOrder.Length - 1
+                If fileName.StartsWith(IconFamilyOrder(index), StringComparison.OrdinalIgnoreCase) Then Return index
+            Next
+
+            ' Anything outside the families sorts after them, alphabetically among itself.
+            Return IconFamilyOrder.Length
+        End Function
+
         Private Shared Function DashboardImagesFolder() As String
             Dim candidates As String() = {
                 Path.Combine(Application.StartupPath, "assets", "images"),
@@ -1673,7 +1692,8 @@ Namespace HelloWorld
                     Where(Function(item) {".png", ".jpg", ".jpeg", ".bmp", ".gif", ".ico"}.
                         Contains(Path.GetExtension(item).ToLowerInvariant())).
                     Select(Function(item) Path.GetFileName(item)).
-                    OrderBy(Function(item) item, StringComparer.OrdinalIgnoreCase).
+                    OrderBy(Function(item) IconFamilyRank(item)).
+                    ThenBy(Function(item) item, StringComparer.OrdinalIgnoreCase).
                     ToList()
             End If
 
@@ -1814,16 +1834,20 @@ Namespace HelloWorld
             UpdateRegistrationOptionState(fields)
 
             Dim primaryKeyField = DataAccess.GetPrimaryKeyFieldName(tableName)
+            ' 314 wider than it was: 224 for the browse grid's Displays column and 150 for the
+            ' maintenance grid's, less the 60 the Edit button column gave back. The left panel is
+            ' fixed at 560 and the right takes what remains, so each change in width lands on the
+            ' grid that gained or lost the column.
             Using dialog As New Form With {
                 .Text = "Select _B and _U Fields",
                 .StartPosition = FormStartPosition.CenterParent,
-                .ClientSize = New Size(980, 620),
+                .ClientSize = New Size(1294, 620),
                 .MinimizeBox = False,
                 .MaximizeBox = False
             }
                 Dim layout As New TableLayoutPanel With {.Dock = DockStyle.Fill, .ColumnCount = 2, .RowCount = 2, .Padding = New Padding(10)}
-                layout.ColumnStyles.Add(New ColumnStyle(SizeType.Percent, 35))
-                layout.ColumnStyles.Add(New ColumnStyle(SizeType.Percent, 65))
+                layout.ColumnStyles.Add(New ColumnStyle(SizeType.Absolute, 560))
+                layout.ColumnStyles.Add(New ColumnStyle(SizeType.Percent, 100))
                 layout.RowStyles.Add(New RowStyle(SizeType.Percent, 100))
                 layout.RowStyles.Add(New RowStyle(SizeType.Absolute, 92))
 
@@ -1844,10 +1868,14 @@ Namespace HelloWorld
                     .HeaderText = "Use in _B",
                     .Width = 80
                 })
+                ' MinimumWidth so a Fill column cannot vanish. Adding Displays pushed the fixed
+                ' columns past the panel width and the field name silently collapsed to a sliver -
+                ' a grid of unlabelled checkboxes. Out of room it now scrolls, which is visible.
                 browseGrid.Columns.Add(New DataGridViewTextBoxColumn With {
                     .Name = "FieldName",
                     .HeaderText = "Field",
                     .ReadOnly = True,
+                    .MinimumWidth = 130,
                     .AutoSizeMode = DataGridViewAutoSizeColumnMode.Fill
                 })
                 browseGrid.Columns.Add(New DataGridViewCheckBoxColumn With {
@@ -1861,15 +1889,57 @@ Namespace HelloWorld
                     .Width = 80,
                     .DataSource = New List(Of String) From {"ASC", "DESC"}
                 })
+
+                ' What the field points at, read from the table's declared relationships. Hidden
+                ' because it is certain and not a choice - the lookup table and its key come from
+                ' the foreign key, and only the column to display is up to anyone.
+                browseGrid.Columns.Add(New DataGridViewTextBoxColumn With {
+                    .Name = "LookupTarget",
+                    .Visible = False
+                })
+
+                ' The one choice: which column of the lookup table the grid shows in place of the
+                ' identifier. Pre-filled with a suggestion, empty where the field points nowhere,
+                ' and empty on purpose means show the identifier as before.
+                browseGrid.Columns.Add(New DataGridViewComboBoxColumn With {
+                    .Name = "Displays",
+                    .HeaderText = "Displays",
+                    .Width = 150
+                })
                 Dim savedBrowseFields = browseFieldsTextBox.Text.Trim()
                 Dim orderByFields = ParseOrderByFields(browseSqlTextBox.Text)
                 Dim orderByDirections = ParseOrderByDirections(browseSqlTextBox.Text)
+
+                ' Read once for the table, not once per field: a foreign key lookup per row would be
+                ' one query per column for information that arrives in a single answer.
+                Dim relationships = DataAccess.GetColumnRelationships(tableName)
+                Dim lookupColumnCache As New Dictionary(Of String, List(Of String))(StringComparer.OrdinalIgnoreCase)
+                Dim lookupRegistrationCache As New Dictionary(Of String, Boolean)(StringComparer.OrdinalIgnoreCase)
+                Dim savedDisplayColumns = ParseBrowseDisplayColumns(browseSqlTextBox.Text)
+
+                ' A lookup column is ordered by what it displays, so ORDER BY names FirstLast where
+                ' the grid row is AssignedManagerID. Translated back here, otherwise reopening a
+                ' request loses the Order By tick on every field that shows a lookup.
+                For Each pair In savedDisplayColumns
+                    If orderByFields.RemoveAll(Function(name) String.Equals(name, pair.Value, StringComparison.OrdinalIgnoreCase)) > 0 Then
+                        orderByFields.Add(pair.Key)
+                    End If
+
+                    Dim direction As String = Nothing
+                    If orderByDirections.TryGetValue(pair.Value, direction) Then
+                        orderByDirections.Remove(pair.Value)
+                        orderByDirections(pair.Key) = direction
+                    End If
+                Next
+
                 For Each field In fields
-                    browseGrid.Rows.Add(
+                    Dim rowIndex = browseGrid.Rows.Add(
                         If(savedBrowseFields = String.Empty, False, ContainsField(savedBrowseFields, field)),
                         field,
                         orderByFields.Any(Function(orderField) String.Equals(orderField, field, StringComparison.OrdinalIgnoreCase)),
                         If(orderByDirections.ContainsKey(field), orderByDirections(field), "ASC"))
+
+                    ConfigureLookupDisplayCell(browseGrid.Rows(rowIndex), field, relationships, savedDisplayColumns, lookupColumnCache)
                 Next
                 OrderSelectionGrid(browseGrid, savedBrowseFields)
                 layout.Controls.Add(CreateSelectionPanel("_B Data Grid Fields and Order By",
@@ -1897,6 +1967,7 @@ Namespace HelloWorld
                     .Name = "FieldName",
                     .HeaderText = "Field",
                     .ReadOnly = True,
+                    .MinimumWidth = 130,
                     .AutoSizeMode = DataGridViewAutoSizeColumnMode.Fill
                 })
                 maintenanceGrid.Columns.Add(New DataGridViewCheckBoxColumn With {
@@ -1910,33 +1981,20 @@ Namespace HelloWorld
                     .Width = 90
                 })
 
-                ' Without this the four answers can be given but never seen again: unticking and
-                ' re-ticking opens an empty picker, so changing one table meant re-entering all of
-                ' it from memory.
-                maintenanceGrid.Columns.Add(New DataGridViewButtonColumn With {
-                    .Name = "EditLookup",
-                    .HeaderText = "",
-                    .Text = "Edit",
-                    .UseColumnTextForButtonValue = True,
-                    .Width = 60
+                ' The same two columns the browse grid carries, filled from the same reading of the
+                ' declared relationships. Where one exists the four questions have three answers
+                ' already - the table and its key are certain, and only the column to show is a
+                ' choice - so ticking Lookup asks nothing and this is where the choice is made.
+                maintenanceGrid.Columns.Add(New DataGridViewTextBoxColumn With {
+                    .Name = "LookupTarget",
+                    .Visible = False
+                })
+                maintenanceGrid.Columns.Add(New DataGridViewComboBoxColumn With {
+                    .Name = "Displays",
+                    .HeaderText = "Displays",
+                    .Width = 150
                 })
 
-                AddHandler maintenanceGrid.CellClick,
-                    Sub(gridSender, eventArgs)
-                        If eventArgs.RowIndex < 0 Then Return
-                        If eventArgs.ColumnIndex <> maintenanceGrid.Columns("EditLookup").Index Then Return
-
-                        Dim row = maintenanceGrid.Rows(eventArgs.RowIndex)
-                        ' The tick is the switch; Edit only revisits an answer already given.
-                        If Not Convert.ToBoolean(row.Cells("Lookup").Value) Then Return
-
-                        Dim fieldName = Convert.ToString(row.Cells("FieldName").Value)
-                        Dim existing As String = Nothing
-                        lookupTargets.TryGetValue(fieldName, existing)
-
-                        Dim spec = PromptForLookupTarget(maintenanceGrid.FindForm(), fieldName, existing)
-                        If spec <> String.Empty Then lookupTargets(fieldName) = spec
-                    End Sub
                 AddHandler maintenanceGrid.CurrentCellDirtyStateChanged,
                     Sub(gridSender, eventArgs)
                         If maintenanceGrid.IsCurrentCellDirty Then
@@ -1975,14 +2033,45 @@ Namespace HelloWorld
                             If eventArgs.ColumnIndex = maintenanceGrid.Columns("Lookup").Index AndAlso Not seedingSelectionGrids Then
                                 Dim fieldName = Convert.ToString(row.Cells("FieldName").Value)
                                 If isLookup Then
-                                    Dim spec = PromptForLookupTarget(maintenanceGrid.FindForm(), fieldName)
+                                    ' The declared relationship is the whole answer: the table and
+                                    ' its key come from the foreign key and the column to show from
+                                    ' the Displays cell. A field with no relationship cannot be a
+                                    ' lookup at all, which is why its tick is disabled rather than
+                                    ' refused here - declare the foreign key and it becomes one.
+                                    Dim relationship As DataAccess.ColumnRelationship = Nothing
+                                    Dim spec As String = String.Empty
+                                    If relationships.TryGetValue(fieldName, relationship) Then
+                                        spec = BuildLookupSpecFromRelationship(fieldName,
+                                                                               relationship,
+                                                                               Convert.ToString(row.Cells("Displays").Value),
+                                                                               lookupRegistrationCache)
+                                    End If
+
                                     If spec = String.Empty Then
                                         row.Cells("Lookup").Value = False
                                     Else
                                         lookupTargets(fieldName) = spec
+                                        SyncDisplaysCellFromSpec(row, spec)
                                     End If
                                 Else
                                     lookupTargets.Remove(fieldName)
+                                End If
+                            End If
+                        ElseIf eventArgs.ColumnIndex = maintenanceGrid.Columns("Displays").Index AndAlso Not seedingSelectionGrids Then
+                            ' Changing what a ticked lookup shows rewrites its spec in place. Left
+                            ' untouched, the grid would show one column and the generated page
+                            ' would build its combo on another.
+                            Dim fieldName = Convert.ToString(row.Cells("FieldName").Value)
+                            Dim relationship As DataAccess.ColumnRelationship = Nothing
+                            If Convert.ToBoolean(row.Cells("Lookup").Value) AndAlso relationships.TryGetValue(fieldName, relationship) Then
+                                Dim spec = BuildLookupSpecFromRelationship(fieldName,
+                                                                           relationship,
+                                                                           Convert.ToString(row.Cells("Displays").Value),
+                                                                           lookupRegistrationCache)
+                                If spec = String.Empty Then
+                                    lookupTargets.Remove(fieldName)
+                                Else
+                                    lookupTargets(fieldName) = spec
                                 End If
                             End If
                         End If
@@ -2021,15 +2110,27 @@ Namespace HelloWorld
                     End Sub
 
                 Dim savedMaintenanceFields = maintenanceFieldsTextBox.Text.Trim()
+                Dim specDisplayColumns = ParseSpecDisplayColumns(lookupTargets)
                 seedingSelectionGrids = True
                 For Each field In fields
-                    maintenanceGrid.Rows.Add(
+                    Dim maintenanceRowIndex = maintenanceGrid.Rows.Add(
                         ContainsField(savedMaintenanceFields, field) OrElse
                             lookupTargets.ContainsKey(field) OrElse
                             ContainsField(adminRequiredFieldsTextBox.Text, field),
                         field,
                         ContainsField(adminRequiredFieldsTextBox.Text, field),
                         lookupTargets.ContainsKey(field))
+
+                    Dim maintenanceRow = maintenanceGrid.Rows(maintenanceRowIndex)
+                    ConfigureLookupDisplayCell(maintenanceRow, field, relationships, specDisplayColumns, lookupColumnCache)
+
+                    ' Nothing to point at, so nothing to tick. A spec written before the foreign
+                    ' keys were declared keeps its tick, so it can still be removed - it just
+                    ' cannot be recreated, which is honest: the answer now comes from the schema.
+                    If Not relationships.ContainsKey(field) AndAlso Not lookupTargets.ContainsKey(field) Then
+                        maintenanceRow.Cells("Lookup").ReadOnly = True
+                        maintenanceRow.Cells("Lookup").Style.BackColor = SystemColors.Control
+                    End If
                 Next
                 seedingSelectionGrids = False
                 OrderSelectionGrid(maintenanceGrid, savedMaintenanceFields)
@@ -2221,20 +2322,33 @@ Namespace HelloWorld
             Dim savedPositions = savedOrder.
                 Select(Function(field, index) New With {field, index}).
                 ToDictionary(Function(item) item.field, Function(item) item.index, StringComparer.OrdinalIgnoreCase)
+            ' The rows are moved, not copied. Rebuilding them from their values discarded anything
+            ' held on the cell rather than in it - a combo cell's own item list, or a cell swapped
+            ' for a different type - and the value then landed in a fresh cell that did not accept
+            ' it: "DataGridViewComboBoxCell value is not valid". Moving the row objects keeps
+            ' whatever each cell was configured with.
             Dim rows = grid.Rows.Cast(Of DataGridViewRow)().
                 Select(Function(row) New With {
-                    .Values = row.Cells.Cast(Of DataGridViewCell)().Select(Function(cell) cell.Value).ToArray(),
+                    .Row = row,
                     .FieldName = Convert.ToString(row.Cells("FieldName").Value),
                     .Included = Convert.ToBoolean(row.Cells("Include").Value)
                 }).
                 OrderByDescending(Function(item) item.Included).
                 ThenBy(Function(item) If(item.Included AndAlso savedPositions.ContainsKey(item.FieldName), savedPositions(item.FieldName), Integer.MaxValue)).
                 ThenBy(Function(item) item.FieldName, StringComparer.OrdinalIgnoreCase).
+                Select(Function(item) item.Row).
                 ToList()
 
-            grid.Rows.Clear()
-            For Each row In rows
-                grid.Rows.Add(row.Values)
+            If rows.Count = 0 Then Return
+
+            ' Removed and reinserted one at a time rather than cleared and re-added: clearing the
+            ' collection disposes the rows, and a disposed row cannot go back in.
+            For targetIndex = 0 To rows.Count - 1
+                Dim row = rows(targetIndex)
+                If row.Index = targetIndex Then Continue For
+
+                grid.Rows.Remove(row)
+                grid.Rows.Insert(targetIndex, row)
             Next
         End Sub
 
@@ -2346,6 +2460,138 @@ Namespace HelloWorld
             Return String.Join(", ", specs)
         End Function
 
+        ''' <summary>The display column each saved lookup spec names, keyed by its field.</summary>
+        Private Shared Function ParseSpecDisplayColumns(specs As Dictionary(Of String, String)) As Dictionary(Of String, String)
+            Dim result As New Dictionary(Of String, String)(StringComparer.OrdinalIgnoreCase)
+            If specs Is Nothing Then Return result
+
+            For Each pair In specs
+                Dim display = ParseSpecDisplayColumn(pair.Value)
+                If Not String.IsNullOrWhiteSpace(display) Then result(pair.Key) = display
+            Next
+            Return result
+        End Function
+
+        Private Shared Function ParseSpecDisplayColumn(spec As String) As String
+            If String.IsNullOrWhiteSpace(spec) Then Return String.Empty
+
+            Dim match = Regex.Match(spec, "(?i)\bdisplayed\s+as\s+(?<display>\w+)")
+            Return If(match.Success, match.Groups("display").Value, String.Empty)
+        End Function
+
+        ''' <summary>
+        ''' Builds the spec sentence the generator parses, from a relationship rather than from four
+        ''' answers. The table and its key come from the foreign key, the display column from the
+        ''' grid, and the scope from whether rows actually populate a RegistrationID - the same
+        ''' test the picker's checkbox makes, so both routes decide it the same way.
+        ''' </summary>
+        Private Shared Function BuildLookupSpecFromRelationship(fieldName As String,
+                                                                relationship As DataAccess.ColumnRelationship,
+                                                                displayColumn As String,
+                                                                registrationCache As Dictionary(Of String, Boolean)) As String
+            If relationship Is Nothing OrElse String.IsNullOrWhiteSpace(displayColumn) Then Return String.Empty
+
+            Dim filterByRegistration As Boolean
+            If registrationCache Is Nothing OrElse Not registrationCache.TryGetValue(relationship.LookupTable, filterByRegistration) Then
+                filterByRegistration = DataAccess.CountLookupRegistrations(relationship.LookupTable) > 0
+                If registrationCache IsNot Nothing Then registrationCache(relationship.LookupTable) = filterByRegistration
+            End If
+
+            Return fieldName & " -> " & relationship.LookupTable & "." & relationship.KeyColumn &
+                   " displayed as " & displayColumn.Trim() &
+                   If(filterByRegistration, " filtered by registration", " not filtered by registration")
+        End Function
+
+        ''' <summary>
+        ''' Shows in the Displays cell what a spec says it displays, so an answer given through the
+        ''' picker and one chosen from the dropdown cannot disagree on screen. A picker answer can
+        ''' name a table the dropdown never offered, so its column is added rather than dropped.
+        ''' </summary>
+        Private Shared Sub SyncDisplaysCellFromSpec(row As DataGridViewRow, spec As String)
+            Dim display = ParseSpecDisplayColumn(spec)
+            If String.IsNullOrWhiteSpace(display) Then Return
+
+            Dim cell = TryCast(row.Cells("Displays"), DataGridViewComboBoxCell)
+            If cell Is Nothing Then
+                row.Cells("Displays").Value = display
+                Return
+            End If
+
+            If Not cell.Items.Contains(display) Then cell.Items.Add(display)
+            cell.Value = display
+        End Sub
+
+        ''' <summary>
+        ''' The columns of a lookup table, read once per table however many rows and grids ask.
+        ''' Both selection grids offer the same choices, and a query per row for an answer that
+        ''' cannot differ between them is a query wasted.
+        ''' </summary>
+        Private Shared Function LookupTableColumns(tableName As String,
+                                                   columnCache As Dictionary(Of String, List(Of String))) As List(Of String)
+            Dim columns As List(Of String) = Nothing
+            If columnCache IsNot Nothing AndAlso columnCache.TryGetValue(tableName, columns) Then Return columns
+
+            columns = DataAccess.GetTableColumnList(tableName)
+            If columnCache IsNot Nothing Then columnCache(tableName) = columns
+            Return columns
+        End Function
+
+        ''' <summary>
+        ''' Fills in a row's relationship: the hidden target, and the dropdown of columns that could
+        ''' be shown in place of the identifier. Used by both grids - the browse grid shows the
+        ''' choice in a column, the maintenance grid shows it in a combo box - because the
+        ''' relationship being offered is the same relationship.
+        '''
+        ''' A field pointing nowhere gets an empty, read-only cell rather than an empty dropdown -
+        ''' offering a choice that cannot be made is worse than offering none. It still shows a
+        ''' display column if one was answered by hand, since a lookup can be declared where no
+        ''' foreign key is.
+        ''' </summary>
+        Private Shared Sub ConfigureLookupDisplayCell(row As DataGridViewRow,
+                                                     fieldName As String,
+                                                     relationships As Dictionary(Of String, DataAccess.ColumnRelationship),
+                                                     savedDisplayColumns As Dictionary(Of String, String),
+                                                     columnCache As Dictionary(Of String, List(Of String)))
+            Dim savedDisplay As String = Nothing
+            If savedDisplayColumns IsNot Nothing Then savedDisplayColumns.TryGetValue(fieldName, savedDisplay)
+
+            Dim relationship As DataAccess.ColumnRelationship = Nothing
+            If relationships Is Nothing OrElse Not relationships.TryGetValue(fieldName, relationship) Then
+                Dim blank As New DataGridViewTextBoxCell()
+                row.Cells("Displays") = blank
+                blank.ReadOnly = True
+                blank.Style.BackColor = SystemColors.Control
+                If Not String.IsNullOrWhiteSpace(savedDisplay) Then blank.Value = savedDisplay
+                Return
+            End If
+
+            row.Cells("LookupTarget").Value = relationship.LookupTable & "." & relationship.KeyColumn
+
+            Dim choices = LookupTableColumns(relationship.LookupTable, columnCache)
+            Dim cell = TryCast(row.Cells("Displays"), DataGridViewComboBoxCell)
+            If cell Is Nothing Then Return
+
+            cell.Items.Clear()
+            ' Blank is a real answer: show the identifier, as the grid did before this existed.
+            cell.Items.Add(String.Empty)
+            For Each column In choices
+                cell.Items.Add(column)
+            Next
+
+            ' What was already chosen beats the suggestion: a request reopens with the answer it
+            ' was given, not with the guess it started from.
+            Dim chosen = savedDisplay
+            If String.IsNullOrWhiteSpace(chosen) Then
+                chosen = DataAccess.SuggestDisplayColumn(relationship.LookupTable)
+            End If
+
+            cell.Value = If(Not String.IsNullOrWhiteSpace(chosen) AndAlso cell.Items.Contains(chosen),
+                            chosen,
+                            String.Empty)
+            cell.ToolTipText = "Shows a column of " & relationship.LookupTable &
+                               " instead of the identifier. Blank shows " & fieldName & " itself."
+        End Sub
+
         ''' <summary>
         ''' Rebuilds the lookup targets from a saved request, so reopening one and touching the grid
         ''' does not quietly discard the lookups it already had.
@@ -2364,128 +2610,6 @@ Namespace HelloWorld
             Next
         End Sub
 
-        ''' <summary>
-        ''' Asks where a lookup field's values come from and returns the sentence the generator
-        ''' parses, or empty if the user cancels.
-        '''
-        ''' Three choices, each narrowing the next: the table, the column whose value is saved, and
-        ''' the column whose text is shown. They are chosen from lists rather than typed because the
-        ''' format is exact and a typo is only discovered at generation, as a refusal.
-        ''' </summary>
-        Private Function PromptForLookupTarget(owner As IWin32Window,
-                                               fieldName As String,
-                                               Optional existingSpec As String = Nothing) As String
-            Using dialog As New Form() With {
-                .Text = "Lookup values for " & fieldName,
-                .FormBorderStyle = FormBorderStyle.FixedDialog,
-                .StartPosition = FormStartPosition.CenterParent,
-                .MinimizeBox = False,
-                .MaximizeBox = False,
-                .ClientSize = New Size(430, 210)
-            }
-                Dim tableCombo As New ComboBox() With {.Location = New Point(150, 20), .Size = New Size(250, 26), .DropDownStyle = ComboBoxStyle.DropDownList}
-                Dim valueCombo As New ComboBox() With {.Location = New Point(150, 60), .Size = New Size(250, 26), .DropDownStyle = ComboBoxStyle.DropDownList}
-                Dim displayCombo As New ComboBox() With {.Location = New Point(150, 100), .Size = New Size(250, 26), .DropDownStyle = ComboBoxStyle.DropDownList}
-
-                dialog.Controls.Add(New Label() With {.Text = "Table", .Location = New Point(20, 20), .Size = New Size(120, 26), .TextAlign = ContentAlignment.MiddleLeft})
-                dialog.Controls.Add(New Label() With {.Text = "Saves this column", .Location = New Point(20, 60), .Size = New Size(120, 26), .TextAlign = ContentAlignment.MiddleLeft})
-                dialog.Controls.Add(New Label() With {.Text = "Shows this column", .Location = New Point(20, 100), .Size = New Size(120, 26), .TextAlign = ContentAlignment.MiddleLeft})
-
-                For Each table In DataAccess.GetDatabaseTables()
-                    tableCombo.Items.Add(table)
-                Next
-
-                AddHandler tableCombo.SelectedIndexChanged,
-                    Sub()
-                        valueCombo.Items.Clear()
-                        displayCombo.Items.Clear()
-                        Dim columns = DataAccess.GetTableColumnList(Convert.ToString(tableCombo.SelectedItem))
-                        For Each column In columns
-                            valueCombo.Items.Add(column)
-                            displayCombo.Items.Add(column)
-                        Next
-
-                        ' The key is nearly always what a lookup saves, so it is offered first.
-                        Dim keyColumn = DataAccess.GetPrimaryKeyColumn(Convert.ToString(tableCombo.SelectedItem))
-                        If Not String.IsNullOrWhiteSpace(keyColumn) AndAlso valueCombo.Items.Contains(keyColumn) Then
-                            valueCombo.SelectedItem = keyColumn
-                        ElseIf valueCombo.Items.Count > 0 Then
-                            valueCombo.SelectedIndex = 0
-                        End If
-                    End Sub
-
-                ' Ticked from what the data says, not from what the schema allows: a table can carry
-                ' a RegistrationID that no row populates, and scoping the list by it would empty the
-                ' combo. The count is shown so the choice can be judged rather than trusted.
-                Dim registrationCheckBox As New CheckBox() With {
-                    .Text = "Filter by registration",
-                    .Location = New Point(150, 132),
-                    .AutoSize = True,
-                    .Enabled = False
-                }
-
-                AddHandler tableCombo.SelectedIndexChanged,
-                    Sub()
-                        ' Enabled only when the table has a RegistrationID, and ticked only when
-                        ' rows actually populate it: scoping a list by a column nobody fills would
-                        ' empty the combo. The state answers the question, so the caption does not
-                        ' have to explain itself.
-                        Dim registrations = DataAccess.CountLookupRegistrations(Convert.ToString(tableCombo.SelectedItem))
-                        registrationCheckBox.Enabled = registrations >= 0
-                        registrationCheckBox.Checked = registrations > 0
-                    End Sub
-
-                Dim okButtonLocal As New Button() With {.Text = "OK", .Size = New Size(90, 30), .Location = New Point(220, 165), .DialogResult = DialogResult.OK}
-                Dim cancelButtonLocal As New Button() With {.Text = "Cancel", .Size = New Size(90, 30), .Location = New Point(316, 165), .DialogResult = DialogResult.Cancel}
-
-                dialog.ClientSize = New Size(430, 225)
-                dialog.Controls.AddRange({tableCombo, valueCombo, displayCombo, registrationCheckBox, okButtonLocal, cancelButtonLocal})
-
-                ' Reopened on an answer already given: show what it says rather than a blank form.
-                ' The table is selected first because choosing it is what fills the other two.
-                If Not String.IsNullOrWhiteSpace(existingSpec) Then
-                    Dim parsed = Regex.Match(existingSpec,
-                                             "->\s*(?<table>\w+)\s*\.\s*(?<value>\w+)\s+displayed\s+as\s+(?<display>\w+)(?<scope>.*)$",
-                                             RegexOptions.IgnoreCase)
-                    If parsed.Success Then
-                        Dim storedTable = parsed.Groups("table").Value
-                        If tableCombo.Items.Contains(storedTable) Then
-                            tableCombo.SelectedItem = storedTable
-
-                            Dim storedValue = parsed.Groups("value").Value
-                            If valueCombo.Items.Contains(storedValue) Then valueCombo.SelectedItem = storedValue
-
-                            Dim storedDisplay = parsed.Groups("display").Value
-                            If displayCombo.Items.Contains(storedDisplay) Then displayCombo.SelectedItem = storedDisplay
-
-                            ' Absent means filtered, matching how the generator reads an old spec.
-                            registrationCheckBox.Checked = registrationCheckBox.Enabled AndAlso
-                                                           Not Regex.IsMatch(parsed.Groups("scope").Value, "not\s+filtered", RegexOptions.IgnoreCase)
-                        End If
-                    End If
-                End If
-                dialog.AcceptButton = okButtonLocal
-                dialog.CancelButton = cancelButtonLocal
-
-                If dialog.ShowDialog(owner) <> DialogResult.OK Then Return String.Empty
-                If tableCombo.SelectedItem Is Nothing OrElse valueCombo.SelectedItem Is Nothing OrElse displayCombo.SelectedItem Is Nothing Then
-                    MessageBox.Show(owner,
-                                    "A LOOKUP NEEDS A TABLE, THE COLUMN IT SAVES AND THE COLUMN IT SHOWS." & Environment.NewLine & Environment.NewLine &
-                                    "THE FIELD WAS LEFT UNTICKED.",
-                                    "LOOKUP NOT SET",
-                                    MessageBoxButtons.OK,
-                                    MessageBoxIcon.Information)
-                    Return String.Empty
-                End If
-
-                ' The scope is always written out, even when it matches the default, so a spec says
-                ' what it does rather than relying on the reader knowing what absent means.
-                Return fieldName & " -> " & Convert.ToString(tableCombo.SelectedItem) & "." &
-                       Convert.ToString(valueCombo.SelectedItem) & " displayed as " & Convert.ToString(displayCombo.SelectedItem) &
-                       If(registrationCheckBox.Checked, " filtered by registration", " not filtered by registration")
-            End Using
-        End Function
-
         Private Shared Function JoinIncludedGridFields(grid As DataGridView) As String
             Dim selectedFields As New List(Of String)()
             For Each row As DataGridViewRow In grid.Rows
@@ -2496,13 +2620,21 @@ Namespace HelloWorld
             Return String.Join(", ", selectedFields)
         End Function
 
+        ''' <summary>
+        ''' One ORDER BY term: the column, with the table alias in front of it discarded. Written
+        ''' once because two parsers read the same clause and reading it two ways would mean an
+        ''' ORDER BY that restores its field in one place and the alias "E" in the other.
+        ''' </summary>
+        Private Const OrderByFieldPattern As String =
+            "^(?:\[?[A-Za-z_][\w]*\]?\s*\.\s*)?\[?(?<field>[A-Za-z_][\w]*)\]?"
+
         Private Shared Function ParseOrderByFields(sql As String) As List(Of String)
             Dim result As New List(Of String)()
             Dim match = Regex.Match(sql, "(?is)ORDER\s+BY\s+(?<fields>.+?)\s*$")
             If Not match.Success Then Return result
 
             For Each part In match.Groups("fields").Value.Split(","c)
-                Dim fieldMatch = Regex.Match(part.Trim(), "^\[?(?<field>[A-Za-z_][\w]*)\]?")
+                Dim fieldMatch = Regex.Match(part.Trim(), OrderByFieldPattern)
                 If fieldMatch.Success Then result.Add(fieldMatch.Groups("field").Value)
             Next
             Return result
@@ -2514,12 +2646,111 @@ Namespace HelloWorld
             If Not match.Success Then Return result
 
             For Each part In match.Groups("fields").Value.Split(","c)
-                Dim fieldMatch = Regex.Match(part.Trim(), "^\[?(?<field>[A-Za-z_][\w]*)\]?\s*(?<direction>ASC|DESC)?")
+                Dim fieldMatch = Regex.Match(part.Trim(), OrderByFieldPattern & "\s*(?<direction>ASC|DESC)?")
                 If fieldMatch.Success Then
                     result(fieldMatch.Groups("field").Value) = If(String.Equals(fieldMatch.Groups("direction").Value, "DESC", StringComparison.OrdinalIgnoreCase), "DESC", "ASC")
                 End If
             Next
             Return result
+        End Function
+
+        ''' <summary>
+        ''' Reads the display columns back out of a saved request's SQL, so reopening one shows the
+        ''' column that was chosen rather than the suggestion. The SQL is where the choice already
+        ''' lives - Order By and its direction are recovered the same way - so nothing has to be
+        ''' stored twice and the two can never disagree.
+        '''
+        ''' Only aliases that a LEFT JOIN introduced count, which is what keeps the primary key's
+        ''' own AS PK out of the result.
+        ''' </summary>
+        Private Shared Function ParseBrowseDisplayColumns(sql As String) As Dictionary(Of String, String)
+            Dim result As New Dictionary(Of String, String)(StringComparer.OrdinalIgnoreCase)
+            If String.IsNullOrWhiteSpace(sql) Then Return result
+
+            Dim joinAliases As New HashSet(Of String)(StringComparer.OrdinalIgnoreCase)
+            For Each joinMatch As Match In Regex.Matches(sql,
+                "(?i)\bLEFT\s+JOIN\s+(?:dbo\s*\.\s*)?\[?[\w]+\]?\s+(?:AS\s+)?(?<alias>[A-Za-z_][\w]*)\s+ON\b")
+                joinAliases.Add(joinMatch.Groups("alias").Value)
+            Next
+            If joinAliases.Count = 0 Then Return result
+
+            For Each selectMatch As Match In Regex.Matches(sql,
+                "(?i)(?<alias>[A-Za-z_][\w]*)\s*\.\s*\[?(?<column>[\w]+)\]?\s+AS\s+\[?(?<field>[\w]+)\]?")
+                If joinAliases.Contains(selectMatch.Groups("alias").Value) Then
+                    result(selectMatch.Groups("field").Value) = selectMatch.Groups("column").Value
+                End If
+            Next
+
+            Return result
+        End Function
+
+        Private Shared Function BracketIdentifier(name As String) As String
+            Return "[" & If(name, String.Empty).Replace("]", "]]", StringComparison.Ordinal) & "]"
+        End Function
+
+        ''' <summary>
+        ''' A short alias in the hand-written style - the table's initial, past any FW_ prefix, so
+        ''' FW_Entity is E and FW_Gender is G. Numbered when two tables would claim the same
+        ''' letter, which two lookups pointing at the same table always would.
+        ''' </summary>
+        Private Shared Function BuildTableAlias(tableName As String, usedAliases As HashSet(Of String)) As String
+            Dim stem = If(tableName, String.Empty).Trim()
+            If stem.StartsWith("FW_", StringComparison.OrdinalIgnoreCase) Then stem = stem.Substring(3)
+
+            Dim letter = "T"
+            For Each character In stem
+                If Char.IsLetter(character) Then
+                    letter = Char.ToUpperInvariant(character).ToString()
+                    Exit For
+                End If
+            Next
+
+            Dim candidate = letter
+            Dim suffix = 2
+            While usedAliases.Contains(candidate)
+                candidate = letter & suffix.ToString(Globalization.CultureInfo.InvariantCulture)
+                suffix += 1
+            End While
+
+            usedAliases.Add(candidate)
+            Return candidate
+        End Function
+
+        ''' <summary>
+        ''' Turns the browse grid's relationship columns into LEFT JOINs, and returns the
+        ''' expression each field displays in place of its identifier.
+        '''
+        ''' LEFT, not INNER: a row whose lookup is empty still belongs in the grid. A field with no
+        ''' declared relationship, or one left blank in Displays, produces no join and keeps showing
+        ''' the identifier - blank is a deliberate answer, not a missing one.
+        ''' </summary>
+        Private Shared Function BuildLookupJoins(browseGrid As DataGridView,
+                                                 baseAlias As String,
+                                                 usedAliases As HashSet(Of String),
+                                                 joins As List(Of String)) As Dictionary(Of String, String)
+            Dim displayExpressions As New Dictionary(Of String, String)(StringComparer.OrdinalIgnoreCase)
+
+            For Each row As DataGridViewRow In browseGrid.Rows
+                If Not Convert.ToBoolean(row.Cells("Include").Value) Then Continue For
+
+                Dim fieldName = Convert.ToString(row.Cells("FieldName").Value)
+                Dim target = Convert.ToString(row.Cells("LookupTarget").Value)
+                Dim displayColumn = Convert.ToString(row.Cells("Displays").Value)
+                If String.IsNullOrWhiteSpace(fieldName) OrElse
+                   String.IsNullOrWhiteSpace(target) OrElse
+                   String.IsNullOrWhiteSpace(displayColumn) Then Continue For
+
+                Dim pieces = target.Split("."c)
+                If pieces.Length <> 2 Then Continue For
+
+                Dim lookupAlias = BuildTableAlias(pieces(0), usedAliases)
+                joins.Add("LEFT JOIN dbo." & BracketIdentifier(pieces(0)) & " " & lookupAlias &
+                          " ON " & baseAlias & "." & BracketIdentifier(fieldName) &
+                          " = " & lookupAlias & "." & BracketIdentifier(pieces(1)))
+                displayExpressions(fieldName) = lookupAlias & "." & BracketIdentifier(displayColumn)
+            Next
+
+            Return displayExpressions
         End Function
 
         Private Function BuildGeneratedBrowseSql(tableName As String,
@@ -2539,16 +2770,40 @@ Namespace HelloWorld
 
             Dim hasRegistrationField = useRegistrationIdCheckBox.Checked AndAlso fields.Any(Function(field) String.Equals(field, "RegistrationID", StringComparison.OrdinalIgnoreCase))
 
+            ' Every column carries its table alias. Not decoration: the registration and
+            ' view-only-mine predicates are appended to this SQL at runtime as plain column names,
+            ' and FW_Users - the commonest lookup target - has a RegistrationID and a UserID of its
+            ' own. Unqualified, those predicates become ambiguous the moment a join exists.
+            Dim usedAliases As New HashSet(Of String)(StringComparer.OrdinalIgnoreCase)
+            Dim baseAlias = BuildTableAlias(tableName, usedAliases)
+            Dim joins As New List(Of String)()
+            Dim displayExpressions = BuildLookupJoins(browseGrid, baseAlias, usedAliases, joins)
+
             Dim selectParts = selectedFields.Select(
-                Function(field) If(String.Equals(field, primaryKeyField, StringComparison.OrdinalIgnoreCase),
-                                   "[" & field & "] AS PK",
-                                   "[" & field & "]"))
+                Function(field)
+                    If String.Equals(field, primaryKeyField, StringComparison.OrdinalIgnoreCase) Then
+                        Return baseAlias & "." & BracketIdentifier(field) & " AS PK"
+                    End If
+
+                    ' Aliased back to the column it replaces, so the field-level permissions and
+                    ' caption overrides keyed on that name still find it. Alias it to anything
+                    ' else and a role denied the field would see the name in its place.
+                    Dim displayExpression As String = Nothing
+                    If displayExpressions.TryGetValue(field, displayExpression) Then
+                        Return displayExpression & " AS " & BracketIdentifier(field)
+                    End If
+
+                    Return baseAlias & "." & BracketIdentifier(field)
+                End Function)
             Dim sql As New StringBuilder()
             sql.AppendLine("SELECT")
             sql.AppendLine("    " & String.Join("," & Environment.NewLine & "    ", selectParts))
-            sql.AppendLine("FROM dbo.[" & tableName.Replace("]", "]]", StringComparison.Ordinal) & "]")
+            sql.AppendLine("FROM dbo." & BracketIdentifier(tableName) & " " & baseAlias)
+            For Each joinClause In joins
+                sql.AppendLine(joinClause)
+            Next
             If hasRegistrationField Then
-                sql.AppendLine("WHERE [RegistrationID] = @RegistrationID")
+                sql.AppendLine("WHERE " & baseAlias & ".[RegistrationID] = @RegistrationID")
             End If
             Dim resolvedOrderByFields = If(orderByFields Is Nothing, New List(Of String)(), orderByFields).
                 Where(Function(field) fields.Any(Function(tableField) String.Equals(tableField, field, StringComparison.OrdinalIgnoreCase))).
@@ -2566,7 +2821,14 @@ Namespace HelloWorld
                         Exit For
                     End If
                 Next
-                orderByParts.Add("[" & field.Replace("]", "]]", StringComparison.Ordinal) & "] " & direction)
+                ' Ordering follows what the column shows. Sorting a column of manager names by the
+                ' identifier behind them would look like no sort at all.
+                Dim displayExpression As String = Nothing
+                If displayExpressions.TryGetValue(field, displayExpression) Then
+                    orderByParts.Add(displayExpression & " " & direction)
+                Else
+                    orderByParts.Add(baseAlias & "." & BracketIdentifier(field) & " " & direction)
+                End If
             Next
             sql.Append("ORDER BY " & String.Join(", ", orderByParts))
             Return sql.ToString()

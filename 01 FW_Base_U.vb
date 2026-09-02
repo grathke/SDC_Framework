@@ -1986,7 +1986,9 @@ Namespace HelloWorld
         End Function
 
         Private Function ResolveRecordKeyFromControls() As String
-            Dim keyControlNames = New String() {"TextBox_ID", "TextBox_UserID", "TextBox_RegistrationID"}
+            ' TextBox_ID stays in the list: the key column is being renamed table by table, so a
+            ' page whose table still has a bare ID has to keep being recognised.
+            Dim keyControlNames = New String() {"TextBox_EntityID", "TextBox_ID", "TextBox_UserID", "TextBox_RegistrationID"}
             For Each keyControlName In keyControlNames
                 Dim matches = Me.Controls.Find(keyControlName, True)
                 If matches Is Nothing OrElse matches.Length = 0 Then
@@ -2428,6 +2430,19 @@ Namespace HelloWorld
             If selectedId <= 0 Then
                 Return 0
             End If
+
+            Return selectedId
+        End Function
+
+        ''' <summary>
+        ''' The same selection, for a column rather than an Integer variable: no selection is
+        ''' Nothing, which the parameter binder writes as NULL. Zero was never a real answer - it
+        ''' points at a record that does not exist, which is why a declared foreign key rejects it -
+        ''' and once stored it is indistinguishable from a value the user chose.
+        ''' </summary>
+        Protected Function GetComboSelectedIdOrNull(combo As ComboBox) As Object
+            Dim selectedId = GetComboSelectedIdOrZero(combo)
+            If selectedId <= 0 Then Return Nothing
 
             Return selectedId
         End Function

@@ -36,7 +36,7 @@ Namespace HelloWorld
             Me.ClientSize = New Size(600, 550)
 
             Dim y = 20
-            idTextBox = AddField("ID", y, True, False)
+            idTextBox = AddField("EntityID", y, True, False)
             y += 42
             
             ' Create AssignedManagerID ComboBox

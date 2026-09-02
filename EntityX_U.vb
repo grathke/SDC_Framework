@@ -124,8 +124,8 @@ Namespace HelloWorld
             values("City") = cityTextBox.Text
             values("State") = stateTextBox.Text
             values("ZipCode") = zipCodeTextBox.Text
-            values("GenderID") = GetComboSelectedIdOrZero(genderIDComboBox)
-            values("AssignedManagerID") = GetComboSelectedIdOrZero(assignedManagerIDComboBox)
+            values("GenderID") = GetComboSelectedIdOrNull(genderIDComboBox)
+            values("AssignedManagerID") = GetComboSelectedIdOrNull(assignedManagerIDComboBox)
             Dim savedId As Integer = recordId
             If savedId <= 0 AndAlso record.Table.Columns.Contains(primaryKey) AndAlso Not record.IsNull(primaryKey) Then Integer.TryParse(Convert.ToString(record(primaryKey)), savedId)
             Dim updatedBy = If(SessionState.IsActive, SessionState.Current.Value.UserID, 0)
