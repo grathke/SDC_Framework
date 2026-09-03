@@ -113,6 +113,24 @@ alone.
 VB.NET Windows Forms line-of-business application targeting `net10.0-windows` (.NET SDK 10 preview).
 Source files live flat in the repository root.
 
+**Delivery: Thinfinity VirtualUI, in the browser over HTML5.** The application is not installed on
+the user's machine. It runs on a server and the browser carries pixels and events, so "the user's
+machine" and "the machine the code runs on" are different computers. Two consequences that shape
+design decisions rather than merely being facts about deployment:
+
+- **Prefer discrete events over continuous pointer sampling.** Clicks and key presses always arrive.
+  Mouse-move events are routinely coalesced or throttled, so anything driven by hover or by polling
+  `Cursor.Position` degrades — it acts late rather than failing outright. Shortening a poll interval
+  does not help, because the position data itself is stale. Where a design can be either hover or
+  click, choose click.
+- **Files, printing and the clipboard are server-side until proven otherwise.** A file dialog browses
+  the server. `Environment.SpecialFolder` and DPAPI resolve against the server account. Attachments
+  use the Thinfinity VirtualUI file picker rather than `OpenFileDialog`.
+
+The page generator — `PageGenerator.vb`, `PageGeneration_U`, `FW_PageGeneration_B` — is a local
+development tool that generates pages consumed at the next compile. It never runs in a VirtualUI
+session, so delivery constraints do not apply to it.
+
 Key areas:
 
 - Page framework: `01 FW_Base_B.vb` (browse pages) and `01 FW_Base_U.vb` (maintenance pages).
