@@ -121,6 +121,16 @@ Namespace SDC.Framework
             responseTextBox.Visible = issueId > 0
             responseLabel.Visible = issueId > 0
             SetFieldRequired(responseTextBox, issueId > 0)
+
+            ' A developer diagnostic rather than part of the workflow - the report it copies names
+            ' the source file behind the page - so it is offered to an App Admin only. Tidiness
+            ' rather than a control: everything in the report is already on this form, and the
+            ' button is not a boundary anything depends on.
+            '
+            ' Narrower than IsCurrentUserSupport, deliberately. A Company Admin acts as support here
+            ' - they set priority and status - but is not who the source file name is for.
+            copyForClaudeButton.Visible = IsCurrentUserApplicationAdmin()
+
             UpdateResponseRequiredState()
         End Sub
 
@@ -628,6 +638,11 @@ Namespace SDC.Framework
             If Not SessionState.IsActive OrElse Not SessionState.Current.HasValue Then Return False
             Dim session = SessionState.Current.Value
             Return session.IsApplicationAdminRole OrElse session.IsCompanyAdminRole
+        End Function
+
+        Private Function IsCurrentUserApplicationAdmin() As Boolean
+            If Not SessionState.IsActive OrElse Not SessionState.Current.HasValue Then Return False
+            Return SessionState.Current.Value.IsApplicationAdminRole
         End Function
     End Class
 End Namespace
