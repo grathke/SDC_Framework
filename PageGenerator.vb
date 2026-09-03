@@ -9,7 +9,7 @@ Imports System.Text
 Imports System.Text.RegularExpressions
 Imports System.Security.Cryptography
 
-Namespace HelloWorld
+Namespace SDC.Framework
     Public NotInheritable Class PageGenerationResult
         Public ReadOnly Property CreatedFiles As IReadOnlyList(Of String)
         Public ReadOnly Property SkippedFiles As IReadOnlyList(Of String)
@@ -324,7 +324,7 @@ Namespace HelloWorld
                 Return New PageCompileResult(False, messages)
             End If
 
-            Dim referenceAssembly = Path.Combine(workspaceRoot, "bin", "Debug", "net10.0-windows", "HelloWorld.dll")
+            Dim referenceAssembly = Path.Combine(workspaceRoot, "bin", "Debug", "net10.0-windows", "SDC.Framework.dll")
             If Not File.Exists(referenceAssembly) Then
                 messages.Add("THE APPLICATION ASSEMBLY WAS NOT FOUND AT " & referenceAssembly & ".")
                 messages.Add("BUILD THE PROJECT ONCE, THEN RUN THE COMPILE CHECK AGAIN.")
@@ -458,10 +458,10 @@ Namespace HelloWorld
                 "    <OutputType>Library</OutputType>",
                 "    <TargetFramework>net10.0-windows</TargetFramework>",
                 "    <UseWindowsForms>true</UseWindowsForms>",
-                "    <RootNamespace>HelloWorld</RootNamespace>",
+                "    <RootNamespace></RootNamespace>",
                 "  </PropertyGroup>",
                 "  <ItemGroup>",
-                "    <Reference Include=""HelloWorld"">",
+                "    <Reference Include=""SDC.Framework"">",
                 "      <HintPath>" & referenceAssembly & "</HintPath>",
                 "    </Reference>",
                 "  </ItemGroup>",
@@ -830,7 +830,7 @@ Namespace HelloWorld
                 "",
                 "Imports System.Windows.Forms",
                 "",
-                "Namespace HelloWorld",
+                "Namespace SDC.Framework",
                 "    Public Class " & pageName,
                 "        Inherits FW_Base_B",
                 "",
@@ -921,7 +921,7 @@ Namespace HelloWorld
             output.AppendLine("Imports System.Drawing")
             output.AppendLine("Imports System.Windows.Forms")
             output.AppendLine()
-            output.AppendLine("Namespace HelloWorld")
+            output.AppendLine("Namespace SDC.Framework")
             output.AppendLine("    Public Class " & pageName)
             output.AppendLine("        Inherits FW_Base_U")
             output.AppendLine()

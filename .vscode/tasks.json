@@ -51,7 +51,7 @@
             "label": "Run Unit Tests",
             "type": "shell",
             "command": "dotnet",
-            "args": ["test", "${workspaceFolder}\\tests\\HelloWorld.Tests\\HelloWorld.Tests.vbproj"],
+            "args": ["test", "${workspaceFolder}\\tests\\SDC.Framework.Tests\\SDC.Framework.Tests.vbproj"],
             "group": "test",
             "presentation": {
                 "reveal": "always",
@@ -60,7 +60,7 @@
             "problemMatcher": []
         },
         {
-            "label": "Run HelloWorld",
+            "label": "Run SDC.Framework",
             "type": "shell",
             "command": "powershell",
             "args": ["-ExecutionPolicy", "Bypass", "-File", "${workspaceFolder}\\run-local.ps1"],
@@ -75,7 +75,7 @@
             "problemMatcher": []
         },
         {
-            "label": "Preview HelloWorld",
+            "label": "Preview SDC.Framework",
             "type": "shell",
             "command": "powershell",
             "args": ["-ExecutionPolicy", "Bypass", "-File", "${workspaceFolder}\\run-local.ps1", "-Preview"],

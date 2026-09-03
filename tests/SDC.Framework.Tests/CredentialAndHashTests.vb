@@ -4,9 +4,9 @@ Option Explicit On
 Imports System
 Imports System.Windows.Forms
 Imports Microsoft.VisualStudio.TestTools.UnitTesting
-Imports HelloWorld.HelloWorld
+Imports SDC.Framework
 
-Namespace HelloWorldTests
+Namespace SDC.Framework.Tests
 
     ''' <summary>
     ''' The keyed hash is shared between user passwords and the developer access gate, so a change
@@ -93,24 +93,24 @@ Namespace HelloWorldTests
 
         <TestMethod>
         Public Sub UsingEnvironmentCredentials_TracksThePasswordVariable()
-            Dim original = Environment.GetEnvironmentVariable("HELLOWORLD_DB_PASSWORD")
-            Dim originalFull = Environment.GetEnvironmentVariable("HELLOWORLD_DB_CONNECTION")
+            Dim original = Environment.GetEnvironmentVariable("SDC_DB_PASSWORD")
+            Dim originalFull = Environment.GetEnvironmentVariable("SDC_DB_CONNECTION")
 
             Try
-                Environment.SetEnvironmentVariable("HELLOWORLD_DB_CONNECTION", Nothing)
+                Environment.SetEnvironmentVariable("SDC_DB_CONNECTION", Nothing)
 
-                Environment.SetEnvironmentVariable("HELLOWORLD_DB_PASSWORD", "something")
+                Environment.SetEnvironmentVariable("SDC_DB_PASSWORD", "something")
                 Assert.IsTrue(DataAccess.IsUsingEnvironmentCredentials())
 
-                Environment.SetEnvironmentVariable("HELLOWORLD_DB_PASSWORD", Nothing)
+                Environment.SetEnvironmentVariable("SDC_DB_PASSWORD", Nothing)
                 Assert.IsFalse(DataAccess.IsUsingEnvironmentCredentials())
 
                 ' A full connection string counts on its own.
-                Environment.SetEnvironmentVariable("HELLOWORLD_DB_CONNECTION", "Server=x;")
+                Environment.SetEnvironmentVariable("SDC_DB_CONNECTION", "Server=x;")
                 Assert.IsTrue(DataAccess.IsUsingEnvironmentCredentials())
             Finally
-                Environment.SetEnvironmentVariable("HELLOWORLD_DB_PASSWORD", original)
-                Environment.SetEnvironmentVariable("HELLOWORLD_DB_CONNECTION", originalFull)
+                Environment.SetEnvironmentVariable("SDC_DB_PASSWORD", original)
+                Environment.SetEnvironmentVariable("SDC_DB_CONNECTION", originalFull)
             End Try
         End Sub
 
@@ -118,13 +118,13 @@ Namespace HelloWorldTests
         Public Sub EnvironmentPassword_CountsAsConfigured()
             ' The regression this pins: the startup check once looked only at the environment and
             ' reported "not configured" whenever the password came from anywhere else.
-            Dim original = Environment.GetEnvironmentVariable("HELLOWORLD_DB_PASSWORD")
+            Dim original = Environment.GetEnvironmentVariable("SDC_DB_PASSWORD")
 
             Try
-                Environment.SetEnvironmentVariable("HELLOWORLD_DB_PASSWORD", "something")
+                Environment.SetEnvironmentVariable("SDC_DB_PASSWORD", "something")
                 Assert.AreEqual(String.Empty, DataAccess.GetMissingConfigurationMessage())
             Finally
-                Environment.SetEnvironmentVariable("HELLOWORLD_DB_PASSWORD", original)
+                Environment.SetEnvironmentVariable("SDC_DB_PASSWORD", original)
             End Try
         End Sub
 

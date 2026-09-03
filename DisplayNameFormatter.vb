@@ -6,7 +6,7 @@ Imports System.Collections.Generic
 Imports System.Globalization
 Imports System.Text.RegularExpressions
 
-Namespace HelloWorld
+Namespace SDC.Framework
     ''' <summary>
     ''' Single owner for turning a database name into user-facing display text.
     ''' Used by control labels (FW_Base_U), grid column headers and page titles

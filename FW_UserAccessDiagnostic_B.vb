@@ -9,7 +9,7 @@ Imports System.Text
 Imports System.Text.RegularExpressions
 Imports System.Windows.Forms
 
-Namespace HelloWorld
+Namespace SDC.Framework
     Public Class FW_UserAccessDiagnostic_B
         Inherits FW_Base_B
 

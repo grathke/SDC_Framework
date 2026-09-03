@@ -8,7 +8,7 @@ Imports System.Collections.Generic
 Imports System.Linq
 Imports System.Windows.Forms
 
-Namespace HelloWorld
+Namespace SDC.Framework
     Public Class FW_MainMenu
         Inherits Form
 

@@ -2,9 +2,9 @@ Option Strict On
 Option Explicit On
 
 Imports Microsoft.VisualStudio.TestTools.UnitTesting
-Imports HelloWorld.HelloWorld
+Imports SDC.Framework
 
-Namespace HelloWorldTests
+Namespace SDC.Framework.Tests
 
     ''' <summary>
     ''' Every browse column header, page title and field caption goes through this. It is the one

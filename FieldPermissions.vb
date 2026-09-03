@@ -6,7 +6,7 @@ Imports System.Collections.Generic
 Imports System.Linq
 Imports System.Windows.Forms
 
-Namespace HelloWorld
+Namespace SDC.Framework
     ''' <summary>
     ''' Applies field-level permissions from FW_RoleFields to individual controls.
     '''

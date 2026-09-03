@@ -22,7 +22,7 @@ An App Admin can right-click any of them and choose a different graphic; the cho
 `FW_DashboardLayouts.IconFileName`, keyed on a surface name and the icon's `ActionKey`, and applied
 on the next load. `IconImageController` owns this for all three surfaces.
 
-The surface names are `Dashboard_Application`, `Dashboard_Company` and `HelloWorld.MainMenu`. The
+The surface names are `Dashboard_Application`, `Dashboard_Company` and `SDC.Framework.MainMenu`. The
 last is supplied by `MenuFormInitializer`, not by the menu form, because one menu form can serve
 more than one application; a second application's initializer passes its own name and keeps its own
 pictures.

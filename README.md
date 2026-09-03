@@ -26,7 +26,7 @@ Before merging any browse or grid behavior change (_B pages), verify all items b
 2. Coverage check:
 	- Confirm base browse and custom browse pages (Entity, Users, Roles) all use the shared behavior.
 3. Build check:
-	- `dotnet build .\HelloWorld.vbproj -p:UseAppHost=false -p:OutputPath=bin\Debug\net10.0-windows-hotfix\`
+	- `dotnet build .\SDC.Framework.vbproj -p:UseAppHost=false -p:OutputPath=bin\Debug\net10.0-windows-hotfix\`
 4. Regression check:
 	- Run `scripts\validate-browse-regression.ps1`
 	- Run UI checks listed by the script.

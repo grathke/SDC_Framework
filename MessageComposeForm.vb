@@ -6,7 +6,7 @@ Imports System.Collections.Generic
 Imports System.Drawing
 Imports System.Windows.Forms
 
-Namespace HelloWorld
+Namespace SDC.Framework
     Public Class MessageComposeForm
         Inherits Form
 

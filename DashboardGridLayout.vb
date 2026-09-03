@@ -3,7 +3,7 @@ Option Explicit On
 
 Imports System.Drawing
 
-Namespace HelloWorld
+Namespace SDC.Framework
     Public NotInheritable Class DashboardGridLayout
         Private Sub New()
         End Sub

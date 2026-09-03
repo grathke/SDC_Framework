@@ -1,14 +1,14 @@
 Add-Type -AssemblyName System.Data
 
-$server = if ($env:HELLOWORLD_DB_SERVER) { $env:HELLOWORLD_DB_SERVER } else { 'BEELINK' }
-$user = if ($env:HELLOWORLD_DB_USER) { $env:HELLOWORLD_DB_USER } else { 'sa' }
-if (-not $env:HELLOWORLD_DB_PASSWORD) {
-    throw "HELLOWORLD_DB_PASSWORD is not set. Run run-local.ps1 or set the variable before running this probe."
+$server = if ($env:SDC_DB_SERVER) { $env:SDC_DB_SERVER } else { 'BEELINK' }
+$user = if ($env:SDC_DB_USER) { $env:SDC_DB_USER } else { 'sa' }
+if (-not $env:SDC_DB_PASSWORD) {
+    throw "SDC_DB_PASSWORD is not set. Run run-local.ps1 or set the variable before running this probe."
 }
-$password = $env:HELLOWORLD_DB_PASSWORD
-$database = if ($env:HELLOWORLD_DB_NAME) { $env:HELLOWORLD_DB_NAME } else { 'WX_Framework' }
-$encrypt = if ($env:HELLOWORLD_DB_ENCRYPT) { $env:HELLOWORLD_DB_ENCRYPT } else { 'False' }
-$trustServerCertificate = if ($env:HELLOWORLD_DB_TRUST_SERVER_CERT) { $env:HELLOWORLD_DB_TRUST_SERVER_CERT } else { 'True' }
+$password = $env:SDC_DB_PASSWORD
+$database = if ($env:SDC_DB_NAME) { $env:SDC_DB_NAME } else { 'WX_Framework' }
+$encrypt = if ($env:SDC_DB_ENCRYPT) { $env:SDC_DB_ENCRYPT } else { 'False' }
+$trustServerCertificate = if ($env:SDC_DB_TRUST_SERVER_CERT) { $env:SDC_DB_TRUST_SERVER_CERT } else { 'True' }
 
 $cs = "Server=$server;User Id=$user;Password=$password;Encrypt=$encrypt;TrustServerCertificate=$trustServerCertificate;Initial Catalog=$database;"
 $conn = New-Object System.Data.SqlClient.SqlConnection $cs

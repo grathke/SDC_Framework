@@ -6,7 +6,7 @@ Imports System.IO
 Imports System.Threading
 Imports System.Windows.Forms
 
-Namespace HelloWorld
+Namespace SDC.Framework
     Friend Module Program
         Private ReadOnly logPath As String = Path.Combine(AppContext.BaseDirectory, "startup.log")
 
@@ -107,7 +107,7 @@ Namespace HelloWorld
                     Next
                 End If
 
-                Dim startupForm = Environment.GetEnvironmentVariable("HELLOWORLD_START_FORM")
+                Dim startupForm = Environment.GetEnvironmentVariable("SDC_START_FORM")
                 If Not String.IsNullOrWhiteSpace(startupForm) Then
                     Select Case startupForm.Trim().ToUpperInvariant()
                         Case "FW_REGISTRATION_U"

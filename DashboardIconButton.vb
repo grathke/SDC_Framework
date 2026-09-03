@@ -1,7 +1,7 @@
 Option Strict On
 Option Explicit On
 
-Namespace HelloWorld
+Namespace SDC.Framework
 
     ''' <summary>
     ''' A dashboard's picture-and-caption button.

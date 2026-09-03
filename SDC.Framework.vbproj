@@ -3,6 +3,12 @@
     <OutputType>WinExe</OutputType>
     <TargetFramework>net10.0-windows</TargetFramework>
     <UseWindowsForms>true</UseWindowsForms>
+    <!-- Empty on purpose. VB wraps every declared namespace in the root namespace, which
+         otherwise defaults to the project file name - which is how the old project ended up
+         addressed as HelloWorld.HelloWorld. Empty here means the Namespace block in each file
+         is the whole name: SDC.Framework. -->
+    <RootNamespace></RootNamespace>
+    <AssemblyName>SDC.Framework</AssemblyName>
   </PropertyGroup>
   <ItemGroup>
     <PackageReference Include="Microsoft.Data.SqlClient" Version="7.0.2" />

@@ -6,7 +6,7 @@ Imports System.Collections.Generic
 Imports System.Linq
 Imports System.Windows.Forms
 
-Namespace HelloWorld
+Namespace SDC.Framework
     Friend NotInheritable Class GridColumnsManager
         Private Sub New()
         End Sub

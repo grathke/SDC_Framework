@@ -4,7 +4,7 @@ Option Explicit On
 Imports System.ComponentModel
 Imports System.Windows.Forms
 
-Namespace HelloWorld
+Namespace SDC.Framework
     Public Class RetrieveQbeDialog
         Inherits Form
 

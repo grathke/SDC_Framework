@@ -6,7 +6,7 @@ Imports System.Drawing
 Imports System.Linq
 Imports System.Windows.Forms
 
-Namespace HelloWorld
+Namespace SDC.Framework
     ''' <summary>
     ''' A confirmation prompt in front of developer-only actions reached from the Application
     ''' dashboard, so one is never opened by a stray click.

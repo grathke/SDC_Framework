@@ -6,7 +6,7 @@ Imports System.Data
 Imports System.Globalization
 Imports System.Windows.Forms
 
-Namespace HelloWorld
+Namespace SDC.Framework
     Public NotInheritable Class RegistrationComboHelper
         Private Const ForcedRegistrationTypeForTesting As String = "Branch"
 

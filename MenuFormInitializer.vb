@@ -5,7 +5,7 @@ Imports System
 Imports System.Drawing
 Imports System.Windows.Forms
 
-Namespace HelloWorld
+Namespace SDC.Framework
     Public Module MenuFormInitializer
         Private Const TableApplicationSettingsDashboard As String = "APPLICATION SETTINGS DASHBOARD"
         Private Const TableRoles As String = "ROLES"
@@ -26,7 +26,7 @@ Namespace HelloWorld
         ''' output path for hotfixes, and a renamed exe would orphan every saved arrangement without
         ''' saying so.
         ''' </summary>
-        Private Const MenuSurfaceName As String = "HelloWorld.MainMenu"
+        Private Const MenuSurfaceName As String = "SDC.Framework.MainMenu"
 
         ''' <summary>
         ''' Tiles pinned to the head of the flow panel, in this order. They cannot be dragged and

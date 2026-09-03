@@ -3,7 +3,7 @@ Option Explicit On
 
 Imports System.Collections.Generic
 
-Namespace HelloWorld
+Namespace SDC.Framework
 
     ''' <summary>
     ''' Who soft-deleted a record and when, for the message shown to a user whose save found the

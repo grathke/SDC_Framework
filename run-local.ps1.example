@@ -6,14 +6,14 @@
 # The application compiles in no credentials. It reads them from the environment, and
 # run-with-db.ps1 sets these variables before launching:
 #
-#   HELLOWORLD_DB_PASSWORD           required - no default. Startup is blocked without it.
-#   HELLOWORLD_DB_SERVER             optional - defaults to BEELINK
-#   HELLOWORLD_DB_USER               optional - defaults to sa
-#   HELLOWORLD_DB_NAME               optional - defaults to WX_Framework
-#   HELLOWORLD_DB_ENCRYPT            optional - defaults to False
-#   HELLOWORLD_DB_TRUST_SERVER_CERT  optional - defaults to True
+#   SDC_DB_PASSWORD           required - no default. Startup is blocked without it.
+#   SDC_DB_SERVER             optional - defaults to BEELINK
+#   SDC_DB_USER               optional - defaults to sa
+#   SDC_DB_NAME               optional - defaults to WX_Framework
+#   SDC_DB_ENCRYPT            optional - defaults to False
+#   SDC_DB_TRUST_SERVER_CERT  optional - defaults to True
 #
-# On a server, or anywhere the defaults above are wrong, set HELLOWORLD_DB_CONNECTION to a
+# On a server, or anywhere the defaults above are wrong, set SDC_DB_CONNECTION to a
 # full connection string instead. It takes precedence over every variable listed above, so
 # a wrong server name cannot be picked up silently from a default.
 #

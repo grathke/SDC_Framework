@@ -9,7 +9,7 @@ Imports System.Linq
 Imports System.Text.Json
 Imports System.Windows.Forms
 
-Namespace HelloWorld
+Namespace SDC.Framework
 
     Public MustInherit Class FW_Base_U
         Inherits Form

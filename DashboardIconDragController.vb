@@ -6,7 +6,7 @@ Imports System.Drawing
 Imports System.Linq
 Imports System.Windows.Forms
 
-Namespace HelloWorld
+Namespace SDC.Framework
 
     ''' <summary>
     ''' Lets a dashboard's icons be dragged between grid cells, and remembers where they were put.

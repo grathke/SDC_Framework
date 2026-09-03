@@ -22,23 +22,23 @@ param(
     [switch]$Preview
 )
 
-$env:HELLOWORLD_DB_SERVER = $Server
-$env:HELLOWORLD_DB_USER = $User
-$env:HELLOWORLD_DB_PASSWORD = $Password
-$env:HELLOWORLD_DB_NAME = $Database
-$env:HELLOWORLD_DB_ENCRYPT = $Encrypt
-$env:HELLOWORLD_DB_TRUST_SERVER_CERT = $TrustServerCertificate
+$env:SDC_DB_SERVER = $Server
+$env:SDC_DB_USER = $User
+$env:SDC_DB_PASSWORD = $Password
+$env:SDC_DB_NAME = $Database
+$env:SDC_DB_ENCRYPT = $Encrypt
+$env:SDC_DB_TRUST_SERVER_CERT = $TrustServerCertificate
 
 Write-Host "Running with database settings:"
-Write-Host "  Server: $($env:HELLOWORLD_DB_SERVER)"
-Write-Host "  User: $($env:HELLOWORLD_DB_USER)"
-Write-Host "  Database: $($env:HELLOWORLD_DB_NAME)"
-Write-Host "  Encrypt: $($env:HELLOWORLD_DB_ENCRYPT)"
-Write-Host "  TrustServerCertificate: $($env:HELLOWORLD_DB_TRUST_SERVER_CERT)"
+Write-Host "  Server: $($env:SDC_DB_SERVER)"
+Write-Host "  User: $($env:SDC_DB_USER)"
+Write-Host "  Database: $($env:SDC_DB_NAME)"
+Write-Host "  Encrypt: $($env:SDC_DB_ENCRYPT)"
+Write-Host "  TrustServerCertificate: $($env:SDC_DB_TRUST_SERVER_CERT)"
 
 if ($Preview) {
-    & dotnet run --project ".\HelloWorld.vbproj" -- --preview
+    & dotnet run --project ".\SDC.Framework.vbproj" -- --preview
 }
 else {
-    & dotnet run --project ".\HelloWorld.vbproj"
+    & dotnet run --project ".\SDC.Framework.vbproj"
 }

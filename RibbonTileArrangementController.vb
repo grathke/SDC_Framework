@@ -6,7 +6,7 @@ Imports System.Drawing
 Imports System.Linq
 Imports System.Windows.Forms
 
-Namespace HelloWorld
+Namespace SDC.Framework
 
     ''' <summary>
     ''' Lets an App Admin rearrange the main menu's ribbon tiles, and remembers the arrangement.

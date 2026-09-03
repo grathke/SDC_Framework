@@ -8,7 +8,7 @@ Imports System.Linq
 Imports System.Text.Json
 Imports System.Windows.Forms
 
-Namespace HelloWorld
+Namespace SDC.Framework
     Public Class FW_AuditTrail_B
         Inherits Form
 

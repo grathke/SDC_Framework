@@ -6,7 +6,7 @@ Imports System.Drawing
 Imports System.Threading.Tasks
 Imports System.Windows.Forms
 
-Namespace HelloWorld
+Namespace SDC.Framework
     ''' <summary>
     ''' A small modal window shown while something slow runs, so the application looks busy rather
     ''' than frozen. Closes itself the moment the work finishes.

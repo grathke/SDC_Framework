@@ -30,7 +30,7 @@ checked against the source at that time; corrections to the original notes are m
   second application writes its own initializer rather than a second menu form. Do not put a
   surface name, an application name, or an exe name inside the form.
 - An App Admin can drag the tiles in the left flow panel into a different order; the panel shows
-  its border only while a drag is under way, not for the whole session. What is saved is a
+  a bar under the movable stretch of the row only while a drag is under way. What is saved is a
   **rank**, never a coordinate — the panel closes the
   gap when a permission hides a tile, and a coordinate would leave a hole. See `ICON_CATALOG.md`
   for the storage and the App Admin boundary.
@@ -572,7 +572,7 @@ way — `Generate` performs the action and the preview describes it.
 
 Reading the previewed source does not prove it compiles. The **Compile Check** button inside the
 preview writes both sources plus a scratch `PageGenPreview.vbproj` to `obj\pagegen-preview\`, which
-references the built `bin\Debug\net10.0-windows\HelloWorld.dll`, and runs `dotnet build` on it. The
+references the built `bin\Debug\net10.0-windows\SDC.Framework.dll`, and runs `dotnet build` on it. The
 generated pages inherit `FW_Base_B` / `FW_Base_U` from that assembly, so this is a real compile and
 reports real `BC` errors with file, line and column. Nothing in the workspace is touched — the SDK
 excludes `obj\` from the application's own compile items.
@@ -657,7 +657,7 @@ Do not propagate the unprefixed `PageGeneration_B_U` name.
 ## Run And Database
 
 - Run with `.\run-local.ps1` (gitignored, holds the local password). It calls `run-with-db.ps1`,
-  which exports `HELLOWORLD_DB_*` environment variables.
+  which exports `SDC_DB_*` environment variables.
 - A bare `dotnet run` has no credentials and now stops at startup with a configuration message.
 - Local development target: Server `BEELINK`, Database `WX_Framework`.
 

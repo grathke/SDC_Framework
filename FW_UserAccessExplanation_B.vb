@@ -9,7 +9,7 @@ Imports System.Linq
 Imports System.Text
 Imports System.Windows.Forms
 
-Namespace HelloWorld
+Namespace SDC.Framework
     Public Class FW_UserAccessExplanation_B
         Inherits Form
 

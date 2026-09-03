@@ -7,7 +7,7 @@ Imports System.Data
 Imports System.Globalization
 Imports Microsoft.Data.SqlClient
 
-Namespace HelloWorld
+Namespace SDC.Framework
     Public NotInheritable Class MessagingDataAccess
         Private Sub New()
         End Sub
@@ -246,12 +246,12 @@ Namespace HelloWorld
         End Sub
 
         Private Shared Function ConnectionString() As String
-            Dim server = Environment.GetEnvironmentVariable("HELLOWORLD_DB_SERVER")
-            Dim user = Environment.GetEnvironmentVariable("HELLOWORLD_DB_USER")
-            Dim password = Environment.GetEnvironmentVariable("HELLOWORLD_DB_PASSWORD")
-            Dim database = Environment.GetEnvironmentVariable("HELLOWORLD_DB_NAME")
-            Dim encrypt = Environment.GetEnvironmentVariable("HELLOWORLD_DB_ENCRYPT")
-            Dim trust = Environment.GetEnvironmentVariable("HELLOWORLD_DB_TRUST_SERVER_CERT")
+            Dim server = Environment.GetEnvironmentVariable("SDC_DB_SERVER")
+            Dim user = Environment.GetEnvironmentVariable("SDC_DB_USER")
+            Dim password = Environment.GetEnvironmentVariable("SDC_DB_PASSWORD")
+            Dim database = Environment.GetEnvironmentVariable("SDC_DB_NAME")
+            Dim encrypt = Environment.GetEnvironmentVariable("SDC_DB_ENCRYPT")
+            Dim trust = Environment.GetEnvironmentVariable("SDC_DB_TRUST_SERVER_CERT")
             Return $"Server={server};Database={database};User ID={user};Password={password};Encrypt={If(String.IsNullOrWhiteSpace(encrypt), "True", encrypt)};TrustServerCertificate={If(String.IsNullOrWhiteSpace(trust), "True", trust)}"
         End Function
     End Class

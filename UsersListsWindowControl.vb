@@ -4,7 +4,7 @@ Option Explicit On
 Imports System.Drawing
 Imports System.Windows.Forms
 
-Namespace HelloWorld
+Namespace SDC.Framework
     Public Class UsersListsWindowControl
         Inherits UserControl
         Implements IAccessControlledControl

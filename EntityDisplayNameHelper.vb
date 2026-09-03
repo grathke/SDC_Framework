@@ -3,7 +3,7 @@ Option Explicit On
 
 Imports System
 
-Namespace HelloWorld
+Namespace SDC.Framework
     Public Module EntityDisplayNameHelper
         Public Function ResolveEntityAlias(registrationId As Integer,
                                            tableName As String,

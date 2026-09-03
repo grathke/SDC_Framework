@@ -5,7 +5,7 @@ Imports System
 Imports System.Drawing
 Imports System.Windows.Forms
 
-Namespace HelloWorld
+Namespace SDC.Framework
     ''' <summary>
     ''' Owns the Zip Coder button on maintenance pages that edit City / State / Zip.
     ''' The button is the manual alternative to the Smarty type-ahead, so it is shown only

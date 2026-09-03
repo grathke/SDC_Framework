@@ -2,9 +2,9 @@ Option Strict On
 Option Explicit On
 
 Imports Microsoft.VisualStudio.TestTools.UnitTesting
-Imports HelloWorld.HelloWorld
+Imports SDC.Framework
 
-Namespace HelloWorldTests
+Namespace SDC.Framework.Tests
 
     ''' <summary>
     ''' Permissions run through every page, and a mistake here is silent - a capability quietly

@@ -7,7 +7,7 @@ Imports System.Drawing
 Imports System.Linq
 Imports System.Windows.Forms
 
-Namespace HelloWorld
+Namespace SDC.Framework
     Public Class MessagesWindowControl
         Inherits UserControl
         Implements IAccessControlledControl

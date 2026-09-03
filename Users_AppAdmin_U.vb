@@ -5,7 +5,7 @@ Imports System.Globalization
 Imports System.Drawing
 Imports System.Windows.Forms
 
-Namespace HelloWorld
+Namespace SDC.Framework
 
     Public Class Users_AppAdmin_U
         Inherits FW_Base_U

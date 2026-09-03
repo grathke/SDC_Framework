@@ -4,7 +4,7 @@ Option Explicit On
 Imports System.Data
 Imports System.Windows.Forms
 
-Namespace HelloWorld
+Namespace SDC.Framework
     Friend Module DeletedViewGuard
 
         Friend Function IsSoftDeleteColumnName(columnName As String) As Boolean

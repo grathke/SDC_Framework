@@ -4,7 +4,7 @@ Option Explicit On
 Imports System
 Imports System.Windows.Forms
 
-Namespace HelloWorld
+Namespace SDC.Framework
 
     Public Class Users_AppAdmin_B
         Inherits FW_Base_B

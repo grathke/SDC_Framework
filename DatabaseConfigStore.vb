@@ -7,7 +7,7 @@ Imports System.Security.Cryptography
 Imports System.Text
 Imports System.Text.Json
 
-Namespace HelloWorld
+Namespace SDC.Framework
     ''' <summary>
     ''' Reads and writes the database credentials the user enters when the application starts with
     ''' nothing configured.

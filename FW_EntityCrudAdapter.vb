@@ -5,7 +5,7 @@ Imports System
 Imports System.Drawing
 Imports System.Windows.Forms
 
-Namespace HelloWorld
+Namespace SDC.Framework
     Public NotInheritable Class FW_EntityCrudAdapter
         Private Sub New()
         End Sub

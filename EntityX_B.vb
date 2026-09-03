@@ -3,7 +3,7 @@ Option Explicit On
 
 Imports System.Windows.Forms
 
-Namespace HelloWorld
+Namespace SDC.Framework
     Public Class EntityX_B
         Inherits FW_Base_B
 

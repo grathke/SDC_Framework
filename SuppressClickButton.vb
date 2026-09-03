@@ -4,7 +4,7 @@ Option Explicit On
 Imports System.ComponentModel
 Imports System.Windows.Forms
 
-Namespace HelloWorld
+Namespace SDC.Framework
 
     ''' <summary>
     ''' A button that can have one click swallowed, and that does not paint a focus rectangle.

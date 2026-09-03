@@ -170,7 +170,7 @@ Selecting a row must not toggle its checkbox. After a move or visibility change,
 A standard page normally needs only:
 
 ```vb
-Namespace HelloWorld
+Namespace SDC.Framework
     Public Class Customer_B
         Inherits FW_Base_B
 

@@ -12,7 +12,7 @@ Imports System.Text
 Imports System.Threading.Tasks
 Imports System.Windows.Forms
 
-Namespace HelloWorld
+Namespace SDC.Framework
     Public Class PageGeneration_U
         Inherits FW_Base_U
 

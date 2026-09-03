@@ -6,7 +6,7 @@ Imports System.Data
 Imports System.Globalization
 Imports Microsoft.Data.SqlClient
 
-Namespace HelloWorld
+Namespace SDC.Framework
     Public NotInheritable Class HelpDeskDataAccess
         Private Sub New()
         End Sub
@@ -56,13 +56,13 @@ Namespace HelloWorld
         End Class
 
         Private Shared Function ConnectionString() As String
-            Dim configured = Environment.GetEnvironmentVariable("HELLOWORLD_DB_CONNECTION")
+            Dim configured = Environment.GetEnvironmentVariable("SDC_DB_CONNECTION")
             If Not String.IsNullOrWhiteSpace(configured) Then Return configured.Trim()
 
-            Dim server = Environment.GetEnvironmentVariable("HELLOWORLD_DB_SERVER")
-            Dim user = Environment.GetEnvironmentVariable("HELLOWORLD_DB_USER")
-            Dim password = Environment.GetEnvironmentVariable("HELLOWORLD_DB_PASSWORD")
-            Dim database = Environment.GetEnvironmentVariable("HELLOWORLD_DB_NAME")
+            Dim server = Environment.GetEnvironmentVariable("SDC_DB_SERVER")
+            Dim user = Environment.GetEnvironmentVariable("SDC_DB_USER")
+            Dim password = Environment.GetEnvironmentVariable("SDC_DB_PASSWORD")
+            Dim database = Environment.GetEnvironmentVariable("SDC_DB_NAME")
             If String.IsNullOrWhiteSpace(server) Then server = "BEELINK"
             If String.IsNullOrWhiteSpace(user) Then user = "sa"
             If String.IsNullOrWhiteSpace(password) Then password = String.Empty

@@ -3,7 +3,7 @@ Option Explicit On
 
 Imports System.Windows.Forms
 
-Namespace HelloWorld
+Namespace SDC.Framework
     Friend Class TabOrderManagerItem
         Public Property Control As Control
         Public Property DisplayName As String

@@ -12,7 +12,7 @@ Status: `pass` with a date, `fail` with what happened, or `untested`.
 ## DB — Database connection and configuration
 
 Run with `.\scripts\test-db-connection-failures.ps1 -Case <name>`. Nothing on the server changes;
-each case is simulated through `HELLOWORLD_DB_CONNECTION` in the launched process.
+each case is simulated through `SDC_DB_CONNECTION` in the launched process.
 
 | ID | Case | Expected | Status |
 |---|---|---|---|
@@ -52,7 +52,7 @@ Only four accounts can authenticate; the rest have no `PasswordHash`.
 ## MENU — Ribbon arrangement and icon pictures
 
 App Admin only. Both are global: one arrangement and one set of pictures for every user, stored in
-`FW_DashboardLayouts` under `HelloWorld.MainMenu`.
+`FW_DashboardLayouts` under `SDC.Framework.MainMenu`.
 
 | ID | Case | Expected | Status |
 |---|---|---|---|
@@ -76,7 +76,7 @@ App Admin only. Both are global: one arrangement and one set of pictures for eve
 | MENU-13 | Even spacing, Help Desk flush right | Every tile in both panels is the same width with the same gap, and Help Desk finishes at the right-hand end of the ribbon rather than 22px short of it. | pass 2026-09-03 |
 | MENU-09 | Role tile picture survives a role change | Change the Select a Role picture, then switch role. It must not revert — `UpdateRoleSelectionTile` rebuilds that tile and re-applies the choice afterwards. | pass 2026-09-03 |
 | MENU-19 | The drop span follows a hidden anchored tile | The bar must start at the first tile that is *visible* and movable, not where that tile sits when everything is shown, and a leftward drag must stop after the last **visible** anchored tile rather than reaching the front. **Not reachable, and that is the design.** An App Admin and a Company Admin always see Application Settings — `canAccessApplicationSettings = isAppAdminSession OrElse isCompanyAdminSession` in `MenuFormInitializer` — and only an App Admin can drag, so no session both hides an anchored tile and can rearrange. `dashboard` and `close` are wired `True` unconditionally and never hide at all. The visible-child skips in `IndexUnderPointer` and `Panel_Paint` are defensive: they cost nothing and mean an anchored tile given a failable permission later would not need this found again. | n/a by design |
-| MENU-20 | Anchored tiles are never ranked | No anchored key — `close`, `dashboard`, `application-settings` — has a `GridColumn` in `FW_DashboardLayouts` under `HelloWorld.MainMenu`, however many arrangements have been saved. A **row** for one is expected and fine: changing a tile picture upserts a row carrying only `IconFileName`, leaving the grid columns null, and `GetDashboardIconPositions` filters `GridRow IS NOT NULL AND GridColumn IS NOT NULL` so a null-rank row is never read as a rank. It is the rank that must be absent, not the row. **Check it in the database, not the UI** — `RankOf` returns `AnchoredBase` before it ever reads storage, so a stray rank would be masked on screen and would surface only if the tile were later un-anchored. | pass 2026-09-03 — `close` has a picture row with null rank; no anchored key carries a rank |
+| MENU-20 | Anchored tiles are never ranked | No anchored key — `close`, `dashboard`, `application-settings` — has a `GridColumn` in `FW_DashboardLayouts` under `SDC.Framework.MainMenu`, however many arrangements have been saved. A **row** for one is expected and fine: changing a tile picture upserts a row carrying only `IconFileName`, leaving the grid columns null, and `GetDashboardIconPositions` filters `GridRow IS NOT NULL AND GridColumn IS NOT NULL` so a null-rank row is never read as a rank. It is the rank that must be absent, not the row. **Check it in the database, not the UI** — `RankOf` returns `AnchoredBase` before it ever reads storage, so a stray rank would be masked on screen and would surface only if the tile were later un-anchored. | pass 2026-09-03 — `close` has a picture row with null rank; no anchored key carries a rank |
 | MENU-21 | Anchored tile returns across a role switch | As App Admin, arrange the movable tiles and note the order. Switch to a role that is neither App Admin nor Company Admin: Application Settings hides and the row packs left (MENU-05). Switch back: it resumes the head of the row ahead of the movable tiles, which keep the arranged order behind it. Weaker than MENU-20 — it proves the round trip, not that no rank was written. | pass 2026-09-03 |
 | MENU-10 | Dashboards unchanged | Both dashboards still drag icons and re-picture them exactly as before, now through the shared `IconImageController`. Dashboard dragging stays open to any user, not just App Admin. | pass 2026-09-03 |
 
@@ -185,6 +185,6 @@ These run without a database and are not duplicated above.
 
 | What | Command |
 |---|---|
-| Unit tests — permissions, display names, keyed hash, credential precedence, empty combo | `dotnet test .\tests\HelloWorld.Tests\HelloWorld.Tests.vbproj` |
+| Unit tests — permissions, display names, keyed hash, credential precedence, empty combo | `dotnet test .\tests\SDC.Framework.Tests\SDC.Framework.Tests.vbproj` |
 | Browse contract checks | `powershell -File .\scripts\validate-browse-regression.ps1 -SkipBuild` |
 | Maintenance contract checks | `powershell -File .\scripts\validate-maintenance-regression.ps1 -SkipBuild` |

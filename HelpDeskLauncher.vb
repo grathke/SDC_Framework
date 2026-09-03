@@ -6,7 +6,7 @@ Imports System.Linq
 Imports System.IO
 Imports System.Windows.Forms
 
-Namespace HelloWorld
+Namespace SDC.Framework
 
     ''' <summary>
     ''' The Help Desk button every _B and _U page carries. One owner, so the button looks the same,

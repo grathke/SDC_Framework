@@ -8,7 +8,7 @@ Imports System.IO
 Imports System.Linq
 Imports System.Windows.Forms
 
-Namespace HelloWorld
+Namespace SDC.Framework
 
     ''' <summary>
     ''' The one place an icon is chosen, and the one place a stored choice becomes a picture.

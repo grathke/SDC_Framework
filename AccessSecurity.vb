@@ -4,7 +4,7 @@ Option Explicit On
 Imports System
 Imports System.Collections.Generic
 
-Namespace HelloWorld
+Namespace SDC.Framework
     <Flags>
     Public Enum AccessCapability
         None = 0

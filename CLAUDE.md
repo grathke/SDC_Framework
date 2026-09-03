@@ -22,10 +22,10 @@ whether something is expected of them.
   ```
 
 - **Do not launch the application until the user replies `run`.** They may prefer to run it themselves.
-- **`CLOSE THE APP`** — the running application locks `bin\Debug\net10.0-windows\HelloWorld.exe`, so a
+- **`CLOSE THE APP`** — the running application locks `bin\Debug\net10.0-windows\SDC.Framework.exe`, so a
   build, a test run or a restart cannot proceed while it is open. When that happens, end the response
   with this marker as a heading, naming the process id, rather than burying the request in prose. Get
-  the id with `Get-Process HelloWorld`, never guess it. Example:
+  the id with `Get-Process SDC.Framework`, never guess it. Example:
 
   ```
   ## CLOSE THE APP — PID 40820
@@ -181,16 +181,16 @@ Known exceptions in the current codebase, to be resolved rather than copied:
 Build:
 
 ```
-dotnet build .\HelloWorld.vbproj
+dotnet build .\SDC.Framework.vbproj
 ```
 
 Hotfix/side build that does not disturb the normal output:
 
 ```
-dotnet build .\HelloWorld.vbproj -p:UseAppHost=false -p:OutputPath=bin\Debug\net10.0-windows-hotfix\
+dotnet build .\SDC.Framework.vbproj -p:UseAppHost=false -p:OutputPath=bin\Debug\net10.0-windows-hotfix\
 ```
 
-Run: `powershell -ExecutionPolicy Bypass -File .\run-local.ps1` (VS Code task `Run HelloWorld`).
+Run: `powershell -ExecutionPolicy Bypass -File .\run-local.ps1` (VS Code task `Run SDC.Framework`).
 With database: `.\run-with-db.ps1`.
 
 ### Database configuration
@@ -200,18 +200,18 @@ from the environment:
 
 | Variable | Default |
 |---|---|
-| `HELLOWORLD_DB_CONNECTION` | none — a full connection string; takes precedence over everything below |
-| `HELLOWORLD_DB_PASSWORD` | none — **required**, and the one the startup check tests |
-| `HELLOWORLD_DB_SERVER` | `BEELINK` |
-| `HELLOWORLD_DB_USER` | `sa` |
-| `HELLOWORLD_DB_NAME` | `WX_Framework` |
-| `HELLOWORLD_DB_ENCRYPT` | `False` |
-| `HELLOWORLD_DB_TRUST_SERVER_CERT` | `True` |
+| `SDC_DB_CONNECTION` | none — a full connection string; takes precedence over everything below |
+| `SDC_DB_PASSWORD` | none — **required**, and the one the startup check tests |
+| `SDC_DB_SERVER` | `BEELINK` |
+| `SDC_DB_USER` | `sa` |
+| `SDC_DB_NAME` | `WX_Framework` |
+| `SDC_DB_ENCRYPT` | `False` |
+| `SDC_DB_TRUST_SERVER_CERT` | `True` |
 
 With nothing configured, `Program.vb` shows "Database Configuration Required" and exits with code 2
 before the login screen. `run-local.ps1` supplies these for local development and is in
 `.gitignore`, so it does not travel with the repository — `run-local.ps1.example` documents what to
-set. Away from this machine, prefer `HELLOWORLD_DB_CONNECTION` so a wrong server name cannot be
+set. Away from this machine, prefer `SDC_DB_CONNECTION` so a wrong server name cannot be
 picked up silently from a default.
 
 Browse regression validation:
@@ -237,7 +237,7 @@ Unit tests (VS Code task `Run Unit Tests`). No database and no message loop, so 
 a second:
 
 ```
-dotnet test .\tests\HelloWorld.Tests\HelloWorld.Tests.vbproj
+dotnet test .\tests\SDC.Framework.Tests\SDC.Framework.Tests.vbproj
 ```
 
 They cover logic only — permissions, display-name formatting, the keyed hash, credential
@@ -305,7 +305,7 @@ These are baseline rules for this application, not optional task-specific sugges
 - Search for duplicate or page-local paths that bypass shared behavior.
 - Build the project, run focused regression checks, search all affected callers, and manually verify the actual page workflow.
 - Run `scripts\validate-browse-regression.ps1` for a `_B` page and `scripts\validate-maintenance-regression.ps1` for a `_U` page, then work through the manual checklist each one prints.
-- Run `dotnet test .\tests\HelloWorld.Tests\HelloWorld.Tests.vbproj` whenever the change touches permissions, display-name formatting, hashing, credential resolution, or the empty-combo test. Passing tests do not substitute for the manual workflow check.
+- Run `dotnet test .\tests\SDC.Framework.Tests\SDC.Framework.Tests.vbproj` whenever the change touches permissions, display-name formatting, hashing, credential resolution, or the empty-combo test. Passing tests do not substitute for the manual workflow check.
 - Do not declare a new page complete from compilation alone.
 - For every new standard `_B` page, verify the no-row `FW_RoleTables` path against the actual database: opening the page must create the correct `WindowOrPage`, `DB_Table`, friendly alias, session `CreatedBy`, and PK-safe fallback SQL.
 

@@ -7,8 +7,9 @@
     <UseWindowsForms>true</UseWindowsForms>
     <LangVersion>latest</LangVersion>
     <IsPackable>false</IsPackable>
-    <!-- Empty: the application namespace is HelloWorld.HelloWorld, because its own RootNamespace
-         and its Namespace block stack. Leaving this empty keeps test namespaces predictable. -->
+    <!-- Empty: the application declares its full name in each file (SDC.Framework) with an empty
+         root namespace, so the tests do the same. Leaving this set would stack a second
+         segment in front of Namespace SDC.Framework.Tests. -->
     <RootNamespace></RootNamespace>
   </PropertyGroup>
 
@@ -17,7 +18,7 @@
   </ItemGroup>
 
   <ItemGroup>
-    <ProjectReference Include="..\..\HelloWorld.vbproj" />
+    <ProjectReference Include="..\..\SDC.Framework.vbproj" />
   </ItemGroup>
 
 </Project>

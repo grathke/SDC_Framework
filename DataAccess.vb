@@ -12,7 +12,7 @@ Imports System.Text.Json
 Imports System.Text.RegularExpressions
 Imports Microsoft.Data.SqlClient
 
-Namespace HelloWorld
+Namespace SDC.Framework
     Public NotInheritable Class DataAccess
         Public NotInheritable Class CrudButtonCaptions
             Public Property CreateCaption As String
@@ -300,7 +300,7 @@ Namespace HelloWorld
         ''' override without touching anyone's saved file.
         ''' </summary>
         Private Shared Function BuildConnectionString() As String
-            Dim fullConnectionString = Environment.GetEnvironmentVariable("HELLOWORLD_DB_CONNECTION")
+            Dim fullConnectionString = Environment.GetEnvironmentVariable("SDC_DB_CONNECTION")
             If Not String.IsNullOrWhiteSpace(fullConnectionString) Then
                 Return fullConnectionString.Trim()
             End If
@@ -310,12 +310,12 @@ Namespace HelloWorld
                 Return DatabaseConfigStore.BuildConnectionString(saved)
             End If
 
-            Dim server = GetEnvironmentOrDefault("HELLOWORLD_DB_SERVER", "BEELINK")
-            Dim userId = GetEnvironmentOrDefault("HELLOWORLD_DB_USER", "sa")
-            Dim password = GetEnvironmentOrDefault("HELLOWORLD_DB_PASSWORD", String.Empty)
-            Dim database = GetEnvironmentOrDefault("HELLOWORLD_DB_NAME", "WX_Framework")
-            Dim encrypt = GetEnvironmentOrDefault("HELLOWORLD_DB_ENCRYPT", "False")
-            Dim trustServerCertificate = GetEnvironmentOrDefault("HELLOWORLD_DB_TRUST_SERVER_CERT", "True")
+            Dim server = GetEnvironmentOrDefault("SDC_DB_SERVER", "BEELINK")
+            Dim userId = GetEnvironmentOrDefault("SDC_DB_USER", "sa")
+            Dim password = GetEnvironmentOrDefault("SDC_DB_PASSWORD", String.Empty)
+            Dim database = GetEnvironmentOrDefault("SDC_DB_NAME", "WX_Framework")
+            Dim encrypt = GetEnvironmentOrDefault("SDC_DB_ENCRYPT", "False")
+            Dim trustServerCertificate = GetEnvironmentOrDefault("SDC_DB_TRUST_SERVER_CERT", "True")
 
             Return "Server=" & server & ";User Id=" & userId & ";Password=" & password & ";Encrypt=" & encrypt & ";TrustServerCertificate=" & trustServerCertificate & ";Initial Catalog=" & database & ";"
         End Function
@@ -335,11 +335,11 @@ Namespace HelloWorld
         ''' environment and are deliberately not compiled into the application.
         ''' </summary>
         Public Shared Function GetMissingConfigurationMessage() As String
-            If Not String.IsNullOrWhiteSpace(Environment.GetEnvironmentVariable("HELLOWORLD_DB_CONNECTION")) Then
+            If Not String.IsNullOrWhiteSpace(Environment.GetEnvironmentVariable("SDC_DB_CONNECTION")) Then
                 Return String.Empty
             End If
 
-            If String.IsNullOrWhiteSpace(Environment.GetEnvironmentVariable("HELLOWORLD_DB_PASSWORD")) Then
+            If String.IsNullOrWhiteSpace(Environment.GetEnvironmentVariable("SDC_DB_PASSWORD")) Then
                 ' Credentials saved through the configuration dialog count as configured, or the
                 ' dialog would reappear on every launch and saving would achieve nothing.
                 If GetUsableSavedSettings() IsNot Nothing Then
@@ -348,9 +348,9 @@ Namespace HelloWorld
 
                 Return "Database credentials are not configured." & Environment.NewLine &
                        Environment.NewLine &
-                       "Enter them here, or set HELLOWORLD_DB_CONNECTION to a full connection " &
-                       "string. HELLOWORLD_DB_SERVER, HELLOWORLD_DB_USER, HELLOWORLD_DB_NAME and " &
-                       "HELLOWORLD_DB_PASSWORD are the individual overrides." & Environment.NewLine &
+                       "Enter them here, or set SDC_DB_CONNECTION to a full connection " &
+                       "string. SDC_DB_SERVER, SDC_DB_USER, SDC_DB_NAME and " &
+                       "SDC_DB_PASSWORD are the individual overrides." & Environment.NewLine &
                        Environment.NewLine &
                        "run-local.ps1 sets these for local development."
             End If
@@ -365,8 +365,8 @@ Namespace HelloWorld
         ''' problem, and a developer running run-local.ps1 should never see a prompt at all.
         ''' </summary>
         Public Shared Function IsUsingEnvironmentCredentials() As Boolean
-            Return Not String.IsNullOrWhiteSpace(Environment.GetEnvironmentVariable("HELLOWORLD_DB_CONNECTION")) OrElse
-                   Not String.IsNullOrWhiteSpace(Environment.GetEnvironmentVariable("HELLOWORLD_DB_PASSWORD"))
+            Return Not String.IsNullOrWhiteSpace(Environment.GetEnvironmentVariable("SDC_DB_CONNECTION")) OrElse
+                   Not String.IsNullOrWhiteSpace(Environment.GetEnvironmentVariable("SDC_DB_PASSWORD"))
         End Function
 
         ''' <summary>
@@ -375,7 +375,7 @@ Namespace HelloWorld
         ''' cannot disagree about whether the application is configured.
         ''' </summary>
         Private Shared Function GetUsableSavedSettings() As DatabaseConfigStore.DatabaseSettings
-            If Not String.IsNullOrWhiteSpace(Environment.GetEnvironmentVariable("HELLOWORLD_DB_PASSWORD")) Then
+            If Not String.IsNullOrWhiteSpace(Environment.GetEnvironmentVariable("SDC_DB_PASSWORD")) Then
                 Return Nothing
             End If
 

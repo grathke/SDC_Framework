@@ -7,7 +7,7 @@ Imports System.Drawing
 Imports System.Globalization
 Imports System.Windows.Forms
 
-Namespace HelloWorld
+Namespace SDC.Framework
     Public Class FW_HD_AdminDashboard_B
         Inherits Form
 

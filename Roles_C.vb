@@ -6,7 +6,7 @@ Imports System.Data
 Imports System.Drawing
 Imports System.Windows.Forms
 
-Namespace HelloWorld
+Namespace SDC.Framework
     Public Class Roles_C
         Inherits Form
 

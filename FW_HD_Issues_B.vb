@@ -5,7 +5,7 @@ Imports System.Data
 Imports System
 Imports System.Windows.Forms
 
-Namespace HelloWorld
+Namespace SDC.Framework
     Public Class FW_HD_Issues_B
         Inherits FW_Base_B
 

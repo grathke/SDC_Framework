@@ -6,7 +6,7 @@ Imports System.Drawing
 Imports System.IO
 Imports System.Windows.Forms
 
-Namespace HelloWorld
+Namespace SDC.Framework
     Public Class HelpDeskAttachmentUpload
         Public Property FileName As String
         Public Property ContentType As String

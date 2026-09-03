@@ -6,7 +6,7 @@ Imports System.Collections.Generic
 Imports System.Threading.Tasks
 Imports System.Windows.Forms
 
-Namespace HelloWorld
+Namespace SDC.Framework
     Public Class LoginForm
         Inherits Form
 

@@ -5,7 +5,7 @@ Imports System.Collections.Generic
 Imports System.Drawing
 Imports System.Windows.Forms
 
-Namespace HelloWorld
+Namespace SDC.Framework
 
     ''' <summary>
     ''' Lets an App Admin re-picture an icon by right-clicking it, and remembers the choice.

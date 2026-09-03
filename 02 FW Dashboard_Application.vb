@@ -5,7 +5,7 @@ Imports System.Drawing
 Imports System.IO
 Imports System.Windows.Forms
 
-Namespace HelloWorld
+Namespace SDC.Framework
     Public Class Dashboard_Application
         Inherits Form
 

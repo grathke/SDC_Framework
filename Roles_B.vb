@@ -6,7 +6,7 @@ Imports System.Drawing
 Imports System.Text.RegularExpressions
 Imports System.Windows.Forms
 
-Namespace HelloWorld
+Namespace SDC.Framework
     Public Class Roles_B
         Inherits FW_Base_B
 

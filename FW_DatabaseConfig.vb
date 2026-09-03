@@ -8,7 +8,7 @@ Imports System.Drawing
 Imports System.Windows.Forms
 Imports Microsoft.Data.SqlClient
 
-Namespace HelloWorld
+Namespace SDC.Framework
     ''' <summary>
     ''' Collects database credentials when the application starts with nothing configured, and
     ''' whenever the user asks to change them with --configure-db.

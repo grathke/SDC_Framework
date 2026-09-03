@@ -9,7 +9,7 @@ Imports System.Text.Json
 Imports System.Text.RegularExpressions
 Imports System.Windows.Forms
 
-Namespace HelloWorld
+Namespace SDC.Framework
     Public Class FW_Base_B
         Inherits Form
 

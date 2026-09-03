@@ -4,7 +4,7 @@ Option Explicit On
 Imports System.Drawing
 Imports System.Windows.Forms
 
-Namespace HelloWorld
+Namespace SDC.Framework
     Friend Module BrowseGridStandardizer
         Private ReadOnly HeaderLightBlue As Color = Color.FromArgb(221, 235, 247)
         Private ReadOnly HeaderTextColor As Color = Color.Black

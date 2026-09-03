@@ -2,7 +2,7 @@ Imports System
 Imports System.Collections.Generic
 Imports System.Windows.Forms
 
-Namespace HelloWorld
+Namespace SDC.Framework
     Friend Module MaintenanceKeyGuard
         Friend Function IsPkColumn(col As DataGridViewColumn) As Boolean
             If col Is Nothing Then

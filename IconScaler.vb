@@ -6,7 +6,7 @@ Imports System.Drawing.Drawing2D
 Imports System.IO
 Imports System.Windows.Forms
 
-Namespace HelloWorld
+Namespace SDC.Framework
 
     ''' <summary>
     ''' Loads an icon from assets\images at the size the surface needs.

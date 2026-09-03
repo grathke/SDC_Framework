@@ -4,7 +4,7 @@
     Launches the application against a deliberately broken database connection, to exercise the
     startup paths that are otherwise only reachable when something is genuinely wrong.
 
-    Nothing on the server is touched. HELLOWORLD_DB_CONNECTION takes precedence over every other
+    Nothing on the server is touched. SDC_DB_CONNECTION takes precedence over every other
     setting, so each case is simulated purely through the environment of the launched process.
 
     Usage:
@@ -33,7 +33,7 @@ $cases = [ordered]@{
     WrongDatabase = 'Real server and credentials, database that does not exist. Expect: Database Unavailable, "Cannot open database".'
     WrongPassword = 'Real server and user, wrong password. Expect: Database Unavailable, "Login failed for user".'
     WrongUser     = 'Real server, user that does not exist. Expect: Database Unavailable, "Login failed for user".'
-    NotConfigured = 'Every HELLOWORLD_DB_* variable cleared. Expect: the Database Configuration dialog, NOT the unavailable message.'
+    NotConfigured = 'Every SDC_DB_* variable cleared. Expect: the Database Configuration dialog, NOT the unavailable message.'
     Healthy       = 'Normal credentials, as a control. Expect: straight to the login screen, no dialog and no delay.'
 }
 
@@ -72,13 +72,13 @@ $connection = switch ($Case) {
 }
 
 # Clear every variable first, so a leftover value cannot mask the case being tested.
-foreach ($name in 'HELLOWORLD_DB_CONNECTION', 'HELLOWORLD_DB_SERVER', 'HELLOWORLD_DB_USER',
-                  'HELLOWORLD_DB_PASSWORD', 'HELLOWORLD_DB_NAME', 'HELLOWORLD_DB_ENCRYPT',
-                  'HELLOWORLD_DB_TRUST_SERVER_CERT') {
+foreach ($name in 'SDC_DB_CONNECTION', 'SDC_DB_SERVER', 'SDC_DB_USER',
+                  'SDC_DB_PASSWORD', 'SDC_DB_NAME', 'SDC_DB_ENCRYPT',
+                  'SDC_DB_TRUST_SERVER_CERT') {
     Set-Item -Path "env:$name" -Value $null -ErrorAction SilentlyContinue
 }
 
-if ($connection) { $env:HELLOWORLD_DB_CONNECTION = $connection }
+if ($connection) { $env:SDC_DB_CONNECTION = $connection }
 
 # Saved credentials would satisfy the NotConfigured case and hide what it is meant to show.
 $savedConfig = Join-Path $env:LOCALAPPDATA 'WXFramework\dbconfig.dat'
@@ -90,7 +90,7 @@ if ($Case -eq 'NotConfigured' -and (Test-Path $savedConfig)) {
 Write-Host "`nCase: $Case" -ForegroundColor Cyan
 Write-Host "$($cases[$Case])`n" -ForegroundColor Gray
 
-$exe = Join-Path $repoRoot 'bin\Debug\net10.0-windows\HelloWorld.exe'
+$exe = Join-Path $repoRoot 'bin\Debug\net10.0-windows\SDC.Framework.exe'
 if (-not (Test-Path $exe)) { throw "Build first - not found: $exe" }
 
 & $exe

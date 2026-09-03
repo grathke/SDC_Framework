@@ -8,7 +8,7 @@ Imports System.Net.Http
 Imports System.Text.Json
 Imports System.Windows.Forms
 
-Namespace HelloWorld
+Namespace SDC.Framework
     Public NotInheritable Class SmartyAddressLookupController
         Private Shared ReadOnly httpClient As New HttpClient()
         Private ReadOnly addressTextBox As TextBox

@@ -4,7 +4,7 @@ Option Explicit On
 Imports System
 Imports System.Windows.Forms
 
-Namespace HelloWorld
+Namespace SDC.Framework
     Public Class NumericTextBoxHelper
         ''' <summary>
         ''' Configure a TextBox to accept only whole numbers (0-9, no decimals)
