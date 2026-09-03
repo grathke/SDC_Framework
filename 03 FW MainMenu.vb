@@ -26,14 +26,13 @@ Namespace HelloWorld
             Public Property OnClick As EventHandler
         End Class
 
+        ''' <summary>
+        ''' A ribbon tile. The hidden focus rectangle and the one suppressible click both come from
+        ''' SuppressClickButton, which the dashboards' icons share - a tile that can be dragged has
+        ''' to be able to swallow the click its own drop raises.
+        ''' </summary>
         Private Class RibbonActionButton
-            Inherits Button
-
-            Protected Overrides ReadOnly Property ShowFocusCues As Boolean
-                Get
-                    Return False
-                End Get
-            End Property
+            Inherits SuppressClickButton
         End Class
 
         Private Class RegionShell
@@ -47,7 +46,7 @@ Namespace HelloWorld
         Private activeAccessProfile As AccessProfile
         Private ReadOnly ribbonPanel As Panel
         Private ReadOnly leftActionsFlow As FlowLayoutPanel
-        Private ReadOnly rightPinnedActionsPanel As Panel
+        Private ReadOnly rightPinnedActionsPanel As FlowLayoutPanel
         Private ReadOnly headingLabel As Label
         Private ReadOnly welcomeLabel As Label
         Private ReadOnly userBadgeLabel As Label
@@ -56,6 +55,32 @@ Namespace HelloWorld
         Private ReadOnly contentLayout As TableLayoutPanel
         Private ReadOnly actionTilesByKey As Dictionary(Of String, ActionTile)
         Private ReadOnly regionShells As Dictionary(Of MenuRegion, RegionShell)
+        Private arrangementController As RibbonTileArrangementController
+        Private imageController As IconImageController
+        ''' <summary>
+        ''' One tile, and the space after it. Every tile in both panels is this size with this
+        ''' margin, so the spacing across the whole ribbon is a single number rather than one value
+        ''' on the left and another on the right.
+        '''
+        ''' 96 rather than the 122 these were: at 126 to a tile the left panel ran out of room at
+        ''' six tiles and silently clipped the last one, because the panel neither wraps nor
+        ''' scrolls. At 100 to a tile seven fit at the smallest window the form allows, and eight at
+        ''' the default width.
+        ''' </summary>
+        Private Const TileWidth As Integer = 96
+        Private Const TileHeight As Integer = 96
+        Private Const TileMargin As Integer = 4
+        Private Const TilePitch As Integer = TileWidth + TileMargin
+
+        ''' The pinned row holds four tiles and is sized to them, so the last one finishes at the
+        ''' panel edge instead of 12px short of it.
+        Private Const PinnedTileCount As Integer = 4
+        Private Const PinnedPanelWidth As Integer = PinnedTileCount * TilePitch
+
+        ''' How far each panel sits from its end of the ribbon. The same on both sides, so the row
+        ''' is inset evenly.
+        Private Const PanelInset As Integer = 10
+
         Private Shared ReadOnly RibbonHoverBackColor As Color = Color.FromArgb(232, 245, 255)
         Private Shared ReadOnly RibbonHoverBorderColor As Color = Color.FromArgb(91, 161, 217)
 
@@ -93,7 +118,7 @@ Namespace HelloWorld
             }
 
             leftActionsFlow = New FlowLayoutPanel() With {
-                .Location = New Point(10, 32),
+                .Location = New Point(PanelInset, 32),
                 .Size = New Size(760, 102),
                 .Anchor = AnchorStyles.Top Or AnchorStyles.Left Or AnchorStyles.Right,
                 .WrapContents = False,
@@ -102,11 +127,18 @@ Namespace HelloWorld
                 .Margin = New Padding(0)
             }
 
-            rightPinnedActionsPanel = New Panel() With {
-                .Location = New Point(ribbonPanel.Width - 514, 32),
-                .Size = New Size(500, 102),
+            ' A flow panel like the left one, so that a pinned tile hidden by a permission lets the
+            ' rest close up behind it rather than leaving a hole. Its tiles are still fixed in place
+            ' - no drag is wired here - and their order is set by LayoutPinnedActions.
+            rightPinnedActionsPanel = New FlowLayoutPanel() With {
+                .Location = New Point(ribbonPanel.Width - PinnedPanelWidth - PanelInset - 4, 32),
+                .Size = New Size(PinnedPanelWidth, 102),
                 .Anchor = AnchorStyles.Top Or AnchorStyles.Right,
-                .BackColor = Color.Transparent
+                .WrapContents = False,
+                .FlowDirection = FlowDirection.LeftToRight,
+                .AutoScroll = False,
+                .BackColor = Color.Transparent,
+                .Margin = New Padding(0)
             }
 
             Dim session = SessionState.Current
@@ -234,11 +266,12 @@ Namespace HelloWorld
 
             actionTilesByKey = New Dictionary(Of String, ActionTile)(StringComparer.OrdinalIgnoreCase)
             AddActionTile("close", "Close", AddressOf CloseMenu_Click, LoadMenuIcon("close.png", SystemIcons.Error.ToBitmap()))
+            AddActionTile("dashboard", "Dashboard", AddressOf Dashboard_Click, LoadMenuIcon("dashboard.png", SystemIcons.Application.ToBitmap()))
             AddActionTile("application-settings", "Application" & Environment.NewLine & "Settings", AddressOf ApplicationSettings_Click, LoadMenuIcon("gear.png", SystemIcons.Shield.ToBitmap()))
             AddActionTile("users", "Users", AddressOf Users_Click, LoadMenuIcon("users.png", SystemIcons.Information.ToBitmap()))
             AddActionTile("entity", "Entity", AddressOf Clients_Click, LoadMenuIcon("clients.png", SystemIcons.Asterisk.ToBitmap()))
             AddActionTile("my-profile", "My" & Environment.NewLine & "Profile", AddressOf MyProfile_Click, LoadMenuIcon("my-profile.png", SystemIcons.Question.ToBitmap()))
-            AddActionTile("login-as-substitute", "LOGIN AS SUBSTITUE USER", AddressOf LoginAsSubstitute_Click, LoadMenuIcon("substitute-user.png", SystemIcons.Warning.ToBitmap()))
+            AddActionTile("login-as-substitute", "Login as" & Environment.NewLine & "Different User", AddressOf LoginAsSubstitute_Click, LoadMenuIcon("substitute-user.png", SystemIcons.Warning.ToBitmap()))
             AddActionTile("select-role", "Select a Role (Application Admin)", AddressOf SelectRole_Click, LoadMenuIcon("users.png", SystemIcons.WinLogo.ToBitmap()))
             AddActionTile("help-desk", "Help" & Environment.NewLine & "Desk", AddressOf HelpDesk_Click, LoadMenuIcon("Color_Help_Desk.png", SystemIcons.Question.ToBitmap()))
 
@@ -288,6 +321,10 @@ Namespace HelloWorld
                 fallbackIcon:=SystemIcons.WinLogo.ToBitmap(),
                 isVisible:=True,
                 isEnabled:=True)
+
+            ' The role tile has just been rebuilt from source, picture included, so a chosen one
+            ' goes back on top.
+            ReapplyChosenIcons()
         End Sub
 
         Private Shared Function FormatRoleCaption(roleName As String) As String
@@ -368,6 +405,96 @@ Namespace HelloWorld
 
         Public Sub SetAccessProfile(profile As AccessProfile)
             activeAccessProfile = profile
+        End Sub
+
+        ''' <summary>
+        ''' Wires the ribbon's arrangement and chosen pictures, and re-applies them afterwards.
+        '''
+        ''' The surface name comes from the initializer rather than from a constant here, because
+        ''' this form is the part that does not vary: one menu form can serve more than one
+        ''' application, each supplying its own tiles through its own initializer. A name fixed in
+        ''' here would make two applications share one arrangement. Required, with no default, so a
+        ''' new initializer cannot inherit another application's ribbon by omission.
+        '''
+        ''' Called from the initializer, which runs six times over a session - every role change and
+        ''' several dialog returns - so the controllers are created once and re-applied thereafter,
+        ''' never re-wired.
+        ''' </summary>
+        Public Sub ConfigureArrangement(surfaceName As String, ParamArray anchoredKeys As String())
+            If String.IsNullOrWhiteSpace(surfaceName) Then
+                Return
+            End If
+
+            Dim session = SessionState.Current
+            Dim sessionUserId = If(session.HasValue AndAlso session.Value.UserID > 0,
+                                   session.Value.UserID,
+                                   currentUser.UserId)
+
+            If arrangementController Is Nothing Then
+                arrangementController = New RibbonTileArrangementController(Me,
+                                                                           leftActionsFlow,
+                                                                           surfaceName,
+                                                                           sessionUserId,
+                                                                           If(anchoredKeys, New String() {}))
+            End If
+
+            If imageController Is Nothing Then
+                imageController = New IconImageController(Me,
+                                                          surfaceName,
+                                                          sessionUserId,
+                                                          Function(fileName, fallback) NormalizeRibbonImage(LoadMenuIcon(fileName, fallback)))
+            End If
+
+            arrangementController.Attach(FlowTiles())
+
+            ' The pinned row cannot be dragged either, and to an App Admin it looks no different
+            ' from the row that can, so it carries the same "Fixed position" tooltip.
+            arrangementController.MarkFixedElsewhere(PinnedTiles())
+
+            imageController.Attach(AllTiles())
+        End Sub
+
+        ''' The tiles that can be rearranged: the ones in the flow panel, and only those. The pinned
+        ''' row is positioned by hand and stays where it is.
+        Private Function FlowTiles() As List(Of KeyValuePair(Of String, Control))
+            Return actionTilesByKey.
+                Where(Function(entry) entry.Value.Button IsNot Nothing AndAlso
+                                      entry.Value.Button.Parent Is leftActionsFlow).
+                Select(Function(entry) New KeyValuePair(Of String, Control)(entry.Key, CType(entry.Value.Button, Control))).
+                ToList()
+        End Function
+
+        ''' The pinned row: fixed in place, and told apart from the movable row only by its tooltip.
+        Private Function PinnedTiles() As List(Of Control)
+            Return actionTilesByKey.
+                Where(Function(entry) entry.Value.Button IsNot Nothing AndAlso
+                                      entry.Value.Button.Parent Is rightPinnedActionsPanel).
+                Select(Function(entry) CType(entry.Value.Button, Control)).
+                ToList()
+        End Function
+
+        ''' Every tile, pinned row included: a picture can be changed on any of them.
+        Private Function AllTiles() As List(Of KeyValuePair(Of String, ButtonBase))
+            Return actionTilesByKey.
+                Where(Function(entry) entry.Value.Button IsNot Nothing).
+                Select(Function(entry) New KeyValuePair(Of String, ButtonBase)(entry.Key, CType(entry.Value.Button, ButtonBase))).
+                ToList()
+        End Function
+
+        ''' <summary>
+        ''' Lays a chosen picture back over one that has just been re-asserted from source.
+        '''
+        ''' Two places do that: the pinned row rewrites Help Desk's picture on every resize, and the
+        ''' role tile is rebuilt on every role change. Without this an App Admin's choice would
+        ''' revert the first time the window was resized or the role switched, which reads as the
+        ''' feature not working rather than as something overwriting it.
+        ''' </summary>
+        Private Sub ReapplyChosenIcons()
+            If imageController Is Nothing Then
+                Return
+            End If
+
+            imageController.ApplySavedImages()
         End Sub
 
         Public Sub UpsertActionTile(actionKey As String,
@@ -550,14 +677,14 @@ Namespace HelloWorld
             Dim tileButton As New RibbonActionButton() With {
                 .Name = "ACTION_" & key,
                 .Text = caption,
-                .Size = New Size(122, 96),
+                .Size = New Size(TileWidth, TileHeight),
                 .TextAlign = ContentAlignment.TopCenter,
                 .ImageAlign = ContentAlignment.TopCenter,
                 .TextImageRelation = TextImageRelation.ImageAboveText,
                 .UseVisualStyleBackColor = False,
                 .BackColor = Color.Transparent,
                 .FlatStyle = FlatStyle.Flat,
-                .Margin = New Padding(0, 0, 4, 0),
+                .Margin = New Padding(0, 0, TileMargin, 0),
                 .Font = New Font("Segoe UI", 9.5F, FontStyle.Regular),
                 .Padding = New Padding(0, 2, 0, 0),
                 .Image = NormalizeActionIcon(key, tileImage),
@@ -578,7 +705,6 @@ Namespace HelloWorld
             }
 
             If IsAlwaysVisibleActionKey(key) Then
-                tileButton.Margin = New Padding(0)
                 rightPinnedActionsPanel.Controls.Add(tileButton)
                 LayoutPinnedActions()
             Else
@@ -624,9 +750,20 @@ Namespace HelloWorld
             tileButton.FlatAppearance.BorderSize = 0
         End Sub
 
+        ''' <summary>
+        ''' Fixes the order of the pinned row. The panel owns where each tile sits, so this sets an
+        ''' index rather than a coordinate - which is also what lets a hidden tile close the gap
+        ''' behind it.
+        '''
+        ''' It used to place them by hand and, while it was there, rewrite Help Desk's caption,
+        ''' padding and picture on every pass. That rewrote exactly what AddActionTile had already
+        ''' set, and since this runs on every ribbon resize it was also what wiped an App Admin's
+        ''' chosen picture the moment the window was resized. Nothing else in the application
+        ''' touches that tile, so the block was doing no work except the harm.
+        ''' </summary>
         Private Sub LayoutPinnedActions()
             Dim orderedKeys As String() = {"my-profile", "login-as-substitute", "select-role", "help-desk"}
-            Dim left As Integer = 0
+            Dim position As Integer = 0
 
             For Each key In orderedKeys
                 Dim tile As ActionTile = Nothing
@@ -634,14 +771,12 @@ Namespace HelloWorld
                     Continue For
                 End If
 
-                tile.Button.Location = New Point(left, 0)
-                tile.Button.Size = New Size(122, 96)
-                If String.Equals(key, "help-desk", StringComparison.OrdinalIgnoreCase) Then
-                    tile.Button.Text = "Help" & Environment.NewLine & "Desk"
-                    tile.Button.Padding = New Padding(0, 2, 0, 0)
-                    tile.Button.Image = NormalizeActionIcon("help-desk", LoadMenuIcon("Color_Help_Desk.png", SystemIcons.Question.ToBitmap()))
+                If tile.Button.Parent IsNot rightPinnedActionsPanel Then
+                    Continue For
                 End If
-                left += tile.Button.Width
+
+                rightPinnedActionsPanel.Controls.SetChildIndex(tile.Button, position)
+                position += 1
             Next
         End Sub
 
@@ -782,8 +917,8 @@ Namespace HelloWorld
         End Sub
 
         Private Sub UpdateRibbonLayout()
-            rightPinnedActionsPanel.Left = ribbonPanel.ClientSize.Width - rightPinnedActionsPanel.Width - 10
-            leftActionsFlow.Width = Math.Max(220, rightPinnedActionsPanel.Left - leftActionsFlow.Left - 12)
+            rightPinnedActionsPanel.Left = ribbonPanel.ClientSize.Width - rightPinnedActionsPanel.Width - PanelInset
+            leftActionsFlow.Width = Math.Max(TilePitch, rightPinnedActionsPanel.Left - leftActionsFlow.Left - TileMargin)
             LayoutPinnedActions()
             rightPinnedActionsPanel.BringToFront()
         End Sub
@@ -822,6 +957,24 @@ Namespace HelloWorld
                 roles.ShowDialog(Me)
             End Using
             MenuFormInitializer.Configure(Me, currentUser, True)
+        End Sub
+
+        ''' <summary>
+        ''' Placeholder. The tile exists so that it holds its place in the row - anchored between
+        ''' Close and Application Settings, hideable by permission, and moving the tiles to its
+        ''' right when it is hidden - but it is not wired to anything yet.
+        '''
+        ''' When it is, it will load an internal page into one of the regions below rather than
+        ''' opening a dialog, which is what every other ribbon tile does. That makes it the first
+        ''' region-loading action, so it needs its own decisions about which region and what
+        ''' content; a dialog stubbed in here now would be the wrong shape to grow from.
+        ''' </summary>
+        Private Sub Dashboard_Click(sender As Object, e As EventArgs)
+            MessageBox.Show(Me,
+                            "The Dashboard is not wired up yet. It will display an internal page in the panels below.",
+                            "Dashboard",
+                            MessageBoxButtons.OK,
+                            MessageBoxIcon.Information)
         End Sub
 
         Private Sub MyProfile_Click(sender As Object, e As EventArgs)

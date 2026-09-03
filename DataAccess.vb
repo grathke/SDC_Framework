@@ -1623,6 +1623,39 @@ Namespace HelloWorld
                                                           dashboardName As String,
                                                           positions As IEnumerable(Of KeyValuePair(Of String, Point)),
                                                           userId As Integer) As Boolean
+            Return WriteIconPositions(dashboardName, positions, userId)
+        End Function
+
+        ''' <summary>
+        ''' The same write, for the main menu's ribbon, where the row is a one-row grid: GridRow is
+        ''' 1 and GridColumn is the tile's rank along the row.
+        '''
+        ''' A separate entry point purely because the authorization differs. Rearranging the ribbon
+        ''' is an App Admin's to do and nobody else's, while dragging a dashboard icon has always
+        ''' been open to any user - so the test belongs on this door rather than on the shared write
+        ''' behind it, which would silently take a working dashboard behaviour away.
+        '''
+        ''' Guarded here and not only where the drag is wired: a handler that is not attached is not
+        ''' authorization. Returns False when refused, so a caller cannot mistake a denial for a
+        ''' save that changed nothing.
+        ''' </summary>
+        Public Shared Function SaveRibbonTileOrder(
+                                                   surfaceName As String,
+                                                   ranks As IEnumerable(Of KeyValuePair(Of String, Integer)),
+                                                   userId As Integer) As Boolean
+            If Not SessionState.IsApplicationAdmin Then Return False
+            If ranks Is Nothing Then Return False
+
+            Return WriteIconPositions(surfaceName,
+                                      ranks.Select(Function(pair) New KeyValuePair(Of String, Point)(
+                                          pair.Key, New Point(pair.Value, 1))),
+                                      userId)
+        End Function
+
+        Private Shared Function WriteIconPositions(
+                                                   dashboardName As String,
+                                                   positions As IEnumerable(Of KeyValuePair(Of String, Point)),
+                                                   userId As Integer) As Boolean
             If String.IsNullOrWhiteSpace(dashboardName) OrElse positions Is Nothing Then Return False
             If Not TableHasColumn("FW_DashboardLayouts", "ActionKey") Then Return False
 

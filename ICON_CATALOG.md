@@ -15,22 +15,72 @@ Registration happens in two places:
 
 Icon files live in `assets/images/`.
 
-## Dashboard icon pictures can be changed at runtime
+## Icon pictures can be changed at runtime
 
-The two dashboards are not catalogued icon by icon here, and their pictures are no longer settled
-by their source alone. An App Admin can right-click any dashboard icon and choose a different
-graphic; the choice is stored in `FW_DashboardLayouts.IconFileName`, keyed on `DashboardName` and
-the icon's `ActionKey`, and applied on the next load.
+Neither the dashboards' icons nor the main menu's ribbon tiles are settled by their source alone.
+An App Admin can right-click any of them and choose a different graphic; the choice is stored in
+`FW_DashboardLayouts.IconFileName`, keyed on a surface name and the icon's `ActionKey`, and applied
+on the next load. `IconImageController` owns this for all three surfaces.
 
-- The filename written in `02 FW Dashboard_Application.vb` or `02 FW Dashboard_Company.vb` is the
-  **default**, not necessarily what is on screen. "Reset to Default" clears the override and
-  returns to it.
+The surface names are `Dashboard_Application`, `Dashboard_Company` and `HelloWorld.MainMenu`. The
+last is supplied by `MenuFormInitializer`, not by the menu form, because one menu form can serve
+more than one application; a second application's initializer passes its own name and keeps its own
+pictures.
+
+- The filename written in `02 FW Dashboard_Application.vb`, `02 FW Dashboard_Company.vb` or the
+  `AddActionTile` calls in `03 FW MainMenu.vb` is the **default**, not necessarily what is on
+  screen. "Reset to Default" clears the override and returns to it.
+- `UpdateRoleSelectionTile` rebuilds the role tile from source on every role change, picture
+  included, and puts the chosen one back afterwards. Anything else that rewrites a tile's `Image`
+  must call `ReapplyChosenIcons` after it, or the choice reverts silently.
+- `LayoutPinnedActions` used to do the same on every ribbon resize. That block is gone: it re-set
+  the caption, padding and picture `AddActionTile` had already set, so it did no work except wipe a
+  chosen Help Desk picture whenever the window was resized.
 - The choice is global. `sql/055` removed `RegistrationID` from that table because neither
   dashboard is registration aware, so there is no scope to disagree about.
 - The picker is `IconPicker`, the same dialog the page generator uses, so a name means the same
   thing in both places: a file in `assets/images/`, or a built-in glyph marked `system:`.
 - Only an App Admin sees the menu, and `DataAccess.SaveDashboardIconOverride` refuses anybody else
   regardless — a hidden menu item is not authorization.
+
+## Ribbon tiles can be rearranged
+
+An App Admin can drag the tiles in the main menu's left flow panel into a different order, and the
+panel shows its border while they can. `RibbonTileArrangementController` owns this.
+
+The pinned row on the right (`my-profile`, `login-as-substitute`, `select-role`, `help-desk`) is a
+flow panel too, but no drag is wired to it: those four keep the order `LayoutPinnedActions` sets and
+can only have their pictures changed. It is a flow panel so that a pinned tile hidden by a
+permission lets the rest close up behind it.
+
+Both panels use one tile size and one margin — `TileWidth`, `TileHeight`, `TileMargin` in
+`03 FW MainMenu.vb` — so spacing is identical across the ribbon and the pinned panel is sized to
+exactly the tiles it holds. When a tile is hidden the remaining ones pack together and the spare
+room collects at the end of the panel; no hole is left where the hidden one was.
+
+The flow panel holds `close`, `dashboard`, `application-settings`, `users`, `entity`, and
+`user-admin` — the last added at runtime by `MenuFormInitializer`.
+
+- `close`, `dashboard` and `application-settings` are **anchored**, in that order, at the head of
+  the row: none can be dragged, and nothing can be dropped in front of them. The anchor list is
+  `MenuFormInitializer.AnchoredMenuKeys`, passed in like the surface name, because which tiles lead
+  a ribbon is the application's decision. An anchor naming a key with no tile matches nothing and
+  costs nothing, so the list can run ahead of the ribbon.
+- Anchoring is not visibility. Any anchored tile can still be hidden by a permission and the row
+  closes up around it — hide `dashboard` and `application-settings` moves left into its place.
+  `application-settings` is hidden from a role that is neither App Admin nor Company Admin.
+- An anchored tile gets no rank in the table and no drag handlers at all. Letting it be dragged and
+  then snapping it back would read as a fault rather than as a tile that stays put.
+
+- What is stored is a **rank**, not a position: `GridRow` 1 and `GridColumn` the place along the
+  row. The flow panel closes the gap when a permission hides a tile, so a saved coordinate would
+  leave a hole where a hidden tile used to be.
+- The rank is sparse. A tile with no saved rank keeps its source order, after the ranked ones, so a
+  role that cannot see a tile — or a menu that does not have it at all — still gets a sensible row.
+- Every tile's rank is rewritten on each drop, hidden ones included, because an insertion shifts
+  everything after it.
+- Global, like the pictures. `DataAccess.SaveRibbonTileOrder` requires App Admin; the shared write
+  behind it does not, so dashboard dragging stays open to any user as it always has.
 
 ---
 
@@ -46,14 +96,21 @@ the icon's `ActionKey`, and applied on the next load.
 
 ## dashboard
 
-- placement: main ribbon (left)
-- ActionType: Page
-- target: **unresolved** — the note this came from named `HelloWorldPageForm`, which no longer
-  exists outside `project-backup/`. Confirm the current target before relying on this entry.
+- placement: main ribbon, flow panel, anchored second — after `close`, before `application-settings`
+- ActionType: Command (**placeholder — not wired up**)
+- target: none yet. It will load an internal page into one of the `MenuRegion` panels below rather
+  than opening a dialog, which would make it the first region-loading ribbon action. Which region
+  and what content are undecided.
 - caption source: fixed (`Dashboard`)
 - icon file: `dashboard.png`
-- visibility rule: `ConfigureActionVisibility("dashboard", True, True)` in `MenuFormInitializer.vb:123`
-- click behavior: opens the dashboard page dialog
+- visibility rule: `ConfigureActionVisibility("dashboard", True, True)` in `MenuFormInitializer.vb`
+- click behavior: shows a message saying it is not wired up yet
+
+History, so the gap is not rediscovered: this tile was absent for some time. It survived only in
+`project-backup/MenuForm.vb`, where it opened `HelloWorldPageForm` — a form with no source left
+anywhere in the repository. The `ConfigureActionVisibility` call above outlived it and did nothing,
+because that method returns early for a key with no tile. Re-added 2026-09-02 as a placeholder so it
+holds its anchored place in the row; the old target is gone and is not what it will do.
 
 ## application-settings
 
@@ -92,12 +149,32 @@ the icon's `ActionKey`, and applied on the next load.
 - placement: main ribbon (left)
 - ActionType: Page
 - target: `Users_AppAdmin_B`
-- caption source: fixed (`User Administration`)
+- caption source: fixed (`User Admin`, on two lines)
 - icon file: `users.png`
 - visibility rule: added by `MenuFormInitializer.vb:128`; currently always visible
 - click behavior: opens the `Users_AppAdmin_B` dialog
 
-## my-profile
+## menu-test
+
+- placement: main ribbon, flow panel, after `user-admin` — movable
+- ActionType: Menu (**demonstration**)
+- target: none. Each item reports what was chosen.
+- caption source: fixed (`Menu Test`, on two lines)
+- icon file: `Fluent_Open.png`
+- visibility rule: added by `MenuFormInitializer.AddMenuTestTile`; always visible
+- click behavior: drops a `ContextMenuStrip` below the tile, over the regions
+
+Kept on purpose as the working example to copy when a real tile needs a menu. Three things it
+settles, all in `MenuFormInitializer`:
+
+- A `ContextMenuStrip` shown explicitly — not assigned to `Control.ContextMenuStrip`, which every
+  tile already uses for the App Admin icon picker, and which answers the right button rather than
+  the left.
+- It is its own top-level window, so it drops **over** the regions below. A child panel would be
+  clipped at the ribbon's edge.
+- It closes when the pointer is over neither the menu nor its tile, polled rather than driven by
+  `MouseLeave`: the tile and the menu are separate top-level windows, so moving from one to the
+  other raises a leave on the first and a leave-driven close would shut the menu on the way to it.
 
 - placement: main ribbon (right, pinned)
 - ActionType: Command/Page placeholder
@@ -112,7 +189,7 @@ the icon's `ActionKey`, and applied on the next load.
 - placement: main ribbon (right, pinned)
 - ActionType: Command/Page placeholder
 - target: not yet implemented
-- caption source: fixed (`LOGIN AS SUBSTITUE USER`)
+- caption source: fixed (`Login as Different User`, on two lines)
 - icon file: `substitute-user.png`
 - visibility rule: always visible (pinned)
 - click behavior: placeholder message

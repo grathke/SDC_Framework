@@ -49,6 +49,36 @@ Only four accounts can authenticate; the rest have no `PasswordHash`.
 
 ---
 
+## MENU — Ribbon arrangement and icon pictures
+
+App Admin only. Both are global: one arrangement and one set of pictures for every user, stored in
+`FW_DashboardLayouts` under `HelloWorld.MainMenu`.
+
+| ID | Case | Expected | Status |
+|---|---|---|---|
+| MENU-01 | Flow panel border | As App Admin the left flow panel shows a border; as any other role it does not, and the ribbon looks exactly as before. | untested |
+| MENU-02 | Reorder a tile | Drag `Entity` ahead of `Users`. The row reflows as the pointer passes the neighbour's midpoint, and the order survives closing and reopening the menu. | untested |
+| MENU-02a | The head of the row is anchored | `Close`, `Dashboard`, `Application Settings` lead the flow panel in that order and none can be dragged. No other tile can be dropped in front of them — a drag towards the head of the row stops when it reaches one. | untested |
+| MENU-02b | An anchored tile can still be hidden | Anchoring does not force a tile visible. With Application Settings hidden by role, `Users` moves left into its place and the head of the row is Close and Dashboard. | untested |
+| MENU-18 | Menu Test dropdown | Clicking `Menu Test` drops a menu below the tile that overlays the regions rather than being clipped at the ribbon's edge; items highlight on hover; choosing one reports it. The menu closes once the pointer is over neither the menu nor the tile, and does **not** close while moving between the two. Dragging the tile does not open it. | pass 2026-09-02 |
+| MENU-11 | Dashboard placeholder | `Dashboard` appears second with `dashboard.png`, and clicking it says it is not wired up yet. It is a placeholder holding its anchored place, not a working action. | untested |
+| MENU-03 | The drop does not open a page | The mouse-up that ends a drag does not open the dragged tile's page. A **later** click on that same tile does open it. | untested |
+| MENU-04 | Click without dragging | A plain click still opens its page, unchanged. | untested |
+| MENU-05 | Hidden tile closes the gap | With the order from MENU-02 saved, log in as a role that is neither App Admin nor Company Admin, so Application Settings is hidden. The remaining tiles pack left with no hole and keep their saved relative order — anchoring does not exempt it from being hidden. **This is the discriminating check** — a gap means a coordinate was saved instead of a rank. | untested |
+| MENU-06 | Non-admin cannot rearrange | As a non-App-Admin, dragging a tile does nothing and right-click offers no menu. | untested |
+| MENU-07 | Change a tile picture | Right-click any ribbon tile, choose a graphic. It applies at once and is still there on the next launch. Reset to Default returns the source picture. | untested |
+| MENU-08 | Pinned picture survives a resize | Change the Help Desk picture, then resize the window. It must not revert. **Was a defect:** `LayoutPinnedActions` re-set that tile's caption, padding and image on every resize — duplicating what `AddActionTile` already did — so a chosen picture was wiped the first time the window changed size. The block was removed rather than worked around. | untested |
+| MENU-12 | Ribbon fits its tiles | All six left tiles are fully visible at the default window size and at the 1180 minimum. **Was a defect:** at 122px per tile six needed 756px in a 730px panel, and the panel neither wraps nor scrolls, so the last tile was silently clipped. | untested |
+| MENU-14 | Switching into an App Admin role | Log in as a non-admin role, then switch to an App Admin role from the Select a Role tile. Dragging and right-click must both start working without restarting, and the panel border must appear. **Was a defect:** handlers were wired once at startup, so the border appeared on the switch but nothing could actually be dragged and no right-click menu was offered. | untested |
+| MENU-16 | Fixed tiles say so | As App Admin, hovering Close, Dashboard, Application Settings or any of the four pinned tiles on the right shows "Fixed position". Only the movable tiles have no tooltip, and no tooltip appears at all for a role that cannot rearrange anything. | untested |
+| MENU-17 | Dragging holds mouse capture | Press a movable tile and drag across its neighbours: they must **not** light up with the hover highlight, and the tiles must trade places as the pointer crosses in. **Was a defect:** without an explicit `Capture = True` the pressed tile stopped receiving mouse movement the moment the pointer left it, so no swap could ever be computed and the ribbon appeared immovable — the hover highlight appearing on the tiles being crossed was the giveaway. | pass 2026-09-02 |
+| MENU-15 | Switching out of an App Admin role | Switch from an App Admin role to one that is not. Dragging and right-click must both stop, and the border must go. The write is refused at the data boundary either way. | untested |
+| MENU-13 | Even spacing, Help Desk flush right | Every tile in both panels is the same width with the same gap, and Help Desk finishes at the right-hand end of the ribbon rather than 22px short of it. | untested |
+| MENU-09 | Role tile picture survives a role change | Change the Select a Role picture, then switch role. It must not revert — `UpdateRoleSelectionTile` rebuilds that tile and re-applies the choice afterwards. | untested |
+| MENU-10 | Dashboards unchanged | Both dashboards still drag icons and re-picture them exactly as before, now through the shared `IconImageController`. Dashboard dragging stays open to any user, not just App Admin. | untested |
+
+---
+
 ## U — Maintenance pages
 
 Mostly verified on `Users_AppAdmin_U` during 2026-08-29/30. Re-run after changes to `01 FW_Base_U.vb`.

@@ -18,7 +18,7 @@ Namespace HelloWorld
         Private ReadOnly userAdminButton As DashboardIconButton
         Private ReadOnly userDiagnosticButton As DashboardIconButton
         Private iconDragController As DashboardIconDragController
-        Private iconImageController As DashboardIconImageController
+        Private iconImageController As IconImageController
 
         ''' The size a chosen picture is scaled to. The icons written into this form are system
         ''' glyphs at their own size; a file graphic needs a target, and 80 is the one the
@@ -162,11 +162,12 @@ Namespace HelloWorld
             ' The chosen pictures, from the same controller the admin dashboard uses. The App Admin
             ' test inside it matters here: a Company Admin can open this dashboard and must not be
             ' able to re-picture its icons.
-            iconImageController = New DashboardIconImageController(Me,
-                                                                  "Dashboard_Company",
-                                                                  If(session.HasValue, session.Value.UserID, 0),
-                                                                  DashboardIconSize)
-            iconImageController.Attach(Me.Controls.OfType(Of DashboardIconButton)())
+            iconImageController = New IconImageController(Me,
+                                                          "Dashboard_Company",
+                                                          If(session.HasValue, session.Value.UserID, 0),
+                                                          Function(fileName, fallback) IconScaler.Load(fileName, DashboardIconSize, fallback))
+            iconImageController.Attach(Me.Controls.OfType(Of DashboardIconButton)().
+                                       Select(Function(icon) New KeyValuePair(Of String, ButtonBase)(icon.Name, icon)))
 
             rolesButton.Enabled = True
             userAdminButton.Enabled = True

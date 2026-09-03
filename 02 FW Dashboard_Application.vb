@@ -28,7 +28,7 @@ Namespace HelloWorld
         Private ReadOnly generatedEntityX_BButton As DashboardIconButton
         Private ReadOnly generatedFW_UserAccessExplanation_BButton As DashboardIconButton
         Private iconDragController As DashboardIconDragController
-        Private iconImageController As DashboardIconImageController
+        Private iconImageController As IconImageController
 
         Public Sub New(user As UserContext, Optional profile As AccessProfile = Nothing)
             currentUser = user
@@ -380,11 +380,12 @@ Namespace HelloWorld
             ' The chosen pictures, from the same controller the company dashboard uses. After the
             ' drag controller, so an icon is in its saved cell before its picture is looked up -
             ' the two are independent, but reading in this order keeps one story on screen.
-            iconImageController = New DashboardIconImageController(Me,
-                                                                  "Dashboard_Application",
-                                                                  If(session.HasValue, session.Value.UserID, 0),
-                                                                  DashboardIconSize)
-            iconImageController.Attach(Me.Controls.OfType(Of DashboardIconButton)())
+            iconImageController = New IconImageController(Me,
+                                                          "Dashboard_Application",
+                                                          If(session.HasValue, session.Value.UserID, 0),
+                                                          Function(fileName, fallback) IconScaler.Load(fileName, DashboardIconSize, fallback))
+            iconImageController.Attach(Me.Controls.OfType(Of DashboardIconButton)().
+                                       Select(Function(icon) New KeyValuePair(Of String, ButtonBase)(icon.Name, icon)))
 
             rolesButton.Enabled = True
             userAdminButton.Enabled = True

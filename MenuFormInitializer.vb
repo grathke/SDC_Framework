@@ -14,6 +14,41 @@ Namespace HelloWorld
         Private Const TableFrameworkDashboard As String = "FRAMEWORK DASHBOARD"
         Private Const TableRegistrationDashboard As String = "REGISTRATION DASHBOARD"
 
+        ''' <summary>
+        ''' Which ribbon this initializer is arranging: application, then surface.
+        '''
+        ''' It belongs here rather than in FW_MainMenu because this module is the only part of the
+        ''' menu that is application specific - the form serves whichever application configures it.
+        ''' A second application writes its own initializer and its own name here, and the two
+        ''' ribbons keep separate arrangements in FW_DashboardLayouts.
+        '''
+        ''' Deliberately not the assembly or exe name: this repository already builds under a second
+        ''' output path for hotfixes, and a renamed exe would orphan every saved arrangement without
+        ''' saying so.
+        ''' </summary>
+        Private Const MenuSurfaceName As String = "HelloWorld.MainMenu"
+
+        ''' <summary>
+        ''' Tiles pinned to the head of the flow panel, in this order. They cannot be dragged and
+        ''' nothing can be dropped in front of them.
+        '''
+        ''' Close, then Dashboard, then Application Settings. The movable tiles follow them.
+        '''
+        ''' Anchoring is not visibility. Any of the three can still be hidden by a permission, and
+        ''' the row closes up around it: hide Dashboard and Application Settings moves left into its
+        ''' place. That falls out of the flow panel skipping invisible children, so it needs no code
+        ''' of its own - which is exactly why what is saved is a rank and never a coordinate.
+        '''
+        ''' `dashboard` is a placeholder tile: it holds its place in the row and reports that it is
+        ''' not wired up. An anchor naming a key with no tile would match nothing and cost nothing,
+        ''' so this list can name one before the ribbon has it.
+        '''
+        ''' Here rather than in the menu form for the same reason as the surface name - which tiles
+        ''' lead a ribbon is the application's decision, and the form serves whichever application
+        ''' configures it.
+        ''' </summary>
+        Private ReadOnly AnchoredMenuKeys As String() = {"close", "dashboard", "application-settings"}
+
         Private cachedAccessRoleId As Integer = 0
         Private cachedAccessRegistrationId As Integer = 0
         Private cachedAccessProfile As AccessProfile = Nothing
@@ -91,6 +126,11 @@ Namespace HelloWorld
 
             ApplyActionAccess(menu, profile)
             ApplyRegionAccess(menu, profile)
+
+            ' Last, because ApplyActionAccess adds a tile and rewrites captions and pictures. The
+            ' saved arrangement and the chosen pictures are laid over the finished ribbon rather
+            ' than over a half-built one.
+            menu.ConfigureArrangement(MenuSurfaceName, AnchoredMenuKeys)
         End Sub
 
         Private Sub ApplyActionAccess(menu As FW_MainMenu, profile As AccessProfile)
@@ -126,7 +166,7 @@ Namespace HelloWorld
 
             menu.UpsertActionTile(
                 actionKey:="user-admin",
-                caption:="User Administration",
+                caption:="User" & Environment.NewLine & "Admin",
                 onClick:=Sub(sender, e)
                              Using frm As New Users_AppAdmin_B(profile)
                                  frm.ShowDialog(menu)
@@ -136,7 +176,117 @@ Namespace HelloWorld
                 fallbackIcon:=SystemIcons.WinLogo.ToBitmap(),
                 isVisible:=True,
                 isEnabled:=True)
+
+            AddMenuTestTile(menu)
         End Sub
+
+        ''' <summary>
+        ''' A demonstration tile: it drops a menu down over the regions below, and choosing an item
+        ''' only says what was chosen. Kept deliberately, as the working example to copy when a real
+        ''' tile needs a menu.
+        '''
+        ''' The menu is a ContextMenuStrip shown explicitly rather than assigned to the button's
+        ''' ContextMenuStrip property. Two reasons: a left-click should open it, and that property is
+        ''' already taken on every tile by the App Admin icon picker.
+        '''
+        ''' A ContextMenuStrip and not a panel, because it is its own top-level window and so drops
+        ''' over the regions below. A child panel would be clipped at the ribbon's edge, which is the
+        ''' whole difficulty this answers.
+        ''' </summary>
+        Private menuTestDropDown As ContextMenuStrip
+        Private menuTestCloseWatcher As Timer
+        Private menuTestTile As Control
+
+        Private Sub AddMenuTestTile(menu As FW_MainMenu)
+            menu.UpsertActionTile(
+                actionKey:="menu-test",
+                caption:="Menu" & Environment.NewLine & "Test",
+                onClick:=Sub(sender, e) ShowMenuTestDropDown(menu, TryCast(sender, Control)),
+                iconFileName:="Fluent_Open.png",
+                fallbackIcon:=SystemIcons.Application.ToBitmap(),
+                isVisible:=True,
+                isEnabled:=True)
+        End Sub
+
+        Private Sub ShowMenuTestDropDown(owner As FW_MainMenu, tile As Control)
+            If tile Is Nothing Then
+                Return
+            End If
+
+            If menuTestDropDown Is Nothing Then
+                menuTestDropDown = New ContextMenuStrip()
+
+                For Each choice In {"Messages", "General Dashboard", "Acme Dashboard"}
+                    menuTestDropDown.Items.Add(BuildMenuTestItem(owner, choice))
+                Next
+
+                menuTestDropDown.Items.Add(New ToolStripSeparator())
+                menuTestDropDown.Items.Add(BuildMenuTestItem(owner, "Users && Lists"))
+                menuTestDropDown.Items.Add(BuildMenuTestItem(owner, "Evolution of Acme Products"))
+            End If
+
+            ' Anchored to the tile's bottom-left corner. A ContextMenuStrip is its own top-level
+            ' window, so it drops down over the regions below instead of being clipped by the ribbon
+            ' the way a child panel would be.
+            menuTestTile = tile
+            menuTestDropDown.Show(tile, New Point(0, tile.Height))
+            StartMenuTestCloseWatcher()
+        End Sub
+
+        ''' <summary>
+        ''' Closes the menu once the pointer is over neither the menu nor the tile that opened it.
+        '''
+        ''' Polled rather than driven by MouseLeave. The pointer crosses from the tile to the menu
+        ''' and back between two separate top-level windows, and each crossing raises a leave on one
+        ''' of them - so closing on leave would shut the menu the instant somebody moved towards it.
+        ''' Asking where the pointer actually is answers the question once, for both.
+        '''
+        ''' Both rectangles are inflated slightly so that a diagonal move across the seam between
+        ''' the two does not clip a corner and count as having left.
+        ''' </summary>
+        Private Sub StartMenuTestCloseWatcher()
+            If menuTestCloseWatcher Is Nothing Then
+                menuTestCloseWatcher = New Timer() With {.Interval = 200}
+                AddHandler menuTestCloseWatcher.Tick, AddressOf MenuTestCloseWatcher_Tick
+            End If
+
+            menuTestCloseWatcher.Start()
+        End Sub
+
+        Private Sub MenuTestCloseWatcher_Tick(sender As Object, e As EventArgs)
+            If menuTestDropDown Is Nothing OrElse Not menuTestDropDown.Visible Then
+                menuTestCloseWatcher.Stop()
+                Return
+            End If
+
+            Dim pointer = Cursor.Position
+
+            Dim overMenu = Rectangle.Inflate(menuTestDropDown.Bounds, 6, 6).Contains(pointer)
+            Dim overTile = menuTestTile IsNot Nothing AndAlso
+                           Rectangle.Inflate(menuTestTile.RectangleToScreen(menuTestTile.ClientRectangle), 6, 6).Contains(pointer)
+
+            If overMenu OrElse overTile Then
+                Return
+            End If
+
+            menuTestCloseWatcher.Stop()
+            menuTestDropDown.Close()
+        End Sub
+
+        Private Function BuildMenuTestItem(owner As FW_MainMenu, label As String) As ToolStripMenuItem
+            Dim item As New ToolStripMenuItem(label)
+
+            AddHandler item.Click,
+                Sub()
+                    MessageBox.Show(owner,
+                                    "Menu test - you chose: " & label.Replace("&&", "&"),
+                                    "Menu Test",
+                                    MessageBoxButtons.OK,
+                                    MessageBoxIcon.Information)
+                End Sub
+
+            Return item
+        End Function
 
         Private Sub ApplyRegionAccess(menu As FW_MainMenu, profile As AccessProfile)
             If menu Is Nothing OrElse profile Is Nothing Then

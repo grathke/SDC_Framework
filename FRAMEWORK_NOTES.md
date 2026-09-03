@@ -17,10 +17,26 @@ checked against the source at that time; corrections to the original notes are m
 | `ConfigureActionVisibility(actionKey, isVisible, isEnabled)` | role-driven ribbon visibility |
 | `UpsertActionTile(...)` | add or update an action tile |
 | `SetActionIconFromFile(actionKey, iconFileName, fallbackIcon)` | swap a tile's PNG |
+| `ConfigureArrangement(surfaceName)` | wire tile rearranging and chosen pictures |
 | `SetTimezoneControlsVisible(isVisible)` | optional timezone controls |
 
 - `MenuFormInitializer.Configure(menu, user, forceRefresh)` applies table-level access to actions
-  and regions. Regions with no access show an access-denied panel.
+  and regions. Regions with no access show an access-denied panel. It runs **six times** over a
+  session — every role change and several dialog returns — so anything it wires must be created
+  once and re-applied thereafter, never re-wired. `ConfigureArrangement` is called last, after the
+  tiles it arranges exist.
+- The menu form is not application specific. It receives its initializer from `LoginForm`, and the
+  initializer supplies the surface name that its arrangement and pictures are stored under. A
+  second application writes its own initializer rather than a second menu form. Do not put a
+  surface name, an application name, or an exe name inside the form.
+- An App Admin can drag the tiles in the left flow panel into a different order; the panel shows
+  its border while they can. What is saved is a **rank**, never a coordinate — the panel closes the
+  gap when a permission hides a tile, and a coordinate would leave a hole. See `ICON_CATALOG.md`
+  for the storage and the App Admin boundary.
+- The head of that row is anchored — `close`, `dashboard`, `application-settings` — by a list the
+  initializer passes in. Anchored tiles get no drag handlers and no saved rank, and an anchor beats
+  anything already written down. Anchoring is independent of visibility: an anchored tile hidden by
+  a permission still lets the row close up around it.
 - Reusable region controls implement `IAccessControlledControl` so they adjust their own internal
   controls by capability at initialization.
 - Region controls split for reuse: `MessagesWindowControl.vb`, `UsersListsWindowControl.vb`,
