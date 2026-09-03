@@ -2,6 +2,7 @@ Option Strict On
 Option Explicit On
 
 Imports System
+Imports System.Collections.Generic
 Imports System.Drawing
 Imports System.Windows.Forms
 
@@ -52,6 +53,12 @@ Namespace SDC.Framework
         Private cachedAccessRoleId As Integer = 0
         Private cachedAccessRegistrationId As Integer = 0
         Private cachedAccessProfile As AccessProfile = Nothing
+
+        ''' <summary>
+        ''' Owns how every ribbon tile's drop-down menu behaves. One for the ribbon, shared by each
+        ''' tile that grows a menu, so a second menu cannot behave differently from the first.
+        ''' </summary>
+        Private ReadOnly tileDropDowns As New TileDropDownController()
 
         Public Sub InvalidateAccessCache()
             cachedAccessRoleId = 0
@@ -185,93 +192,39 @@ Namespace SDC.Framework
         ''' only says what was chosen. Kept deliberately, as the working example to copy when a real
         ''' tile needs a menu.
         '''
-        ''' The menu is a ContextMenuStrip shown explicitly rather than assigned to the button's
-        ''' ContextMenuStrip property. Two reasons: a left-click should open it, and that property is
-        ''' already taken on every tile by the App Admin icon picker.
+        ''' Note what it does not do. It says what its menu contains and nothing about how the menu
+        ''' behaves - opening, and closing when the pointer leaves, both belong to
+        ''' TileDropDownController. A real tile copying this inherits that behaviour by writing no
+        ''' part of it.
         '''
-        ''' A ContextMenuStrip and not a panel, because it is its own top-level window and so drops
-        ''' over the regions below. A child panel would be clipped at the ribbon's edge, which is the
-        ''' whole difficulty this answers.
+        ''' The items are built on first open rather than here, so a menu may be assembled from
+        ''' state that does not exist yet when the ribbon is configured.
         ''' </summary>
-        Private menuTestDropDown As ContextMenuStrip
-        Private menuTestCloseWatcher As Timer
-        Private menuTestTile As Control
-
         Private Sub AddMenuTestTile(menu As FW_MainMenu)
             menu.UpsertActionTile(
                 actionKey:="menu-test",
                 caption:="Menu" & Environment.NewLine & "Test",
-                onClick:=Sub(sender, e) ShowMenuTestDropDown(menu, TryCast(sender, Control)),
+                onClick:=Sub(sender, e) tileDropDowns.Open(TryCast(sender, Control),
+                                                           Function() BuildMenuTestItems(menu)),
                 iconFileName:="Fluent_Open.png",
                 fallbackIcon:=SystemIcons.Application.ToBitmap(),
                 isVisible:=True,
                 isEnabled:=True)
         End Sub
 
-        Private Sub ShowMenuTestDropDown(owner As FW_MainMenu, tile As Control)
-            If tile Is Nothing Then
-                Return
-            End If
+        Private Function BuildMenuTestItems(owner As FW_MainMenu) As IEnumerable(Of ToolStripItem)
+            Dim items As New List(Of ToolStripItem)()
 
-            If menuTestDropDown Is Nothing Then
-                menuTestDropDown = New ContextMenuStrip()
+            For Each choice In {"Messages", "General Dashboard", "Acme Dashboard"}
+                items.Add(BuildMenuTestItem(owner, choice))
+            Next
 
-                For Each choice In {"Messages", "General Dashboard", "Acme Dashboard"}
-                    menuTestDropDown.Items.Add(BuildMenuTestItem(owner, choice))
-                Next
+            items.Add(New ToolStripSeparator())
+            items.Add(BuildMenuTestItem(owner, "Users && Lists"))
+            items.Add(BuildMenuTestItem(owner, "Evolution of Acme Products"))
 
-                menuTestDropDown.Items.Add(New ToolStripSeparator())
-                menuTestDropDown.Items.Add(BuildMenuTestItem(owner, "Users && Lists"))
-                menuTestDropDown.Items.Add(BuildMenuTestItem(owner, "Evolution of Acme Products"))
-            End If
-
-            ' Anchored to the tile's bottom-left corner. A ContextMenuStrip is its own top-level
-            ' window, so it drops down over the regions below instead of being clipped by the ribbon
-            ' the way a child panel would be.
-            menuTestTile = tile
-            menuTestDropDown.Show(tile, New Point(0, tile.Height))
-            StartMenuTestCloseWatcher()
-        End Sub
-
-        ''' <summary>
-        ''' Closes the menu once the pointer is over neither the menu nor the tile that opened it.
-        '''
-        ''' Polled rather than driven by MouseLeave. The pointer crosses from the tile to the menu
-        ''' and back between two separate top-level windows, and each crossing raises a leave on one
-        ''' of them - so closing on leave would shut the menu the instant somebody moved towards it.
-        ''' Asking where the pointer actually is answers the question once, for both.
-        '''
-        ''' Both rectangles are inflated slightly so that a diagonal move across the seam between
-        ''' the two does not clip a corner and count as having left.
-        ''' </summary>
-        Private Sub StartMenuTestCloseWatcher()
-            If menuTestCloseWatcher Is Nothing Then
-                menuTestCloseWatcher = New Timer() With {.Interval = 200}
-                AddHandler menuTestCloseWatcher.Tick, AddressOf MenuTestCloseWatcher_Tick
-            End If
-
-            menuTestCloseWatcher.Start()
-        End Sub
-
-        Private Sub MenuTestCloseWatcher_Tick(sender As Object, e As EventArgs)
-            If menuTestDropDown Is Nothing OrElse Not menuTestDropDown.Visible Then
-                menuTestCloseWatcher.Stop()
-                Return
-            End If
-
-            Dim pointer = Cursor.Position
-
-            Dim overMenu = Rectangle.Inflate(menuTestDropDown.Bounds, 6, 6).Contains(pointer)
-            Dim overTile = menuTestTile IsNot Nothing AndAlso
-                           Rectangle.Inflate(menuTestTile.RectangleToScreen(menuTestTile.ClientRectangle), 6, 6).Contains(pointer)
-
-            If overMenu OrElse overTile Then
-                Return
-            End If
-
-            menuTestCloseWatcher.Stop()
-            menuTestDropDown.Close()
-        End Sub
+            Return items
+        End Function
 
         Private Function BuildMenuTestItem(owner As FW_MainMenu, label As String) As ToolStripMenuItem
             Dim item As New ToolStripMenuItem(label)

@@ -165,10 +165,12 @@ holds its anchored place in the row; the old target is gone and is not what it w
 - caption source: fixed (`Menu Test`, on two lines)
 - icon file: `Fluent_Open.png`
 - visibility rule: added by `MenuFormInitializer.AddMenuTestTile`; always visible
-- click behavior: drops a `ContextMenuStrip` below the tile, over the regions
+- click behavior: drops a `ContextMenuStrip` below the tile, over the regions. It closes when the
+  pointer moves off both the tile and the menu, when an item is chosen, or on a click elsewhere.
 
-Kept on purpose as the working example to copy when a real tile needs a menu. Three things it
-settles, all in `MenuFormInitializer`:
+Kept on purpose as the working example to copy when a real tile needs a menu. What it demonstrates
+is how little a tile has to say: `AddMenuTestTile` supplies the items and nothing else. Every
+question of behavior is answered once, for all tiles, by `TileDropDownController`:
 
 - A `ContextMenuStrip` shown explicitly — not assigned to `Control.ContextMenuStrip`, which every
   tile already uses for the App Admin icon picker, and which answers the right button rather than
@@ -178,6 +180,14 @@ settles, all in `MenuFormInitializer`:
 - It closes when the pointer is over neither the menu nor its tile, polled rather than driven by
   `MouseLeave`: the tile and the menu are separate top-level windows, so moving from one to the
   other raises a leave on the first and a leave-driven close would shut the menu on the way to it.
+- Clicking the tile a second time does **not** close the menu, which is a decision rather than an
+  omission. An open drop-down holds the mouse, so that click is a dismissal before it is ever a
+  button click: the menu has already gone by the time the tile's `Click` runs, which reopens it in
+  the same frame. Suppressing that reopen from the `Closed` event was tried on 2026-09-03 and did
+  not work — see MENU-22 in `TEST_CASES.md` before attempting it again.
+
+A tile wanting a menu calls `tileDropDowns.Open(tile, itemFactory)` from its own click and inherits
+all of it. There is deliberately no way to ask for different behavior.
 
 - placement: main ribbon (right, pinned)
 - ActionType: Command/Page placeholder
