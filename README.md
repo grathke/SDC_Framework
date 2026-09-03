@@ -1,6 +1,9 @@
-# Hello World VB.NET Windows Forms
+# SDC.Framework
 
-A simple VB.NET Windows Forms application with one window and one button. Click the button to display a Hello World message.
+A VB.NET Windows Forms line-of-business application and page framework targeting `net10.0-windows`.
+Browse (`_B`) and maintenance (`_U`) pages inherit shared base classes that own permissions, soft
+delete, concurrency and layout persistence. See `CLAUDE.md` for the working guardrails and
+`FRAMEWORK_NOTES.md` for how the framework actually behaves.
 
 ## Build
 
