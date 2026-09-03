@@ -158,6 +158,29 @@ Namespace HelloWorld
             End Get
         End Property
 
+        ''' <summary>
+        ''' Whether the session is running under an Application Admin role.
+        '''
+        ''' One owner, because the test was written out longhand in six places - Base_B, Base_U
+        ''' twice, the main menu, Entity_U and the help desk support browse - and a seventh copy is
+        ''' how the six became six. Base_B's IsAppAdminSession is Protected, so a form that does not
+        ''' inherit it, such as either dashboard, could not reach the answer at all.
+        '''
+        ''' No session is not an admin. That is the safe reading and the only one available.
+        ''' </summary>
+        Public ReadOnly Property IsApplicationAdmin As Boolean
+            Get
+                Return currentSession.HasValue AndAlso currentSession.Value.IsApplicationAdminRole
+            End Get
+        End Property
+
+        ''' <summary>The same, for the Company Admin role.</summary>
+        Public ReadOnly Property IsCompanyAdmin As Boolean
+            Get
+                Return currentSession.HasValue AndAlso currentSession.Value.IsCompanyAdminRole
+            End Get
+        End Property
+
         Public Sub StartSession(user As UserContext,
                                 Optional registrationId As Integer = 1,
                                 Optional registrationName As String = "",

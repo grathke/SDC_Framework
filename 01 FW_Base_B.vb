@@ -510,14 +510,15 @@ Namespace HelloWorld
             Next
         End Sub
 
+        ''' These two are here so page code can keep asking a page. The answer itself belongs to
+        ''' SessionState, which every form can reach - including the dashboards, which inherit
+        ''' nothing from here and so could never have used a Protected helper.
         Protected Function IsAppAdminSession() As Boolean
-            Dim activeSession = SessionState.Current
-            Return activeSession.HasValue AndAlso activeSession.Value.IsApplicationAdminRole
+            Return SessionState.IsApplicationAdmin
         End Function
 
         Protected Function IsCompanyAdminSession() As Boolean
-            Dim activeSession = SessionState.Current
-            Return activeSession.HasValue AndAlso activeSession.Value.IsCompanyAdminRole
+            Return SessionState.IsCompanyAdmin
         End Function
 
         Protected Function IsRegistrationAwareSession() As Boolean

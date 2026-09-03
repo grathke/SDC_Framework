@@ -8,12 +8,29 @@ rule, click behavior.
 
 Registration happens in two places:
 
-- `MainMenu.vb` builds the ribbon and owns `UpsertActionTile`, `ConfigureActionVisibility`,
+- `03 FW MainMenu.vb` builds the ribbon and owns `UpsertActionTile`, `ConfigureActionVisibility`,
   `SetActionIconFromFile`.
 - `MenuFormInitializer.Configure` decides which actions are visible for the session and adds
   page-specific tiles such as `user-admin`.
 
 Icon files live in `assets/images/`.
+
+## Dashboard icon pictures can be changed at runtime
+
+The two dashboards are not catalogued icon by icon here, and their pictures are no longer settled
+by their source alone. An App Admin can right-click any dashboard icon and choose a different
+graphic; the choice is stored in `FW_DashboardLayouts.IconFileName`, keyed on `DashboardName` and
+the icon's `ActionKey`, and applied on the next load.
+
+- The filename written in `02 FW Dashboard_Application.vb` or `02 FW Dashboard_Company.vb` is the
+  **default**, not necessarily what is on screen. "Reset to Default" clears the override and
+  returns to it.
+- The choice is global. `sql/055` removed `RegistrationID` from that table because neither
+  dashboard is registration aware, so there is no scope to disagree about.
+- The picker is `IconPicker`, the same dialog the page generator uses, so a name means the same
+  thing in both places: a file in `assets/images/`, or a built-in glyph marked `system:`.
+- Only an App Admin sees the menu, and `DataAccess.SaveDashboardIconOverride` refuses anybody else
+  regardless — a hidden menu item is not authorization.
 
 ---
 

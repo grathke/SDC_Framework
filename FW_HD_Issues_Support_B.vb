@@ -63,9 +63,7 @@ Namespace HelloWorld
         End Function
 
         Private Function SeesAllRegistrationIssues() As Boolean
-            If Not SessionState.IsActive OrElse Not SessionState.Current.HasValue Then Return False
-            Dim session = SessionState.Current.Value
-            Return session.IsApplicationAdminRole OrElse session.IsCompanyAdminRole
+            Return SessionState.IsApplicationAdmin OrElse SessionState.IsCompanyAdmin
         End Function
 
         Protected Overrides Function TryGetActiveRegistrationId(ByRef registrationId As Integer) As Boolean

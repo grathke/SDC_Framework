@@ -1591,233 +1591,29 @@ Namespace HelloWorld
             Return False
         End Function
 
-        ''' <summary>
-        ''' The icon families, in the order they are offered. They are chosen from as sets - a page
-        ''' takes its picture from one style or the other - so they are kept whole and in this
-        ''' order rather than sorted into each other. Plain alphabetical order let the loose files
-        ''' fall between them: dashboard.png sat in the gap between Color and Fluent.
-        '''
-        ''' A family listed here that has no files simply contributes nothing.
-        ''' </summary>
-        Private Shared ReadOnly IconFamilyOrder As String() = {"Color_", "Fluent_"}
-
-        Private Shared Function IconFamilyRank(fileName As String) As Integer
-            For index = 0 To IconFamilyOrder.Length - 1
-                If fileName.StartsWith(IconFamilyOrder(index), StringComparison.OrdinalIgnoreCase) Then Return index
-            Next
-
-            ' Anything outside the families sorts after them, alphabetically among itself.
-            Return IconFamilyOrder.Length
-        End Function
-
-        Private Shared Function DashboardImagesFolder() As String
-            Dim candidates As String() = {
-                Path.Combine(Application.StartupPath, "assets", "images"),
-                Path.Combine(Application.StartupPath, "..", "..", "..", "assets", "images"),
-                Path.Combine(Application.StartupPath, "..", "..", "..", "..", "assets", "images")
-            }
-            For Each candidate In candidates
-                Dim fullPath = Path.GetFullPath(candidate)
-                If Directory.Exists(fullPath) Then Return fullPath
-            Next
-            Return String.Empty
-        End Function
-
-        ''' A choice is either a file in assets\images or one of the built-in glyphs, marked with
-        ''' the system: prefix. One place resolves both to a picture.
-        Private Shared Function ResolveIconImage(choice As String) As Image
-            Dim wanted = If(choice, String.Empty).Trim()
-            If wanted = String.Empty Then Return Nothing
-
-            Dim systemName = PageGenerator.SystemIconName(wanted)
-            If systemName.Length > 0 Then
-                Select Case systemName.ToUpperInvariant()
-                    Case "APPLICATION" : Return SystemIcons.Application.ToBitmap()
-                    Case "ASTERISK" : Return SystemIcons.Asterisk.ToBitmap()
-                    Case "ERROR" : Return SystemIcons.Error.ToBitmap()
-                    Case "EXCLAMATION" : Return SystemIcons.Exclamation.ToBitmap()
-                    Case "HAND" : Return SystemIcons.Hand.ToBitmap()
-                    Case "INFORMATION" : Return SystemIcons.Information.ToBitmap()
-                    Case "QUESTION" : Return SystemIcons.Question.ToBitmap()
-                    Case "SHIELD" : Return SystemIcons.Shield.ToBitmap()
-                    Case "WARNING" : Return SystemIcons.Warning.ToBitmap()
-                    Case "WINLOGO" : Return SystemIcons.WinLogo.ToBitmap()
-                    Case Else : Return Nothing
-                End Select
-            End If
-
-            Dim folder = DashboardImagesFolder()
-            If folder = String.Empty Then Return Nothing
-            Dim fullPath = Path.Combine(folder, wanted)
-            If Not File.Exists(fullPath) Then Return Nothing
-
-            Try
-                ' Read through a stream so the preview does not lock the file.
-                Using stream As New FileStream(fullPath, FileMode.Open, FileAccess.Read)
-                    Return Image.FromStream(stream)
-                End Using
-            Catch
-                Return Nothing
-            End Try
-        End Function
-
-        ''' What the user sees in the list for a stored choice.
-        Private Shared Function IconChoiceDisplay(choice As String) As String
-            Dim systemName = PageGenerator.SystemIconName(choice)
-            Return If(systemName.Length > 0, systemName & " (system)", If(choice, String.Empty).Trim())
-        End Function
-
-        ''' What is stored for a displayed choice.
-        Private Shared Function IconChoiceValue(display As String) As String
-            Dim text = If(display, String.Empty).Trim()
-            If text.EndsWith(" (system)", StringComparison.OrdinalIgnoreCase) Then
-                Return PageGenerator.SystemIconPrefix & text.Substring(0, text.Length - " (system)".Length)
-            End If
-            Return text
-        End Function
 
         Private Sub SetIconFileName(fileName As String)
-            iconFileNameTextBox.Text = IconChoiceDisplay(fileName)
-            iconPreviewBox.Image = ResolveIconImage(fileName)
+            iconFileNameTextBox.Text = IconPicker.IconChoiceDisplay(fileName)
+            iconPreviewBox.Image = IconPicker.ResolveIconImage(fileName)
         End Sub
 
-        ''' One tile per icon, laid out like the dashboard it is choosing for: system glyphs on the
-        ''' left, the files in assets\images on the right. Picking by sight beats picking a file
-        ''' name and then finding out what it looks like.
+        ''' <summary>
+        ''' Offers the shared picker and records what came back.
+        '''
+        ''' The dialog itself lives in IconPicker, because the dashboards open the same one. What
+        ''' stays here is what only this page knows: that a new choice makes the request dirty and
+        ''' the saved-page document worth rebuilding.
+        ''' </summary>
         Private Sub SelectIconButton_Click(sender As Object, e As EventArgs)
-            Dim folder = DashboardImagesFolder()
-            Dim files As New List(Of String)()
-            If folder <> String.Empty Then
-                files = Directory.GetFiles(folder).
-                    Where(Function(item) {".png", ".jpg", ".jpeg", ".bmp", ".gif", ".ico"}.
-                        Contains(Path.GetExtension(item).ToLowerInvariant())).
-                    Select(Function(item) Path.GetFileName(item)).
-                    OrderBy(Function(item) IconFamilyRank(item)).
-                    ThenBy(Function(item) item, StringComparer.OrdinalIgnoreCase).
-                    ToList()
-            End If
+            Dim chosen = IconPicker.Choose(Me, iconFileNameTextBox.Text)
+            If String.IsNullOrWhiteSpace(chosen) Then Return
+            If String.Equals(IconPicker.IconChoiceValue(iconFileNameTextBox.Text), chosen, StringComparison.OrdinalIgnoreCase) Then Return
 
-            Dim chosen = IconChoiceValue(iconFileNameTextBox.Text)
-            Dim tiles As New List(Of Panel)()
-
-            Using dialog As New Form With {
-                .Text = "Select Dashboard Icon",
-                .StartPosition = FormStartPosition.CenterParent,
-                .ClientSize = New Size(780, 560),
-                .MinimizeBox = False,
-                .MaximizeBox = False,
-                .FormBorderStyle = FormBorderStyle.FixedDialog
-            }
-                Dim layout As New TableLayoutPanel With {
-                    .Dock = DockStyle.Fill,
-                    .ColumnCount = 2,
-                    .RowCount = 2,
-                    .Padding = New Padding(10)
-                }
-                layout.ColumnStyles.Add(New ColumnStyle(SizeType.Percent, 50))
-                layout.ColumnStyles.Add(New ColumnStyle(SizeType.Percent, 50))
-                layout.RowStyles.Add(New RowStyle(SizeType.Percent, 100))
-                layout.RowStyles.Add(New RowStyle(SizeType.Absolute, 48))
-
-                Dim systemGroup As New GroupBox With {.Text = "System Icons", .Dock = DockStyle.Fill}
-                Dim fileGroup As New GroupBox With {.Text = "File Graphics", .Dock = DockStyle.Fill}
-                Dim systemFlow As New FlowLayoutPanel With {.Dock = DockStyle.Fill, .AutoScroll = True, .Padding = New Padding(8)}
-                Dim fileFlow As New FlowLayoutPanel With {.Dock = DockStyle.Fill, .AutoScroll = True, .Padding = New Padding(8)}
-                systemGroup.Controls.Add(systemFlow)
-                fileGroup.Controls.Add(fileFlow)
-
-                Dim applyButton As New Button With {.Text = "Select", .DialogResult = DialogResult.OK, .AutoSize = True, .Enabled = chosen <> String.Empty}
-
-                Dim highlight = Sub()
-                                    For Each tile In tiles
-                                        Dim value = Convert.ToString(tile.Tag)
-                                        Dim isChosen = String.Equals(value, chosen, StringComparison.OrdinalIgnoreCase)
-                                        tile.BackColor = If(isChosen, Color.FromArgb(221, 235, 247), SystemColors.Control)
-                                        tile.BorderStyle = If(isChosen, BorderStyle.FixedSingle, BorderStyle.None)
-                                    Next
-                                    applyButton.Enabled = chosen <> String.Empty
-                                End Sub
-
-                Dim addTile = Sub(host As FlowLayoutPanel, value As String, caption As String)
-                                  Dim tile As New Panel With {
-                                      .Size = New Size(104, 104),
-                                      .Margin = New Padding(6),
-                                      .Tag = value,
-                                      .Cursor = Cursors.Hand
-                                  }
-                                  Dim picture As New PictureBox With {
-                                      .Size = New Size(48, 48),
-                                      .Location = New Point(28, 10),
-                                      .SizeMode = PictureBoxSizeMode.Zoom,
-                                      .Image = ResolveIconImage(value)
-                                  }
-                                  Dim captionLabel As New Label With {
-                                      .Text = caption,
-                                      .AutoSize = False,
-                                      .Size = New Size(100, 32),
-                                      .Location = New Point(2, 64),
-                                      .TextAlign = ContentAlignment.TopCenter
-                                  }
-                                  tile.Controls.Add(picture)
-                                  tile.Controls.Add(captionLabel)
-
-                                  ' The picture and the caption fill the tile, so the click has to be
-                                  ' taken on all three or half the tile would be dead.
-                                  For Each clickable As Control In New Control() {tile, picture, captionLabel}
-                                      AddHandler clickable.Click, Sub()
-                                                                      chosen = value
-                                                                      highlight()
-                                                                  End Sub
-                                      AddHandler clickable.DoubleClick, Sub()
-                                                                            chosen = value
-                                                                            dialog.DialogResult = DialogResult.OK
-                                                                            dialog.Close()
-                                                                        End Sub
-                                  Next
-
-                                  tiles.Add(tile)
-                                  host.Controls.Add(tile)
-                              End Sub
-
-                For Each systemName In PageGenerator.SystemIconNames
-                    addTile(systemFlow, PageGenerator.SystemIconPrefix & systemName, systemName)
-                Next
-                For Each fileName In files
-                    addTile(fileFlow, fileName, fileName)
-                Next
-
-                If files.Count = 0 Then
-                    fileFlow.Controls.Add(New Label With {
-                        .Text = "No images found in assets\images.",
-                        .AutoSize = True,
-                        .ForeColor = Color.DimGray,
-                        .Margin = New Padding(6)
-                    })
-                End If
-
-                Dim actions As New FlowLayoutPanel With {.Dock = DockStyle.Fill, .FlowDirection = FlowDirection.RightToLeft}
-                Dim cancelButton As New Button With {.Text = "Cancel", .DialogResult = DialogResult.Cancel, .AutoSize = True}
-                actions.Controls.Add(cancelButton)
-                actions.Controls.Add(applyButton)
-
-                layout.Controls.Add(systemGroup, 0, 0)
-                layout.Controls.Add(fileGroup, 1, 0)
-                layout.Controls.Add(actions, 1, 1)
-                dialog.Controls.Add(layout)
-                dialog.AcceptButton = applyButton
-                dialog.CancelButton = cancelButton
-
-                highlight()
-
-                If dialog.ShowDialog(Me) = DialogResult.OK AndAlso chosen <> String.Empty Then
-                    If Not String.Equals(IconChoiceValue(iconFileNameTextBox.Text), chosen, StringComparison.OrdinalIgnoreCase) Then
-                        SetIconFileName(chosen)
-                        MarkDirty(sender, e)
-                        RefreshSavedPageDocumentTemplate()
-                    End If
-                End If
-            End Using
+            SetIconFileName(chosen)
+            MarkDirty(sender, e)
+            RefreshSavedPageDocumentTemplate()
         End Sub
+
         Private Sub SelectFieldsButton_Click(sender As Object, e As EventArgs)
             Dim tableName = underlyingTableNameTextBox.Text.Trim()
             If tableName.StartsWith("dbo.", StringComparison.OrdinalIgnoreCase) Then
@@ -2901,7 +2697,7 @@ Namespace HelloWorld
                     {"LookupFields", DbSaveValue(lookupSpecs)},
                     {"AdminRequiredFields", DbSaveValue(adminRequiredFieldsTextBox.Text)},
                     {"MenuCaller", DbSaveValue(SelectedMenuCaller())},
-                    {"IconFileName", DbSaveValue(IconChoiceValue(iconFileNameTextBox.Text))}
+                    {"IconFileName", DbSaveValue(IconPicker.IconChoiceValue(iconFileNameTextBox.Text))}
                 }
                 If Not DataAccess.SavePageGeneration(isNewRecord, Integer.Parse(If(String.IsNullOrWhiteSpace(pageRequestIdTextBox.Text), "0", pageRequestIdTextBox.Text)), values, originalRowVersion) Then
                     ' A deleted record is not a conflict to overwrite.

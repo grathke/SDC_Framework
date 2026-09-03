@@ -1597,7 +1597,8 @@ Namespace HelloWorld
                 conn.Open()
                 Using cmd As New SqlCommand(
                     "SELECT ActionKey, GridRow, GridColumn FROM dbo.FW_DashboardLayouts " &
-                    "WHERE DashboardName = @DashboardName AND ISNULL(DeletedFlag, 0) = 0", conn)
+                    "WHERE DashboardName = @DashboardName AND ISNULL(DeletedFlag, 0) = 0 " &
+                    "AND GridRow IS NOT NULL AND GridColumn IS NOT NULL", conn)
                     cmd.Parameters.AddWithValue("@DashboardName", dashboardName.Trim())
                     Using reader = cmd.ExecuteReader()
                         While reader.Read()
@@ -1657,6 +1658,81 @@ Namespace HelloWorld
                     End Try
                 End Using
             End Using
+        End Function
+
+        ''' <summary>
+        ''' The icon pictures an App Admin has chosen, as ActionKey -> stored icon choice.
+        '''
+        ''' Only icons that have been changed appear. Anything missing keeps the picture its
+        ''' dashboard was written with, which is what lets a newly added icon show the one its
+        ''' source names rather than nothing at all.
+        ''' </summary>
+        Public Shared Function GetDashboardIconOverrides(dashboardName As String) As Dictionary(Of String, String)
+            Dim chosenIcons As New Dictionary(Of String, String)(StringComparer.OrdinalIgnoreCase)
+            If String.IsNullOrWhiteSpace(dashboardName) Then Return chosenIcons
+            ' Missing-schema guard: without 057 there is no column, and so no chosen picture.
+            If Not TableHasColumn("FW_DashboardLayouts", "IconFileName") Then Return chosenIcons
+
+            Using conn As New SqlConnection(ConnectionString)
+                conn.Open()
+                Using cmd As New SqlCommand(
+                    "SELECT ActionKey, IconFileName FROM dbo.FW_DashboardLayouts " &
+                    "WHERE DashboardName = @DashboardName AND ISNULL(DeletedFlag, 0) = 0 " &
+                    "AND IconFileName IS NOT NULL AND LTRIM(RTRIM(IconFileName)) <> ''", conn)
+                    cmd.Parameters.AddWithValue("@DashboardName", dashboardName.Trim())
+                    Using reader = cmd.ExecuteReader()
+                        While reader.Read()
+                            chosenIcons(Convert.ToString(reader("ActionKey"))) = Convert.ToString(reader("IconFileName"))
+                        End While
+                    End Using
+                End Using
+            End Using
+
+            Return chosenIcons
+        End Function
+
+        ''' <summary>
+        ''' Records the picture chosen for one icon, or clears it when iconFileName is empty.
+        '''
+        ''' The App Admin test is made here, not only where the menu is offered. A hidden menu item
+        ''' is not authorization - it is the absence of an invitation - and this is the boundary the
+        ''' write actually crosses. Returns False when refused, so a caller cannot mistake a denial
+        ''' for a save that simply changed nothing.
+        '''
+        ''' Upserts against UX_FW_DashboardLayouts_Icon, so an icon that has never been dragged gets
+        ''' a row on its first re-picturing. That row's position is NULL rather than 0, 0: a corner
+        ''' cell is a real answer, and writing one would move the icon there on the next launch, so
+        ''' choosing a picture would quietly rearrange the dashboard. An existing row keeps the
+        ''' position it was dropped at.
+        ''' </summary>
+        Public Shared Function SaveDashboardIconOverride(dashboardName As String,
+                                                         actionKey As String,
+                                                         iconFileName As String,
+                                                         userId As Integer) As Boolean
+            If Not SessionState.IsApplicationAdmin Then Return False
+            If String.IsNullOrWhiteSpace(dashboardName) OrElse String.IsNullOrWhiteSpace(actionKey) Then Return False
+            If Not TableHasColumn("FW_DashboardLayouts", "IconFileName") Then Return False
+
+            Dim storedValue As Object = If(String.IsNullOrWhiteSpace(iconFileName), DBNull.Value, CObj(iconFileName.Trim()))
+
+            Using conn As New SqlConnection(ConnectionString)
+                conn.Open()
+                Using cmd As New SqlCommand(
+                    "UPDATE dbo.FW_DashboardLayouts " &
+                    "SET IconFileName = @IconFileName, DeletedFlag = 0, UpdatedBy = @UserID, UpdatedOn = GETDATE() " &
+                    "WHERE DashboardName = @DashboardName AND ActionKey = @ActionKey; " &
+                    "IF @@ROWCOUNT = 0 " &
+                    "INSERT INTO dbo.FW_DashboardLayouts (DashboardName, ActionKey, GridRow, GridColumn, IconFileName, CreatedBy, CreatedOn) " &
+                    "VALUES (@DashboardName, @ActionKey, NULL, NULL, @IconFileName, @UserID, GETDATE());", conn)
+                    cmd.Parameters.AddWithValue("@DashboardName", dashboardName.Trim())
+                    cmd.Parameters.AddWithValue("@ActionKey", actionKey.Trim())
+                    cmd.Parameters.AddWithValue("@IconFileName", storedValue)
+                    cmd.Parameters.AddWithValue("@UserID", userId)
+                    cmd.ExecuteNonQuery()
+                End Using
+            End Using
+
+            Return True
         End Function
 
         Public Shared Function GetPrimaryKeyFieldName(tableName As String) As String

@@ -360,8 +360,7 @@ Namespace HelloWorld
         End Function
 
         Private Shared Function IsApplicationAdminSession() As Boolean
-            Return SessionState.IsActive AndAlso SessionState.Current.HasValue AndAlso
-                   SessionState.Current.Value.IsApplicationAdminRole
+            Return SessionState.IsApplicationAdmin
         End Function
 
         Protected Overrides Function ShouldWarnOnCancel() As Boolean
