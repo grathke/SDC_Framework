@@ -215,16 +215,16 @@ Namespace SDC.Framework
             allowMultipleRolesCheckBox = AddOptionCheckBox("CheckBox_AllowMultipleRoles", "Allow Multiple Roles per User", optionsX, y + 2)
 
             y += rowGap
-            registrationTypeComboBox = AddLabeledComboBoxSharedStyle("RegistrationType", "Registration Type", y)
+            registrationTypeComboBox = AddLabeledComboBoxSharedStyle("RegistrationTypeID", "Registration Type", y)
             allowPasswordChangeCheckBox = AddOptionCheckBox("CheckBox_AllowPasswordChangeAtLogin", "Allow Password Change At Login", optionsX, y + 2)
 
             y += rowGap
             addressTextBox = AddField("Address1", y, False, False)
-            allowUpdateProfileCheckBox = AddOptionCheckBox("CheckBox_AllowUpdateProfile", "Allow Update My Profile at Main Menu", optionsX, y + 2)
+            allowUpdateProfileCheckBox = AddOptionCheckBox("CheckBox_AllowUpdateMyProfile", "Allow Update My Profile at Main Menu", optionsX, y + 2)
 
             y += rowGap
             address2TextBox = AddField("Address2", y, False, False)
-            allowUpdateEmailCheckBox = AddOptionCheckBox("CheckBox_AllowUpdateEmail", "Allow Update My Email", optionsX, y + 2)
+            allowUpdateEmailCheckBox = AddOptionCheckBox("CheckBox_AllowUpdateMyProfileEmail", "Allow Update My Email", optionsX, y + 2)
 
             y += rowGap
             cityTextBox = AddField("City", y, False, False)
@@ -404,7 +404,7 @@ Namespace SDC.Framework
             allowPasswordChangeCheckBox.Checked = record.AllowPasswordChangeAtLogin
             allowUpdateProfileCheckBox.Checked = record.AllowUpdateMyProfile
             allowUpdateEmailCheckBox.Checked = record.AllowUpdateMyProfileEmail
-            twoFactorCheckBox.Checked = record.Use2FA
+            twoFactorCheckBox.Checked = record.TwoFactorAuthentication
 
             smartyAuthIdTextBox.DataBindings.Clear()
             smartyAuthIdTextBox.DataBindings.Add("Text", record, "Smarty_AuthID", True)
@@ -415,8 +415,8 @@ Namespace SDC.Framework
             smartyUseEmbeddedKeyCheckBox.DataBindings.Clear()
             smartyUseEmbeddedKeyCheckBox.DataBindings.Add("Checked", record, "Smarty_UseEmbeddedKey", True)
 
-            If record.RegTypeId > 0 Then
-                registrationTypeComboBox.SelectedValue = record.RegTypeId
+            If record.RegistrationTypeID > 0 Then
+                registrationTypeComboBox.SelectedValue = record.RegistrationTypeID
                 If registrationTypeComboBox.SelectedIndex < 0 Then
                     registrationTypeComboBox.SelectedIndex = 0
                 End If
@@ -448,7 +448,7 @@ Namespace SDC.Framework
                 .ID = recordId,
                 .RegName = registrationTextBox.Text.Trim(),
                 .BusinessRuleType = businessRuleType,
-                .RegTypeId = regTypeId,
+                .RegistrationTypeID = regTypeId,
                 .Address1 = addressTextBox.Text.Trim(),
                 .Address2 = address2TextBox.Text.Trim(),
                 .City = cityTextBox.Text.Trim(),
@@ -469,7 +469,7 @@ Namespace SDC.Framework
                 .AllowUpdateMyProfile = allowUpdateProfileCheckBox.Checked,
                 .AllowUpdateMyProfileEmail = allowUpdateEmailCheckBox.Checked,
                 .Ribbonbar_InvisibleIcons = If(currentRecord Is Nothing, False, currentRecord.Ribbonbar_InvisibleIcons),
-                .Use2FA = twoFactorCheckBox.Checked,
+                .TwoFactorAuthentication = twoFactorCheckBox.Checked,
                 .IsActive = True,
                 .RowVersion = CopyOriginalRowVersion()
             }
@@ -480,7 +480,7 @@ Namespace SDC.Framework
                 .ID = 0,
                 .RegName = String.Empty,
                 .BusinessRuleType = String.Empty,
-                .RegTypeId = 0,
+                .RegistrationTypeID = 0,
                 .Address1 = String.Empty,
                 .Address2 = String.Empty,
                 .City = String.Empty,
@@ -501,7 +501,7 @@ Namespace SDC.Framework
                 .AllowUpdateMyProfile = True,
                 .AllowUpdateMyProfileEmail = True,
                 .Ribbonbar_InvisibleIcons = True,
-                .Use2FA = False,
+                .TwoFactorAuthentication = False,
                 .IsActive = True
             }
         End Function

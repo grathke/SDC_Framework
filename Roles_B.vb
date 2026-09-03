@@ -152,7 +152,7 @@ Namespace SDC.Framework
             FocusGridForBrowseEntry(rolesGrid)
         End Sub
 
-        Private Sub LoadInternalSqlFromRoleTable()
+        Private Sub LoadInternalSqlFromPages()
             Try
                 Dim activeSession = SessionState.Current
                 If Not activeSession.HasValue OrElse activeSession.Value.RegistrationID <= 0 Then
@@ -163,11 +163,11 @@ Namespace SDC.Framework
 
                 Dim registrationId = activeSession.Value.RegistrationID
                 Dim pageName = Me.GetType().Name
-                currentDbTableName = DataAccess.GetDbTableFromRoleTableByWindowOrPage(registrationId, pageName).Trim()
-                Dim displayTitle = EntityDisplayNameHelper.BuildEntityListingTitle(registrationId, currentDbTableName, "Roles")
+                currentDbTableName = DataAccess.GetPageDbTableByWindowOrPage(registrationId, pageName).Trim()
+                Dim displayTitle = PageTitleHelper.BuildListingTitle(registrationId, currentDbTableName, "Roles")
                 Me.Text = displayTitle
                 titleLabel.Text = displayTitle
-                Dim sql = DataAccess.GetTableSqlFromRoleTableByWindowOrPage(registrationId, pageName)
+                Dim sql = DataAccess.GetPageSqlByWindowOrPage(registrationId, pageName)
 
                 If Not String.IsNullOrWhiteSpace(sql) Then
                     sql = sql.Trim()
@@ -296,7 +296,7 @@ Namespace SDC.Framework
         End Sub
 
         Private Sub Roles_B_Load(sender As Object, e As EventArgs)
-            LoadInternalSqlFromRoleTable()
+            LoadInternalSqlFromPages()
             If IsAppAdminSession() Then
                 LoadRegistrations()
             End If
@@ -828,7 +828,7 @@ Namespace SDC.Framework
                     Dim updatedBy = If(SessionState.IsActive, SessionState.Current.Value.UserID, 0)
                     DataAccess.DeleteRole(roleId.Value, updatedBy)
                     RefreshGrid()
-                    FW_EntityCrudAdapter.ShowAutoClosingMessage(Me, "Role deleted.", "Delete", MessageBoxIcon.Information, 1000)
+                    AutoClosingMessage.Show(Me, "Role deleted.", "Delete", MessageBoxIcon.Information, 1000)
                 Catch ex As Exception
                     MessageBox.Show($"Error deleting role: {ex.Message}", "Error", MessageBoxButtons.OK, MessageBoxIcon.Error)
                 End Try
@@ -868,7 +868,7 @@ Namespace SDC.Framework
                 Dim updatedBy = If(SessionState.IsActive, SessionState.Current.Value.UserID, 0)
                 DataAccess.RestoreRole(roleId.Value, updatedBy)
                 RefreshGrid()
-                FW_EntityCrudAdapter.ShowAutoClosingMessage(Me, "Role restored.", "Restore", MessageBoxIcon.Information, 1000)
+                AutoClosingMessage.Show(Me, "Role restored.", "Restore", MessageBoxIcon.Information, 1000)
             Catch ex As Exception
                 MessageBox.Show($"Error restoring role: {ex.Message}", "Error", MessageBoxButtons.OK, MessageBoxIcon.Error)
             End Try

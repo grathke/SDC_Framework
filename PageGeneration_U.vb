@@ -40,7 +40,7 @@ Namespace SDC.Framework
         Private iconFileNameTextBox As TextBox
         Private selectIconButton As Button
         Private iconPreviewBox As PictureBox
-        Private pageRequestIdTextBox As TextBox
+        Private generatedPageIdTextBox As TextBox
         Private createdByTextBox As TextBox
         Private createdOnTextBox As TextBox
         Private updatedByTextBox As TextBox
@@ -104,7 +104,7 @@ Namespace SDC.Framework
         End Sub
 
         Protected Overrides Function GetTableNameOverride() As String
-            Return "FW_PageGeneration_B_U"
+            Return DataAccess.GeneratedPagesTable
         End Function
 
         Protected Overrides Function GetPageName() As String
@@ -112,7 +112,7 @@ Namespace SDC.Framework
         End Function
 
         Protected Overrides Function ResolveAuditRecordKey() As String
-            Return pageRequestIdTextBox.Text.Trim()
+            Return generatedPageIdTextBox.Text.Trim()
         End Function
 
         Protected Overrides Function ResolveAuditOperationType() As String
@@ -149,8 +149,8 @@ Namespace SDC.Framework
             fields.ColumnStyles.Add(New ColumnStyle(SizeType.Percent, 100))
             root.Controls.Add(fields, 0, 0)
 
-            pageRequestIdTextBox = New TextBox With {.Name = "TextBox_PageRequestID", .Visible = False}
-            Controls.Add(pageRequestIdTextBox)
+            generatedPageIdTextBox = New TextBox With {.Name = "TextBox_GeneratedPageID", .Visible = False}
+            Controls.Add(generatedPageIdTextBox)
             requestNameTextBox = AddEntryField(fields, "RequestName", False, 34, 150, False, "1. Request Name")
             pageBaseNameTextBox = AddEntryField(fields, "PageBaseName", False, 34, 150, False, "2. Pages To Generate")
             createAsFrameworkPagesCheckBox = New CheckBox With {
@@ -485,7 +485,7 @@ Namespace SDC.Framework
             Dim browseReady = Not generateBrowsePageCheckBox.Checked OrElse IsGenerationResultPresent(result, ".vb", browsePageName)
             Dim maintenanceReady = Not generateMaintenancePageCheckBox.Checked OrElse IsGenerationResultPresent(result, ".vb", maintenancePageName)
             Dim pagesReady = browseReady AndAlso maintenanceReady
-            Dim sqlReady = IsGenerationResultPresent(result, "FW_RoleTables", String.Empty)
+            Dim sqlReady = IsGenerationResultPresent(result, "FW_Pages", String.Empty)
             Dim createdPageResults = GetGenerationResults(result.CreatedFiles, False)
             Dim createdIconResults = GetGenerationResults(result.CreatedFiles, True)
             Dim skippedPageResults = GetGenerationResults(result.SkippedFiles, False)
@@ -1248,7 +1248,7 @@ Namespace SDC.Framework
                 schema.Rows.Add(newRow)
                 formBindingSource.DataSource = schema
                 BindFormControls()
-                pageRequestIdTextBox.Text = String.Empty
+                generatedPageIdTextBox.Text = String.Empty
                 createdByTextBox.Text = currentUser.UserId.ToString()
                 createdOnTextBox.Text = DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss")
                 deletedFlagCheckBox.Checked = False
@@ -1261,7 +1261,7 @@ Namespace SDC.Framework
                 formBindingSource.DataSource = row.Table
                 formBindingSource.Position = row.Table.Rows.IndexOf(row)
                 BindFormControls()
-                pageRequestIdTextBox.Text = DbText(row("PageRequestID"))
+                generatedPageIdTextBox.Text = DbText(row("GeneratedPageID"))
                 requestNameTextBox.Text = DbText(row("RequestName"))
                 pageBaseNameTextBox.Text = DbText(row("PageBaseName"))
                 If row.Table.Columns.Contains("CreateAsFrameworkPages") AndAlso Not row.IsNull("CreateAsFrameworkPages") Then
@@ -1299,7 +1299,7 @@ Namespace SDC.Framework
         End Sub
 
         Protected Overrides Sub ApplyMode()
-            pageRequestIdTextBox.ReadOnly = True
+            generatedPageIdTextBox.ReadOnly = True
             createdByTextBox.ReadOnly = True
             createdOnTextBox.ReadOnly = True
             updatedByTextBox.ReadOnly = True
@@ -2699,18 +2699,18 @@ Namespace SDC.Framework
                     {"MenuCaller", DbSaveValue(SelectedMenuCaller())},
                     {"IconFileName", DbSaveValue(IconPicker.IconChoiceValue(iconFileNameTextBox.Text))}
                 }
-                If Not DataAccess.SavePageGeneration(isNewRecord, Integer.Parse(If(String.IsNullOrWhiteSpace(pageRequestIdTextBox.Text), "0", pageRequestIdTextBox.Text)), values, originalRowVersion) Then
+                If Not DataAccess.SavePageGeneration(isNewRecord, Integer.Parse(If(String.IsNullOrWhiteSpace(generatedPageIdTextBox.Text), "0", generatedPageIdTextBox.Text)), values, originalRowVersion) Then
                     ' A deleted record is not a conflict to overwrite.
                     If HandleRecordDeletedDuringSave() Then Return False
                     Return ConfirmConcurrencyOverwrite()
                 End If
-                Dim savedRequestId = If(String.IsNullOrWhiteSpace(pageRequestIdTextBox.Text),
+                Dim savedRequestId = If(String.IsNullOrWhiteSpace(generatedPageIdTextBox.Text),
                                         DataAccess.GetPageGenerationId(requestNameTextBox.Text, browsePageNameTextBox.Text, maintenancePageNameTextBox.Text),
-                                        Integer.Parse(pageRequestIdTextBox.Text))
+                                        Integer.Parse(generatedPageIdTextBox.Text))
                 If savedRequestId > 0 Then
                     Dim savedRow = DataAccess.GetPageGenerationById(savedRequestId)
                     If savedRow IsNot Nothing Then
-                        pageRequestIdTextBox.Text = DbText(savedRow("PageRequestID"))
+                        generatedPageIdTextBox.Text = DbText(savedRow("GeneratedPageID"))
                         recordId = savedRequestId
                         isNewRecord = False
                         If Not savedRow.IsNull("RowVersion") Then
@@ -2853,7 +2853,7 @@ Namespace SDC.Framework
                 "- If Menu Caller is not explicit (for example Main Menu or Dashboard), choose the exact caller from the prompt list.",
                 "- RegistrationID appears in SELECT only when it is explicitly selected in `_B data grid fields`; Use RegistrationID only controls the WHERE filter.",
                 "- Create only the page targets whose Generate checkbox is checked.",
-                "- If Generate Browse Page is False, do not create or overwrite the `_B` page, its generated dashboard icon, or its generated FW_RoleTables record.",
+                "- If Generate Browse Page is False, do not create or overwrite the `_B` page, its generated dashboard icon, or its generated FW_Pages record.",
                 "- If Generate Maintenance Page is False, do not create or overwrite the `_U` page or its generated maintenance baseline.",
                 "- Generate Maintenance Page requires Generate Browse Page; an `_U` page is never generated by itself.",
                 "- Create-only mode is the default: if target `_B`/`_U` pages or SQL already exist, report that to the user and skip updates.",
@@ -2890,7 +2890,7 @@ Namespace SDC.Framework
                 "- When Use QBE Only is Yes, the generated _B page overrides OnlyUseQbe() and hides CRUD buttons while retaining QBE search.",
                 "- At least one target must be selected; a maintenance page requires a browse page.",
                 "- Create only the page targets whose Generate checkbox is checked.",
-                "- If Generate Browse Page is False, do not create or overwrite the _B page, its generated dashboard icon, or its generated FW_RoleTables record.",
+                "- If Generate Browse Page is False, do not create or overwrite the _B page, its generated dashboard icon, or its generated FW_Pages record.",
                 "- If Generate Maintenance Page is False, do not create or overwrite the _U page or its generated maintenance baseline.",
                 "- Generate Maintenance Page requires Generate Browse Page; an _U page is never generated by itself.",
                 "- _B selection is independent and may be used without selecting any _U field.",

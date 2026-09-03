@@ -73,7 +73,7 @@ Namespace SDC.Framework
         Private missingSqlWarningShown As Boolean = False
         Private lastAppliedSqlSignature As String = String.Empty
         Private lastVisibleColumnsSignature As String = String.Empty
-        Private sqlLoadedFromRoleTable As Boolean = False
+        Private sqlLoadedFromPages As Boolean = False
         Private currentDbTableName As String = String.Empty
         Private pendingInitialLayoutApply As Boolean = True
         Private baselineLayoutSnapshot As String = String.Empty
@@ -428,7 +428,7 @@ Namespace SDC.Framework
             If Not DataAccess.SavePageBackgroundColor(pageName, pageBackgroundColor.ToArgb(), savedBy) Then
                 MessageBox.Show(Me,
                                 "THE COLOUR WAS APPLIED BUT NOT SAVED." & Environment.NewLine & Environment.NewLine &
-                                "THIS PAGE HAS NO FW_RoleTables ROW TO STORE IT AGAINST." & Environment.NewLine &
+                                "THIS PAGE HAS NO FW_Pages ROW TO STORE IT AGAINST." & Environment.NewLine &
                                 Environment.NewLine &
                                 "PAGE: " & pageName,
                                 "PAGE COLOUR NOT SAVED",
@@ -1094,7 +1094,7 @@ Namespace SDC.Framework
             Next
         End Sub
 
-        Private Sub LoadSqlFromRoleTable()
+        Private Sub LoadSqlFromPages()
             Try
                 Dim activeSession = SessionState.Current
                 If Not activeSession.HasValue OrElse activeSession.Value.RegistrationID <= 0 Then
@@ -1103,14 +1103,14 @@ Namespace SDC.Framework
 
                 Dim registrationId = activeSession.Value.RegistrationID
                 Dim pageName = ResolveBrowsePageName()
-                currentDbTableName = DataAccess.GetDbTableFromRoleTableByWindowOrPage(registrationId, pageName)
+                currentDbTableName = DataAccess.GetPageDbTableByWindowOrPage(registrationId, pageName)
                 UpdateShowDeletedButtonState()
 
                 Me.Text = BuildBrowseListingTitle(registrationId, ResolveCurrentRoleFieldTableName())
                 titleLabel.Text = Me.Text
                 
-                ' Try to get SQL from RoleTables
-                Dim sql = DataAccess.GetTableSqlFromRoleTableByWindowOrPage(registrationId, pageName)
+                ' Try to get SQL from FW_Pages
+                Dim sql = DataAccess.GetPageSqlByWindowOrPage(registrationId, pageName)
                 
                 If Not String.IsNullOrWhiteSpace(sql) Then
                     ' SQL exists - use it and replace ? placeholders
@@ -1119,15 +1119,15 @@ Namespace SDC.Framework
                     sqlTextBox.SelectionStart = 0
                     sqlTextBox.SelectionLength = 0
                     sqlTextBox.ScrollToCaret()
-                    sqlLoadedFromRoleTable = True
+                    sqlLoadedFromPages = True
                 Else
                     Dim fallbackTableName = ResolveCurrentRoleFieldTableName()
-                    Dim fallbackSql = DataAccess.GetTableSqlFromRoleTable(registrationId, fallbackTableName)
+                    Dim fallbackSql = DataAccess.GetPageSqlByTable(registrationId, fallbackTableName)
                     Dim copiedExistingTableSql = Not String.IsNullOrWhiteSpace(fallbackSql)
-                    Dim parentRoleTableId As Integer? = If(copiedExistingTableSql,
-                                                           DataAccess.GetRoleTableIdByTable(registrationId, fallbackTableName),
+                    Dim parentPageId As Integer? = If(copiedExistingTableSql,
+                                                           DataAccess.GetPageIdByTable(registrationId, fallbackTableName),
                                                            Nothing)
-                    ' Built here, kept here. Nothing writes this query to FW_RoleTables, so the row
+                    ' Built here, kept here. Nothing writes this query to FW_Pages, so the row
                     ' never claims an answer nobody gave: a page's SQL is written by hand or by the
                     ' page generator, and anything else is a stand-in that says so every time.
                     Dim usingUnsavedDefaultSql = String.IsNullOrWhiteSpace(fallbackSql)
@@ -1138,14 +1138,14 @@ Namespace SDC.Framework
                     sqlTextBox.SelectionStart = 0
                     sqlTextBox.SelectionLength = 0
                     sqlTextBox.ScrollToCaret()
-                    sqlLoadedFromRoleTable = False
+                    sqlLoadedFromPages = False
 
                     Dim fallbackUserId = If(activeSession.Value.UserID > 0, activeSession.Value.UserID, 0)
                     If usingUnsavedDefaultSql Then
                         ShowUnsavedDefaultSqlNotice(pageName, fallbackTableName)
                     ElseIf Not String.IsNullOrWhiteSpace(fallbackTableName) AndAlso
                        Not String.IsNullOrWhiteSpace(fallbackSql) Then
-                        Dim persisted = DataAccess.UpsertRoleTableRecord(registrationId,
+                        Dim persisted = DataAccess.UpsertPageRecord(registrationId,
                                                                          pageName,
                                                                          fallbackTableName,
                                                                          If(fallbackTableName.StartsWith("FW_", StringComparison.OrdinalIgnoreCase),
@@ -1153,13 +1153,13 @@ Namespace SDC.Framework
                                                                              fallbackTableName),
                                                                          fallbackSql,
                                                                          fallbackUserId)
-                        If persisted AndAlso DataAccess.CheckIfRoleTableRecordExists(registrationId, pageName) Then
+                        If persisted AndAlso DataAccess.CheckIfPageRecordExists(registrationId, pageName) Then
                             ' Only the copied case reaches here now, so the message says so plainly
                             ' rather than choosing between two stories.
                             MessageBox.Show(Me,
                                             ("FW_ROLETABLES RECORD CREATED FOR " & pageName &
                                              ". SQL WAS COPIED FROM PARENT RECORD PK " &
-                                             If(parentRoleTableId.HasValue, parentRoleTableId.Value.ToString(), "UNKNOWN") & ".").ToUpperInvariant(),
+                                             If(parentPageId.HasValue, parentPageId.Value.ToString(), "UNKNOWN") & ".").ToUpperInvariant(),
                                             "BROWSE PAGE REGISTERED",
                                             MessageBoxButtons.OK,
                                             MessageBoxIcon.Information)
@@ -1169,7 +1169,7 @@ Namespace SDC.Framework
                                                         ResolveBrowsePageName(),
                                                         registrationId)
                         Else
-                            Throw New InvalidOperationException("FW_RoleTables did not create a record for " & pageName & ".")
+                            Throw New InvalidOperationException("FW_Pages did not create a record for " & pageName & ".")
                         End If
                     End If
                 End If
@@ -1285,7 +1285,7 @@ Namespace SDC.Framework
         End Function
 
         Private Sub BrowsePage_Load(sender As Object, e As EventArgs)
-            LoadSqlFromRoleTable()
+            LoadSqlFromPages()
 
             If Not EnsureSqlOrClose() Then
                 Me.DialogResult = DialogResult.Cancel

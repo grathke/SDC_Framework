@@ -308,7 +308,7 @@ Namespace SDC.Framework
         End Function
 
         Private Sub LoadTableChoices()
-            Dim tables = DataAccess.GetExposedRoleTableChoices()
+            Dim tables = DataAccess.GetExposedPageChoices()
             For Each tableRow As DataRow In tables.Rows
                 tableRow("Table_Alias") = Convert.ToString(tableRow("Table_Alias")).ToUpperInvariant()
             Next

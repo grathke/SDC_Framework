@@ -60,8 +60,8 @@ layout maths works: equal margins means grid right edge + margin = `ClientSize.W
 ## Browse (_B) Page Patterns
 
 - **SQL loading:** the page calls `LoadSqlFromRoleTable()` in the constructor, then the shown
-  handler. With no `FW_RoleTables` row the user picks a table from a dropdown (UPPERCASE names);
-  the choice is written back to `FW_RoleTables`. Cancelling returns to the main menu without
+  handler. With no `FW_Pages` row the user picks a table from a dropdown (UPPERCASE names);
+  the choice is written back to `FW_Pages`. Cancelling returns to the main menu without
   showing the page. `Table_Alias` drives the page title.
 - **Layout precedence** (`DataAccess.GetPreferredTableLayout`): `LastUsed` for the user, else the
   shared `Default` (`userId = 0`), else the physical SQL-derived columns.
@@ -104,7 +104,7 @@ what SQL the page runs:
 3. `GetTableSqlFromRoleTableByWindowOrPage` fetches the SQL for this page. If a row exists, that
    SQL is used and `sqlLoadedFromRoleTable` is set.
 4. With no row, it falls back: SQL for the same *table* under a different page, else
-   `BuildDefaultSqlForBrowse`. Either way it writes an `FW_RoleTables` row back through
+   `BuildDefaultSqlForBrowse`. Either way it writes an `FW_Pages` row back through
    `UpsertRoleTableRecord` and tells the user which happened. A failure to create the row throws
    rather than leaving the page half-registered.
 5. `EnsureSqlOrClose` closes the page if there is still no SQL.
@@ -543,7 +543,7 @@ There are **two** ways a page pair gets built, and they are not the same thing.
 | Path | Driven by | Documented in |
 |---|---|---|
 | By hand | a filled-in page request read by Claude Code | `.github/new-page-request-manual.md` — page identity, SQL rules, field options, create/update/delete behavior, and a 13-step implementation procedure |
-| Automated | `PageGenerator.Generate`, from an `FW_PageGeneration_B_U` row | this section |
+| Automated | `PageGenerator.Generate`, from an `FW_GeneratedPages` row | this section |
 
 The manual's "What Happens During Implementation" describes the **by hand** path. The generator
 does none of it: no restore point, no build, no regression run, no manual test.
@@ -559,9 +559,9 @@ The footer carries two buttons that sound alike and answer different questions.
 
 `Preview Code` requires a saved request, because the generator reads the saved row rather than the
 form; if there are unsaved edits it offers to save first rather than writing silently. It never
-writes a page file, an `FW_RoleTables` row or a dashboard icon. Its Summary tab lists all three as
+writes a page file, an `FW_Pages` row or a dashboard icon. Its Summary tab lists all three as
 *would be* actions, including whether an existing file would be overwritten and whether the
-`FW_RoleTables` row would be inserted, left alone, have its SQL updated, or be replaced.
+`FW_Pages` row would be inserted, left alone, have its SQL updated, or be replaced.
 
 `Preview` and `Generate` share one owner: `PageGenerator.BuildPlan` performs every validation and
 emits both sources, `Generate` writes what it produced, and `Preview` displays it. A preview
@@ -611,7 +611,7 @@ rather than dead-ending.
 
 ### What the generator writes outside the source files
 
-- **`FW_RoleTables`** for the browse page. No row: inserted. A row for the same table: its SQL is
+- **`FW_Pages`** for the browse page. No row: inserted. A row for the same table: its SQL is
   updated if it differs, otherwise skipped. A row for a *different* table: overwritten. Registration
   is passed as `0`, which `UpsertRoleTableRecord` stores as `NULL` — shared across registrations.
 - **The maintenance source baseline** on the request row, so later drift can be compared.
@@ -634,15 +634,20 @@ rather than dead-ending.
 ## Hardcode Guardrail For Generated Pages
 
 Never put page-local SELECT/INSERT/UPDATE/DELETE SQL or duplicated field lists in a standard
-`_B`/`_U` page. Browse SQL comes only from `FW_RoleTables.Table_SQL` through `FW_Base_B`; `_U`
+`_B`/`_U` page. Browse SQL comes only from `FW_Pages.Table_SQL` through `FW_Base_B`; `_U`
 controls and persistence are schema and shared-layer driven. Preflight fails on page-local DML,
 missing `TextBox_`/`ComboBox_`/`CheckBox_` names, or missing data bindings.
 
 ## Physical Table Naming
 
 Framework tables use the `FW_` prefix. For page generation the physical table is
-`dbo.FW_PageGeneration_B_U`; the logical page keys are `PageGeneration_B` and `PageGeneration_U`.
-Do not propagate the unprefixed `PageGeneration_B_U` name.
+`dbo.FW_GeneratedPages`, keyed `GeneratedPageID`; the logical page keys are `PageGeneration_B` and
+`PageGeneration_U`.
+
+It was `FW_PageGeneration_B_U` until 2026-09-03 - a page name wearing a table's clothes, and named
+after a page pair that had itself since been renamed. The table name lives in one place now,
+`DataAccess.GeneratedPagesTable`, because it was a string literal in nine sites across three files
+and that is the arrangement in which a rename reaches eight of them.
 
 ## Help Desk Rules
 

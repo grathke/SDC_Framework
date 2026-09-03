@@ -36,7 +36,7 @@ Namespace SDC.Framework
             Public Property FieldCaptions As Dictionary(Of String, String)
             Public Property InvisibleFields As HashSet(Of String)
             Public Property StartEmpty As Boolean
-            Public Property RoleTableAlias As String
+            Public Property PageAlias As String
             Public Property RoleOverrideCaption As String
 
             Public Sub New()
@@ -45,7 +45,7 @@ Namespace SDC.Framework
                 FieldCaptions = New Dictionary(Of String, String)(StringComparer.OrdinalIgnoreCase)
                 InvisibleFields = New HashSet(Of String)(StringComparer.OrdinalIgnoreCase)
                 StartEmpty = False
-                RoleTableAlias = String.Empty
+                PageAlias = String.Empty
                 RoleOverrideCaption = String.Empty
             End Sub
         End Class
@@ -199,7 +199,7 @@ Namespace SDC.Framework
                                     .CanExpandQbe = Convert.ToBoolean(reader("Expand_QBE"))
                                 }
                                 result.StartEmpty = Convert.ToBoolean(reader("StartEmpty"))
-                                result.RoleTableAlias = SafeString(reader("Table_Alias"))
+                                result.PageAlias = SafeString(reader("Table_Alias"))
                                 result.RoleOverrideCaption = SafeString(reader("OverrideCaption"))
                             End If
                         End Using
@@ -274,7 +274,7 @@ Namespace SDC.Framework
                 .FieldCaptions = CloneCaptionMap(source.FieldCaptions),
                 .InvisibleFields = New HashSet(Of String)(source.InvisibleFields, StringComparer.OrdinalIgnoreCase),
                 .StartEmpty = source.StartEmpty,
-                .RoleTableAlias = source.RoleTableAlias,
+                .PageAlias = source.PageAlias,
                 .RoleOverrideCaption = source.RoleOverrideCaption
             }
         End Function
@@ -579,7 +579,7 @@ Namespace SDC.Framework
                                                          Optional maxRows As Integer = 0,
                                                          Optional overrideExplicitRegistrationPredicate As Boolean = False,
                                                          Optional sourceTableName As String = Nothing) As DataTable
-            Dim table As New DataTable("FW_Entity")
+            Dim table As New DataTable("BrowseRows")
 
             Using conn As New SqlConnection(ConnectionString)
                 conn.Open()
@@ -673,104 +673,21 @@ Namespace SDC.Framework
                     Return LimitBrowseRows(table, maxRows)
                 End If
 
-                ' DEFAULT SQL PATH: Standard query with optional QBE filters
-                Dim sql As New StringBuilder()
-                sql.Append("SELECT EntityID, RegistrationID, FirstName, MiddleName, LastName, FirstLast, LastFirst, EMail1, Phone1, IsActive, AssignedManagerID, GenderID, DeletedFlag, UpdatedOn ")
-                sql.Append("FROM dbo.FW_Entity WHERE RegistrationID = @RegistrationID")
-
-                Dim parsedFilters As New List(Of Tuple(Of String, QbeComparisonOperator, String))()
-
-                If filters IsNot Nothing Then
-                    For Each kvp In filters
-                        Dim rawKey = If(kvp.Key, String.Empty).Trim()
-                        Dim rawValue = If(kvp.Value, String.Empty).Trim()
-
-                        If rawValue = String.Empty Then
-                            Continue For
-                        End If
-
-                        Dim fieldName = rawKey
-                        Dim comparisonOperator As QbeComparisonOperator = QbeComparisonOperator.EqualsTo
-
-                        If rawKey.Contains("|") Then
-                            Dim pieces = rawKey.Split("|"c)
-                            fieldName = pieces(0)
-                            If pieces.Length > 1 Then
-                                [Enum].TryParse(pieces(1), True, comparisonOperator)
-                            End If
-                        End If
-
-                        parsedFilters.Add(Tuple.Create(fieldName, comparisonOperator, rawValue))
-                    Next
-                End If
-
-                ' Add filter clauses to SQL
-                For Each parsedFilter In parsedFilters
-                    Dim fieldName = parsedFilter.Item1
-                    Dim comparisonOperator = parsedFilter.Item2
-                    Dim value = parsedFilter.Item3
-
-                    Select Case fieldName
-                        Case "EntityID"
-                            Dim parsed As Integer
-                            If Integer.TryParse(value, parsed) Then
-                                sql.Append(" AND EntityID").Append(" ").Append(GetSqlOperator(comparisonOperator, QbeFieldKind.NumericField)).Append(" @").Append(fieldName)
-                            End If
-                        Case "AssignedManagerID"
-                            Dim parsed As Integer
-                            If Integer.TryParse(value, parsed) Then
-                                sql.Append(" AND AssignedManagerID").Append(" ").Append(GetSqlOperator(comparisonOperator, QbeFieldKind.NumericField)).Append(" @AssignedManagerID")
-                            End If
-                        Case "IsActive"
-                            Dim parsedBit As Boolean
-                            If TryParseBooleanFilter(value, parsedBit) Then
-                                sql.Append(" AND IsActive").Append(" ").Append(GetSqlOperator(comparisonOperator, QbeFieldKind.BooleanField)).Append(" @IsActive")
-                            End If
-                        Case "FirstName", "MiddleName", "LastName", "FirstLast", "LastFirst", "EMail1", "Phone1"
-                            sql.Append(" AND ").Append(fieldName).Append(" ").Append(ResolveTextComparison(value, comparisonOperator).SqlOperator).Append(" @").Append(fieldName)
-                    End Select
-                Next
-
-                sql.Append(" ORDER BY EntityID")
-
-                ' Execute default query with filters and parameters
-                Using cmd As New SqlCommand(sql.ToString(), conn)
-                    cmd.Parameters.AddWithValue("@RegistrationID", registrationId)
-
-                    For Each parsedFilter In parsedFilters
-                        Dim fieldName = parsedFilter.Item1
-                        Dim comparisonOperator = parsedFilter.Item2
-                        Dim value = parsedFilter.Item3
-
-                        Select Case fieldName
-                            Case "EntityID"
-                                Dim parsed As Integer
-                                If Integer.TryParse(value, parsed) Then
-                                    cmd.Parameters.AddWithValue("@" & fieldName, parsed)
-                                End If
-                            Case "AssignedManagerID"
-                                Dim parsed As Integer
-                                If Integer.TryParse(value, parsed) Then
-                                    cmd.Parameters.AddWithValue("@AssignedManagerID", parsed)
-                                End If
-                            Case "IsActive"
-                                Dim parsedBit As Boolean
-                                If TryParseBooleanFilter(value, parsedBit) Then
-                                    cmd.Parameters.AddWithValue("@IsActive", parsedBit)
-                                End If
-                            Case "FirstName", "MiddleName", "LastName", "FirstLast", "LastFirst", "EMail1", "Phone1"
-                                cmd.Parameters.AddWithValue("@" & fieldName, ResolveTextComparison(value, comparisonOperator).Pattern)
-                        End Select
-                    Next
-
-                    Using da As New SqlDataAdapter(cmd)
-                        da.Fill(table)
-                    End Using
-                End Using
+                ' No SQL for this page, and there is no generic query that could stand in for one.
+                '
+                ' This used to fall back to a hardcoded SELECT against dbo.FW_Entity, which answered
+                ' whichever page arrived here with another page's data - or, once FW_Entity was
+                ' removed, with an error naming a table the caller has nothing to do with. Saying
+                ' plainly that the page has no SQL is the only useful answer.
+                '
+                ' Reaching this is a configuration fault rather than a user error: FW_Pages is
+                ' meant to gain a row with PK-safe fallback SQL the first time a page opens.
+                Throw New InvalidOperationException(
+                    "This page has no SQL configured." & Environment.NewLine & Environment.NewLine &
+                    "A browse page reads its query from FW_Pages, and no row was found or created for " &
+                    If(String.IsNullOrWhiteSpace(sourceTableName), "this page", sourceTableName) & "." & Environment.NewLine &
+                    "Open the page's row in Role Tables and give it a SELECT that aliases its key AS PK.")
             End Using
-
-            table = ApplyBrowseDeletedFilterFallback(table, showDeletedOnly, "FW_Entity")
-            Return LimitBrowseRows(table, maxRows)
         End Function
 
         Private Shared Function LimitBrowseRows(source As DataTable, maxRows As Integer) As DataTable
@@ -871,7 +788,7 @@ Namespace SDC.Framework
             Return filtered
         End Function
 
-        Public Shared Function GetTableSqlFromRoleTable(registrationId As Integer, tableName As String) As String
+        Public Shared Function GetPageSqlByTable(registrationId As Integer, tableName As String) As String
             If registrationId <= 0 OrElse String.IsNullOrWhiteSpace(tableName) Then
                 Return String.Empty
             End If
@@ -879,9 +796,9 @@ Namespace SDC.Framework
             Using conn As New SqlConnection(ConnectionString)
                 conn.Open()
                 Using cmd As New SqlCommand(
-                    "SELECT TOP 1 Table_SQL FROM dbo.FW_RoleTables " &
+                    "SELECT TOP 1 Table_SQL FROM dbo." & PagesTable & " " &
                     "WHERE (RegistrationID = @RegistrationID OR RegistrationID IS NULL) AND DB_Table = @DBTable " &
-                    "ORDER BY CASE WHEN RegistrationID = @RegistrationID THEN 0 ELSE 1 END, ID DESC", conn)
+                    "ORDER BY CASE WHEN RegistrationID = @RegistrationID THEN 0 ELSE 1 END, PageID DESC", conn)
                     
                     cmd.Parameters.AddWithValue("@RegistrationID", registrationId)
                     cmd.Parameters.AddWithValue("@DBTable", tableName.Trim())
@@ -896,7 +813,7 @@ Namespace SDC.Framework
             End Using
         End Function
 
-        Public Shared Function GetRoleTableIdByTable(registrationId As Integer, tableName As String) As Integer?
+        Public Shared Function GetPageIdByTable(registrationId As Integer, tableName As String) As Integer?
             If registrationId <= 0 OrElse String.IsNullOrWhiteSpace(tableName) Then
                 Return Nothing
             End If
@@ -904,9 +821,9 @@ Namespace SDC.Framework
             Using conn As New SqlConnection(ConnectionString)
                 conn.Open()
                 Using cmd As New SqlCommand(
-                    "SELECT TOP 1 ID FROM dbo.FW_RoleTables " &
+                    "SELECT TOP 1 PageID FROM dbo." & PagesTable & " " &
                     "WHERE (RegistrationID = @RegistrationID OR RegistrationID IS NULL) AND DB_Table = @DBTable " &
-                    "ORDER BY CASE WHEN RegistrationID = @RegistrationID THEN 0 ELSE 1 END, ID DESC", conn)
+                    "ORDER BY CASE WHEN RegistrationID = @RegistrationID THEN 0 ELSE 1 END, PageID DESC", conn)
 
                     cmd.Parameters.AddWithValue("@RegistrationID", registrationId)
                     cmd.Parameters.AddWithValue("@DBTable", tableName.Trim())
@@ -921,7 +838,7 @@ Namespace SDC.Framework
             End Using
         End Function
 
-        Public Shared Function GetTableSqlFromRoleTableByWindowOrPage(registrationId As Integer, windowOrPageName As String) As String
+        Public Shared Function GetPageSqlByWindowOrPage(registrationId As Integer, windowOrPageName As String) As String
             If String.IsNullOrWhiteSpace(windowOrPageName) Then
                 Return String.Empty
             End If
@@ -929,9 +846,9 @@ Namespace SDC.Framework
             Using conn As New SqlConnection(ConnectionString)
                 conn.Open()
                 Using cmd As New SqlCommand(
-                    "SELECT TOP 1 Table_SQL FROM dbo.FW_RoleTables " &
+                    "SELECT TOP 1 Table_SQL FROM dbo." & PagesTable & " " &
                     "WHERE WindowOrPage = @WindowOrPage " &
-                    "ORDER BY ID DESC", conn)
+                    "ORDER BY PageID DESC", conn)
                     
                     cmd.Parameters.AddWithValue("@WindowOrPage", windowOrPageName.Trim())
                     
@@ -955,9 +872,9 @@ Namespace SDC.Framework
             Using conn As New SqlConnection(ConnectionString)
                 conn.Open()
                 Using cmd As New SqlCommand(
-                    "SELECT TOP 1 Background FROM dbo.FW_RoleTables " &
+                    "SELECT TOP 1 Background FROM dbo." & PagesTable & " " &
                     "WHERE WindowOrPage = @WindowOrPage " &
-                    "ORDER BY ID DESC", conn)
+                    "ORDER BY PageID DESC", conn)
 
                     cmd.Parameters.AddWithValue("@WindowOrPage", windowOrPageName.Trim())
 
@@ -970,7 +887,7 @@ Namespace SDC.Framework
 
         ''' <summary>
         ''' Stores a browse page's background colour as an ARGB value. Returns False when the page
-        ''' has no FW_RoleTables row - there is nothing to attach the colour to, and inventing a row
+        ''' has no FW_Pages row - there is nothing to attach the colour to, and inventing a row
         ''' here would create one without the SQL, alias and table name that give it meaning.
         ''' </summary>
         Public Shared Function SavePageBackgroundColor(windowOrPageName As String, argb As Integer, updatedBy As Integer) As Boolean
@@ -979,7 +896,7 @@ Namespace SDC.Framework
             Using conn As New SqlConnection(ConnectionString)
                 conn.Open()
                 Using cmd As New SqlCommand(
-                    "UPDATE dbo.FW_RoleTables " &
+                    "UPDATE dbo." & PagesTable & " " &
                     "SET Background = @Background, ModifiedBy = @ModifiedBy, ModifiedOn = GETDATE() " &
                     "WHERE WindowOrPage = @WindowOrPage", conn)
 
@@ -992,7 +909,7 @@ Namespace SDC.Framework
             End Using
         End Function
 
-        Public Shared Function GetTableAliasFromRoleTableByWindowOrPage(registrationId As Integer, windowOrPageName As String) As String
+        Public Shared Function GetPageAliasByWindowOrPage(registrationId As Integer, windowOrPageName As String) As String
             If String.IsNullOrWhiteSpace(windowOrPageName) Then
                 Return String.Empty
             End If
@@ -1000,9 +917,9 @@ Namespace SDC.Framework
             Using conn As New SqlConnection(ConnectionString)
                 conn.Open()
                 Using cmd As New SqlCommand(
-                    "SELECT TOP 1 Table_Alias FROM dbo.FW_RoleTables " &
+                    "SELECT TOP 1 Table_Alias FROM dbo." & PagesTable & " " &
                     "WHERE WindowOrPage = @WindowOrPage " &
-                    "ORDER BY ID DESC", conn)
+                    "ORDER BY PageID DESC", conn)
                     
                     cmd.Parameters.AddWithValue("@WindowOrPage", windowOrPageName.Trim())
                     
@@ -1016,8 +933,8 @@ Namespace SDC.Framework
             End Using
         End Function
 
-        Public Shared Function GetExposedRoleTableChoices() As DataTable
-            Dim choices As New DataTable("ExposedRoleTables")
+        Public Shared Function GetExposedPageChoices() As DataTable
+            Dim choices As New DataTable("ExposedPages")
             choices.Columns.Add("ID", GetType(Integer))
             choices.Columns.Add("SchemaID", GetType(Integer))
             choices.Columns.Add("Table_Alias", GetType(String))
@@ -1030,12 +947,12 @@ Namespace SDC.Framework
                     "DECLARE @ExposureColumn sysname; " &
                     "SELECT TOP 1 @ExposureColumn = c.name " &
                     "FROM sys.columns AS c " &
-                    "WHERE c.object_id = OBJECT_ID(N'dbo.FW_RoleTables') " &
+                    "WHERE c.object_id = OBJECT_ID(N'dbo." & PagesTable & "') " &
                     "AND c.name = N'ExposedToUser'; " &
-                    "IF @ExposureColumn IS NULL THROW 52107, 'No exposed-user column exists on dbo.FW_RoleTables.', 1; " &
+                    "IF @ExposureColumn IS NULL THROW 52107, 'No exposed-user column exists on dbo." & PagesTable & ".', 1; " &
                     "DECLARE @Sql nvarchar(max) = " &
-                    "N'SELECT MIN(rt.ID) AS ID, MIN(rs.ID) AS SchemaID, rt.Table_Alias, MIN(rt.DB_Table) AS DB_Table, MIN(rt.WindowOrPage) AS WindowOrPage ' " &
-                    "+ N'FROM dbo.FW_RoleTables rt INNER JOIN dbo.FW_RoleSchema rs ON rs.DB_Table = rt.DB_Table AND ISNULL(rs.IsActive, 1) = 1 ' " &
+                    "N'SELECT MIN(rt.PageID) AS ID, MIN(rs.ID) AS SchemaID, rt.Table_Alias, MIN(rt.DB_Table) AS DB_Table, MIN(rt.WindowOrPage) AS WindowOrPage ' " &
+                    "+ N'FROM dbo." & PagesTable & " rt INNER JOIN dbo.FW_RoleSchema rs ON rs.DB_Table = rt.DB_Table AND ISNULL(rs.IsActive, 1) = 1 ' " &
                     "+ N'WHERE ISNULL(rt.' + QUOTENAME(@ExposureColumn) + N', 0) = 1 ' " &
                     "+ N'GROUP BY rt.Table_Alias ORDER BY rt.Table_Alias'; " &
                     "EXEC sys.sp_executesql @Sql;", conn)
@@ -1049,7 +966,7 @@ Namespace SDC.Framework
             Return choices
         End Function
 
-        Public Shared Function GetDbTableFromRoleTableByWindowOrPage(registrationId As Integer, windowOrPageName As String) As String
+        Public Shared Function GetPageDbTableByWindowOrPage(registrationId As Integer, windowOrPageName As String) As String
             If String.IsNullOrWhiteSpace(windowOrPageName) Then
                 Return String.Empty
             End If
@@ -1057,9 +974,9 @@ Namespace SDC.Framework
             Using conn As New SqlConnection(ConnectionString)
                 conn.Open()
                 Using cmd As New SqlCommand(
-                    "SELECT TOP 1 DB_Table FROM dbo.FW_RoleTables " &
+                    "SELECT TOP 1 DB_Table FROM dbo." & PagesTable & " " &
                     "WHERE WindowOrPage = @WindowOrPage " &
-                    "ORDER BY ID DESC", conn)
+                    "ORDER BY PageID DESC", conn)
 
                     cmd.Parameters.AddWithValue("@WindowOrPage", windowOrPageName.Trim())
 
@@ -1073,7 +990,7 @@ Namespace SDC.Framework
             End Using
         End Function
 
-        Public Shared Function CheckIfRoleTableRecordExists(registrationId As Integer, windowOrPageName As String) As Boolean
+        Public Shared Function CheckIfPageRecordExists(registrationId As Integer, windowOrPageName As String) As Boolean
             If String.IsNullOrWhiteSpace(windowOrPageName) Then
                 Return False
             End If
@@ -1081,7 +998,7 @@ Namespace SDC.Framework
             Using conn As New SqlConnection(ConnectionString)
                 conn.Open()
                 Using cmd As New SqlCommand(
-                    "SELECT COUNT(1) FROM dbo.FW_RoleTables " &
+                    "SELECT COUNT(1) FROM dbo." & PagesTable & " " &
                     "WHERE WindowOrPage = @WindowOrPage", conn)
                     
                     cmd.Parameters.AddWithValue("@WindowOrPage", windowOrPageName.Trim())
@@ -1092,18 +1009,18 @@ Namespace SDC.Framework
             End Using
         End Function
 
-        Public Shared Function GetRoleTableMetadata(windowOrPageName As String) As DataRow
+        Public Shared Function GetPageMetadata(windowOrPageName As String) As DataRow
             If String.IsNullOrWhiteSpace(windowOrPageName) Then
                 Return Nothing
             End If
 
-            Dim table As New DataTable("FW_RoleTablesMetadata")
+            Dim table As New DataTable("FW_PagesMetadata")
             Using conn As New SqlConnection(ConnectionString)
                 conn.Open()
                 Using cmd As New SqlCommand(
                     "SELECT TOP 1 WindowOrPage, DB_Table, Table_Alias, Table_SQL " &
-                    "FROM dbo.FW_RoleTables WHERE WindowOrPage = @WindowOrPage " &
-                    "ORDER BY ID DESC", conn)
+                    "FROM dbo." & PagesTable & " WHERE WindowOrPage = @WindowOrPage " &
+                    "ORDER BY PageID DESC", conn)
                     cmd.Parameters.Add("@WindowOrPage", SqlDbType.VarChar, 100).Value = windowOrPageName.Trim()
                     Using adapter As New SqlDataAdapter(cmd)
                         adapter.Fill(table)
@@ -1114,7 +1031,7 @@ Namespace SDC.Framework
             Return If(table.Rows.Count = 0, Nothing, table.Rows(0))
         End Function
 
-        Public Shared Function UpsertRoleTableRecord(registrationId As Integer, windowOrPageName As String, dbTableName As String, tableAlias As String, tableSql As String, userId As Integer) As Boolean
+        Public Shared Function UpsertPageRecord(registrationId As Integer, windowOrPageName As String, dbTableName As String, tableAlias As String, tableSql As String, userId As Integer) As Boolean
             If String.IsNullOrWhiteSpace(windowOrPageName) OrElse String.IsNullOrWhiteSpace(dbTableName) Then
                 Return False
             End If
@@ -1124,9 +1041,9 @@ Namespace SDC.Framework
                     conn.Open()
                     
                     Using cmd As New SqlCommand(
-                        "IF EXISTS (SELECT 1 FROM dbo.FW_RoleTables WHERE WindowOrPage = @WindowOrPage) " &
-                        "UPDATE dbo.FW_RoleTables SET RegistrationID = NULL, DB_Table = @DBTable, Table_Alias = @TableAlias, Table_SQL = @TableSQL WHERE WindowOrPage = @WindowOrPage " &
-                        "ELSE INSERT INTO dbo.FW_RoleTables (RegistrationID, WindowOrPage, DB_Table, Table_Alias, Table_SQL, CreatedBy) VALUES (NULL, @WindowOrPage, @DBTable, @TableAlias, @TableSQL, @CreatedBy)", conn)
+                        "IF EXISTS (SELECT 1 FROM dbo." & PagesTable & " WHERE WindowOrPage = @WindowOrPage) " &
+                        "UPDATE dbo." & PagesTable & " SET RegistrationID = NULL, DB_Table = @DBTable, Table_Alias = @TableAlias, Table_SQL = @TableSQL WHERE WindowOrPage = @WindowOrPage " &
+                        "ELSE INSERT INTO dbo." & PagesTable & " (RegistrationID, WindowOrPage, DB_Table, Table_Alias, Table_SQL, CreatedBy) VALUES (NULL, @WindowOrPage, @DBTable, @TableAlias, @TableSQL, @CreatedBy)", conn)
                         cmd.Parameters.Add("@WindowOrPage", SqlDbType.VarChar, 100).Value = windowOrPageName.Trim()
                         cmd.Parameters.Add("@DBTable", SqlDbType.VarChar, 100).Value = dbTableName.Trim()
                         cmd.Parameters.Add("@TableAlias", SqlDbType.VarChar, 100).Value = If(String.IsNullOrWhiteSpace(tableAlias), dbTableName.Trim(), tableAlias.Trim())
@@ -1142,14 +1059,14 @@ Namespace SDC.Framework
                 End Using
             Catch ex As Exception
                 LogFallbackUsage("SQL_Fallback_UpsertException",
-                                 "Failed to persist FW_RoleTables fallback for " & windowOrPageName & ": " & ex.Message,
+                                 "Failed to persist FW_Pages fallback for " & windowOrPageName & ": " & ex.Message,
                                  windowOrPageName,
                                  registrationId)
                 Return False
             End Try
         End Function
 
-        Public Shared Function UpdateRoleTableSql(windowOrPageName As String, tableSql As String) As Boolean
+        Public Shared Function UpdatePageSql(windowOrPageName As String, tableSql As String) As Boolean
             If String.IsNullOrWhiteSpace(windowOrPageName) Then
                 Return False
             End If
@@ -1158,7 +1075,7 @@ Namespace SDC.Framework
                 Using conn As New SqlConnection(ConnectionString)
                     conn.Open()
                     Using cmd As New SqlCommand(
-                        "UPDATE dbo.FW_RoleTables SET Table_SQL = @TableSQL WHERE WindowOrPage = @WindowOrPage", conn)
+                        "UPDATE dbo." & PagesTable & " SET Table_SQL = @TableSQL WHERE WindowOrPage = @WindowOrPage", conn)
                         cmd.Parameters.Add("@WindowOrPage", SqlDbType.VarChar, 100).Value = windowOrPageName.Trim()
                         cmd.Parameters.Add("@TableSQL", SqlDbType.VarChar, -1).Value = DbValue(tableSql)
                         Return cmd.ExecuteNonQuery() > 0
@@ -1166,7 +1083,7 @@ Namespace SDC.Framework
                 End Using
             Catch ex As Exception
                 LogFallbackUsage("SQL_Fallback_UpdateException",
-                                 "Failed to update FW_RoleTables SQL for " & windowOrPageName & ": " & ex.Message,
+                                 "Failed to update FW_Pages SQL for " & windowOrPageName & ": " & ex.Message,
                                  windowOrPageName,
                                  0)
                 Return False
@@ -1492,12 +1409,12 @@ Namespace SDC.Framework
             Return table
         End Function
 
-        Public Shared Function GetPageGenerationById(pageRequestId As Integer) As DataRow
+        Public Shared Function GetPageGenerationById(generatedPageId As Integer) As DataRow
             Dim table As New DataTable("PageGeneration")
             Using conn As New SqlConnection(ConnectionString)
                 conn.Open()
-                Using cmd As New SqlCommand("SELECT * FROM dbo.FW_PageGeneration_B_U WHERE PageRequestID = @PageRequestID", conn)
-                    cmd.Parameters.Add("@PageRequestID", SqlDbType.Int).Value = pageRequestId
+                Using cmd As New SqlCommand("SELECT * FROM dbo." & GeneratedPagesTable & " WHERE GeneratedPageID = @GeneratedPageID", conn)
+                    cmd.Parameters.Add("@GeneratedPageID", SqlDbType.Int).Value = generatedPageId
                     Using adapter As New SqlDataAdapter(cmd)
                         adapter.Fill(table)
                     End Using
@@ -1512,9 +1429,9 @@ Namespace SDC.Framework
             Using conn As New SqlConnection(ConnectionString)
                 conn.Open()
                 Using cmd As New SqlCommand(
-                    "SELECT TOP 1 PageRequestID FROM dbo.FW_PageGeneration_B_U " &
+                    "SELECT TOP 1 GeneratedPageID FROM dbo." & GeneratedPagesTable & " " &
                     "WHERE RequestName = @RequestName AND BrowsePageName = @BrowsePageName AND MaintenancePageName = @MaintenancePageName " &
-                    "ORDER BY PageRequestID DESC", conn)
+                    "ORDER BY GeneratedPageID DESC", conn)
                     cmd.Parameters.Add("@RequestName", SqlDbType.VarChar, -1).Value = If(requestName, String.Empty).Trim()
                     cmd.Parameters.Add("@BrowsePageName", SqlDbType.VarChar, -1).Value = If(browsePageName, String.Empty).Trim()
                     cmd.Parameters.Add("@MaintenancePageName", SqlDbType.VarChar, -1).Value = If(maintenancePageName, String.Empty).Trim()
@@ -1525,16 +1442,16 @@ Namespace SDC.Framework
             End Using
         End Function
 
-        Public Shared Function SavePageGenerationMaintenanceBaseline(pageRequestId As Integer,
+        Public Shared Function SavePageGenerationMaintenanceBaseline(generatedPageId As Integer,
                                                                        source As String,
                                                                        sourceHash As String) As Boolean
             Using conn As New SqlConnection(ConnectionString)
                 conn.Open()
                 Using cmd As New SqlCommand(
-                    "UPDATE dbo.FW_PageGeneration_B_U SET GeneratedMaintenanceSource = @Source, GeneratedMaintenanceHash = @Hash, UpdatedOn = GETDATE() WHERE PageRequestID = @PageRequestID", conn)
+                    "UPDATE dbo." & GeneratedPagesTable & " SET GeneratedMaintenanceSource = @Source, GeneratedMaintenanceHash = @Hash, UpdatedOn = GETDATE() WHERE GeneratedPageID = @GeneratedPageID", conn)
                     cmd.Parameters.Add("@Source", SqlDbType.VarChar, -1).Value = If(source, String.Empty)
                     cmd.Parameters.Add("@Hash", SqlDbType.VarChar, 64).Value = If(sourceHash, String.Empty)
-                    cmd.Parameters.Add("@PageRequestID", SqlDbType.Int).Value = pageRequestId
+                    cmd.Parameters.Add("@GeneratedPageID", SqlDbType.Int).Value = generatedPageId
                     Return cmd.ExecuteNonQuery() = 1
                 End Using
             End Using
@@ -1545,14 +1462,14 @@ Namespace SDC.Framework
         ''' same way a _U page is. There is no source column to match the maintenance baseline: the
         ''' browse side only needs to answer whether the file still matches what was generated.
         ''' </summary>
-        Public Shared Function SavePageGenerationBrowseBaseline(pageRequestId As Integer,
+        Public Shared Function SavePageGenerationBrowseBaseline(generatedPageId As Integer,
                                                                 sourceHash As String) As Boolean
             Using conn As New SqlConnection(ConnectionString)
                 conn.Open()
                 Using cmd As New SqlCommand(
-                    "UPDATE dbo.FW_PageGeneration_B_U SET GeneratedBrowseHash = @Hash, UpdatedOn = GETDATE() WHERE PageRequestID = @PageRequestID", conn)
+                    "UPDATE dbo." & GeneratedPagesTable & " SET GeneratedBrowseHash = @Hash, UpdatedOn = GETDATE() WHERE GeneratedPageID = @GeneratedPageID", conn)
                     cmd.Parameters.Add("@Hash", SqlDbType.VarChar, 64).Value = If(sourceHash, String.Empty)
-                    cmd.Parameters.Add("@PageRequestID", SqlDbType.Int).Value = pageRequestId
+                    cmd.Parameters.Add("@GeneratedPageID", SqlDbType.Int).Value = generatedPageId
                     Return cmd.ExecuteNonQuery() = 1
                 End Using
             End Using
@@ -1562,7 +1479,7 @@ Namespace SDC.Framework
             Dim table As New DataTable("PageGenerationSchema")
             Using conn As New SqlConnection(ConnectionString)
                 conn.Open()
-                Using cmd As New SqlCommand("SELECT TOP 0 * FROM dbo.FW_PageGeneration_B_U", conn)
+                Using cmd As New SqlCommand("SELECT TOP 0 * FROM dbo." & GeneratedPagesTable, conn)
                     Using adapter As New SqlDataAdapter(cmd)
                         adapter.Fill(table)
                     End Using
@@ -1823,7 +1740,7 @@ Namespace SDC.Framework
         '''
         '''   - RegistrationID, when present: the session's registration, plus rows with none. A
         '''     NULL RegistrationID means the row is shared by every registration, the same
-        '''     convention FW_RoleTables uses. Without this filter FW_Gender offered Male and Female
+        '''     convention FW_Pages uses. Without this filter FW_Gender offered Male and Female
         '''     twice - once for each registration - which is what prompted this.
         '''   - DeletedFlag, when present: soft-deleted rows are not offered.
         '''
@@ -2203,7 +2120,7 @@ Namespace SDC.Framework
         End Function
 
         Public Shared Function SavePageGeneration(isNewRecord As Boolean,
-                                                   pageRequestId As Integer,
+                                                   generatedPageId As Integer,
                                                    values As Dictionary(Of String, Object),
                                                    originalRowVersion As Byte()) As Boolean
             Dim writableColumns = New String() {
@@ -2217,7 +2134,7 @@ Namespace SDC.Framework
                 If isNewRecord Then
                     Dim columnNames = String.Join(", ", writableColumns)
                     Dim parameterNames = String.Join(", ", writableColumns.Select(Function(column) "@" & column))
-                    Using cmd As New SqlCommand("INSERT INTO dbo.FW_PageGeneration_B_U (" & columnNames & ", CreatedBy) VALUES (" & parameterNames & ", @CreatedBy)", conn)
+                    Using cmd As New SqlCommand("INSERT INTO dbo." & GeneratedPagesTable & " (" & columnNames & ", CreatedBy) VALUES (" & parameterNames & ", @CreatedBy)", conn)
                         AddPageGenerationParameters(cmd, values)
                         cmd.Parameters.Add("@CreatedBy", SqlDbType.Int).Value = If(SessionState.IsActive, SessionState.Current.Value.UserID, 0)
                         cmd.ExecuteNonQuery()
@@ -2226,10 +2143,10 @@ Namespace SDC.Framework
                 End If
 
                 Dim assignments = String.Join(", ", writableColumns.Select(Function(column) column & " = @" & column))
-                Using cmd As New SqlCommand("UPDATE dbo.FW_PageGeneration_B_U SET " & assignments & ", UpdatedBy = @UpdatedBy, UpdatedOn = GETDATE() WHERE PageRequestID = @PageRequestID AND RowVersion = @RowVersion", conn)
+                Using cmd As New SqlCommand("UPDATE dbo." & GeneratedPagesTable & " SET " & assignments & ", UpdatedBy = @UpdatedBy, UpdatedOn = GETDATE() WHERE GeneratedPageID = @GeneratedPageID AND RowVersion = @RowVersion", conn)
                     AddPageGenerationParameters(cmd, values)
                     cmd.Parameters.Add("@UpdatedBy", SqlDbType.Int).Value = If(SessionState.IsActive, SessionState.Current.Value.UserID, 0)
-                    cmd.Parameters.Add("@PageRequestID", SqlDbType.Int).Value = pageRequestId
+                    cmd.Parameters.Add("@GeneratedPageID", SqlDbType.Int).Value = generatedPageId
                     cmd.Parameters.Add("@RowVersion", SqlDbType.Timestamp).Value = If(originalRowVersion, New Byte() {})
                     Return cmd.ExecuteNonQuery() = 1
                 End Using
@@ -2246,165 +2163,6 @@ Namespace SDC.Framework
                                    command.Parameters.Add("@" & pair.Key, SqlDbType.VarChar, -1))
                 parameter.Value = If(pair.Value Is Nothing, DBNull.Value, pair.Value)
             Next
-        End Sub
-
-        Public Shared Function GetEntityById(entityId As Integer) As EntityRecord
-            Using conn As New SqlConnection(ConnectionString)
-                conn.Open()
-                Using cmd As New SqlCommand(
-                    "SELECT EntityID, RegistrationID, AssignedManagerID, GenderID, FirstName, MiddleName, LastName, FirstLast, LastFirst, EMail1, Phone1, IsActive, RowVersion " &
-                    "FROM dbo.FW_Entity WHERE EntityID = @ID", conn)
-                    cmd.Parameters.AddWithValue("@ID", entityId)
-                    Using reader = cmd.ExecuteReader()
-                        If Not reader.Read() Then
-                            Return Nothing
-                        End If
-
-                        Dim genderId As Integer = 0
-                        If Not IsDBNull(reader("GenderID")) Then
-                            genderId = Convert.ToInt32(reader("GenderID"), CultureInfo.InvariantCulture)
-                        End If
-
-                        Return New EntityRecord With {
-                            .ID = Convert.ToInt32(reader("EntityID"), CultureInfo.InvariantCulture),
-                            .RegistrationID = Convert.ToInt32(reader("RegistrationID"), CultureInfo.InvariantCulture),
-                            .AssignedManagerID = Convert.ToInt32(reader("AssignedManagerID"), CultureInfo.InvariantCulture),
-                            .GenderID = genderId,
-                            .FirstName = SafeString(reader("FirstName")),
-                            .MiddleName = SafeString(reader("MiddleName")),
-                            .LastName = SafeString(reader("LastName")),
-                            .FirstLast = SafeString(reader("FirstLast")),
-                            .LastFirst = SafeString(reader("LastFirst")),
-                            .EMail1 = SafeString(reader("EMail1")),
-                            .Phone1 = SafeString(reader("Phone1")),
-                            .IsActive = Convert.ToBoolean(reader("IsActive"), CultureInfo.InvariantCulture),
-                            .RowVersion = DirectCast(reader("RowVersion"), Byte())
-                        }
-                    End Using
-                End Using
-            End Using
-        End Function
-
-        Public Shared Function CreateEntity(record As EntityRecord, currentUserId As Integer) As Integer
-            ' No manager chosen writes NULL, the same as gender below. It used to fall back to the
-            ' user doing the creating, which assigned a manager the page never showed and nobody
-            ' asked for - and is now refused outright by the foreign key on the column.
-            Dim assignedManager As Object = If(record.AssignedManagerID > 0, CType(record.AssignedManagerID, Object), DBNull.Value)
-            Dim genderIdValue As Object = If(record.GenderID > 0, CType(record.GenderID, Object), DBNull.Value)
-
-            Using conn As New SqlConnection(ConnectionString)
-                conn.Open()
-                Using cmd As New SqlCommand(
-                    "INSERT INTO dbo.FW_Entity " &
-                    "(RegistrationID, AssignedManagerID, GenderID, FirstName, MiddleName, LastName, EMail1, Phone1, IsActive, BDAcknowledged, CreatedBy, CreatedOn, UpdatedBy, UpdatedOn) " &
-                    "VALUES " &
-                    "(@RegistrationID, @AssignedManager, @GenderID, @FirstName, @MiddleName, @LastName, @EMail1, @Phone1, @IsActive, 0, @CurrentUserId, GETDATE(), @CurrentUserId, GETDATE()); " &
-                    "SELECT CAST(SCOPE_IDENTITY() AS INT);", conn)
-
-                    cmd.Parameters.AddWithValue("@RegistrationID", record.RegistrationID)
-                    cmd.Parameters.AddWithValue("@AssignedManager", assignedManager)
-                    cmd.Parameters.AddWithValue("@GenderID", genderIdValue)
-                    cmd.Parameters.AddWithValue("@FirstName", DbValue(record.FirstName))
-                    cmd.Parameters.AddWithValue("@MiddleName", DbValue(record.MiddleName))
-                    cmd.Parameters.AddWithValue("@LastName", DbValue(record.LastName))
-                    cmd.Parameters.AddWithValue("@EMail1", DbValue(record.EMail1))
-                    cmd.Parameters.AddWithValue("@Phone1", DbValue(record.Phone1))
-                    cmd.Parameters.AddWithValue("@IsActive", record.IsActive)
-                    cmd.Parameters.AddWithValue("@CurrentUserId", currentUserId)
-
-                    Return Convert.ToInt32(cmd.ExecuteScalar(), CultureInfo.InvariantCulture)
-                End Using
-            End Using
-        End Function
-
-        Public Shared Function UpdateEntity(record As EntityRecord, currentUserId As Integer) As SaveResult
-            If Not TableHasRowVersion("FW_Entity") OrElse record.RowVersion Is Nothing Then
-                Return SaveResult.ConcurrencyUnavailable
-            End If
-
-            Using conn As New SqlConnection(ConnectionString)
-                conn.Open()
-                Using cmd As New SqlCommand(
-                    "UPDATE dbo.FW_Entity SET " &
-                    "RegistrationID = @RegistrationID, " &
-                    "AssignedManagerID = @AssignedManager, " &
-                    "GenderID = @GenderID, " &
-                    "FirstName = @FirstName, " &
-                    "MiddleName = @MiddleName, " &
-                    "LastName = @LastName, " &
-                    "EMail1 = @EMail1, " &
-                    "Phone1 = @Phone1, " &
-                    "IsActive = @IsActive, " &
-                    "UpdatedBy = @CurrentUserId, " &
-                    "UpdatedOn = GETDATE() " &
-                    "WHERE EntityID = @ID AND RowVersion = @OriginalRowVersion", conn)
-
-                    cmd.Parameters.AddWithValue("@ID", record.ID)
-                    cmd.Parameters.AddWithValue("@RegistrationID", record.RegistrationID)
-                    cmd.Parameters.AddWithValue("@AssignedManager", If(record.AssignedManagerID > 0, CType(record.AssignedManagerID, Object), DBNull.Value))
-                    cmd.Parameters.AddWithValue("@GenderID", If(record.GenderID > 0, CType(record.GenderID, Object), DBNull.Value))
-                    cmd.Parameters.AddWithValue("@FirstName", DbValue(record.FirstName))
-                    cmd.Parameters.AddWithValue("@MiddleName", DbValue(record.MiddleName))
-                    cmd.Parameters.AddWithValue("@LastName", DbValue(record.LastName))
-                    cmd.Parameters.AddWithValue("@EMail1", DbValue(record.EMail1))
-                    cmd.Parameters.AddWithValue("@Phone1", DbValue(record.Phone1))
-                    cmd.Parameters.AddWithValue("@IsActive", record.IsActive)
-                    cmd.Parameters.AddWithValue("@CurrentUserId", currentUserId)
-                    cmd.Parameters.Add("@OriginalRowVersion", SqlDbType.Timestamp).Value = record.RowVersion
-
-                    If cmd.ExecuteNonQuery() = 0 Then
-                        Return SaveResult.RecordChanged
-                    End If
-                End Using
-            End Using
-            Return SaveResult.Succeeded
-        End Function
-
-        Public Shared Sub DeleteEntity(entityId As Integer,
-                                       Optional updatedBy As Integer = 0,
-                                       Optional sourcePageName As String = "FW_Base_B")
-            Dim auditPageName = If(String.IsNullOrWhiteSpace(sourcePageName), "FW_Base_B", sourcePageName.Trim())
-
-            Using conn As New SqlConnection(ConnectionString)
-                conn.Open()
-
-                If TableHasColumn("FW_Entity", "DeletedFlag") Then
-                    Using cmd As New SqlCommand(
-                        "UPDATE dbo.FW_Entity " &
-                        "SET IsActive = 0, DeletedFlag = 1, DeletedBy = @UpdatedBy, DeletedOn = SYSUTCDATETIME(), UpdatedBy = @UpdatedBy, UpdatedOn = GETDATE() " &
-                        "WHERE EntityID = @ID", conn)
-                        cmd.Parameters.AddWithValue("@ID", entityId)
-                        cmd.Parameters.AddWithValue("@UpdatedBy", If(updatedBy > 0, CType(updatedBy, Object), DBNull.Value))
-                        cmd.ExecuteNonQuery()
-                    End Using
-
-                    LogUpdateAudit(auditPageName,
-                                   "FW_Entity",
-                                   "Delete",
-                                   "AfterSave",
-                                   entityId.ToString(CultureInfo.InvariantCulture),
-                                   BuildSoftDeleteAuditSnapshotJson("Soft deleted entity record."),
-                                   True,
-                                   Nothing,
-                                   updatedBy)
-                    Return
-                End If
-
-                Using cmd As New SqlCommand("DELETE FROM dbo.FW_Entity WHERE EntityID = @ID", conn)
-                    cmd.Parameters.AddWithValue("@ID", entityId)
-                    cmd.ExecuteNonQuery()
-                End Using
-
-                LogUpdateAudit(auditPageName,
-                               "FW_Entity",
-                               "Delete",
-                               "AfterSave",
-                               entityId.ToString(CultureInfo.InvariantCulture),
-                               BuildSoftDeleteAuditSnapshotJson("Deleted entity record."),
-                               True,
-                               Nothing,
-                               updatedBy)
-            End Using
         End Sub
 
         Public Shared Sub DeleteUser(userId As Integer, Optional updatedBy As Integer = 0)
@@ -2444,55 +2202,6 @@ Namespace SDC.Framework
                                "AfterSave",
                                userId.ToString(CultureInfo.InvariantCulture),
                                BuildSoftDeleteAuditSnapshotJson("Deleted user record."),
-                               True,
-                               Nothing,
-                               updatedBy)
-            End Using
-        End Sub
-
-        Public Shared Sub RestoreEntity(entityId As Integer,
-                                        Optional updatedBy As Integer = 0,
-                                        Optional sourcePageName As String = "FW_Base_B")
-            Dim auditPageName = If(String.IsNullOrWhiteSpace(sourcePageName), "FW_Base_B", sourcePageName.Trim())
-
-            Using conn As New SqlConnection(ConnectionString)
-                conn.Open()
-
-                If TableHasColumn("FW_Entity", "DeletedFlag") Then
-                    Using cmd As New SqlCommand(
-                        "UPDATE dbo.FW_Entity " &
-                        "SET IsActive = 1, DeletedFlag = 0, DeletedBy = NULL, DeletedOn = NULL, UpdatedBy = @UpdatedBy, UpdatedOn = GETDATE() " &
-                        "WHERE EntityID = @ID", conn)
-                        cmd.Parameters.AddWithValue("@ID", entityId)
-                        cmd.Parameters.AddWithValue("@UpdatedBy", If(updatedBy > 0, CType(updatedBy, Object), DBNull.Value))
-                        cmd.ExecuteNonQuery()
-                    End Using
-
-                    LogUpdateAudit(auditPageName,
-                                   "FW_Entity",
-                                   "Restore",
-                                   "AfterSave",
-                                   entityId.ToString(CultureInfo.InvariantCulture),
-                                   BuildSoftDeleteAuditSnapshotJson("Restored entity record."),
-                                   True,
-                                   Nothing,
-                                   updatedBy)
-                    Return
-                End If
-
-                Using cmd As New SqlCommand(
-                    "UPDATE dbo.FW_Entity SET IsActive = 1, UpdatedBy = @UpdatedBy, UpdatedOn = GETDATE() WHERE EntityID = @ID", conn)
-                    cmd.Parameters.AddWithValue("@ID", entityId)
-                    cmd.Parameters.AddWithValue("@UpdatedBy", If(updatedBy > 0, CType(updatedBy, Object), DBNull.Value))
-                    cmd.ExecuteNonQuery()
-                End Using
-
-                LogUpdateAudit(auditPageName,
-                               "FW_Entity",
-                               "Restore",
-                               "AfterSave",
-                               entityId.ToString(CultureInfo.InvariantCulture),
-                               BuildSoftDeleteAuditSnapshotJson("Restored entity record."),
                                True,
                                Nothing,
                                updatedBy)
@@ -2735,6 +2444,36 @@ Namespace SDC.Framework
         ''' page shows this same constant rather than inventing its own placeholder.
         ''' </summary>
         Public Const StoredPasswordMask As String = "#####"
+
+        ''' <summary>
+        ''' The table holding page-generation requests, and its key.
+        '''
+        ''' Named once. Before 2026-09-03 the table name was a string literal in nine places across
+        ''' three files, which is the arrangement in which a rename lands in eight of them - and the
+        ''' rename from FW_PageGeneration_B_U to FW_GeneratedPages was precisely the occasion for
+        ''' finding that out.
+        '''
+        ''' Bare, without a schema, because it is used both in SQL - where "dbo." is prepended - and
+        ''' as the table name a page reports to the framework, where a schema prefix would not match
+        ''' the FW_Pages row.
+        ''' </summary>
+        Public Const GeneratedPagesTable As String = "FW_GeneratedPages"
+        Public Const GeneratedPagesKey As String = "GeneratedPageID"
+
+        ''' <summary>
+        ''' The page registry: one row per page per registration, holding the table a page reads,
+        ''' the SELECT it runs, its caption, display order and colour. Base_B reads it on every page
+        ''' load to find out what to query.
+        '''
+        ''' Called FW_Pages until 2026-09-03, which was wrong in a way that cost real time -
+        ''' the table has no RoleID column and never had one. Role permissions are FW_RoleDetails
+        ''' and FW_RoleFields. The old name was confusing enough that the codebase used "RoleTable"
+        ''' for both ideas at once: RoleTableAccessEntry and GetRoleTableAccessEntries read
+        ''' FW_RoleDetails and have nothing to do with this table, which is why the rename had to be
+        ''' done by hand rather than by search and replace.
+        ''' </summary>
+        Public Const PagesTable As String = "FW_Pages"
+        Public Const PagesKey As String = "PageID"
 
         Public Shared Function ComputePasswordHashForUser(rawPassword As String, userId As Integer) As String
             If userId <= 0 Then
@@ -3065,7 +2804,19 @@ Namespace SDC.Framework
 
 
 
-        Public Shared Function GetUsersByRegistration(registrationId As Integer) As DataTable
+        ''' <summary>
+        ''' Users of a registration, as a lookup source: UserID AS ID, FirstLast.
+        '''
+        ''' <paramref name="excludeUserId"/> leaves one user out. The manager lookup passes the user
+        ''' being edited, because nobody reports to themselves and a foreign key cannot say so - the
+        ''' key is satisfied by a row pointing at itself.
+        '''
+        ''' Soft-deleted users are excluded. They were not, until 2026-09-03: the function had been
+        ''' written and never called, so nothing had ever exposed the omission. A deleted user must
+        ''' not be offerable as somebody's manager.
+        ''' </summary>
+        Public Shared Function GetUsersByRegistration(registrationId As Integer,
+                                                      Optional excludeUserId As Integer = 0) As DataTable
             Dim table As New DataTable("FW_Users")
 
             Using conn As New SqlConnection(ConnectionString)
@@ -3073,10 +2824,13 @@ Namespace SDC.Framework
                 Using cmd As New SqlCommand(
                     "SELECT UserID AS ID, FirstLast FROM dbo.FW_Users " &
                     "WHERE RegistrationID = @RegistrationID " &
+                    "AND ISNULL(DeletedFlag, 0) = 0 " &
+                    "AND (@ExcludeUserID = 0 OR UserID <> @ExcludeUserID) " &
                     "ORDER BY FirstLast", conn)
-                    
+
                     cmd.Parameters.AddWithValue("@RegistrationID", registrationId)
-                    
+                    cmd.Parameters.AddWithValue("@ExcludeUserID", excludeUserId)
+
                     Using da As New SqlDataAdapter(cmd)
                         da.Fill(table)
                     End Using
@@ -3196,7 +2950,7 @@ Namespace SDC.Framework
                 conn.Open()
                 Using cmd As New SqlCommand(
                     "SELECT DISTINCT WindowOrPage, DB_Table, ISNULL(Table_Alias, DB_Table) AS Table_Alias " &
-                    "FROM dbo.FW_RoleTables WHERE RegistrationID = @RegistrationID OR RegistrationID IS NULL " &
+                    "FROM dbo." & PagesTable & " WHERE RegistrationID = @RegistrationID OR RegistrationID IS NULL " &
                     "ORDER BY WindowOrPage, DB_Table", conn)
                     cmd.Parameters.AddWithValue("@RegistrationID", registrationId)
                     Using da As New SqlDataAdapter(cmd)
@@ -3216,7 +2970,7 @@ Namespace SDC.Framework
                     "CASE WHEN NOT EXISTS (SELECT 1 FROM dbo.FW_UserRoles ur0 WHERE ur0.UserID = @UserID " &
                     "AND ur0.RegistrationID = @RegistrationID AND ISNULL(ur0.IsActive, 1) = 1) " &
                     "THEN 'MISSING ROLE' ELSE 'ROLE HAS NO READ PERMISSION' END AS DiagnosticReason " &
-                    "FROM dbo.FW_RoleTables rt " &
+                    "FROM dbo." & PagesTable & " rt " &
                     "WHERE (rt.RegistrationID = @RegistrationID OR rt.RegistrationID IS NULL) " &
                     "AND NOT EXISTS (" &
                     "SELECT 1 FROM dbo.FW_UserRoles ur " &
@@ -3403,7 +3157,7 @@ Namespace SDC.Framework
             Using conn As New SqlConnection(ConnectionString)
                 conn.Open()
                 Using cmd As New SqlCommand(
-                    "SELECT TOP 1 RegistrationID, RegName, Smarty_AuthID, Smarty_AuthToken, Smarty_EmbeddedKey, ISNULL(Smarty_UseEmbeddedKey, 0) AS Smarty_UseEmbeddedKey, ISNULL(LTRIM(RTRIM(BusinessRuleType)), '') AS BusinessRuleType, RegTypeId, Address1, Address2, City, State, Zip, MainFax, MainPhone, MainEMail, WebLandingPage, " &
+                    "SELECT TOP 1 RegistrationID, RegName, Smarty_AuthID, Smarty_AuthToken, Smarty_EmbeddedKey, ISNULL(Smarty_UseEmbeddedKey, 0) AS Smarty_UseEmbeddedKey, ISNULL(LTRIM(RTRIM(BusinessRuleType)), '') AS BusinessRuleType, RegistrationTypeID, Address1, Address2, City, State, Zip, MainFax, MainPhone, MainEMail, WebLandingPage, " &
                     "ISNULL(DisplayDashboardOnStartUp, 0) AS DisplayDashboardOnStartUp, " &
                     "ISNULL(AllowMessaging, 0) AS AllowMessaging, " &
                     "ISNULL(AllowMultipleRoles, 0) AS AllowMultipleRoles, " &
@@ -3411,7 +3165,7 @@ Namespace SDC.Framework
                     "ISNULL(AllowUpdateMyProfile, 0) AS AllowUpdateMyProfile, " &
                     "ISNULL(AllowUpdateMyProfileEmail, 0) AS AllowUpdateMyProfileEmail, " &
                     "ISNULL(Ribbonbar_InvisibleIcons, 0) AS Ribbonbar_InvisibleIcons, " &
-                    "ISNULL(Use2FA, 0) AS Use2FA, " &
+                    "ISNULL(TwoFactorAuthentication, 0) AS TwoFactorAuthentication, " &
                     "ISNULL(HDUserSupport, 0) AS HDUserSupport, " &
                     "ISNULL(HDApplicationSupport, 0) AS HDApplicationSupport, " &
                     "ISNULL(IsActive, 1) AS IsActive, RowVersion " &
@@ -3432,7 +3186,7 @@ Namespace SDC.Framework
                             .Smarty_EmbeddedKey = SafeString(reader("Smarty_EmbeddedKey")),
                             .Smarty_UseEmbeddedKey = Convert.ToBoolean(reader("Smarty_UseEmbeddedKey"), CultureInfo.InvariantCulture),
                             .BusinessRuleType = NormalizeBusinessRuleType(SafeString(reader("BusinessRuleType"))),
-                            .RegTypeId = If(IsDBNull(reader("RegTypeId")), 0, Convert.ToInt32(reader("RegTypeId"), CultureInfo.InvariantCulture)),
+                            .RegistrationTypeID = If(IsDBNull(reader("RegistrationTypeID")), 0, Convert.ToInt32(reader("RegistrationTypeID"), CultureInfo.InvariantCulture)),
                             .Address1 = SafeString(reader("Address1")),
                             .Address2 = SafeString(reader("Address2")),
                             .City = SafeString(reader("City")),
@@ -3449,7 +3203,7 @@ Namespace SDC.Framework
                             .AllowUpdateMyProfile = Convert.ToBoolean(reader("AllowUpdateMyProfile"), CultureInfo.InvariantCulture),
                             .AllowUpdateMyProfileEmail = Convert.ToBoolean(reader("AllowUpdateMyProfileEmail"), CultureInfo.InvariantCulture),
                             .Ribbonbar_InvisibleIcons = Convert.ToBoolean(reader("Ribbonbar_InvisibleIcons"), CultureInfo.InvariantCulture),
-                            .Use2FA = Convert.ToBoolean(reader("Use2FA"), CultureInfo.InvariantCulture),
+                            .TwoFactorAuthentication = Convert.ToBoolean(reader("TwoFactorAuthentication"), CultureInfo.InvariantCulture),
                             .HDUserSupport = Convert.ToInt32(reader("HDUserSupport"), CultureInfo.InvariantCulture),
                             .HDApplicationSupport = Convert.ToInt32(reader("HDApplicationSupport"), CultureInfo.InvariantCulture),
                             .IsActive = Convert.ToBoolean(reader("IsActive"), CultureInfo.InvariantCulture),
@@ -3487,14 +3241,14 @@ Namespace SDC.Framework
                 Dim normalizedBusinessRuleType = NormalizeBusinessRuleType(record.BusinessRuleType)
                 Using cmd As New SqlCommand(
                     "INSERT INTO dbo.FW_Registration " &
-                    "(RegName, BusinessRuleType, RegTypeId, Address1, Address2, City, State, Zip, MainFax, MainPhone, MainEMail, WebLandingPage, Smarty_AuthID, Smarty_AuthToken, Smarty_EmbeddedKey, Smarty_UseEmbeddedKey, DisplayDashboardOnStartUp, AllowMessaging, AllowMultipleRoles, AllowPasswordChangeAtLogin, AllowUpdateMyProfile, AllowUpdateMyProfileEmail, Ribbonbar_InvisibleIcons, Use2FA, IsActive, CreatedBy, CreatedOn, UpdatedBy, UpdatedOn) " &
+                    "(RegName, BusinessRuleType, RegistrationTypeID, Address1, Address2, City, State, Zip, MainFax, MainPhone, MainEMail, WebLandingPage, Smarty_AuthID, Smarty_AuthToken, Smarty_EmbeddedKey, Smarty_UseEmbeddedKey, DisplayDashboardOnStartUp, AllowMessaging, AllowMultipleRoles, AllowPasswordChangeAtLogin, AllowUpdateMyProfile, AllowUpdateMyProfileEmail, Ribbonbar_InvisibleIcons, TwoFactorAuthentication, IsActive, CreatedBy, CreatedOn, UpdatedBy, UpdatedOn) " &
                     "VALUES " &
-                    "(@RegName, @BusinessRuleType, @RegTypeId, @Address1, @Address2, @City, @State, @Zip, @MainFax, @MainPhone, @MainEMail, @WebLandingPage, @Smarty_AuthID, @Smarty_AuthToken, @Smarty_EmbeddedKey, @Smarty_UseEmbeddedKey, @DisplayDashboardOnStartUp, @AllowMessaging, @AllowMultipleRoles, @AllowPasswordChangeAtLogin, @AllowUpdateMyProfile, @AllowUpdateMyProfileEmail, @Ribbonbar_InvisibleIcons, @Use2FA, @IsActive, @CurrentUserId, GETDATE(), @CurrentUserId, GETDATE()); " &
+                    "(@RegName, @BusinessRuleType, @RegistrationTypeID, @Address1, @Address2, @City, @State, @Zip, @MainFax, @MainPhone, @MainEMail, @WebLandingPage, @Smarty_AuthID, @Smarty_AuthToken, @Smarty_EmbeddedKey, @Smarty_UseEmbeddedKey, @DisplayDashboardOnStartUp, @AllowMessaging, @AllowMultipleRoles, @AllowPasswordChangeAtLogin, @AllowUpdateMyProfile, @AllowUpdateMyProfileEmail, @Ribbonbar_InvisibleIcons, @TwoFactorAuthentication, @IsActive, @CurrentUserId, GETDATE(), @CurrentUserId, GETDATE()); " &
                     "SELECT CAST(SCOPE_IDENTITY() AS INT);", conn)
 
                     cmd.Parameters.AddWithValue("@RegName", DbValue(record.RegName))
                     cmd.Parameters.AddWithValue("@BusinessRuleType", normalizedBusinessRuleType)
-                    cmd.Parameters.AddWithValue("@RegTypeId", If(record.RegTypeId > 0, CType(record.RegTypeId, Object), DBNull.Value))
+                    cmd.Parameters.AddWithValue("@RegistrationTypeID", If(record.RegistrationTypeID > 0, CType(record.RegistrationTypeID, Object), DBNull.Value))
                     cmd.Parameters.AddWithValue("@Address1", DbValue(record.Address1))
                     cmd.Parameters.AddWithValue("@Address2", DbValue(record.Address2))
                     cmd.Parameters.AddWithValue("@City", DbValue(record.City))
@@ -3515,7 +3269,7 @@ Namespace SDC.Framework
                     cmd.Parameters.AddWithValue("@AllowUpdateMyProfile", record.AllowUpdateMyProfile)
                     cmd.Parameters.AddWithValue("@AllowUpdateMyProfileEmail", record.AllowUpdateMyProfileEmail)
                     cmd.Parameters.AddWithValue("@Ribbonbar_InvisibleIcons", record.Ribbonbar_InvisibleIcons)
-                    cmd.Parameters.AddWithValue("@Use2FA", record.Use2FA)
+                    cmd.Parameters.AddWithValue("@TwoFactorAuthentication", record.TwoFactorAuthentication)
                     cmd.Parameters.AddWithValue("@IsActive", record.IsActive)
                     cmd.Parameters.AddWithValue("@CurrentUserId", currentUserId)
 
@@ -3536,7 +3290,7 @@ Namespace SDC.Framework
                     "UPDATE dbo.FW_Registration SET " &
                     "RegName = @RegName, " &
                     "BusinessRuleType = @BusinessRuleType, " &
-                    "RegTypeId = @RegTypeId, " &
+                    "RegistrationTypeID = @RegistrationTypeID, " &
                     "Address1 = @Address1, " &
                     "Address2 = @Address2, " &
                     "City = @City, " &
@@ -3557,7 +3311,7 @@ Namespace SDC.Framework
                     "AllowUpdateMyProfile = @AllowUpdateMyProfile, " &
                     "AllowUpdateMyProfileEmail = @AllowUpdateMyProfileEmail, " &
                     "Ribbonbar_InvisibleIcons = @Ribbonbar_InvisibleIcons, " &
-                    "Use2FA = @Use2FA, " &
+                    "TwoFactorAuthentication = @TwoFactorAuthentication, " &
                     "IsActive = @IsActive, " &
                     "UpdatedBy = @CurrentUserId, " &
                     "UpdatedOn = GETDATE() " &
@@ -3566,7 +3320,7 @@ Namespace SDC.Framework
                     cmd.Parameters.AddWithValue("@ID", record.ID)
                     cmd.Parameters.AddWithValue("@RegName", DbValue(record.RegName))
                     cmd.Parameters.AddWithValue("@BusinessRuleType", normalizedBusinessRuleType)
-                    cmd.Parameters.AddWithValue("@RegTypeId", If(record.RegTypeId > 0, CType(record.RegTypeId, Object), DBNull.Value))
+                    cmd.Parameters.AddWithValue("@RegistrationTypeID", If(record.RegistrationTypeID > 0, CType(record.RegistrationTypeID, Object), DBNull.Value))
                     cmd.Parameters.AddWithValue("@Address1", DbValue(record.Address1))
                     cmd.Parameters.AddWithValue("@Address2", DbValue(record.Address2))
                     cmd.Parameters.AddWithValue("@City", DbValue(record.City))
@@ -3587,7 +3341,7 @@ Namespace SDC.Framework
                     cmd.Parameters.AddWithValue("@AllowUpdateMyProfile", record.AllowUpdateMyProfile)
                     cmd.Parameters.AddWithValue("@AllowUpdateMyProfileEmail", record.AllowUpdateMyProfileEmail)
                     cmd.Parameters.AddWithValue("@Ribbonbar_InvisibleIcons", record.Ribbonbar_InvisibleIcons)
-                    cmd.Parameters.AddWithValue("@Use2FA", record.Use2FA)
+                    cmd.Parameters.AddWithValue("@TwoFactorAuthentication", record.TwoFactorAuthentication)
                     cmd.Parameters.AddWithValue("@IsActive", record.IsActive)
                     cmd.Parameters.AddWithValue("@CurrentUserId", currentUserId)
                     cmd.Parameters.Add("@OriginalRowVersion", SqlDbType.Timestamp).Value = record.RowVersion
@@ -3623,7 +3377,7 @@ Namespace SDC.Framework
                 Using cmd As New SqlCommand(
                     "SELECT r.RegistrationID, r.RegName, ISNULL(rt.RegTypeName, '') AS RegistrationType " &
                     "FROM dbo.FW_Registration r " &
-                    "LEFT JOIN dbo.FW_RegistrationType rt ON rt.RegTypeID = r.RegTypeID " &
+                    "LEFT JOIN dbo.FW_RegistrationType rt ON rt.RegTypeID = r.RegistrationTypeID " &
                     "ORDER BY r.RegName", conn)
                     
                     Using da As New SqlDataAdapter(cmd)
@@ -4603,7 +4357,7 @@ Namespace SDC.Framework
             Using conn As New SqlConnection(ConnectionString)
                 conn.Open()
                 Using cmd As New SqlCommand(
-                    "SELECT UserID, RegistrationID, FirstName, LastName, FirstLast, LastFirst, Email, Phone, Address1, Address2, City, State, Zip, IsActive, SuperAdmin, RowVersion " &
+                    "SELECT UserID, RegistrationID, FirstName, LastName, FirstLast, LastFirst, Email, Phone, Address1, Address2, City, State, Zip, IsActive, SuperAdmin, AssignedManagerID, RowVersion " &
                     "FROM dbo.FW_Users WHERE UserID = @UserID", conn)
                     cmd.Parameters.AddWithValue("@UserID", userId)
                     Using reader = cmd.ExecuteReader()
@@ -4624,6 +4378,7 @@ Namespace SDC.Framework
                                 .Zip = If(reader("Zip") Is DBNull.Value, String.Empty, reader("Zip").ToString()),
                                 .IsActive = If(reader("IsActive") Is DBNull.Value, False, CBool(reader("IsActive"))),
                                 .SuperAdmin = If(reader("SuperAdmin") Is DBNull.Value, False, CBool(reader("SuperAdmin"))),
+                                .AssignedManagerID = If(reader("AssignedManagerID") Is DBNull.Value, 0, CInt(reader("AssignedManagerID"))),
                                 .RowVersion = DirectCast(reader("RowVersion"), Byte())
                             }
                         End If
@@ -4843,8 +4598,8 @@ Namespace SDC.Framework
                         End Using
 
                         Using cmd As New SqlCommand(
-                            "INSERT INTO dbo.FW_Users (RegistrationID, FirstName, LastName, Email, Phone, Address1, Address2, City, State, Zip, IsActive, SuperAdmin, CreatedBy, CreatedOn) " &
-                            "VALUES (@RegistrationID, @FirstName, @LastName, @Email, @Phone, @Address1, @Address2, @City, @State, @Zip, @IsActive, @SuperAdmin, @CreatedBy, GETDATE()); " &
+                            "INSERT INTO dbo.FW_Users (RegistrationID, FirstName, LastName, Email, Phone, Address1, Address2, City, State, Zip, IsActive, SuperAdmin, AssignedManagerID, CreatedBy, CreatedOn) " &
+                            "VALUES (@RegistrationID, @FirstName, @LastName, @Email, @Phone, @Address1, @Address2, @City, @State, @Zip, @IsActive, @SuperAdmin, @AssignedManagerID, @CreatedBy, GETDATE()); " &
                             "SELECT CAST(SCOPE_IDENTITY() as int)", conn, trans)
                             cmd.Parameters.AddWithValue("@RegistrationID", record.RegistrationID)
                             cmd.Parameters.AddWithValue("@FirstName", CType(If(String.IsNullOrWhiteSpace(record.FirstName), DBNull.Value, CObj(record.FirstName.Trim())), Object))
@@ -4858,6 +4613,7 @@ Namespace SDC.Framework
                             cmd.Parameters.AddWithValue("@Zip", CType(If(String.IsNullOrWhiteSpace(record.Zip), DBNull.Value, CObj(record.Zip.Trim())), Object))
                             cmd.Parameters.AddWithValue("@IsActive", record.IsActive)
                             cmd.Parameters.AddWithValue("@SuperAdmin", record.SuperAdmin)
+                            cmd.Parameters.AddWithValue("@AssignedManagerID", If(record.AssignedManagerID > 0, CType(record.AssignedManagerID, Object), DBNull.Value))
                             cmd.Parameters.AddWithValue("@CreatedBy", createdBy)
                             Dim result = cmd.ExecuteScalar()
                             trans.Commit()
@@ -4884,7 +4640,7 @@ Namespace SDC.Framework
                 Using cmd As New SqlCommand(
                     "UPDATE dbo.FW_Users SET FirstName = @FirstName, LastName = @LastName, Email = @Email, Phone = @Phone, " &
                     "Address1 = @Address1, Address2 = @Address2, City = @City, State = @State, Zip = @Zip, " &
-                    "IsActive = @IsActive, SuperAdmin = @SuperAdmin, UpdatedBy = @UpdatedBy, UpdatedOn = GETDATE() " &
+                    "IsActive = @IsActive, SuperAdmin = @SuperAdmin, AssignedManagerID = @AssignedManagerID, UpdatedBy = @UpdatedBy, UpdatedOn = GETDATE() " &
                     "WHERE UserID = @UserID AND RowVersion = @OriginalRowVersion", conn)
                     cmd.Parameters.AddWithValue("@UserID", record.UserID)
                     cmd.Parameters.AddWithValue("@FirstName", CType(If(String.IsNullOrWhiteSpace(record.FirstName), DBNull.Value, CObj(record.FirstName.Trim())), Object))
@@ -4898,6 +4654,7 @@ Namespace SDC.Framework
                     cmd.Parameters.AddWithValue("@Zip", CType(If(String.IsNullOrWhiteSpace(record.Zip), DBNull.Value, CObj(record.Zip.Trim())), Object))
                     cmd.Parameters.AddWithValue("@IsActive", record.IsActive)
                     cmd.Parameters.AddWithValue("@SuperAdmin", record.SuperAdmin)
+                    cmd.Parameters.AddWithValue("@AssignedManagerID", If(record.AssignedManagerID > 0, CType(record.AssignedManagerID, Object), DBNull.Value))
                     cmd.Parameters.AddWithValue("@UpdatedBy", updatedBy)
                     cmd.Parameters.Add("@OriginalRowVersion", SqlDbType.Timestamp).Value = record.RowVersion
                     If cmd.ExecuteNonQuery() = 0 Then
@@ -7738,7 +7495,7 @@ Namespace SDC.Framework
         End Function
 
         ''' <summary>
-        ''' Builds the client-side filter for a page whose SQL came from FW_RoleTables.
+        ''' Builds the client-side filter for a page whose SQL came from FW_Pages.
         '''
         ''' <paramref name="unsupportedMessage"/> is set when a filter cannot be expressed here at
         ''' all, rather than merely matching nothing. The caller must surface it: a filter that was
@@ -7841,7 +7598,7 @@ Namespace SDC.Framework
                     conn.Open()
                     Dim sql As String =
                         "SELECT SavedQbeID, RegistrationID, UserID, QbeName, IsCompanyWide, TableContext, QbeData " &
-                        "FROM dbo.FW_SavedQbe " &
+                        "FROM dbo.FW_SavedQBE " &
                         "WHERE RegistrationID = @RegistrationID AND TableContext = @TableContext " &
                         "  AND (UserID = @UserID OR IsCompanyWide = 1) " &
                         "  AND ISNULL(DeletedFlag, 0) = 0 " &
@@ -7926,7 +7683,7 @@ Namespace SDC.Framework
                 conn.Open()
                 Dim existingId As Integer = 0
                 Dim checkSql As String =
-                    "SELECT SavedQbeID FROM dbo.FW_SavedQbe " &
+                    "SELECT SavedQbeID FROM dbo.FW_SavedQBE " &
                     "WHERE RegistrationID = @RegistrationID AND UserID = @UserID " &
                     "  AND QbeName = @QbeName AND TableContext = @TableContext " &
                     "  AND ISNULL(DeletedFlag, 0) = 0"
@@ -7943,7 +7700,7 @@ Namespace SDC.Framework
 
                 If existingId > 0 Then
                     Dim updateSql As String =
-                        "UPDATE dbo.FW_SavedQbe SET IsCompanyWide = @IsCompanyWide, QbeData = @QbeData, UpdatedOn = GETDATE() " &
+                        "UPDATE dbo.FW_SavedQBE SET IsCompanyWide = @IsCompanyWide, QbeData = @QbeData, UpdatedOn = GETDATE() " &
                         "WHERE SavedQbeID = @SavedQbeID"
                     Using cmd As New SqlCommand(updateSql, conn)
                         cmd.Parameters.AddWithValue("@IsCompanyWide", If(record.IsCompanyWide, 1, 0))
@@ -7953,7 +7710,7 @@ Namespace SDC.Framework
                     End Using
                 Else
                     Dim insertSql As String =
-                        "INSERT INTO dbo.FW_SavedQbe (RegistrationID, UserID, QbeName, IsCompanyWide, TableContext, QbeData) " &
+                        "INSERT INTO dbo.FW_SavedQBE (RegistrationID, UserID, QbeName, IsCompanyWide, TableContext, QbeData) " &
                         "VALUES (@RegistrationID, @UserID, @QbeName, @IsCompanyWide, @TableContext, @QbeData)"
                     Using cmd As New SqlCommand(insertSql, conn)
                         cmd.Parameters.AddWithValue("@RegistrationID", record.RegistrationID)
@@ -7974,7 +7731,7 @@ Namespace SDC.Framework
                 Dim lookupTable As String = String.Empty
                 Dim lookupName As String = String.Empty
                 Using lookupCmd As New SqlCommand(
-                    "SELECT TOP 1 TableContext, QbeName FROM dbo.FW_SavedQbe WHERE SavedQbeID = @SavedQbeID AND UserID = @UserID", conn)
+                    "SELECT TOP 1 TableContext, QbeName FROM dbo.FW_SavedQBE WHERE SavedQbeID = @SavedQbeID AND UserID = @UserID", conn)
                     lookupCmd.Parameters.AddWithValue("@SavedQbeID", savedQbeId)
                     lookupCmd.Parameters.AddWithValue("@UserID", ownerUserId)
                     Using reader = lookupCmd.ExecuteReader()
@@ -7989,7 +7746,7 @@ Namespace SDC.Framework
 
                 Dim rowsAffected As Integer = 0
                 Using cmd As New SqlCommand(
-                    "UPDATE dbo.FW_SavedQbe " &
+                    "UPDATE dbo.FW_SavedQBE " &
                     "SET DeletedFlag = 1, DeletedBy = @DeletedBy, DeletedOn = SYSUTCDATETIME() " &
                     "WHERE SavedQbeID = @SavedQbeID AND UserID = @UserID AND ISNULL(DeletedFlag, 0) = 0", conn)
                     cmd.Parameters.AddWithValue("@SavedQbeID", savedQbeId)
@@ -8000,7 +7757,7 @@ Namespace SDC.Framework
 
                 If rowsAffected > 0 Then
                     LogUpdateAudit(lookupTable,
-                                   "FW_SavedQbe",
+                                   "FW_SavedQBE",
                                    "Delete",
                                    "AfterSave",
                                    savedQbeId.ToString(CultureInfo.InvariantCulture),

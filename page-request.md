@@ -94,7 +94,7 @@ Answer: ``
 
 **12a. RegistrationID value:**
 > Explicit numeric value, e.g. `3`. Never "active session RegistrationID".
-> Required when 12 is `Yes`. Controls the page context and the `FW_RoleTables` record.
+> Required when 12 is `Yes`. Controls the page context and the `FW_Pages` record.
 > If this is missing or ambiguous I will stop and ask before creating anything.
 
 Answer: ``

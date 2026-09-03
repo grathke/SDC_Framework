@@ -55,12 +55,12 @@ Namespace SDC.Framework.Tests
 
         <TestMethod>
         Public Sub TableName_MatchesRegardlessOfCaseSchemaOrFrameworkPrefix()
-            Dim profile = ProfileWith("FW_Entity", AccessCapability.Read)
+            Dim profile = ProfileWith("FW_Gender", AccessCapability.Read)
 
             ' Pages hold the table name in whatever form their SQL or metadata gave them.
-            For Each spelling In New String() {"FW_Entity", "FW_ENTITY", "fw_entity", "dbo.FW_Entity", "Entity"}
+            For Each spelling In New String() {"FW_Gender", "FW_GENDER", "fw_gender", "dbo.FW_Gender", "Gender"}
                 Assert.IsTrue(profile.Can(spelling, AccessCapability.Read),
-                              "Expected '" & spelling & "' to resolve to the FW_Entity permission.")
+                              "Expected '" & spelling & "' to resolve to the FW_Gender permission.")
             Next
         End Sub
 

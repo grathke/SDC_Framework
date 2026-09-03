@@ -269,7 +269,6 @@ Namespace SDC.Framework
             AddActionTile("dashboard", "Dashboard", AddressOf Dashboard_Click, LoadMenuIcon("dashboard.png", SystemIcons.Application.ToBitmap()))
             AddActionTile("application-settings", "Application" & Environment.NewLine & "Settings", AddressOf ApplicationSettings_Click, LoadMenuIcon("gear.png", SystemIcons.Shield.ToBitmap()))
             AddActionTile("users", "Users", AddressOf Users_Click, LoadMenuIcon("users.png", SystemIcons.Information.ToBitmap()))
-            AddActionTile("entity", "Entity", AddressOf Clients_Click, LoadMenuIcon("clients.png", SystemIcons.Asterisk.ToBitmap()))
             AddActionTile("my-profile", "My" & Environment.NewLine & "Profile", AddressOf MyProfile_Click, LoadMenuIcon("my-profile.png", SystemIcons.Question.ToBitmap()))
             AddActionTile("login-as-substitute", "Login as" & Environment.NewLine & "Different User", AddressOf LoginAsSubstitute_Click, LoadMenuIcon("substitute-user.png", SystemIcons.Warning.ToBitmap()))
             AddActionTile("select-role", "Select a Role (Application Admin)", AddressOf SelectRole_Click, LoadMenuIcon("users.png", SystemIcons.WinLogo.ToBitmap()))
@@ -927,13 +926,6 @@ Namespace SDC.Framework
         Private Sub CloseMenu_Click(sender As Object, e As EventArgs)
             LogoutButton_Click(sender, e)
         End Sub
-
-        Private Sub Clients_Click(sender As Object, e As EventArgs)
-            Using contacts As New Entity_B(currentUser, activeAccessProfile)
-                contacts.ShowDialog(Me)
-            End Using
-        End Sub
-
         Private Sub ApplicationSettings_Click(sender As Object, e As EventArgs)
             Dim session = SessionState.Current
             Dim isAppAdmin As Boolean = session.HasValue AndAlso session.Value.IsApplicationAdminRole

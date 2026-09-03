@@ -11,7 +11,7 @@ A normal request creates:
 - One `_B` browse page based on `FW_Base_B`.
 - One `_U` maintenance page based on `FW_Base_U`.
 - Page-specific table and SQL ownership.
-- A `FW_RoleTables` metadata record when the matching record is missing.
+- A `FW_Pages` metadata record when the matching record is missing.
 
 A normal request does not create roles or permissions.
 
@@ -94,7 +94,7 @@ Do not use:
 Active session RegistrationID
 ```
 
-The supplied value controls the page context and the matching `FW_RoleTables.RegistrationID` record. If it is missing or ambiguous, stop and ask before creating files or database metadata.
+The supplied value controls the page context and the matching `FW_Pages.RegistrationID` record. If it is missing or ambiguous, stop and ask before creating files or database metadata.
 
 ### Friendly name
 
@@ -160,7 +160,7 @@ d.RegistrationID,
 WHERE d.RegistrationID = @RegistrationID
 ```
 
-The page request still must provide the explicit numeric RegistrationID. Include `RegistrationID` and its filter in the SQL only when the table requires registration filtering. The framework uses the supplied value for the page context and `FW_RoleTables` metadata.
+The page request still must provide the explicit numeric RegistrationID. Include `RegistrationID` and its filter in the SQL only when the table requires registration filtering. The framework uses the supplied value for the page context and `FW_Pages` metadata.
 
 ### DeletedFlag and RowVersion
 
@@ -336,7 +336,7 @@ Disables Delete and leaves the record intact.
 
 Do not request this casually. Supply the reason, approval requirement, audit behavior, and confirmation wording. Physical deletion requires explicit confirmation and is not the default.
 
-## `FW_RoleTables` Behavior
+## `FW_Pages` Behavior
 
 The metadata key is the page and registration combination:
 
@@ -358,7 +358,7 @@ CreatedBy      = active session user
 
 If it already exists, inspect it before changing it. Do not silently replace an existing user-configured SQL definition without confirming the intended change.
 
-`FW_RoleTables` metadata does not grant access. It is separate from roles, role details, role fields, permissions, and access profiles.
+`FW_Pages` metadata does not grant access. It is separate from roles, role details, role fields, permissions, and access profiles.
 
 ## What Is Not Created Automatically
 
@@ -379,7 +379,7 @@ Do not create any of these unless the request explicitly asks for them:
 5. Create a restore point before changing shared framework files.
 6. Create the `_B` and `_U` pages using existing patterns.
 7. Wire standard CRUD actions and page-specific behavior.
-8. Create or verify the matching `FW_RoleTables` record.
+8. Create or verify the matching `FW_Pages` record.
 9. Build the project.
 10. Run browse regression validation.
 11. Verify the metadata record against the actual database.
@@ -394,7 +394,7 @@ I must stop before editing when:
 - The SQL does not expose a clear `PK` alias.
 - The SQL has multiple possible maintenance tables.
 - The requested page name conflicts with an existing page.
-- An existing `FW_RoleTables` record has conflicting SQL or table metadata.
+- An existing `FW_Pages` record has conflicting SQL or table metadata.
 - The request would require roles or permissions that were not explicitly requested.
 - A multi-table save requires transaction behavior that has not been specified.
 - A destructive physical delete is requested without explicit confirmation and audit requirements.

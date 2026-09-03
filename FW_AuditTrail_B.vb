@@ -223,7 +223,7 @@ Namespace SDC.Framework
                 DataAccess.SoftDeleteAuditTrailEntry(auditId.Value, updatedBy)
                 LoadFilterOptions()
                 LoadGrid()
-                FW_EntityCrudAdapter.ShowAutoClosingMessage(Me, "Audit row deleted.", "Delete", MessageBoxIcon.Information, 1000)
+                AutoClosingMessage.Show(Me, "Audit row deleted.", "Delete", MessageBoxIcon.Information, 1000)
             Catch ex As Exception
                 MessageBox.Show("Delete failed: " & ex.Message, "Error", MessageBoxButtons.OK, MessageBoxIcon.Error)
             End Try
@@ -245,7 +245,7 @@ Namespace SDC.Framework
                 DataAccess.RestoreAuditTrailEntry(auditId.Value, updatedBy)
                 LoadFilterOptions()
                 LoadGrid()
-                FW_EntityCrudAdapter.ShowAutoClosingMessage(Me, "Audit row restored.", "Restore", MessageBoxIcon.Information, 1000)
+                AutoClosingMessage.Show(Me, "Audit row restored.", "Restore", MessageBoxIcon.Information, 1000)
             Catch ex As Exception
                 MessageBox.Show("Restore failed: " & ex.Message, "Error", MessageBoxButtons.OK, MessageBoxIcon.Error)
             End Try

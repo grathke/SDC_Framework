@@ -65,14 +65,14 @@ Namespace SDC.Framework
                     Dim generateIndex = Array.FindIndex(args, Function(arg) String.Equals(arg, "--generate-request", StringComparison.OrdinalIgnoreCase))
                     If generateIndex >= 0 Then
                         If args.Length <= generateIndex + 1 Then
-                            Console.Error.WriteLine("A PageRequestID is required after --generate-request.")
+                            Console.Error.WriteLine("A GeneratedPageID is required after --generate-request.")
                             Environment.ExitCode = 2
                             Return
                         End If
 
                         Dim requestId As Integer
                         If Not Integer.TryParse(args(generateIndex + 1), requestId) OrElse requestId <= 0 Then
-                            Console.Error.WriteLine("PageRequestID must be a positive integer.")
+                            Console.Error.WriteLine("GeneratedPageID must be a positive integer.")
                             Environment.ExitCode = 2
                             Return
                         End If

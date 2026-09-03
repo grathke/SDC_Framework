@@ -278,9 +278,9 @@ Namespace SDC.Framework
         Private Sub LoadExposedTableChoices()
             Dim choices As DataTable
             Try
-                choices = DataAccess.GetExposedRoleTableChoices()
+                choices = DataAccess.GetExposedPageChoices()
             Catch ex As Exception
-                choices = New DataTable("ExposedRoleTables")
+                choices = New DataTable("ExposedPages")
                 choices.Columns.Add("ID", GetType(Integer))
                 choices.Columns.Add("Table_Alias", GetType(String))
                 choices.Columns.Add("DB_Table", GetType(String))

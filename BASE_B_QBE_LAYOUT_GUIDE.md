@@ -6,7 +6,7 @@ This guide describes how a standard browse page (`*_B`) works when it inherits `
 
 A standard `_B` page must use the shared `FW_Base_B` behavior:
 
-- Browse SQL comes from `FW_RoleTables.Table_SQL`.
+- Browse SQL comes from `FW_Pages.Table_SQL`.
 - The page key is normally the runtime class name, such as `Entity_B`.
 - Results are loaded through `DataAccess.GetBrowseRowsByRegistration`.
 - The grid is the source for visible QBE fields after layout and internal-column hiding are complete.
@@ -21,8 +21,8 @@ For a page opened in a session:
 2. On the form `Load` event, `LoadSqlFromRoleTable()` resolves:
    - `RegistrationID` from the active session.
    - `WindowOrPage` from `ResolveBrowsePageName()`.
-   - SQL from `FW_RoleTables.Table_SQL`.
-3. If the page has no `FW_RoleTables` row or no SQL, Base_B builds a safe fallback such as `SELECT * FROM dbo.FW_Entity`, persists the row, and keeps the SQL in the shared SQL control.
+   - SQL from `FW_Pages.Table_SQL`.
+3. If the page has no `FW_Pages` row or no SQL, Base_B builds a safe fallback such as `SELECT * FROM dbo.FW_Entity`, persists the row, and keeps the SQL in the shared SQL control.
 4. The page closes if SQL remains unavailable.
 5. Every browse refresh calls `DataAccess.GetBrowseRowsByRegistration` with:
    - Registration ID
@@ -35,7 +35,7 @@ For a page opened in a session:
 
 The SQL must include `PK` as an explicit maintenance key alias when update, delete, or restore actions require a record key. The internal `PK` column is hidden from users but remains available for maintenance operations.
 
-Example SQL stored in `FW_RoleTables.Table_SQL`:
+Example SQL stored in `FW_Pages.Table_SQL`:
 
 ```sql
 SELECT
@@ -58,7 +58,7 @@ The normal lifecycle is:
 ```text
 Constructor
   -> build shared Base_B shell
-  -> page Load: load SQL from FW_RoleTables
+  -> page Load: load SQL from FW_Pages
   -> ensure SQL exists
   -> load registration and permissions
   -> if StartsEmptyOnInitialLoad() is True:
@@ -181,7 +181,7 @@ Namespace SDC.Framework
 End Namespace
 ```
 
-Before using the page, configure the matching `FW_RoleTables` row:
+Before using the page, configure the matching `FW_Pages` row:
 
 ```text
 WindowOrPage = Customer_B
@@ -214,7 +214,7 @@ For every new `_B` page:
 - Confirm it inherits `FW_Base_B`.
 - Confirm its file and class names match the page key.
 - Confirm the constructor passes `UserContext`, `AccessProfile`, and the correct physical table.
-- Confirm `FW_RoleTables.Table_SQL` is the source of browse SQL.
+- Confirm `FW_Pages.Table_SQL` is the source of browse SQL.
 - Confirm SQL includes `AS PK` when maintenance actions need a key.
 - Open with no role-table row and verify the fallback row is persisted correctly.
 - Open with an existing SQL row and verify the grid uses that SQL.
@@ -233,7 +233,7 @@ For every new `_B` page:
 
 This document is a living contract for the shared browse framework. Update it in the same change whenever work changes:
 
-- The `FW_RoleTables` SQL contract or fallback behavior
+- The `FW_Pages` SQL contract or fallback behavior
 - SQL control layout, including the rule that pages without a visible registration selector use the available space up to the Apply SQL button
 - SQL textbox sizing: the shared SQL entry begins after the SQL label and ends 8 px before Apply SQL, keeping its left edge fixed
 - Registration selector layout: visible registration controls are positioned responsively at the top-right of the browse page

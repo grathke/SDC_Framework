@@ -157,7 +157,7 @@ Key areas:
 
 ## Naming Conventions (Required)
 
-- Database tables that belong to the framework are prefixed `FW_`, for example `dbo.FW_Entity`.
+- Database tables that belong to the framework are prefixed `FW_`, for example `dbo.FW_Users`.
 - Pages that belong to the framework are prefixed `FW_`, for example `FW_Registration_B`.
 - Application-specific tables and pages built on top of the framework do **not** take the prefix.
 - `_B` = browse page: a grid listing rows, from which a record is selected to view, edit or delete.
@@ -167,7 +167,7 @@ Key areas:
   documented exception rather than a variant: state the contract it cannot satisfy and add a
   validation check for it. `Roles_U` is an approved exception.
 - **Primary key: `<Stem>ID`** — the table name past `FW_`, singular, no underscore, `ID` uppercase.
-  `FW_Gender` takes `GenderID`, `FW_Entity` takes `EntityID`. Not a bare `ID`: that is the one name
+  `FW_Gender` takes `GenderID`, `FW_Pages` takes `PageID`. Not a bare `ID`: that is the one name
   that cannot survive a join, since two of them collide in a single result set, which is why browse
   SQL has always had to alias the key `AS PK`.
 - **Foreign key: exactly the primary key name it points at.** A join then reads
@@ -187,12 +187,12 @@ Key areas:
 
 Known exceptions in the current codebase, to be resolved rather than copied:
 
-- `Entity_B/_U`, `Roles_B/_U`, `Users_AppAdmin_B/_U` and `PageGeneration_B/_U` are framework pages
-  without the `FW_` prefix.
+- `Roles_B/_U`, `Users_AppAdmin_B/_U` and `PageGeneration_U` are framework pages without the
+  `FW_` prefix.
 - Browse-only pages with no `_U` partner: `FW_AuditTrail_B`, `FW_HD_Admin_B`,
   `FW_HD_AdminDashboard_B`, `FW_UserAccessDiagnostic_B`, `FW_UserAccessExplanation_B`.
 - `FW_HD_Issues_B` and `FW_HD_Issues_Support_B` share a single `FW_HD_Issues_U`.
-- Primary keys follow five conventions at once: bare `ID` (`FW_Entity`, `FW_Gender`), `<Table>ID`
+- Primary keys follow five conventions at once: bare `ID` (`FW_Gender`), `<Table>ID`
   (`AuditTrailID`), `<Table>_ID` (`BusinessRuleType_ID`), all-caps
   (`APPLICATION_SETTINGS_DASHBOARDID`), and names unrelated to their table (`Attachment` holds
   `DocumentID`, `FW_AuditTrail` holds `UpdateAuditLogID`). `FW_Users.UserId` also spells `Id` in
@@ -329,7 +329,37 @@ These are baseline rules for this application, not optional task-specific sugges
 - Run `scripts\validate-browse-regression.ps1` for a `_B` page and `scripts\validate-maintenance-regression.ps1` for a `_U` page, then work through the manual checklist each one prints.
 - Run `dotnet test .\tests\SDC.Framework.Tests\SDC.Framework.Tests.vbproj` whenever the change touches permissions, display-name formatting, hashing, credential resolution, or the empty-combo test. Passing tests do not substitute for the manual workflow check.
 - Do not declare a new page complete from compilation alone.
-- For every new standard `_B` page, verify the no-row `FW_RoleTables` path against the actual database: opening the page must create the correct `WindowOrPage`, `DB_Table`, friendly alias, session `CreatedBy`, and PK-safe fallback SQL.
+- For every new standard `_B` page, verify the no-row `FW_Pages` path against the actual database: opening the page must create the correct `WindowOrPage`, `DB_Table`, friendly alias, session `CreatedBy`, and PK-safe fallback SQL.
+
+## Removing A Page Or Table (Required)
+
+A page leaves traces in **eight** framework tables. Removing `FW_Entity` on 2026-09-03 was planned
+against four of them, and the other four surfaced one at a time only because someone kept asking
+whether the last one had been missed. Work the list, do not recall it.
+
+| Table | What it holds |
+|---|---|
+| `FW_Pages` | the page's row, its SQL, its alias |
+| `FW_RoleFields` | one row per field permission — often over a hundred |
+| `FW_RoleDetails` | table captions and role overrides |
+| `FW_RoleSchema` | one row per known table |
+| `FW_DashboardLayouts` | tile position and chosen picture, keyed by `ActionKey` |
+| `FW_TableLayouts` | saved grid column layouts, per page and per user |
+| `FW_SavedQbe` | saved searches, keyed by table **context** — the page's caption, not its name |
+| `FW_GeneratedPages` | the generation request, which can be reopened and regenerated |
+
+`FW_AuditTrail` also names the table, and normally **stays**: an audit row records that something
+happened, and that remains true after the page is deleted. Remove it only on a database that has
+never held real work, and say why.
+
+Two sweeps catch what the list misses. Neither should return rows afterwards:
+
+- role and layout rows whose table no longer exists — `OBJECT_ID('dbo.' + DB_Table) IS NULL`
+- views and procedures with unresolved references — `sys.sql_expression_dependencies` where
+  `referenced_id IS NULL`
+
+The same list applies in reverse to a **rename**, where every one of those rows keeps pointing at a
+name that no longer resolves.
 
 ## QBE Visibility Guardrail (Required)
 
@@ -422,11 +452,11 @@ See also `BASE_B_QBE_LAYOUT_GUIDE.md`.
 Before merging any browse or grid behavior change (`_B` pages), verify all items below:
 
 0. Preflight before editing: run the `Preflight Browse Framework` task. It runs static browse-contract
-   checks without rebuilding, including QBE visibility, no Entity-specific QBE defaults, and
+   checks without rebuilding, including QBE visibility, no page-specific QBE defaults, and
    double-click invoking Modify.
 1. Shared-first implementation: place data behavior in shared data access helpers; place deleted-view
    button enablement rules in shared guard helpers; keep page-local logic for page-specific UX only.
-2. Coverage check: confirm base browse and custom browse pages (Entity, Users, Roles) all use the
+2. Coverage check: confirm base browse and custom browse pages (Users, Roles) all use the
    shared behavior.
 3. Build check (see hotfix build command above).
 4. Regression check: run `scripts\validate-browse-regression.ps1` and the UI checks it lists.

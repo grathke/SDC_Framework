@@ -61,7 +61,7 @@ Both panels use one tile size and one margin — `TileWidth`, `TileHeight`, `Til
 exactly the tiles it holds. When a tile is hidden the remaining ones pack together and the spare
 room collects at the end of the panel; no hole is left where the hidden one was.
 
-The flow panel holds `close`, `dashboard`, `application-settings`, `users`, `entity`, and
+The flow panel holds `close`, `dashboard`, `application-settings`, `users`, and
 `user-admin` — the last added at runtime by `MenuFormInitializer`.
 
 - `close`, `dashboard` and `application-settings` are **anchored**, in that order, at the head of
@@ -136,16 +136,6 @@ holds its anchored place in the row; the old target is gone and is not what it w
 - icon file: `users.png`
 - visibility rule: `MenuFormInitializer.vb:120`, always visible and enabled
 - click behavior: opens the `Roles_B` dialog
-
-## entity
-
-- placement: main ribbon (left)
-- ActionType: Table
-- target: `FW_Entity` via `Entity_B`
-- caption source: `FW_RoleDetails.OverrideCaption` for `DB_Table = FW_Entity`, fallback `Entity`
-- icon file: `clients.png`
-- visibility rule: `MenuFormInitializer.vb:121`, always visible and enabled
-- click behavior: opens `Entity_B` with access key `FW_Entity`
 
 ## user-admin
 

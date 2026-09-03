@@ -333,21 +333,6 @@ Namespace SDC.Framework
         End Sub
     End Module
 
-    Public Class EntityRecord
-        Public Property ID As Integer
-        Public Property RegistrationID As Integer
-        Public Property AssignedManagerID As Integer
-        Public Property GenderID As Integer
-        Public Property FirstName As String
-        Public Property MiddleName As String
-        Public Property LastName As String
-        Public Property FirstLast As String
-        Public Property LastFirst As String
-        Public Property EMail1 As String
-        Public Property Phone1 As String
-        Public Property IsActive As Boolean
-        Public Property RowVersion As Byte()
-    End Class
 
     Public Class UserAdminRecord
         Public Property UserID As Integer
@@ -365,6 +350,16 @@ Namespace SDC.Framework
         Public Property Zip As String
         Public Property IsActive As Boolean
         Public Property SuperAdmin As Boolean
+
+        ''' <summary>
+        ''' The user this user reports to - another row in FW_Users. Zero means none recorded, and
+        ''' is written to the column as NULL: the column carries a foreign key, so it must point at
+        ''' a real user or at nothing.
+        '''
+        ''' Named against the convention deliberately. See sql/071.
+        ''' </summary>
+        Public Property AssignedManagerID As Integer
+
         Public Property RowVersion As Byte()
     End Class
 
@@ -376,7 +371,7 @@ Namespace SDC.Framework
         Public Property Smarty_EmbeddedKey As String
         Public Property Smarty_UseEmbeddedKey As Boolean
         Public Property BusinessRuleType As String
-        Public Property RegTypeId As Integer
+        Public Property RegistrationTypeID As Integer
         Public Property Address1 As String
         Public Property Address2 As String
         Public Property City As String
@@ -393,7 +388,7 @@ Namespace SDC.Framework
         Public Property AllowUpdateMyProfile As Boolean
         Public Property AllowUpdateMyProfileEmail As Boolean
         Public Property Ribbonbar_InvisibleIcons As Boolean
-        Public Property Use2FA As Boolean
+        Public Property TwoFactorAuthentication As Boolean
         Public Property HDUserSupport As Integer
         Public Property HDApplicationSupport As Integer
         Public Property IsActive As Boolean
@@ -450,12 +445,6 @@ Namespace SDC.Framework
         Public Property FilterValue As String
     End Class
 
-    Public Enum EntityEditMode
-        CreateMode
-        ReadMode
-        UpdateMode
-        DeleteMode
-    End Enum
 
     Public Class SavedQbeRecord
         Public Property SavedQbeID As Integer

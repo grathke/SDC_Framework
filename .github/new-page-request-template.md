@@ -89,9 +89,9 @@ Answer: `<existing caller or new caller>`
 - Preserve the selected row and scroll position after returning from `_U`.
 - Use the active session user and access profile.
 - Use the explicitly supplied `RegistrationID` value for the page context; never infer it from the active session.
-- If the `FW_RoleTables` record is missing for the page and supplied RegistrationID, create it with the supplied SQL, table name, friendly alias, RegistrationID, and CreatedBy.
+- If the `FW_Pages` record is missing for the page and supplied RegistrationID, create it with the supplied SQL, table name, friendly alias, RegistrationID, and CreatedBy.
 - If `RegistrationID` is missing, invalid, or ambiguous, stop and ask for it before creating files or database metadata.
-- Verify the resulting `FW_RoleTables` record against the actual database.
+- Verify the resulting `FW_Pages` record against the actual database.
 - Derive the friendly name by removing `FW_`, splitting underscores, and formatting PascalCase words.
 
 ## Do Not Create Automatically
@@ -104,7 +104,7 @@ Do not create any of the following unless explicitly requested:
 - Permission records
 - Access profiles
 
-Creating or updating a `FW_RoleTables` metadata record is allowed and is separate from creating permissions.
+Creating or updating a `FW_Pages` metadata record is allowed and is separate from creating permissions.
 
 ## SQL Table Inference
 
@@ -122,7 +122,7 @@ For joins, views, stored procedures, aggregates, or multiple possible update tab
 - Inspect all existing related pages and callers before editing.
 - Build the project.
 - Run the browse regression script.
-- Verify the `FW_RoleTables` row against the actual database.
+- Verify the `FW_Pages` row against the actual database.
 - Verify Create, Read, Update, Delete, Cancel, missing schema, missing metadata, conflict, and retry paths as applicable.
 - Launch the application and manually verify the actual page workflow.
 - Create a new good-baseline restore point only after the runtime workflow is confirmed successful.

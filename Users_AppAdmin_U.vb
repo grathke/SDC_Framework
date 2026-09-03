@@ -32,6 +32,7 @@ Namespace SDC.Framework
         Private ReadOnly removeButton As Button
         Private ReadOnly registrationLabel As Label
         Private ReadOnly registrationIdTextBox As TextBox
+        Private ReadOnly assignedManagerComboBox As ComboBox
 
         <System.ComponentModel.DesignerSerializationVisibility(System.ComponentModel.DesignerSerializationVisibility.Hidden)>
         Public Property UserData As UserAdminRecord
@@ -74,6 +75,16 @@ Namespace SDC.Framework
             y += 42
             passwordTextBox = AddField("Password", y, mode = UserAdminEditMode.ReadMode OrElse mode = UserAdminEditMode.DeleteMode)
             passwordTextBox.UseSystemPasswordChar = False
+            y += 42
+
+            ' The user this user reports to - another row in FW_Users. AddComboField names the label
+            ' and the combo from the one argument, so Label_ and ComboBox_ cannot drift apart, and
+            ' both match the column so field permissions and caption overrides reach them.
+            '
+            ' Captioned explicitly: the derived name would read "Assigned Manager ID", and the ID is
+            ' the framework's business rather than the reader's.
+            assignedManagerComboBox = AddComboField("AssignedManagerID", y, labelText:="Assigned Manager")
+            assignedManagerComboBox.Enabled = mode <> UserAdminEditMode.ReadMode AndAlso mode <> UserAdminEditMode.DeleteMode
             y += 42
 
             addressTextBox = AddField("Address1", 62, mode = UserAdminEditMode.ReadMode OrElse mode = UserAdminEditMode.DeleteMode, False, 500)
@@ -326,6 +337,15 @@ Namespace SDC.Framework
             zipTextBox.Text = If(UserData.Zip, String.Empty)
             activeCheckBox.Checked = UserData.IsActive
             superAdminCheckBox.Checked = UserData.SuperAdmin
+
+            ' The manager list excludes soft-deleted users and the user being edited - nobody
+            ' reports to themselves, and the foreign key alone would happily allow it.
+            ConfigureLookupCombo(assignedManagerComboBox,
+                                 DataAccess.GetUsersByRegistration(UserData.RegistrationID, UserData.UserID),
+                                 "ID",
+                                 "FirstLast",
+                                 UserData.AssignedManagerID,
+                                 "No Manager")
 
             ' DataBindings for enumeration discovery
             firstNameTextBox.DataBindings.Clear()
@@ -585,6 +605,7 @@ Namespace SDC.Framework
                 .Zip = zipTextBox.Text.Trim(),
                 .IsActive = activeCheckBox.Checked,
                 .SuperAdmin = superAdminCheckBox.Checked,
+                .AssignedManagerID = SelectedManagerId(),
                 .RowVersion = CopyOriginalRowVersion()
             }
             UserData = record
@@ -798,6 +819,27 @@ Namespace SDC.Framework
 
             ConfigurePasswordEditorForCurrentUser()
             Return True
+        End Function
+
+        ''' <summary>
+        ''' The chosen manager, or 0 for none.
+        '''
+        ''' Zero rather than Nothing because the model carries an Integer, and DataAccess writes
+        ''' NULL for anything not greater than zero - the column has a foreign key, so it must name
+        ''' a real user or nobody. The placeholder row supplied to ConfigureLookupCombo carries 0 for
+        ''' exactly this.
+        ''' </summary>
+        Private Function SelectedManagerId() As Integer
+            If assignedManagerComboBox Is Nothing OrElse assignedManagerComboBox.SelectedValue Is Nothing Then
+                Return 0
+            End If
+
+            Dim parsed As Integer
+            If Integer.TryParse(assignedManagerComboBox.SelectedValue.ToString(), parsed) Then
+                Return Math.Max(0, parsed)
+            End If
+
+            Return 0
         End Function
 
         Private Function CloneRecord(record As UserAdminRecord) As UserAdminRecord

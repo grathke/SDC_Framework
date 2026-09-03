@@ -51,9 +51,9 @@ Assert-Pattern -Path ".\01 FW_Base_B.vb" -Pattern "If col Is Nothing OrElse Not 
 Assert-Pattern -Path ".\01 FW_Base_B.vb" -Pattern "If IsPkAliasColumn(col) OrElse IsSoftDeleteColumnName(fieldName) Then" -Description "Grid-derived QBE excludes the internal PK alias"
 Assert-Pattern -Path ".\01 FW_Base_B.vb" -Pattern 'String.Equals(dc.ColumnName, "PK", StringComparison.OrdinalIgnoreCase)' -Description "Start Empty QBE excludes the internal PK alias"
 if (Select-String -Path ".\01 FW_Base_B.vb" -Pattern 'AssignedManagerID' -SimpleMatch -Quiet) {
-    throw "Base_B must not seed Entity-specific QBE fields; QBE fields must come from the active page grid."
+    throw "Base_B must not seed page-specific QBE fields; QBE fields must come from the active page grid. AssignedManagerID was the original offender, from the since-removed FW_Entity."
 }
-Write-Host "PASS: Base browse does not seed Entity-specific QBE fields" -ForegroundColor Green
+Write-Host "PASS: Base browse does not seed page-specific QBE fields" -ForegroundColor Green
 Assert-Pattern -Path ".\Users_AppAdmin_B.vb" -Pattern "Inherits FW_Base_B" -Description "Users browse inherits shared deleted-view guard"
 Assert-Pattern -Path ".\Roles_B.vb" -Pattern "DeletedViewGuard.TableSupportsDeletedView(ResolveCurrentRoleFieldTableName()) AndAlso DeletedViewGuard.ResultHasDeletedFlagColumn(rolesGrid)" -Description "Roles browse uses shared deleted-view guard"
 if (Select-String -Path ".\FW_HD_Issues_B.vb" -Pattern "Overrides Function GetActiveBaseSql" -SimpleMatch -Quiet) {
@@ -139,8 +139,8 @@ foreach ($page in $standardUpdatePages) {
     }
     Write-Host "PASS: $($page.Name) uses shared SQL ownership and data bindings" -ForegroundColor Green
 }
-Assert-Pattern -Path ".\DataAccess.vb" -Pattern "Public Shared Function UpsertRoleTableRecord" -Description "Data layer persists missing browse SQL records"
-Assert-Pattern -Path ".\01 FW_Base_B.vb" -Pattern "UpsertRoleTableRecord" -Description "Base browse persists generated fallback SQL"
+Assert-Pattern -Path ".\DataAccess.vb" -Pattern "Public Shared Function UpsertPageRecord" -Description "Data layer persists missing browse SQL records"
+Assert-Pattern -Path ".\01 FW_Base_B.vb" -Pattern "UpsertPageRecord" -Description "Base browse persists generated fallback SQL"
 Assert-Pattern -Path ".\01 FW_Base_B.vb" -Pattern "EnsureDefaultLayoutExists(registrationId)" -Description "Base browse ensures a shared default layout after the first successful grid load"
 Assert-Pattern -Path ".\01 FW_Base_B.vb" -Pattern "updateButton.PerformClick()" -Description "Base browse double-click invokes the visible Modify button"
 Assert-Pattern -Path ".\Roles_B.vb" -Pattern "modifyButton.PerformClick()" -Description "Roles double-click invokes its visible Modify button"
@@ -150,12 +150,9 @@ Assert-Pattern -Path ".\01 FW_Base_U.vb" -Pattern "WarnIfMissingRowVersion" -Des
 Assert-Pattern -Path ".\01 FW_Base_U.vb" -Pattern "CaptureOriginalRowVersion" -Description "Base maintenance page owns the original RowVersion"
 Assert-Pattern -Path ".\01 FW_Base_U.vb" -Pattern "CopyOriginalRowVersion" -Description "Base maintenance page provides RowVersion copies"
 Assert-Pattern -Path ".\01 FW_Base_B.vb" -Pattern "TableHasRowVersion" -Description "Base browse page checks RowVersion schema"
-Assert-Pattern -Path ".\DataAccess.vb" -Pattern "WHERE EntityID = @ID AND RowVersion = @OriginalRowVersion" -Description "Entity update uses optimistic concurrency"
 Assert-Pattern -Path ".\DataAccess.vb" -Pattern "WHERE UserID = @UserID AND RowVersion = @OriginalRowVersion" -Description "User update uses optimistic concurrency"
 Assert-Pattern -Path ".\FW_Registration_U.vb" -Pattern "ConfirmConcurrencyOverwrite" -Description "Registration handles concurrency conflicts"
 Assert-Pattern -Path ".\Users_AppAdmin_U.vb" -Pattern "ConfirmConcurrencyOverwrite" -Description "Users handles concurrency conflicts"
-Assert-Pattern -Path ".\FW_EntityCrudAdapter.vb" -Pattern "RecordChanged" -Description "Entity adapter handles concurrency conflicts"
-Assert-Pattern -Path ".\Entity_U.vb" -Pattern "CaptureOriginalRowVersion(EntityData.RowVersion)" -Description "Entity captures its original RowVersion through Base_U"
 Assert-Pattern -Path ".\Users_AppAdmin_U.vb" -Pattern "CaptureOriginalRowVersion(UserData.RowVersion)" -Description "Users captures its original RowVersion through Base_U"
 Assert-Pattern -Path ".\FW_Registration_U.vb" -Pattern "CaptureOriginalRowVersion(currentRecord.RowVersion)" -Description "Registration captures its original RowVersion through Base_U"
 Assert-Pattern -Path ".\Roles_U.vb" -Pattern "DataAccess.UpdateRoleField" -Description "Roles_U remains the documented custom immediate-write page"
@@ -189,7 +186,7 @@ Assert-Pattern -Path ".\MessagingDataAccess.vb" -Pattern "MarkRecipientRead" -De
 Assert-Pattern -Path ".\MessageComposeForm.vb" -Pattern "SelectionMode.MultiExtended" -Description "Compose supports multi-select recipients"
 
 Write-Step "Manual verification checklist"
-Write-Host "Run these UI checks in Entity_B, Users_AppAdmin_B, Roles_B:" -ForegroundColor Yellow
+Write-Host "Run these UI checks in Users_AppAdmin_B, Roles_B:" -ForegroundColor Yellow
 Write-Host "  1) Custom SQL without DeletedFlag: Show Deleted should be disabled when grid lacks DeletedFlag." -ForegroundColor Yellow
 Write-Host "  2) Delete a row where soft-delete is supported: row should disappear from normal view." -ForegroundColor Yellow
 Write-Host "  3) Show Deleted: only deleted rows should appear." -ForegroundColor Yellow

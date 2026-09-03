@@ -13,7 +13,7 @@ Namespace SDC.Framework
         Private ReadOnly currentUser As UserContext
         Private ReadOnly accessProfile As AccessProfile
         Public Sub New(user As UserContext, Optional profile As AccessProfile = Nothing)
-            MyBase.New(user, profile, "FW_PageGeneration_B_U")
+            MyBase.New(user, profile, DataAccess.GeneratedPagesTable)
             currentUser = user
             accessProfile = profile
             Text = "Page Generation"

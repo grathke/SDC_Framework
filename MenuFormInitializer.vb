@@ -10,7 +10,6 @@ Namespace SDC.Framework
     Public Module MenuFormInitializer
         Private Const TableApplicationSettingsDashboard As String = "APPLICATION SETTINGS DASHBOARD"
         Private Const TableRoles As String = "ROLES"
-        Private Const TableEntity As String = "FW_Entity"
         Private Const TableMessaging As String = "MESSAGING"
         Private Const TableFrameworkDashboard As String = "FRAMEWORK DASHBOARD"
         Private Const TableRegistrationDashboard As String = "REGISTRATION DASHBOARD"
@@ -144,18 +143,11 @@ Namespace SDC.Framework
             If menu Is Nothing OrElse profile Is Nothing Then
                 Return
             End If
-
-            Dim entityCaption As String = "Entity"
             Dim applicationSettingsCaption As String = "Application" & Environment.NewLine & "Settings"
             Dim session = SessionState.Current
             Dim isAppAdminSession As Boolean = False
             Dim isCompanyAdminSession As Boolean = False
             If session.HasValue AndAlso session.Value.RoleID > 0 AndAlso session.Value.RegistrationID > 0 Then
-                Dim overrideCaption = DataAccess.GetRoleDetailOverrideCaption(session.Value.RoleID, session.Value.RegistrationID, TableEntity)
-                If Not String.IsNullOrWhiteSpace(overrideCaption) Then
-                    entityCaption = overrideCaption
-                End If
-
                 isAppAdminSession = session.Value.IsApplicationAdminRole
                 isCompanyAdminSession = session.Value.IsCompanyAdminRole
 
@@ -165,8 +157,6 @@ Namespace SDC.Framework
             menu.ConfigureActionVisibility("application-settings", canAccessApplicationSettings, canAccessApplicationSettings)
             menu.SetActionCaption("application-settings", applicationSettingsCaption)
             menu.ConfigureActionVisibility("users", True, True)
-            menu.ConfigureActionVisibility("entity", True, True)
-            menu.SetActionCaption("entity", entityCaption)
             menu.ConfigureActionVisibility("dashboard", True, True)
 
             menu.ConfigureActionVisibility("select-role", True, True)

@@ -208,7 +208,7 @@ Both are granted from role rows — `Convert.ToBoolean(reader("Expand_QBE"))` at
 `UseEnglishSearch = 1024` would sit alongside them, making "QBE, English, both or neither" a
 per-role setting changed in the role matrix without a rebuild.
 
-**Its cost**, following the path `Expand_QBE` took: a migration adding a column to `FW_RoleTables`,
+**Its cost**, following the path `Expand_QBE` took: a migration adding a column to `FW_RoleDetails`,
 a property on `RoleTableAccessEntry`, the mapping in `AccessSecurity.vb`, two readers in
 `DataAccess.vb` (lines 199 and 5240), and a tick box in the role matrix UI. Well-trodden, but it is
 a permissions change with a schema migration, so it is deliberately **not** in v1 — it should not
@@ -224,7 +224,7 @@ There are three filter paths, not one:
 
 | Path | Where | Used by |
 |---|---|---|
-| Client-side `DataView` | `DataAccess.vb:649` and `:4199`, via `BuildSingleColumnFilterExpr` at `:7672` | **most browse pages** — any page with SQL in `FW_RoleTables` |
+| Client-side `DataView` | `DataAccess.vb:649` and `:4199`, via `BuildSingleColumnFilterExpr` at `:7672` | **most browse pages** — any page with SQL in `FW_Pages` |
 | Inline SQL, `FW_Entity` | `DataAccess.vb:718` and `:750` | fallback when no page SQL is supplied |
 | Inline SQL, `FW_Users` | `DataAccess.vb:4261` and `:4287` | the Users browse |
 

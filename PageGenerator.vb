@@ -28,7 +28,7 @@ Namespace SDC.Framework
         End Sub
     End Class
 
-    Public Enum RoleTableAction
+    Public Enum PageAction
         None = 0
         Insert = 1
         AlreadyCurrent = 2
@@ -112,26 +112,26 @@ Namespace SDC.Framework
             End If
 
             If plan.GenerateBrowsePage Then
-                Select Case ClassifyRoleTableAction(plan.BrowsePageName, plan.TableName, plan.BrowseSql)
-                    Case RoleTableAction.Insert
-                        If DataAccess.UpsertRoleTableRecord(0, plan.BrowsePageName, plan.TableName, plan.TableAlias, plan.BrowseSql, plan.CreatedBy) Then
-                            created.Add("FW_RoleTables:" & plan.BrowsePageName)
+                Select Case ClassifyPageAction(plan.BrowsePageName, plan.TableName, plan.BrowseSql)
+                    Case PageAction.Insert
+                        If DataAccess.UpsertPageRecord(0, plan.BrowsePageName, plan.TableName, plan.TableAlias, plan.BrowseSql, plan.CreatedBy) Then
+                            created.Add("FW_Pages:" & plan.BrowsePageName)
                         Else
-                            errors.Add("The generated browse SQL could not be registered in FW_RoleTables.")
+                            errors.Add("The generated browse SQL could not be registered in FW_Pages.")
                         End If
-                    Case RoleTableAction.AlreadyCurrent
-                        skipped.Add("FW_RoleTables:" & plan.BrowsePageName)
-                    Case RoleTableAction.UpdateSql
-                        If DataAccess.UpdateRoleTableSql(plan.BrowsePageName, plan.BrowseSql) Then
-                            created.Add("FW_RoleTables SQL UPDATED:" & plan.BrowsePageName)
+                    Case PageAction.AlreadyCurrent
+                        skipped.Add("FW_Pages:" & plan.BrowsePageName)
+                    Case PageAction.UpdateSql
+                        If DataAccess.UpdatePageSql(plan.BrowsePageName, plan.BrowseSql) Then
+                            created.Add("FW_Pages SQL UPDATED:" & plan.BrowsePageName)
                         Else
-                            errors.Add("The existing FW_RoleTables SQL could not be updated for " & plan.BrowsePageName & ".")
+                            errors.Add("The existing FW_Pages SQL could not be updated for " & plan.BrowsePageName & ".")
                         End If
                     Case Else
-                        If DataAccess.UpsertRoleTableRecord(0, plan.BrowsePageName, plan.TableName, plan.TableAlias, plan.BrowseSql, plan.CreatedBy) Then
-                            created.Add("FW_RoleTables UPDATED:" & plan.BrowsePageName)
+                        If DataAccess.UpsertPageRecord(0, plan.BrowsePageName, plan.TableName, plan.TableAlias, plan.BrowseSql, plan.CreatedBy) Then
+                            created.Add("FW_Pages UPDATED:" & plan.BrowsePageName)
                         Else
-                            errors.Add("The existing FW_RoleTables row could not be updated for " & plan.BrowsePageName & ".")
+                            errors.Add("The existing FW_Pages row could not be updated for " & plan.BrowsePageName & ".")
                         End If
                 End Select
             End If
@@ -248,18 +248,18 @@ Namespace SDC.Framework
             Return plan
         End Function
 
-        ' Decides what generation would do to FW_RoleTables. Generate performs the action and
+        ' Decides what generation would do to FW_Pages. Generate performs the action and
         ' Preview describes it, so the two cannot drift apart.
-        Private Shared Function ClassifyRoleTableAction(browsePageName As String, tableName As String, browseSql As String) As RoleTableAction
-            Dim existingRoleTable = DataAccess.GetRoleTableMetadata(browsePageName)
-            If existingRoleTable Is Nothing Then Return RoleTableAction.Insert
-            If Not String.Equals(DbText(existingRoleTable("DB_Table")).Trim(), tableName.Trim(), StringComparison.OrdinalIgnoreCase) Then
-                Return RoleTableAction.ReplaceRow
+        Private Shared Function ClassifyPageAction(browsePageName As String, tableName As String, browseSql As String) As PageAction
+            Dim existingPage = DataAccess.GetPageMetadata(browsePageName)
+            If existingPage Is Nothing Then Return PageAction.Insert
+            If Not String.Equals(DbText(existingPage("DB_Table")).Trim(), tableName.Trim(), StringComparison.OrdinalIgnoreCase) Then
+                Return PageAction.ReplaceRow
             End If
-            If String.Equals(DbText(existingRoleTable("Table_SQL")).Trim(), browseSql.Trim(), StringComparison.Ordinal) Then
-                Return RoleTableAction.AlreadyCurrent
+            If String.Equals(DbText(existingPage("Table_SQL")).Trim(), browseSql.Trim(), StringComparison.Ordinal) Then
+                Return PageAction.AlreadyCurrent
             End If
-            Return RoleTableAction.UpdateSql
+            Return PageAction.UpdateSql
         End Function
 
         ' Everything generation would change, in the order it would change it, so the preview covers
@@ -284,15 +284,15 @@ Namespace SDC.Framework
             lines.Add("DATABASE")
             lines.Add("  UNDERLYING TABLE: " & plan.TableName & "   PRIMARY KEY: " & plan.PrimaryKey)
             If plan.GenerateBrowsePage Then
-                Select Case ClassifyRoleTableAction(plan.BrowsePageName, plan.TableName, plan.BrowseSql)
-                    Case RoleTableAction.Insert
-                        lines.Add("  FW_RoleTables: NEW ROW FOR " & plan.BrowsePageName & " (ALIAS " & plan.TableAlias & ")")
-                    Case RoleTableAction.AlreadyCurrent
-                        lines.Add("  FW_RoleTables: ALREADY CURRENT, NO CHANGE")
-                    Case RoleTableAction.UpdateSql
-                        lines.Add("  FW_RoleTables: SQL WOULD BE UPDATED FOR " & plan.BrowsePageName)
+                Select Case ClassifyPageAction(plan.BrowsePageName, plan.TableName, plan.BrowseSql)
+                    Case PageAction.Insert
+                        lines.Add("  FW_Pages: NEW ROW FOR " & plan.BrowsePageName & " (ALIAS " & plan.TableAlias & ")")
+                    Case PageAction.AlreadyCurrent
+                        lines.Add("  FW_Pages: ALREADY CURRENT, NO CHANGE")
+                    Case PageAction.UpdateSql
+                        lines.Add("  FW_Pages: SQL WOULD BE UPDATED FOR " & plan.BrowsePageName)
                     Case Else
-                        lines.Add("  FW_RoleTables: ROW WOULD BE REPLACED FOR " & plan.BrowsePageName & " (TABLE CHANGED)")
+                        lines.Add("  FW_Pages: ROW WOULD BE REPLACED FOR " & plan.BrowsePageName & " (TABLE CHANGED)")
                 End Select
             End If
             If plan.GenerateMaintenancePage Then

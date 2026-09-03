@@ -189,7 +189,6 @@ Namespace SDC.Framework
             If emailLower.Contains("admin") Then
                 profile.SetRole(1, "Application Admin")
                 profile.SetTablePermissions("MESSAGING", AccessCapability.Read Or AccessCapability.Create Or AccessCapability.Update Or AccessCapability.Delete Or AccessCapability.UseQbe)
-                profile.SetTablePermissions("ENTITY", AccessCapability.Read Or AccessCapability.Create Or AccessCapability.Update Or AccessCapability.Delete Or AccessCapability.UseQbe)
                 profile.SetTablePermissions("ROLES", AccessCapability.Read Or AccessCapability.Create Or AccessCapability.Update Or AccessCapability.Delete)
                 profile.SetTablePermissions("REGISTRATION DASHBOARD", AccessCapability.Read Or AccessCapability.Update)
                 profile.SetTablePermissions("APPLICATION SETTINGS DASHBOARD", AccessCapability.Read Or AccessCapability.Update)
@@ -200,7 +199,6 @@ Namespace SDC.Framework
             If emailLower.Contains("owner") Then
                 profile.SetRole(4, "User Owner Only")
                 profile.SetTablePermissions("MESSAGING", AccessCapability.Read Or AccessCapability.Create)
-                profile.SetTablePermissions("ENTITY", AccessCapability.Read Or AccessCapability.Update Or AccessCapability.UseQbe)
                 profile.SetTablePermissions("ROLES", AccessCapability.None)
                 profile.SetTablePermissions("REGISTRATION DASHBOARD", AccessCapability.Read)
                 profile.SetTablePermissions("APPLICATION SETTINGS DASHBOARD", AccessCapability.None)
@@ -210,7 +208,6 @@ Namespace SDC.Framework
 
             profile.SetRole(5, "User RO")
             profile.SetTablePermissions("MESSAGING", AccessCapability.Read)
-            profile.SetTablePermissions("ENTITY", AccessCapability.Read)
             profile.SetTablePermissions("ROLES", AccessCapability.Read)
             profile.SetTablePermissions("REGISTRATION DASHBOARD", AccessCapability.Read)
             profile.SetTablePermissions("APPLICATION SETTINGS DASHBOARD", AccessCapability.None)
