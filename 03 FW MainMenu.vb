@@ -473,7 +473,8 @@ Namespace HelloWorld
                 ToList()
         End Function
 
-        ''' Every tile, pinned row included: a picture can be changed on any of them.
+        ''' Every tile, pinned row included: a picture can be changed on any of them. Deliberate for
+        ''' `close` too - it never moves and never hides, but its picture is the App Admin's.
         Private Function AllTiles() As List(Of KeyValuePair(Of String, ButtonBase))
             Return actionTilesByKey.
                 Where(Function(entry) entry.Value.Button IsNot Nothing).

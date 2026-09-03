@@ -30,7 +30,8 @@ checked against the source at that time; corrections to the original notes are m
   second application writes its own initializer rather than a second menu form. Do not put a
   surface name, an application name, or an exe name inside the form.
 - An App Admin can drag the tiles in the left flow panel into a different order; the panel shows
-  its border while they can. What is saved is a **rank**, never a coordinate — the panel closes the
+  its border only while a drag is under way, not for the whole session. What is saved is a
+  **rank**, never a coordinate — the panel closes the
   gap when a permission hides a tile, and a coordinate would leave a hole. See `ICON_CATALOG.md`
   for the storage and the App Admin boundary.
 - The head of that row is anchored — `close`, `dashboard`, `application-settings` — by a list the

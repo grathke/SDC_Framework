@@ -45,8 +45,11 @@ pictures.
 
 ## Ribbon tiles can be rearranged
 
-An App Admin can drag the tiles in the main menu's left flow panel into a different order, and the
-panel shows its border while they can. `RibbonTileArrangementController` owns this.
+An App Admin can drag the tiles in the main menu's left flow panel into a different order. The panel
+shows its border only while a tile is actually being dragged — an App Admin who is just using the
+menu sees the ribbon everybody else sees. Which tiles can move is said in a tooltip instead:
+"Moveable" or "Fixed position", and only for an App Admin, since nobody else can drag anything.
+`RibbonTileArrangementController` owns this.
 
 The pinned row on the right (`my-profile`, `login-as-substitute`, `select-role`, `help-desk`) is a
 flow panel too, but no drag is wired to it: those four keep the order `LayoutPinnedActions` sets and

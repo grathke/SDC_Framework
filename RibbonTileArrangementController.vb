@@ -79,6 +79,12 @@ Namespace HelloWorld
         ''' a ribbon, not a dialog, and a sentence there is noise.
         Private Const AnchoredTileTip As String = "Fixed position"
 
+        ''' What a movable tile says. The counterpart to the anchored one, and the pair only works
+        ''' as a pair: "Fixed position" alone names the tiles that cannot move but leaves the ones
+        ''' that can carrying no tooltip at all, which reads as a tile nobody has got to yet rather
+        ''' than as an answer.
+        Private Const MovableTileTip As String = "Moveable"
+
         Private ReadOnly tips As New ToolTip()
 
         ''' <summary>
@@ -94,9 +100,25 @@ Namespace HelloWorld
         ''' </summary>
         Private ReadOnly anchoredKeys As List(Of String)
 
+        ''' <summary>
+        ''' How thick the drop-span bar is, and what colour.
+        '''
+        ''' Three pixels of the six clear ones below the row, so it reads as a deliberate mark
+        ''' rather than a hairline, and still sits clear of the tiles. The colour is the ribbon's
+        ''' existing hover blue - the drag is already speaking in that colour, and a second one
+        ''' would only add a thing to interpret.
+        ''' </summary>
+        Private Const DragBarThickness As Integer = 3
+
+        Private Shared ReadOnly DragBarColor As Color = Color.FromArgb(91, 161, 217)
+
         Private dragged As Control
         Private dragStart As Point
         Private dragging As Boolean
+
+        ''' Whether the drop-span bar is currently drawn. Held rather than read back off the panel,
+        ''' because the bar is painted and there is nothing on the panel to read.
+        Private showingDragBounds As Boolean
 
         Public Sub New(owner As Form,
                        panel As FlowLayoutPanel,
@@ -110,6 +132,10 @@ Namespace HelloWorld
             Me.anchoredKeys = If(anchoredKeys, New String() {}).
                 Where(Function(key) Not String.IsNullOrWhiteSpace(key)).
                 ToList()
+
+            ' Wired once here rather than per role. The handler draws nothing unless a drag is under
+            ' way, and only an App Admin can start one, so the role gate is already upstream of it.
+            AddHandler panel.Paint, AddressOf Panel_Paint
         End Sub
 
         Private Function AnchorPosition(key As String) As Integer
@@ -124,11 +150,12 @@ Namespace HelloWorld
         End Function
 
         ''' <summary>
-        ''' Applies the saved arrangement, and - for an App Admin - makes the tiles draggable and
-        ''' shows the panel's border so the area they move within can be seen.
+        ''' Applies the saved arrangement, and - for an App Admin - makes the tiles draggable.
         '''
-        ''' The border is the only visible difference for everybody else: a user who cannot
-        ''' rearrange the ribbon sees exactly the ribbon they saw before.
+        ''' Nothing about the ribbon looks different until a drag is actually under way. An App
+        ''' Admin who is only using the menu sees the ribbon everybody else sees. A bar marking the
+        ''' span a tile can be dropped within appears while one is being moved, and goes again the
+        ''' moment it is dropped.
         '''
         ''' Safe to call again. A tile already known is not re-wired, so a later pass that finds a
         ''' newly added tile picks it up without doubling the handlers on the rest.
@@ -150,14 +177,13 @@ Namespace HelloWorld
         End Sub
 
         ''' <summary>
-        ''' Wires or unwires dragging to match the role the session is running under now, and shows
-        ''' the panel's border only while it can be dragged.
+        ''' Wires or unwires dragging to match the role the session is running under now, and takes
+        ''' down any drop-span bar a role switch caught mid-move.
         '''
         ''' Run on every pass, not only the first. The menu offers a role switch and reconfigures
         ''' itself in place, so a session can become an App Admin - or stop being one - without the
-        ''' form being rebuilt. Wiring once at startup left the border appearing for a role that
-        ''' could not actually drag anything, and left the handlers attached for one that no longer
-        ''' should have them.
+        ''' form being rebuilt. Wiring once at startup left the handlers attached for a role that no
+        ''' longer should have them.
         '''
         ''' An anchored tile never gets handlers whatever the role: it is not draggable at all.
         ''' Letting it be dragged and then snapping it back would read as a fault rather than as a
@@ -170,13 +196,15 @@ Namespace HelloWorld
                 Dim button = pair.Key
                 Dim anchored = AnchorPosition(pair.Value) >= 0
 
-                If anchored Then
-                    ' An anchored tile looks exactly like a movable one, so an App Admin who tries
-                    ' to drag it gets silence and cannot tell whether it is fixed by design or the
-                    ' rearranging is broken. Only they see this: nobody else can drag anything, so
-                    ' for them it would answer a question they never asked.
-                    tips.SetToolTip(button, If(canArrange, AnchoredTileTip, String.Empty))
-                End If
+                ' Every tile says which kind it is, because they all look the same. An App Admin who
+                ' drags an anchored one gets silence and cannot tell whether it is fixed by design
+                ' or the rearranging is broken - and naming only the fixed ones leaves the movable
+                ' ones silent, which reads the same way. Only an App Admin sees either: nobody else
+                ' can drag anything, so for them both would answer a question they never asked.
+                tips.SetToolTip(button,
+                                If(canArrange,
+                                   If(anchored, AnchoredTileTip, MovableTileTip),
+                                   String.Empty))
 
                 ' MouseMove goes on every tile, anchored ones included, and does nothing unless a
                 ' drag is already under way. It is a second route to the same handler: if the tile
@@ -208,7 +236,10 @@ Namespace HelloWorld
                 tips.SetToolTip(button, If(canArrange, AnchoredTileTip, String.Empty))
             Next
 
-            panel.BorderStyle = If(canArrange, BorderStyle.FixedSingle, BorderStyle.None)
+            ' Not shown to an App Admin merely because they could drag something - only while they
+            ' are. A role switch cannot land in the middle of a drag, but this clears the bar
+            ' rather than assuming it: nothing else here would ever take one down.
+            ShowDragBounds(False)
         End Sub
 
         ''' <summary>
@@ -270,6 +301,63 @@ Namespace HelloWorld
             Return UnrankedBase + sourceIndex
         End Function
 
+        ''' <summary>
+        ''' Shows or hides the bar marking the span a tile can actually be dropped within.
+        '''
+        ''' The panel's own border was the first attempt and was wrong twice over. It outlined the
+        ''' whole panel, anchored head included - so it promised a drop zone that three tiles at the
+        ''' front will not accept - and turning a BorderStyle on mid-drag costs the client area a
+        ''' pixel each way, which nudged the whole row as it appeared.
+        '''
+        ''' A bar in the gutter has neither problem. It starts at the first tile that can move, so
+        ''' the anchored head is visibly outside it, and it changes no geometry at all.
+        ''' </summary>
+        Private Sub ShowDragBounds(visible As Boolean)
+            If showingDragBounds = visible Then Return
+
+            showingDragBounds = visible
+            panel.Invalidate()
+        End Sub
+
+        ''' <summary>
+        ''' Draws the drop span: a bar under the tiles, from the first one that can move to the end
+        ''' of the row.
+        '''
+        ''' It goes in the gutter because that is the only part of the panel nothing covers. A tile
+        ''' is 96 of the panel's 102 pixels and sits flush against the top and the left edge, so a
+        ''' rectangle drawn round the span would be hidden behind the tiles on three sides; the 6
+        ''' pixels below the row are clear.
+        '''
+        ''' Read left to right it says where a drag stops: nothing before the bar will take a drop,
+        ''' which is exactly what the anchored tiles do. If a permission has hidden every movable
+        ''' tile there is no span to draw and nothing is drawn.
+        ''' </summary>
+        Private Sub Panel_Paint(sender As Object, e As PaintEventArgs)
+            If Not showingDragBounds Then Return
+
+            Dim firstMovable As Control = Nothing
+            Dim lastVisible As Control = Nothing
+
+            For Each child As Control In panel.Controls
+                If Not child.Visible Then Continue For
+
+                lastVisible = child
+                If firstMovable Is Nothing AndAlso Not IsAnchored(child) Then firstMovable = child
+            Next
+
+            If firstMovable Is Nothing OrElse lastVisible Is Nothing Then Return
+            If lastVisible.Right <= firstMovable.Left Then Return
+
+            Dim top = panel.ClientSize.Height - DragBarThickness
+            Using bar As New SolidBrush(DragBarColor)
+                e.Graphics.FillRectangle(bar,
+                                         firstMovable.Left,
+                                         top,
+                                         lastVisible.Right - firstMovable.Left,
+                                         DragBarThickness)
+            End Using
+        End Sub
+
         Private Sub Tile_MouseDown(sender As Object, e As MouseEventArgs)
             If e.Button <> MouseButtons.Left Then Return
 
@@ -313,6 +401,8 @@ Namespace HelloWorld
                 ' opened the page it was dragged from.
                 Dim tile = TryCast(dragged, SuppressClickButton)
                 If tile IsNot Nothing Then tile.SuppressNextClick = True
+
+                ShowDragBounds(True)
             End If
 
             Dim index = panel.Controls.GetChildIndex(dragged)
@@ -365,6 +455,10 @@ Namespace HelloWorld
             If moved Is Nothing Then Return
 
             moved.Capture = False
+
+            ' Unconditionally, not only on the drag path: a press that never became one never showed
+            ' the bar, and ShowDragBounds is a no-op when it is already down.
+            ShowDragBounds(False)
 
             If Not dragging Then
                 ' Never passed the threshold, so this was a click. The tile's own Click handler
