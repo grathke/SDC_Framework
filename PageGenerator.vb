@@ -471,7 +471,8 @@ Namespace SDC.Framework
         End Function
 
         ''' A dashboard is a class named Dashboard_<Name>, and its source file is
-        ''' "02 FW Dashboard_<Name>.vb". Both halves are convention, so adding a dashboard needs no
+        ''' "02_FW_Dashboard_<Name>.vb" - the ##_FW_ file naming convention. Both halves are
+        ''' convention, so adding a dashboard needs no
         ''' edit here and none in the Menu Caller list: create the pair and it becomes a valid
         ''' target. DashboardCallers discovers the classes; DashboardSourceFileName derives the file.
         Public Const DashboardCallerPrefix As String = "Dashboard_"
@@ -545,7 +546,7 @@ Namespace SDC.Framework
 
         Private Shared Function DashboardSourceFileName(menuCaller As String) As String
             If Not IsDashboardCaller(menuCaller) Then Return String.Empty
-            Return "02 FW " & menuCaller.Trim() & ".vb"
+            Return "02_FW_" & menuCaller.Trim() & ".vb"
         End Function
 
         ''' <summary>

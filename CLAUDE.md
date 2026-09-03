@@ -63,7 +63,7 @@ whether something is expected of them.
   decision; length for its own sake is not.
 - Read the full relevant file before changing it. Never apply a generic solution without first
   understanding the existing code.
-- Before editing `01 FW_Base_B.vb` or `01 FW_Base_U.vb`, read the section of `FRAMEWORK_NOTES.md`
+- Before editing `01_FW_Base_B.vb` or `01_FW_Base_U.vb`, read the section of `FRAMEWORK_NOTES.md`
   that covers the behavior being changed. The contracts there are not obvious from a single call
   site, and getting one backwards is expensive: the required-field colour precedence was argued the
   wrong way round on 2026-08-31 because the documented rule was never consulted.
@@ -133,7 +133,7 @@ session, so delivery constraints do not apply to it.
 
 Key areas:
 
-- Page framework: `01 FW_Base_B.vb` (browse pages) and `01 FW_Base_U.vb` (maintenance pages).
+- Page framework: `01_FW_Base_B.vb` (browse pages) and `01_FW_Base_U.vb` (maintenance pages).
 - Data access: `DataAccess.vb`, plus `HelpDeskDataAccess.vb` and `MessagingDataAccess.vb`.
 - Models: `Models.vb`.
 - Entry point and shell: `Program.vb`, `LoginForm.vb`, `MainMenu.vb`.
@@ -363,7 +363,7 @@ name that no longer resolves.
 
 ## QBE Visibility Guardrail (Required)
 
-- Before the first substantive edit to `01 FW_Base_B.vb`, run the `Create Base_B Restore Point` task. Do not edit Base_B until its timestamped restore point is created.
+- Before the first substantive edit to `01_FW_Base_B.vb`, run the `Create Base_B Restore Point` task. Do not edit Base_B until its timestamped restore point is created.
 - QBE fields must be derived only from visible browse-grid columns after all standard hiding and saved-layout rules have been applied.
 - Internal maintenance aliases, including `PK`, must never appear in the browse grid, QBE, columns manager, or user-facing field lists.
 - A real ID column explicitly selected by page SQL, such as `IssueID`, is distinct from the internal `PK` alias and may appear when visible.
@@ -425,7 +425,7 @@ See also `BASE_B_QBE_LAYOUT_GUIDE.md`.
 
 ## Save And Model Contract Guardrail (Required)
 
-- Before the first substantive edit to `01 FW_Base_U.vb`, run the `Create Base_U Restore Point` task. Do not edit Base_U until its timestamped restore point is created.
+- Before the first substantive edit to `01_FW_Base_U.vb`, run the `Create Base_U Restore Point` task. Do not edit Base_U until its timestamped restore point is created.
 - Standard `_U` pages must use the shared save result contract and must distinguish success, conflict, deleted record, unavailable concurrency protection, and failure.
 - Record identity, registration context, and concurrency tokens must survive every load, clone, form-bind, validation, and record-rebuild path.
 - Model and data-reader nullability must match the database contract. A nullable database column must map to a nullable model property and safe `DBNull` conversion; never make it required merely because a current page does not display it.

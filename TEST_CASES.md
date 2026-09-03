@@ -86,7 +86,7 @@ App Admin only. Both are global: one arrangement and one set of pictures for eve
 
 ## U — Maintenance pages
 
-Mostly verified on `Users_AppAdmin_U` during 2026-08-29/30. Re-run after changes to `01 FW_Base_U.vb`.
+Mostly verified on `Users_AppAdmin_U` during 2026-08-29/30. Re-run after changes to `01_FW_Base_U.vb`.
 
 | ID | Case | Expected | Status |
 |---|---|---|---|

@@ -736,8 +736,8 @@ themselves:
 | `StandardClientHeight` | 560 |
 
 `CellLeft(column)`, `CellTop(row)` and `CellLocation(row, column)` convert 1-based grid positions to
-pixels. Both dashboards place their buttons through it — `02 FW Dashboard_Application.vb` and
-`02 FW Dashboard_Company.vb`. Position a new button by cell, never by literal coordinates.
+pixels. Both dashboards place their buttons through it — `02_FW_Dashboard_Application.vb` and
+`02_FW_Dashboard_Company.vb`. Position a new button by cell, never by literal coordinates.
 
 **Page generation can add the button for you.** When a browse page is generated with
 `MenuCaller = Dashboard_Application`, `PageGenerator` edits the dashboard source directly:
