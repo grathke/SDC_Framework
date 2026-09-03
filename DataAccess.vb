@@ -646,14 +646,26 @@ Namespace SDC.Framework
                     table = ApplyBrowseDeletedFilterFallback(table, showDeletedOnly, sourceTableName)
 
                     If filters IsNot Nothing AndAlso filters.Count > 0 Then
-                        Dim filterExpr = BuildDataViewFilterExpression(table, filters)
+                        Dim unsupportedFilter As String = Nothing
+                        Dim filterExpr = BuildDataViewFilterExpression(table, filters, unsupportedFilter)
+
+                        If Not String.IsNullOrWhiteSpace(unsupportedFilter) Then
+                            Throw New InvalidOperationException(unsupportedFilter)
+                        End If
+
                         If Not String.IsNullOrWhiteSpace(filterExpr) Then
                             Try
                                 Dim view As New DataView(table)
                                 view.RowFilter = filterExpr
                                 Return view.ToTable()
-                            Catch
-                                ' Return unfiltered if expression is invalid
+                            Catch ex As Exception
+                                ' Never fall back to the unfiltered table. A filter that was silently
+                                ' dropped returns every row, which reads as "everything matched" - the
+                                ' opposite of what happened, and invisible for as long as nobody counts.
+                                Throw New InvalidOperationException(
+                                    "The filter could not be applied on this page: " & ex.Message &
+                                    Environment.NewLine & Environment.NewLine &
+                                    "FILTER: " & filterExpr, ex)
                             End Try
                         End If
                     End If
@@ -715,7 +727,7 @@ Namespace SDC.Framework
                                 sql.Append(" AND IsActive").Append(" ").Append(GetSqlOperator(comparisonOperator, QbeFieldKind.BooleanField)).Append(" @IsActive")
                             End If
                         Case "FirstName", "MiddleName", "LastName", "FirstLast", "LastFirst", "EMail1", "Phone1"
-                            sql.Append(" AND ").Append(fieldName).Append(" ").Append(GetSqlOperator(comparisonOperator, QbeFieldKind.TextField)).Append(" @").Append(fieldName)
+                            sql.Append(" AND ").Append(fieldName).Append(" ").Append(ResolveTextComparison(value, comparisonOperator).SqlOperator).Append(" @").Append(fieldName)
                     End Select
                 Next
 
@@ -747,7 +759,7 @@ Namespace SDC.Framework
                                     cmd.Parameters.AddWithValue("@IsActive", parsedBit)
                                 End If
                             Case "FirstName", "MiddleName", "LastName", "FirstLast", "LastFirst", "EMail1", "Phone1"
-                                cmd.Parameters.AddWithValue("@" & fieldName, BuildTextFilterValue(value, comparisonOperator))
+                                cmd.Parameters.AddWithValue("@" & fieldName, ResolveTextComparison(value, comparisonOperator).Pattern)
                         End Select
                     Next
 
@@ -2879,17 +2891,93 @@ Namespace SDC.Framework
                    valueType Is GetType(Int64)
         End Function
 
-        Private Shared Function BuildTextFilterValue(value As String, comparisonOperator As QbeComparisonOperator) As String
+        ''' <summary>
+        ''' How a text filter compares, and the value to compare against.
+        '''
+        ''' The two travel together because they have to agree and they are used at separate call
+        ''' sites - the operator while the SQL is being assembled, the value later while parameters
+        ''' are bound. Deciding them in two places is how "LIKE" ends up paired with a value nobody
+        ''' wrapped, and the search silently matches nothing.
+        ''' </summary>
+        Private Structure TextComparison
+            Public ReadOnly SqlOperator As String
+            Public ReadOnly Pattern As String
+
+            Public Sub New(sqlOperator As String, pattern As String)
+                Me.SqlOperator = sqlOperator
+                Me.Pattern = pattern
+            End Sub
+
+            Public ReadOnly Property IsPatternMatch As Boolean
+                Get
+                    Return SqlOperator = "LIKE" OrElse SqlOperator = "NOT LIKE"
+                End Get
+            End Property
+        End Structure
+
+        ''' <summary>
+        ''' Decides how a text value is compared, honouring a wildcard the user typed.
+        '''
+        ''' A value containing % is a LIKE pattern and is used exactly as typed, whatever the
+        ''' operator says. The operator does not then add wildcards of its own: Contains on
+        ''' "%Rathk%" would otherwise ask for "%%Rathk%%", which still matches but is no longer the
+        ''' pattern that was typed.
+        '''
+        ''' Nothing is lost by this. Before it, % was a literal character under Equals, so
+        ''' "= Glenn%" looked for a name ending in a percent sign and always returned nothing, and
+        ''' "&lt;&gt; Glenn%" excluded nothing and returned everything. Only queries that could not
+        ''' work change meaning.
+        '''
+        ''' Underscore is deliberately not a switch. It is a LIKE wildcard once a pattern is in
+        ''' play, but on its own it stays literal, so "= FW_Entity" remains an exact match rather
+        ''' than quietly also finding FW.Entity. One switch, and full SQL semantics past it.
+        '''
+        ''' With no wildcard the behaviour is what it always was, so every existing search and every
+        ''' saved QBE is unaffected.
+        ''' </summary>
+        Private Shared Function ResolveTextComparison(value As String,
+                                                      comparisonOperator As QbeComparisonOperator) As TextComparison
+            If Not String.IsNullOrEmpty(value) AndAlso value.Contains("%"c) Then
+                If comparisonOperator = QbeComparisonOperator.NotEquals Then
+                    Return New TextComparison("NOT LIKE", value)
+                End If
+
+                Return New TextComparison("LIKE", value)
+            End If
+
             Select Case comparisonOperator
-                Case QbeComparisonOperator.StartsWith
-                    Return value & "%"
-                Case QbeComparisonOperator.EndsWith
-                    Return "%" & value
+                Case QbeComparisonOperator.NotEquals
+                    Return New TextComparison("<>", value)
                 Case QbeComparisonOperator.Contains
-                    Return "%" & value & "%"
+                    Return New TextComparison("LIKE", "%" & value & "%")
+                Case QbeComparisonOperator.StartsWith
+                    Return New TextComparison("LIKE", value & "%")
+                Case QbeComparisonOperator.EndsWith
+                    Return New TextComparison("LIKE", "%" & value)
                 Case Else
-                    Return value
+                    Return New TextComparison("=", value)
             End Select
+        End Function
+
+        ''' <summary>
+        ''' Whether a pattern carries a wildcard anywhere but its two ends.
+        '''
+        ''' Only the client-side DataView path asks. SQL Server is happy with "Gl%nn"; a DataTable
+        ''' filter expression allows a wildcard at the start or the end and nowhere else, and throws
+        ''' rather than failing to match. Asking first is what turns that into a message.
+        ''' </summary>
+        Private Shared Function HasInnerWildcard(pattern As String) As Boolean
+            If String.IsNullOrEmpty(pattern) Then
+                Return False
+            End If
+
+            For i = 1 To pattern.Length - 2
+                If pattern(i) = "%"c Then
+                    Return True
+                End If
+            Next
+
+            Return False
         End Function
 
         Private Shared Function GetSqlOperator(comparisonOperator As QbeComparisonOperator, fieldKind As QbeFieldKind) As String
@@ -2917,14 +3005,11 @@ Namespace SDC.Framework
                             Return "="
                     End Select
                 Case Else
-                    Select Case comparisonOperator
-                        Case QbeComparisonOperator.NotEquals
-                            Return "<>"
-                        Case QbeComparisonOperator.Contains, QbeComparisonOperator.StartsWith, QbeComparisonOperator.EndsWith
-                            Return "LIKE"
-                        Case Else
-                            Return "="
-                    End Select
+                    ' Text has one owner, and it is not this function. ResolveTextComparison decides
+                    ' the operator and the value together because they have to agree; answering half
+                    ' the question here is what let a typed wildcard be dropped on the floor.
+                    Throw New InvalidOperationException(
+                        "Text filters are resolved by ResolveTextComparison, which returns the operator and the value together.")
             End Select
         End Function
 
@@ -4196,14 +4281,26 @@ Namespace SDC.Framework
                                                                  "ID")
 
                     If filters IsNot Nothing AndAlso filters.Count > 0 Then
-                        Dim filterExpr = BuildDataViewFilterExpression(table, filters)
+                        Dim unsupportedFilter As String = Nothing
+                        Dim filterExpr = BuildDataViewFilterExpression(table, filters, unsupportedFilter)
+
+                        If Not String.IsNullOrWhiteSpace(unsupportedFilter) Then
+                            Throw New InvalidOperationException(unsupportedFilter)
+                        End If
+
                         If Not String.IsNullOrWhiteSpace(filterExpr) Then
                             Try
                                 Dim view As New DataView(table)
                                 view.RowFilter = filterExpr
                                 Return view.ToTable()
-                            Catch
-                                ' Return unfiltered if expression is invalid
+                            Catch ex As Exception
+                                ' Never fall back to the unfiltered table. A filter that was silently
+                                ' dropped returns every row, which reads as "everything matched" - the
+                                ' opposite of what happened, and invisible for as long as nobody counts.
+                                Throw New InvalidOperationException(
+                                    "The filter could not be applied on this page: " & ex.Message &
+                                    Environment.NewLine & Environment.NewLine &
+                                    "FILTER: " & filterExpr, ex)
                             End Try
                         End If
                     End If
@@ -4258,7 +4355,7 @@ Namespace SDC.Framework
                                 sql.Append(" AND ").Append(fieldName).Append(" ").Append(GetSqlOperator(comparisonOperator, QbeFieldKind.BooleanField)).Append(" @").Append(fieldName)
                             End If
                         Case "FirstName", "LastName", "FirstLast", "LastFirst", "Email", "Phone"
-                            sql.Append(" AND ").Append(fieldName).Append(" ").Append(GetSqlOperator(comparisonOperator, QbeFieldKind.TextField)).Append(" @").Append(fieldName)
+                            sql.Append(" AND ").Append(fieldName).Append(" ").Append(ResolveTextComparison(value, comparisonOperator).SqlOperator).Append(" @").Append(fieldName)
                     End Select
                 Next
 
@@ -4284,7 +4381,7 @@ Namespace SDC.Framework
                                     cmd.Parameters.AddWithValue("@" & fieldName, parsedBit)
                                 End If
                             Case "FirstName", "LastName", "FirstLast", "LastFirst", "Email", "Phone"
-                                cmd.Parameters.AddWithValue("@" & fieldName, BuildTextFilterValue(value, comparisonOperator))
+                                cmd.Parameters.AddWithValue("@" & fieldName, ResolveTextComparison(value, comparisonOperator).Pattern)
                         End Select
                     Next
 
@@ -7640,7 +7737,17 @@ Namespace SDC.Framework
             End Try
         End Function
 
-        Private Shared Function BuildDataViewFilterExpression(table As DataTable, filters As Dictionary(Of String, String)) As String
+        ''' <summary>
+        ''' Builds the client-side filter for a page whose SQL came from FW_RoleTables.
+        '''
+        ''' <paramref name="unsupportedMessage"/> is set when a filter cannot be expressed here at
+        ''' all, rather than merely matching nothing. The caller must surface it: a filter that was
+        ''' quietly dropped returns every row, which reads as "everything matched" and is the
+        ''' opposite of what happened.
+        ''' </summary>
+        Private Shared Function BuildDataViewFilterExpression(table As DataTable,
+                                                              filters As Dictionary(Of String, String),
+                                                              ByRef unsupportedMessage As String) As String
             Dim parts As New List(Of String)()
 
             For Each kvp In filters
@@ -7662,14 +7769,25 @@ Namespace SDC.Framework
                 If Not table.Columns.Contains(fieldName) Then Continue For
 
                 Dim col = table.Columns(fieldName)
-                Dim expr = BuildSingleColumnFilterExpr(col, fieldName, comparisonOperator, rawValue)
+                Dim unsupported As String = Nothing
+                Dim expr = BuildSingleColumnFilterExpr(col, fieldName, comparisonOperator, rawValue, unsupported)
+
+                If Not String.IsNullOrWhiteSpace(unsupported) Then
+                    unsupportedMessage = unsupported
+                    Return String.Empty
+                End If
+
                 If Not String.IsNullOrEmpty(expr) Then parts.Add(expr)
             Next
 
             Return String.Join(" AND ", parts)
         End Function
 
-        Private Shared Function BuildSingleColumnFilterExpr(col As DataColumn, fieldName As String, op As QbeComparisonOperator, value As String) As String
+        Private Shared Function BuildSingleColumnFilterExpr(col As DataColumn,
+                                                            fieldName As String,
+                                                            op As QbeComparisonOperator,
+                                                            value As String,
+                                                            ByRef unsupportedMessage As String) As String
             Dim quotedField = "[" & fieldName.Replace("]", "]]" ) & "]"
 
             If col.DataType Is GetType(Boolean) Then
@@ -7693,14 +7811,26 @@ Namespace SDC.Framework
                 Return quotedField & " " & numOp & " " & value
             End If
 
-            ' Text field
-            Dim escaped = value.Replace("'", "''")
-            Select Case op
-                Case QbeComparisonOperator.NotEquals  : Return quotedField & " <> '"  & escaped & "'"
-                Case QbeComparisonOperator.Contains   : Return quotedField & " LIKE '%" & escaped & "%'"
-                Case QbeComparisonOperator.StartsWith : Return quotedField & " LIKE '"  & escaped & "%'"
-                Case QbeComparisonOperator.EndsWith   : Return quotedField & " LIKE '%" & escaped & "'"
-                Case Else                             : Return quotedField & " = '"    & escaped & "'"
+            ' Text field. Same decision as the SQL paths make, so a page filtered here and a page
+            ' filtered in the database answer a typed wildcard the same way.
+            Dim comparison = ResolveTextComparison(value, op)
+
+            If comparison.IsPatternMatch AndAlso HasInnerWildcard(comparison.Pattern) Then
+                unsupportedMessage =
+                    "A wildcard in the middle of a value cannot be used on this page." & Environment.NewLine &
+                    Environment.NewLine &
+                    "This page filters its rows after loading them, and that filter allows % only at the " &
+                    "start or the end of a value. Try " & fieldName & " with the % at one end."
+                Return String.Empty
+            End If
+
+            Dim escaped = comparison.Pattern.Replace("'", "''")
+
+            Select Case comparison.SqlOperator
+                Case "LIKE"     : Return quotedField & " LIKE '" & escaped & "'"
+                Case "NOT LIKE" : Return "NOT (" & quotedField & " LIKE '" & escaped & "')"
+                Case "<>"       : Return quotedField & " <> '" & escaped & "'"
+                Case Else       : Return quotedField & " = '" & escaped & "'"
             End Select
         End Function
 

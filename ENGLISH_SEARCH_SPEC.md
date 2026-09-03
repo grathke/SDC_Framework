@@ -232,7 +232,7 @@ The first is the main one, and it filters in memory with `DataView.RowFilter`, w
 syntax permits a wildcard only at the **start or end** of a pattern. Mid-string `LIKE '%Gl%nn%'`
 does not merely fail to match — it throws.
 
-**And it is caught and discarded:**
+It **was** caught and discarded:
 
 ```vb
 Catch
@@ -240,10 +240,13 @@ Catch
 End Try
 ```
 
-So on most pages today, an invalid filter expression returns **every row, unfiltered**, with nothing
-said. `Contains` + `Gl%nn` reaches it with no changes from this specification. That is a
-pre-existing defect, independent of English search, and worth fixing on its own: a filter that
-cannot be applied must report rather than quietly return everything.
+So an invalid filter expression returned **every row, unfiltered**, with nothing said — which reads
+as "everything matched", the opposite of what happened.
+
+**Fixed 2026-09-03**, in the same pass that made the QBE honour a typed `%`. An unusable filter now
+throws with the filter text in the message, and a mid-string wildcard is refused up front naming the
+field, rather than being discovered by a throw. Both are covered by B-21 and B-22 in
+`TEST_CASES.md`. The path table above still stands, and is still what this route rests on.
 
 Also observed while tracing, unverified as to intent: the filtered `DataView` branch returns
 `view.ToTable()` directly, bypassing `LimitBrowseRows`, while the unfiltered branch applies it.
@@ -278,5 +281,6 @@ Then `scripts\validate-browse-regression.ps1` and the manual checklist it prints
   `UpdateActiveFilterLabel` maintains (`01 FW_Base_B.vb:4103`).
 - **Dates.** Whether relative phrases — `last 30 days`, `this year` — earn their place, or v1 takes
   explicit dates only. The one part of the lexicon where scope can quietly grow.
-- **The silent-unfiltered defect** in §8 — fixed in the same pass, or separately. It is independent
-  of this work.
+~~The silent-unfiltered defect in §8~~ — fixed 2026-09-03, along with the QBE honouring a typed
+`%`. One consequence for this specification: §5's wildcard rules are now **already true of the
+QBE**, so the parser inherits them rather than introducing them.

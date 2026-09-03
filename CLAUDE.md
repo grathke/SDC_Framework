@@ -132,8 +132,8 @@ Key areas:
 - `BASE_B_QBE_LAYOUT_GUIDE.md`, `COMBO_CHECKLIST.md` — existing area-specific guides.
 - `ENGLISH_SEARCH_SPEC.md` — **proposed, not built.** An English filter box on browse pages,
   parsed locally into a SQL predicate. Read it before building any of it, and before changing QBE
-  filtering: section 8 records the three filter paths and a defect where an invalid `DataView`
-  expression silently returns every row.
+  filtering: section 8 records the three filter paths a change has to reach, which is not obvious
+  from any one of them.
 - `.github/new-page-request-template.md` and `.github/new-page-request-manual.md` — the page
   request template and how to interpret a filled-in one.
 

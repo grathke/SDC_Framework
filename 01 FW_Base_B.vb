@@ -4161,13 +4161,25 @@ Namespace SDC.Framework
             Next
         End Sub
 
+        ''' <summary>
+        ''' The operator a field starts on before anyone chooses otherwise.
+        '''
+        ''' Text defaults to Equals rather than Contains, which is a change of long standing
+        ''' behaviour and was asked for deliberately: a typed value should mean what it says, and a
+        ''' partial match should be asked for rather than assumed.
+        '''
+        ''' It only became reasonable once DataAccess.ResolveTextComparison began honouring a typed
+        ''' wildcard. Equals alone would have been a downgrade - "Rathke" would stop finding Rathkey
+        ''' with nothing on screen to explain why. With % honoured, "Rathke" is exact, "%Rathk%" is
+        ''' a partial match, and the two read the way they do in SQL. Do not restore the old default
+        ''' without also removing that, or the pair stops making sense.
+        '''
+        ''' Contains is still in the list and still does what it did. It is now the shorthand for
+        ''' people who would rather not type wildcards, and produces identical SQL to Equals with a
+        ''' value wrapped in them.
+        ''' </summary>
         Protected Overridable Function GetDefaultOperator(fieldKind As QbeFieldKind) As QbeComparisonOperator
-            Select Case fieldKind
-                Case QbeFieldKind.NumericField, QbeFieldKind.BooleanField, QbeFieldKind.DateField
-                    Return QbeComparisonOperator.EqualsTo
-                Case Else
-                    Return QbeComparisonOperator.Contains
-            End Select
+            Return QbeComparisonOperator.EqualsTo
         End Function
 
         Protected Overridable Function GetAllowedOperators(fieldKind As QbeFieldKind) As IEnumerable(Of QbeComparisonOperator)
