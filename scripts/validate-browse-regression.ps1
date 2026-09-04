@@ -56,14 +56,14 @@ if (Select-String -Path ".\01_FW_Base_B.vb" -Pattern 'AssignedManagerID' -Simple
 Write-Host "PASS: Base browse does not seed page-specific QBE fields" -ForegroundColor Green
 Assert-Pattern -Path ".\Users_AppAdmin_B.vb" -Pattern "Inherits FW_Base_B" -Description "Users browse inherits shared deleted-view guard"
 Assert-Pattern -Path ".\Roles_B.vb" -Pattern "DeletedViewGuard.TableSupportsDeletedView(ResolveCurrentRoleFieldTableName()) AndAlso DeletedViewGuard.ResultHasDeletedFlagColumn(rolesGrid)" -Description "Roles browse uses shared deleted-view guard"
-if (Select-String -Path ".\FW_HD_Issues_B.vb" -Pattern "Overrides Function GetActiveBaseSql" -SimpleMatch -Quiet) {
+if (Select-String -Path ".\100_FW_HD_Issues_B.vb" -Pattern "Overrides Function GetActiveBaseSql" -SimpleMatch -Quiet) {
     throw "FW_HD_Issues_B must use FW_Base_B SQL loading; remove the page-local GetActiveBaseSql override."
 }
 Write-Host "PASS: Help Desk browse uses shared Base_B SQL loading" -ForegroundColor Green
-if (Select-String -Path ".\FW_HD_Issues_Support_B.vb" -Pattern "Inherits FW_HD_Issues_B|New FW_HD_Issues_B" -SimpleMatch -Quiet) {
+if (Select-String -Path ".\100_FW_HD_Issues_Support_B.vb" -Pattern "Inherits FW_HD_Issues_B|New FW_HD_Issues_B" -SimpleMatch -Quiet) {
     throw "FW_HD_Issues_Support_B must be independent of FW_HD_Issues_B."
 }
-Assert-Pattern -Path ".\FW_HD_Issues_Support_B.vb" -Pattern "Inherits FW_Base_B" -Description "Support browse independently inherits shared Base_B"
+Assert-Pattern -Path ".\100_FW_HD_Issues_Support_B.vb" -Pattern "Inherits FW_Base_B" -Description "Support browse independently inherits shared Base_B"
 Assert-Pattern -Path ".\01_FW_Base_B.vb" -Pattern "Return Me.GetType().Name" -Description "Browse pages use runtime class names for FW_RoleTables keys"
 
 Write-Step "DeletedFlag hydration fallback"
@@ -124,10 +124,10 @@ Write-Host "PASS: Page Generation question labels are not raw database field nam
 Write-Step "Standard _U page hard-code guardrails"
 $standardUpdatePages = Get-ChildItem -Path $repoRoot -Filter "*_U.vb" -File |
     Where-Object { $_.Name -ne "01_FW_Base_U.vb" } |
-    Where-Object { $_.Name -notin @("FW_Registration_U.vb") } |
+    Where-Object { $_.Name -notin @("100_FW_Registration_U.vb") } |
     Where-Object { Select-String -Path $_.FullName -Pattern "Inherits FW_Base_U" -SimpleMatch -Quiet }
 
-Write-Host "PASS: FW_Registration_U.vb is an approved legacy model-backed maintenance-page exception" -ForegroundColor Yellow
+Write-Host "PASS: 100_FW_Registration_U.vb is an approved legacy model-backed maintenance-page exception" -ForegroundColor Yellow
 
 foreach ($page in $standardUpdatePages) {
     $pageText = Get-Content -Path $page.FullName -Raw
@@ -151,10 +151,10 @@ Assert-Pattern -Path ".\01_FW_Base_U.vb" -Pattern "CaptureOriginalRowVersion" -D
 Assert-Pattern -Path ".\01_FW_Base_U.vb" -Pattern "CopyOriginalRowVersion" -Description "Base maintenance page provides RowVersion copies"
 Assert-Pattern -Path ".\01_FW_Base_B.vb" -Pattern "TableHasRowVersion" -Description "Base browse page checks RowVersion schema"
 Assert-Pattern -Path ".\DataAccess.vb" -Pattern "WHERE UserID = @UserID AND RowVersion = @OriginalRowVersion" -Description "User update uses optimistic concurrency"
-Assert-Pattern -Path ".\FW_Registration_U.vb" -Pattern "ConfirmConcurrencyOverwrite" -Description "Registration handles concurrency conflicts"
+Assert-Pattern -Path ".\100_FW_Registration_U.vb" -Pattern "ConfirmConcurrencyOverwrite" -Description "Registration handles concurrency conflicts"
 Assert-Pattern -Path ".\Users_AppAdmin_U.vb" -Pattern "ConfirmConcurrencyOverwrite" -Description "Users handles concurrency conflicts"
 Assert-Pattern -Path ".\Users_AppAdmin_U.vb" -Pattern "CaptureOriginalRowVersion(UserData.RowVersion)" -Description "Users captures its original RowVersion through Base_U"
-Assert-Pattern -Path ".\FW_Registration_U.vb" -Pattern "CaptureOriginalRowVersion(currentRecord.RowVersion)" -Description "Registration captures its original RowVersion through Base_U"
+Assert-Pattern -Path ".\100_FW_Registration_U.vb" -Pattern "CaptureOriginalRowVersion(currentRecord.RowVersion)" -Description "Registration captures its original RowVersion through Base_U"
 Assert-Pattern -Path ".\Roles_U.vb" -Pattern "DataAccess.UpdateRoleField" -Description "Roles_U remains the documented custom immediate-write page"
 Assert-Pattern -Path ".\HelpDeskDataAccess.vb" -Pattern "Public Property UpdatedBy As Integer?" -Description "Help Desk nullable update actor maps to a nullable model property"
 Assert-Pattern -Path ".\HelpDeskDataAccess.vb" -Pattern "Public Property UpdatedOn As DateTime?" -Description "Help Desk nullable update timestamp maps to a nullable model property"
@@ -177,7 +177,7 @@ Assert-Pattern -Path ".\03_FW_MainMenu.vb" -Pattern "SizeType.Percent, 34.0F" -D
 Assert-Pattern -Path ".\03_FW_MainMenu.vb" -Pattern "SizeType.Percent, 33.0F" -Description "Other main-menu regions share the reduced width"
 Assert-Pattern -Path ".\MessagesWindowControl.vb" -Pattern 'inboxButton = CreateTab("Inbox (0)"' -Description "Messages control shows unread count on Inbox"
 Assert-Pattern -Path ".\MessagesWindowControl.vb" -Pattern "MarkSelectedMessageRead" -Description "Messages control marks selected Inbox messages read"
-Assert-Pattern -Path ".\FW_HD_Issues_U.vb" -Pattern "Conversation History" -Description "Help Desk update page provides conversation history"
+Assert-Pattern -Path ".\100_FW_HD_Issues_U.vb" -Pattern "Conversation History" -Description "Help Desk update page provides conversation history"
 Assert-Pattern -Path ".\MessagesWindowControl.vb" -Pattern "SelectionChanged" -Description "Messages mark the selected Inbox item read"
 Assert-Pattern -Path ".\MessagesWindowControl.vb" -Pattern "GetMessageBody" -Description "Messages provide a quick body preview"
 Assert-Pattern -Path ".\MessagesWindowControl.vb" -Pattern "Unread messages must be viewed before they can be deleted." -Description "Unread messages cannot be deleted"
