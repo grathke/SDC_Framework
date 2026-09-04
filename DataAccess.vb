@@ -519,8 +519,26 @@ Namespace SDC.Framework
                     Dim lastName As String = String.Empty
                     Dim storedPasswordHash As String = String.Empty
 
-                    If Not TryGetCurrentUserRecord(conn, emailLookup, userId, dbEmail, firstName, lastName, storedPasswordHash) Then
+                    Dim isActive As Boolean
+
+                    ' A deleted account is not found at all - the view filters it - so it reports the
+                    ' same "no user" as an address that never existed. Confirming that a deleted
+                    ' account was once real tells an attacker something and tells an honest user
+                    ' nothing they can act on.
+                    If Not TryGetCurrentUserRecord(conn, emailLookup, userId, dbEmail, firstName, lastName, storedPasswordHash, isActive) Then
                         errorMessage = "No user found for that email."
+                        Return False
+                    End If
+
+                    ' Checked before the password, and answered plainly. Somebody whose access was
+                    ' removed has a correct password and needs to know it is not the problem -
+                    ' "invalid password" would send them to reset a password that works.
+                    '
+                    ' IsActive on FW_Users is the login privilege. Until 2026-09-04 nothing checked
+                    ' it: removing somebody's access left them able to sign in, and LOGIN-03 recorded
+                    ' that it should be refused while sitting untested.
+                    If Not isActive Then
+                        errorMessage = "This account is not active. Ask an administrator to restore access."
                         Return False
                     End If
 
@@ -551,8 +569,15 @@ Namespace SDC.Framework
             End Try
         End Function
 
-        Private Shared Function TryGetCurrentUserRecord(conn As SqlConnection, emailLookup As String, ByRef userId As Integer, ByRef dbEmail As String, ByRef firstName As String, ByRef lastName As String, ByRef storedPasswordHash As String) As Boolean
-            Using cmd As New SqlCommand("SELECT TOP 1 UserId, Email, ISNULL(FirstName, ''), ISNULL(LastName, ''), ISNULL(PasswordHash, '') FROM dbo.vw_FW_CurrentUser WHERE LOWER(REPLACE(Email, ' ', '')) = @EmailLookup", conn)
+        ''' <summary>
+        ''' The account behind an email, for authentication.
+        '''
+        ''' IsActive comes back rather than being filtered, because login has to tell somebody their
+        ''' access was removed instead of claiming they do not exist. Deleted users are filtered by
+        ''' the view itself - a deleted account should not confirm it ever existed.
+        ''' </summary>
+        Private Shared Function TryGetCurrentUserRecord(conn As SqlConnection, emailLookup As String, ByRef userId As Integer, ByRef dbEmail As String, ByRef firstName As String, ByRef lastName As String, ByRef storedPasswordHash As String, ByRef isActive As Boolean) As Boolean
+            Using cmd As New SqlCommand("SELECT TOP 1 UserId, Email, ISNULL(FirstName, ''), ISNULL(LastName, ''), ISNULL(PasswordHash, ''), ISNULL(IsActive, 0) FROM dbo.vw_FW_CurrentUser WHERE LOWER(REPLACE(Email, ' ', '')) = @EmailLookup", conn)
                 cmd.Parameters.AddWithValue("@EmailLookup", emailLookup)
 
                 Using reader = cmd.ExecuteReader()
@@ -565,6 +590,7 @@ Namespace SDC.Framework
                     firstName = reader.GetString(2)
                     lastName = reader.GetString(3)
                     storedPasswordHash = reader.GetString(4)
+                    isActive = Convert.ToBoolean(reader.GetValue(5))
                     Return True
                 End Using
             End Using
@@ -1950,9 +1976,38 @@ Namespace SDC.Framework
                                                           ByRef outcome As SaveResult) As Integer
             outcome = SaveResult.Succeeded
             Dim schema = GetGeneratedPageSchema(tableName)
+
+            ' A password typed on any page is taken out of the ordinary column write and put back
+            ' through UpdateUserPasswordHash afterwards, which is the only code that knows the
+            ' contract: store the raw value, hash it keyed on the UserId, then overwrite the column
+            ' with the sentinel.
+            '
+            ' Held here rather than in each page because that is where it failed. The rule lived in
+            ' Users_AppAdmin_U alone, so a generated page editing FW_Users wrote "1234" into
+            ' [Password] as though it were any other text column and left PasswordHash null - a
+            ' plaintext password stored, and an account that could not log in. A rule enforced in one
+            ' form is not enforced.
+            Dim pendingPassword As String = Nothing
+            If IsUserPasswordTable(tableName) Then
+                pendingPassword = TakeGeneratedPasswordValue(values)
+
+                ' Refused here as well as validated on the page, for the same reason the password is
+                ' hashed here: a rule that lives only in a form is not a rule. Two accounts sharing
+                ' an email leave login picking one by row order.
+                Dim proposedEmail = GetGeneratedValueText(values, "Email")
+                If proposedEmail <> String.Empty Then
+                    Dim emailProblem = GetEmailUnavailableMessage(proposedEmail, Math.Max(0, recordId))
+                    If emailProblem <> String.Empty Then
+                        outcome = SaveResult.Failed
+                        Throw New InvalidOperationException(emailProblem)
+                    End If
+                End If
+            End If
+
             Dim writableValues = values.Where(Function(pair) schema.Columns.Contains(pair.Key) AndAlso
                                                        Not String.Equals(pair.Key, primaryKey, StringComparison.OrdinalIgnoreCase) AndAlso
-                                                       Not String.Equals(pair.Key, "RowVersion", StringComparison.OrdinalIgnoreCase)).ToList()
+                                                       Not String.Equals(pair.Key, "RowVersion", StringComparison.OrdinalIgnoreCase) AndAlso
+                                                       Not IsProtectedPasswordColumn(tableName, pair.Key)).ToList()
             Using conn As New SqlConnection(ConnectionString)
                 conn.Open()
                 If recordId <= 0 Then
@@ -1981,7 +2036,12 @@ Namespace SDC.Framework
                         AddGeneratedParameters(cmd, writableValues, schema)
                         If schema.Columns.Contains("CreatedBy") Then cmd.Parameters.Add("@CreatedBy", SqlDbType.Int).Value = userId
                         cmd.CommandText &= "; SELECT CAST(SCOPE_IDENTITY() AS INT);"
-                        Return Convert.ToInt32(cmd.ExecuteScalar(), CultureInfo.InvariantCulture)
+                        Dim insertedId = Convert.ToInt32(cmd.ExecuteScalar(), CultureInfo.InvariantCulture)
+
+                        ' After the insert, never before: the hash is keyed on the UserId, so it
+                        ' cannot be computed until the row exists and identity has issued one.
+                        ApplyGeneratedPasswordIfSupplied(tableName, insertedId, pendingPassword, userId, outcome)
+                        Return insertedId
                     End Using
                 End If
 
@@ -2005,10 +2065,110 @@ Namespace SDC.Framework
                         Return 0
                     End If
 
+                    ApplyGeneratedPasswordIfSupplied(tableName, recordId, pendingPassword, userId, outcome)
                     Return recordId
                 End Using
             End Using
         End Function
+
+        ''' <summary>
+        ''' The table whose password columns carry the hash contract. Named in one place so the
+        ''' three checks below cannot disagree about which table they are protecting.
+        ''' </summary>
+        Private Shared Function IsUserPasswordTable(tableName As String) As Boolean
+            Return String.Equals(If(tableName, String.Empty).Trim(), "FW_Users", StringComparison.OrdinalIgnoreCase)
+        End Function
+
+        ''' <summary>
+        ''' Columns a page may never write directly.
+        '''
+        ''' Password because it must be hashed on the way in; PasswordHash because it is derived and
+        ''' nothing outside ComputePasswordHashForUser is entitled to produce one. A page offering
+        ''' either as an ordinary text box is not wrong to - Password is meant to be editable - it
+        ''' simply must not reach the column as typed.
+        ''' </summary>
+        Private Shared Function IsProtectedPasswordColumn(tableName As String, columnName As String) As Boolean
+            If Not IsUserPasswordTable(tableName) Then
+                Return False
+            End If
+
+            Dim name = If(columnName, String.Empty).Trim()
+            Return String.Equals(name, "Password", StringComparison.OrdinalIgnoreCase) OrElse
+                   String.Equals(name, "PasswordHash", StringComparison.OrdinalIgnoreCase)
+        End Function
+
+        ''' <summary>
+        ''' A value from a generated page's dictionary as trimmed text, or empty when absent or null.
+        ''' </summary>
+        Private Shared Function GetGeneratedValueText(values As Dictionary(Of String, Object), columnName As String) As String
+            If values Is Nothing Then
+                Return String.Empty
+            End If
+
+            For Each key In values.Keys.Where(Function(k) String.Equals(k, columnName, StringComparison.OrdinalIgnoreCase))
+                Dim raw = values(key)
+                If raw Is Nothing OrElse IsDBNull(raw) Then
+                    Return String.Empty
+                End If
+
+                Return raw.ToString().Trim()
+            Next
+
+            Return String.Empty
+        End Function
+
+        ''' <summary>
+        ''' Lifts a typed password out of the value set, or returns Nothing when there is nothing to
+        ''' do.
+        '''
+        ''' The sentinel means the field was displayed and left alone, which is the ordinary case on
+        ''' every edit - rehashing then would replace a good password with the same one and churn
+        ''' UpdatedOn for no reason. An empty box means the same.
+        ''' </summary>
+        Private Shared Function TakeGeneratedPasswordValue(values As Dictionary(Of String, Object)) As String
+            If values Is Nothing Then
+                Return Nothing
+            End If
+
+            For Each key In values.Keys.Where(Function(k) String.Equals(k, "Password", StringComparison.OrdinalIgnoreCase)).ToList()
+                Dim raw = If(values(key) Is Nothing OrElse IsDBNull(values(key)), String.Empty, values(key).ToString()).Trim()
+                If raw = String.Empty OrElse String.Equals(raw, StoredPasswordMask, StringComparison.Ordinal) Then
+                    Return Nothing
+                End If
+
+                Return raw
+            Next
+
+            Return Nothing
+        End Function
+
+        ''' <summary>
+        ''' Puts a typed password through the hash path once the row is known.
+        '''
+        ''' Its own transaction rather than the caller's, which is a real seam: the row is committed
+        ''' before the password is. A failure here therefore leaves a saved record with no password
+        ''' rather than no record, which is why the outcome is reported rather than swallowed - the
+        ''' page must not say the save succeeded when the password did not.
+        ''' </summary>
+        Private Shared Sub ApplyGeneratedPasswordIfSupplied(tableName As String,
+                                                            recordId As Integer,
+                                                            rawPassword As String,
+                                                            updatedBy As Integer,
+                                                            ByRef outcome As SaveResult)
+            If Not IsUserPasswordTable(tableName) OrElse
+               recordId <= 0 OrElse
+               String.IsNullOrWhiteSpace(rawPassword) Then
+                Return
+            End If
+
+            If Not UpdateUserPasswordHash(recordId, rawPassword, updatedBy) Then
+                outcome = SaveResult.Failed
+                LogFallbackUsage("Password_HashFailedAfterSave",
+                                 "The record saved but the password could not be hashed for user " &
+                                 recordId.ToString(CultureInfo.InvariantCulture) & ".",
+                                 tableName)
+            End If
+        End Sub
 
         Private Shared Sub AddMissingGeneratedInsertValues(schema As DataTable, values As List(Of KeyValuePair(Of String, Object)))
             Dim existing = New HashSet(Of String)(values.Select(Function(pair) pair.Key), StringComparer.OrdinalIgnoreCase)
@@ -2413,6 +2573,140 @@ Namespace SDC.Framework
             End If
 
             Return email.Replace(" ", String.Empty).Trim().ToLowerInvariant()
+        End Function
+
+        ''' <summary>
+        ''' Whether another user already holds this email, in any registration.
+        '''
+        ''' Deliberately not scoped by registration, unlike every other uniqueness rule here. An
+        ''' email is how somebody signs in, and login does not know a registration yet - it finds the
+        ''' account first and takes the registration from it. Two accounts sharing an email means
+        ''' TryGetCurrentUserRecord's SELECT TOP 1 picks one of them by row order, so which account
+        ''' you get - which password, which roles - is undefined. That is the failure this prevents,
+        ''' and it does not respect registration boundaries.
+        '''
+        ''' Compared the way login compares, through NormalizeEmailForLookup and the same
+        ''' LOWER(REPLACE(...)) in SQL. A check that normalised differently would let through a pair
+        ''' that login then treats as the same address, which is the whole problem back again.
+        '''
+        ''' Soft-deleted rows are excluded: a deleted user must not hold an address hostage.
+        ''' excludeUserId leaves the record being edited out, so saving a user without changing
+        ''' their email does not report them as a duplicate of themselves.
+        ''' </summary>
+        Public Enum EmailAvailability
+            Free
+            HeldByActiveUser
+            HeldByDeletedUser
+            CouldNotBeChecked
+        End Enum
+
+        ''' <summary>
+        ''' Who, if anyone, already holds this email - counting soft-deleted users, and saying so
+        ''' separately.
+        '''
+        ''' A deleted row still holds its address. Letting the address be reused while that row
+        ''' exists creates a duplicate the moment somebody restores it, and RestoreUser sets
+        ''' IsActive = 1 and DeletedFlag = 0 with no check at all - so the conflict would be created
+        ''' by an operation this check never sees. Refusing up front means restore is always safe
+        ''' and needs no second rule.
+        '''
+        ''' Told apart rather than merged, because the two need different actions from whoever hit
+        ''' them: an active holder means pick another address, a deleted one means restore that user,
+        ''' change their address, or remove them for good. A single "already in use" would leave an
+        ''' administrator hunting a user they cannot see.
+        ''' </summary>
+        Public Shared Function CheckEmailAvailability(email As String, excludeUserId As Integer, ByRef holderName As String) As EmailAvailability
+            holderName = String.Empty
+
+            Dim normalized = NormalizeEmailForLookup(email)
+            If normalized = String.Empty Then
+                Return EmailAvailability.Free
+            End If
+
+            Try
+                Using conn As New SqlConnection(ConnectionString)
+                    conn.Open()
+                    Using cmd As New SqlCommand(
+                        "SELECT TOP 1 ISNULL(FirstLast, ''), ISNULL(DeletedFlag, 0) FROM dbo.FW_Users " &
+                        "WHERE LOWER(REPLACE(Email, ' ', '')) = @Email " &
+                        "AND (@ExcludeUserID = 0 OR UserId <> @ExcludeUserID) " &
+                        "ORDER BY ISNULL(DeletedFlag, 0), UserId", conn)
+                        cmd.Parameters.AddWithValue("@Email", normalized)
+                        cmd.Parameters.AddWithValue("@ExcludeUserID", excludeUserId)
+
+                        Using reader = cmd.ExecuteReader()
+                            If Not reader.Read() Then
+                                Return EmailAvailability.Free
+                            End If
+
+                            holderName = reader.GetString(0).Trim()
+                            ' Ordered so an active holder is reported ahead of a deleted one: an
+                            ' address held by both is a live conflict first.
+                            Return If(Convert.ToBoolean(reader.GetValue(1)),
+                                      EmailAvailability.HeldByDeletedUser,
+                                      EmailAvailability.HeldByActiveUser)
+                        End Using
+                    End Using
+                End Using
+            Catch
+                ' A check that cannot run must not report "free" - that would wave a duplicate
+                ' through on a transient fault. Refusing the save is the safe direction to fail.
+                Return EmailAvailability.CouldNotBeChecked
+            End Try
+        End Function
+
+        ''' <summary>
+        ''' How to refer to whoever holds an email: by name when the name says something, and by
+        ''' <paramref name="fallback"/> when it does not.
+        '''
+        ''' A name built from the address itself says nothing. FirstLast is FirstName + LastName, and
+        ''' a user entered as first name "1@1.com", last name "1@1.com" produces "1@1.com 1@1.com" -
+        ''' so the message read "The email 1@1.com already belongs to 1@1.com 1@1.com", stating the
+        ''' address three times and identifying nobody.
+        '''
+        ''' Compared through the email normaliser so spacing and case do not decide it.
+        ''' </summary>
+        Private Shared Function DescribeEmailHolder(holderName As String, email As String, fallback As String) As String
+            Dim name = If(holderName, String.Empty).Trim()
+            If name = String.Empty Then
+                Return fallback
+            End If
+
+            Dim normalizedEmail = NormalizeEmailForLookup(email)
+            If normalizedEmail <> String.Empty AndAlso
+               NormalizeEmailForLookup(name).Contains(normalizedEmail) Then
+                Return fallback
+            End If
+
+            Return name
+        End Function
+
+        ''' <summary>
+        ''' The message for an email that cannot be used, or empty when it can. One wording, used by
+        ''' both the page validation and the write boundary, so the two cannot describe the same
+        ''' refusal differently.
+        ''' </summary>
+        Public Shared Function GetEmailUnavailableMessage(email As String, excludeUserId As Integer) As String
+            Dim holderName As String = Nothing
+
+            Select Case CheckEmailAvailability(email, excludeUserId, holderName)
+                Case EmailAvailability.Free
+                    Return String.Empty
+
+                Case EmailAvailability.HeldByActiveUser
+                    Return "The email " & email.Trim() & " already belongs to " &
+                           DescribeEmailHolder(holderName, email, "another user") & "." & Environment.NewLine &
+                           "An email is how a user signs in, it must be unique."
+
+                Case EmailAvailability.HeldByDeletedUser
+                    Return "The email " & email.Trim() & " belongs to " &
+                           DescribeEmailHolder(holderName, email, "a user") & ", whose record is deleted." & Environment.NewLine &
+                           "Restore that user, change their email, or remove the record permanently - " &
+                           "reusing it now would create two accounts with one email as soon as theirs is restored."
+
+                Case Else
+                    Return "The email " & email.Trim() & " could not be checked for duplicates, so the record was not saved."
+            End Select
         End Function
 
         Private Shared Function ValidateComputedHashAgainstStored(emailWithoutSpaces As String, userId As Integer, storedHash As String) As Boolean
@@ -6530,6 +6824,36 @@ Namespace SDC.Framework
         ''' Comparison is case-insensitive; blank values are skipped so several optional fields may
         ''' be left empty. Returns True when all checks pass.
         ''' </summary>
+        ''' <summary>
+        ''' The message to show when a page is about to save a duplicate email, or empty when it is
+        ''' not. Any page editing FW_Users qualifies - hand-written or generated - because it looks
+        ''' for the control by the naming convention rather than by knowing the page.
+        ''' </summary>
+        Private Shared Function GetUserEmailDuplicateMessage(form As System.Windows.Forms.Form,
+                                                             tableName As String,
+                                                             currentRecordKey As String) As String
+            If form Is Nothing OrElse Not IsUserPasswordTable(NormalizeTableName(tableName)) Then
+                Return String.Empty
+            End If
+
+            Dim matches = form.Controls.Find("TextBox_Email", True)
+            If matches.Length = 0 Then
+                Return String.Empty
+            End If
+
+            Dim typedEmail = If(matches(0).Text, String.Empty).Trim()
+            If typedEmail = String.Empty Then
+                Return String.Empty
+            End If
+
+            ' On a new record the key is empty, so nothing is excluded and the user is compared
+            ' against every existing row - which is right, because they are not one of them yet.
+            Dim excludeUserId As Integer
+            Integer.TryParse(If(currentRecordKey, String.Empty).Trim(), excludeUserId)
+
+            Return GetEmailUnavailableMessage(typedEmail, Math.Max(0, excludeUserId))
+        End Function
+
         Public Shared Function ValidateUniqueFields(form As System.Windows.Forms.Form,
                                                     pageName As String,
                                                     tableName As String,
@@ -6538,6 +6862,17 @@ Namespace SDC.Framework
                                                     ByRef errorMessage As String) As Boolean
             errorMessage = String.Empty
             Dim failures As New List(Of String)()
+
+            ' Checked before anything else, and outside the role-field loop below, because it is a
+            ' framework invariant rather than a configurable rule: login cannot resolve an account
+            ' when two share an address. The loop would skip it anyway - every FW_Users.Email row in
+            ' FW_RoleFields has IsUnique null and IsActive 0, so the rule is switched off in data.
+            ' It is not the kind of rule an administrator should be able to switch off.
+            Dim duplicateEmailMessage = GetUserEmailDuplicateMessage(form, tableName, currentRecordKey)
+            If Not String.IsNullOrWhiteSpace(duplicateEmailMessage) Then
+                errorMessage = duplicateEmailMessage
+                Return False
+            End If
 
             Try
                 Dim normalizedTable = NormalizeTableName(tableName)
