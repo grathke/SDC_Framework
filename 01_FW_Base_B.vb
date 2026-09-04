@@ -1671,6 +1671,7 @@ Namespace SDC.Framework
                 ' Fields this role may not see are removed from the result before anything can bind
                 ' to them, so no later step can put them back on screen.
                 RemoveInvisibleRoleFieldColumns(dt)
+                RemoveBinaryColumns(dt)
                 browseGrid.DataSource = dt
                 recordCountLabel.Text = "Record Count: " & dt.Rows.Count.ToString()
                 browseGrid.ColumnHeadersVisible = True
@@ -2951,6 +2952,41 @@ Namespace SDC.Framework
                     Continue For
                 End If
 
+                table.Columns.Remove(columnName)
+            Next
+        End Sub
+
+        ''' <summary>
+        ''' Removes binary columns from the result before anything binds to them.
+        '''
+        ''' A DataGridView picks its column type from the data type, and a Byte() column becomes a
+        ''' DataGridViewImageColumn. RowVersion is a SQL timestamp - eight bytes that are not an
+        ''' image - so painting it throws ArgumentException out of GdiPlus and the grid raises its
+        ''' own error dialog. It only fires when somebody scrolls far enough right for that column
+        ''' to actually paint, which is why a page can look healthy for months.
+        '''
+        ''' Users_AppAdmin_B selects `UserID AS PK, *`, and every FW_ table has carried a RowVersion
+        ''' since sql/010, so any page selecting * can do this.
+        '''
+        ''' Removed rather than hidden, and hiding was tried first. Two reasons it failed. The
+        ''' column the grid builds for Byte() data is an image column whose own ValueType is Image,
+        ''' so a check for Byte() on the grid column never matches. And a hidden column can be put
+        ''' back - the comment on RemoveInvisibleRoleFieldColumns records a saved layout doing
+        ''' exactly that. Taking the column out of the DataTable means no image column is ever
+        ''' created, nothing can restore it, and QBE cannot derive it.
+        '''
+        ''' Safe to drop: nothing reads RowVersion from the browse result. Maintenance pages load
+        ''' their own record, and take their concurrency token from that.
+        ''' </summary>
+        Protected Overridable Sub RemoveBinaryColumns(table As DataTable)
+            If table Is Nothing OrElse table.Columns Is Nothing Then
+                Return
+            End If
+
+            For Each columnName In table.Columns.Cast(Of DataColumn)().
+                                         Where(Function(c) c.DataType Is GetType(Byte())).
+                                         Select(Function(c) c.ColumnName).
+                                         ToList()
                 table.Columns.Remove(columnName)
             Next
         End Sub
