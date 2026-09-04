@@ -183,14 +183,14 @@ Namespace SDC.Framework
             AddHandler underlyingTableNameTextBox.TextChanged, AddressOf UnderlyingTableNameTextBox_TextChanged
             Dim underlyingTableRow = fields.GetRow(underlyingTableNameTextBox)
             fields.Controls.Remove(underlyingTableNameTextBox)
-            ' Question 5 stacks the chosen table under the button that chose it. Both live in a
+            ' Question 5 puts the chosen table beside the button that chose it. Both live in a
             ' FlowLayoutPanel so the framework hosts their focus borders instead of adding a panel
             ' to the question grid.
             tableSelectionPanel = New FlowLayoutPanel With {
                 .Dock = DockStyle.Fill,
                 .AutoSize = False,
                 .WrapContents = False,
-                .FlowDirection = FlowDirection.TopDown,
+                .FlowDirection = FlowDirection.LeftToRight,
                 .Padding = New Padding(0)
             }
             selectTableButton = New Button With {
@@ -198,13 +198,29 @@ Namespace SDC.Framework
                 .Size = New Size(110, 32),
                 .FlatStyle = FlatStyle.Standard,
                 .UseVisualStyleBackColor = True,
-                .Margin = New Padding(0, 1, 0, 4)
+                .Margin = New Padding(0, 0, 8, 0)
             }
             AddHandler selectTableButton.Click, AddressOf SelectTableButton_Click
             tableSelectionPanel.Controls.Add(selectTableButton)
+            ' Nudged down so the shorter text box sits on the button's centre line rather than its top.
+            underlyingTableNameTextBox.Margin = New Padding(0, 3, 0, 0)
+
+            ' The box is read-only, so clicking it can only mean "I want to change this" - and the
+            ' one way to change it is the button beside it. The button's own handler is invoked
+            ' rather than the picker being opened again here, so there is a single path to a table
+            ' being chosen however the user asks for it.
+            '
+            ' Click, not hover. The application is served through Thinfinity VirtualUI, where
+            ' mouse-move events are coalesced and hover fires late or not at all, while a click
+            ' always arrives.
+            underlyingTableNameTextBox.Cursor = Cursors.Hand
+            AddHandler underlyingTableNameTextBox.Click, AddressOf SelectTableButton_Click
+
             tableSelectionPanel.Controls.Add(underlyingTableNameTextBox)
             fields.Controls.Add(tableSelectionPanel, 1, underlyingTableRow)
-            fields.RowStyles(underlyingTableRow).Height = 80
+            ' A single-line row now that the two sit side by side - the same height AddEntryField gives
+            ' every other one-line question, so question 6 closes up behind it.
+            fields.RowStyles(underlyingTableRow).Height = 46
 
             ' Question 6 is the Select Fields button. The four fields it fills hang off it as
             ' bullets rather than questions of their own, because none of them is answered by
