@@ -24,6 +24,7 @@ Namespace SDC.Framework
         Private ReadOnly databaseConfigButton As DashboardIconButton
         Private ReadOnly companyDashboardButton As DashboardIconButton
         Private ReadOnly closeIconButton As Button
+        Private ReadOnly generatedUserX_BButton As DashboardIconButton
         Private ReadOnly generatedFW_UserAccessExplanation_BButton As DashboardIconButton
         Private iconDragController As DashboardIconDragController
         Private iconImageController As IconImageController
@@ -269,6 +270,25 @@ Namespace SDC.Framework
             generatedFW_UserAccessExplanation_BButton.FlatAppearance.MouseOverBackColor = Color.Transparent
             generatedFW_UserAccessExplanation_BButton.FlatAppearance.MouseDownBackColor = Color.Transparent
 
+
+            generatedUserX_BButton = New DashboardIconButton() With {
+                .Name = "ActionKey_UserX_B",
+                .Text = "UserX",
+                .Location = DashboardGridLayout.CellLocation(1, 5),
+                .Size = New Size(DashboardGridLayout.IconWidth, DashboardGridLayout.IconHeight),
+                .BackColor = Color.Transparent,
+                .UseVisualStyleBackColor = False,
+                .FlatStyle = FlatStyle.Flat,
+                .Font = New Font("Segoe UI", 13.0F, FontStyle.Regular),
+                .Image = LoadDashboardIcon("Color_OK.png", SystemIcons.Application.ToBitmap()),
+                .TextImageRelation = TextImageRelation.ImageAboveText,
+                .ImageAlign = ContentAlignment.TopCenter,
+                .TextAlign = ContentAlignment.BottomCenter,
+                .TabStop = False
+            }
+            generatedUserX_BButton.FlatAppearance.BorderSize = 0
+            generatedUserX_BButton.FlatAppearance.MouseOverBackColor = Color.Transparent
+            generatedUserX_BButton.FlatAppearance.MouseDownBackColor = Color.Transparent
             AddHandler Me.Load, AddressOf Dashboard_Application_Load
             AddHandler Me.Resize, AddressOf Dashboard_Application_Resize
             AddHandler rolesButton.MouseEnter, AddressOf IconButton_MouseEnter
@@ -301,8 +321,12 @@ Namespace SDC.Framework
             AddHandler generatedFW_UserAccessExplanation_BButton.MouseEnter, AddressOf IconButton_MouseEnter
             AddHandler generatedFW_UserAccessExplanation_BButton.MouseLeave, AddressOf IconButton_MouseLeave
             AddHandler generatedFW_UserAccessExplanation_BButton.Click, AddressOf GeneratedFW_UserAccessExplanation_BButton_Click
+            AddHandler generatedUserX_BButton.MouseEnter, AddressOf IconButton_MouseEnter
+            AddHandler generatedUserX_BButton.MouseLeave, AddressOf IconButton_MouseLeave
+            AddHandler generatedUserX_BButton.Click, AddressOf GeneratedUserX_BButton_Click
             AddHandler closeIconButton.Click, AddressOf CloseButton_Click
             Me.Controls.Add(generatedFW_UserAccessExplanation_BButton)
+            Me.Controls.Add(generatedUserX_BButton)
             Me.Controls.Add(topStripLabel)
             Me.Controls.Add(closeIconButton)
             Me.Controls.Add(headerLabel)
@@ -351,6 +375,8 @@ Namespace SDC.Framework
 
         Private Sub Dashboard_Application_Resize(sender As Object, e As EventArgs)
             rolesButton.Top = DashboardGridLayout.CellTop(1)
+            generatedUserX_BButton.Left = DashboardGridLayout.CellLeft(5)
+            generatedUserX_BButton.Top = DashboardGridLayout.CellTop(1)
             generatedFW_UserAccessExplanation_BButton.Left = DashboardGridLayout.CellLeft(4)
             generatedFW_UserAccessExplanation_BButton.Top = DashboardGridLayout.CellTop(1)
             userAdminButton.Top = DashboardGridLayout.CellTop(1)
@@ -456,6 +482,13 @@ Namespace SDC.Framework
         Private Sub GeneratedFW_UserAccessExplanation_BButton_Click(sender As Object, e As EventArgs)
             ResetIconButtonVisuals()
             Using page As New FW_UserAccessExplanation_B(currentUser, accessProfile)
+                page.ShowDialog(Me)
+            End Using
+        End Sub
+
+        Private Sub GeneratedUserX_BButton_Click(sender As Object, e As EventArgs)
+            ResetIconButtonVisuals()
+            Using page As New UserX_B(currentUser, accessProfile)
                 page.ShowDialog(Me)
             End Using
         End Sub
