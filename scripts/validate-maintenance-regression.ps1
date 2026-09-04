@@ -1,4 +1,4 @@
-﻿[CmdletBinding()]
+[CmdletBinding()]
 param(
     [switch]$SkipBuild
 )
@@ -53,9 +53,13 @@ function Assert-Absent {
 }
 
 # Every _U page, and the ones that own shared behavior.
-$maintenancePages = @(Get-ChildItem -Path $repoRoot -Filter "*_U.vb" -File |
-    Where-Object { $_.Name -ne "01_FW_Base_U.vb" } |
-    ForEach-Object { ".\$($_.Name)" })
+# Recursive since 2026-09-04: the pages moved into 000_FRAMEWORK\<band>\ folders, and a
+# non-recursive scan of the repository root silently found none - which surfaced as
+# "Cannot bind argument to parameter 'Path'" rather than as zero pages checked.
+$maintenancePages = @(Get-ChildItem -Path $repoRoot -Filter "*_U.vb" -File -Recurse |
+    Where-Object { $_.FullName -notmatch '\\(bin|obj|restore-points|project-backup|tests)\\' } |
+    Where-Object { $_.Name -ne "Base_U.vb" } |
+    ForEach-Object { $_.FullName })
 
 Write-Step "Maintenance framework static validation"
 Write-Host "Pages in scope: $($maintenancePages.Count)" -ForegroundColor Gray
@@ -69,14 +73,14 @@ if (-not $SkipBuild) {
 }
 
 Write-Step "Field lifecycle order in Base_U"
-Assert-Pattern -Path ".\01_FW_Base_U.vb" -Pattern "AdoptRequiredBorderPanels()" -Description "Base_U adopts the metadata required-border panels"
-Assert-Pattern -Path ".\01_FW_Base_U.vb" -Pattern "CollapseHiddenFieldRows()" -Description "Hidden-field rows are collapsed"
-Assert-Pattern -Path ".\01_FW_Base_U.vb" -Pattern "suppressRequiredTouch = True" -Description "The page's own initial focus does not count as visiting a field"
-Assert-Pattern -Path ".\01_FW_Base_U.vb" -Pattern "ShouldShowRequiredWarning" -Description "Red required border uses the shared visited-and-empty rule"
+Assert-Pattern -Path ".\000_FRAMEWORK\000_BASECLASSES\Base_U.vb" -Pattern "AdoptRequiredBorderPanels()" -Description "Base_U adopts the metadata required-border panels"
+Assert-Pattern -Path ".\000_FRAMEWORK\000_BASECLASSES\Base_U.vb" -Pattern "CollapseHiddenFieldRows()" -Description "Hidden-field rows are collapsed"
+Assert-Pattern -Path ".\000_FRAMEWORK\000_BASECLASSES\Base_U.vb" -Pattern "suppressRequiredTouch = True" -Description "The page's own initial focus does not count as visiting a field"
+Assert-Pattern -Path ".\000_FRAMEWORK\000_BASECLASSES\Base_U.vb" -Pattern "ShouldShowRequiredWarning" -Description "Red required border uses the shared visited-and-empty rule"
 
 # CollapseHiddenFieldRows and the dirty baseline both depend on Control.Visible, which lies until
 # the form is shown. Guard the ordering rather than the mere presence of the calls.
-$baseU = Get-Content ".\01_FW_Base_U.vb" -Raw
+$baseU = Get-Content ".\000_FRAMEWORK\000_BASECLASSES\Base_U.vb" -Raw
 $shownHandler = [regex]::Match($baseU, "(?s)Private Sub FW_Base_U_Shown.*?End Sub").Value
 if (-not $shownHandler) {
     throw "Could not locate FW_Base_U_Shown; the lifecycle order can no longer be verified."
@@ -92,21 +96,21 @@ if ($shownHandler.IndexOf("ResetPendingRecordBaseline()") -lt $shownHandler.Inde
 Write-Host "PASS: Shown handler runs collapse, tab order, focus and baseline in that order" -ForegroundColor Green
 
 Write-Step "Hidden fields keep their value"
-Assert-Pattern -Path ".\FieldPermissions.vb" -Pattern "FreezeBoundValue(ctrl)" -Description "HideField detaches bindings so a hidden field is not blanked by validation"
-Assert-Pattern -Path ".\DataAccess.vb" -Pattern "If FlagOrDefault(row, ""Make_Invisible"", False) Then" -Description "Make_Invisible is applied before required styling"
+Assert-Pattern -Path ".\000_FRAMEWORK\500_INFRASTRUCTURE\Security\FieldPermissions.vb" -Pattern "FreezeBoundValue(ctrl)" -Description "HideField detaches bindings so a hidden field is not blanked by validation"
+Assert-Pattern -Path ".\000_FRAMEWORK\500_INFRASTRUCTURE\Data\DataAccess.vb" -Pattern "If FlagOrDefault(row, ""Make_Invisible"", False) Then" -Description "Make_Invisible is applied before required styling"
 
 Write-Step "Field permissions are derived from the page, not from a stored enumeration"
-Assert-Pattern -Path ".\DataAccess.vb" -Pattern "CollectBoundControls(form, form, normalizedTable, columns, derived)" -Description "GetControlUpdates derives the control mapping from the live form"
-Assert-Absent -Path @(".\DataAccess.vb") -Pattern "FROM dbo.vw_FW_ControlUpdates_U" -Description "Nothing reads the enumeration view"
-Assert-Absent -Path @(".\DataAccess.vb") -Pattern "SELECT ControlName, FileLink FROM dbo.FW_Enumerations_U" -Description "The control field map is derived, not read from the enumeration"
-Assert-Pattern -Path ".\01_FW_Base_U.vb" -Pattern "ReportUnmappedFieldControls()" -Description "A control mapping to no column is reported rather than failing silently"
-Assert-Pattern -Path ".\01_FW_Base_U.vb" -Pattern "okButton.Enabled = False" -Description "An unmapped field stops the page saving"
-Assert-Pattern -Path ".\01_FW_Base_U.vb" -Pattern "An unbound field declaration needs a reason." -Description "An intentional unbound control must state why"
+Assert-Pattern -Path ".\000_FRAMEWORK\500_INFRASTRUCTURE\Data\DataAccess.vb" -Pattern "CollectBoundControls(form, form, normalizedTable, columns, derived)" -Description "GetControlUpdates derives the control mapping from the live form"
+Assert-Absent -Path @(".\000_FRAMEWORK\500_INFRASTRUCTURE\Data\DataAccess.vb") -Pattern "FROM dbo.vw_FW_ControlUpdates_U" -Description "Nothing reads the enumeration view"
+Assert-Absent -Path @(".\000_FRAMEWORK\500_INFRASTRUCTURE\Data\DataAccess.vb") -Pattern "SELECT ControlName, FileLink FROM dbo.FW_Enumerations_U" -Description "The control field map is derived, not read from the enumeration"
+Assert-Pattern -Path ".\000_FRAMEWORK\000_BASECLASSES\Base_U.vb" -Pattern "ReportUnmappedFieldControls()" -Description "A control mapping to no column is reported rather than failing silently"
+Assert-Pattern -Path ".\000_FRAMEWORK\000_BASECLASSES\Base_U.vb" -Pattern "okButton.Enabled = False" -Description "An unmapped field stops the page saving"
+Assert-Pattern -Path ".\000_FRAMEWORK\000_BASECLASSES\Base_U.vb" -Pattern "An unbound field declaration needs a reason." -Description "An intentional unbound control must state why"
 
 Write-Step "Single owner for shared field tests"
-Assert-Pattern -Path ".\DataAccess.vb" -Pattern "Public Shared Function IsEmptyComboSelection" -Description "One owner for the empty-combo test"
-Assert-Absent -Path @(".\01_FW_Base_U.vb") -Pattern "Integer.TryParse(combo.SelectedValue.ToString(), selectedValue)" -Description "Base_U does not re-derive the empty-combo test"
-Assert-Pattern -Path ".\SmartyAddressLookupController.vb" -Pattern "Public Shared Function IsSessionLookupEnabled" -Description "One owner for the Smarty session test"
+Assert-Pattern -Path ".\000_FRAMEWORK\500_INFRASTRUCTURE\Data\DataAccess.vb" -Pattern "Public Shared Function IsEmptyComboSelection" -Description "One owner for the empty-combo test"
+Assert-Absent -Path @(".\000_FRAMEWORK\000_BASECLASSES\Base_U.vb") -Pattern "Integer.TryParse(combo.SelectedValue.ToString(), selectedValue)" -Description "Base_U does not re-derive the empty-combo test"
+Assert-Pattern -Path ".\000_FRAMEWORK\500_INFRASTRUCTURE\Controllers\SmartyAddressLookupController.vb" -Pattern "Public Shared Function IsSessionLookupEnabled" -Description "One owner for the Smarty session test"
 Assert-Absent -Path $maintenancePages -Pattern "SessionState.Current.Value.Smarty_UseEmbeddedKey" -Description "No page re-derives the Smarty session test"
 
 Write-Step "No page-local copies of shared behavior"
@@ -118,14 +122,14 @@ Assert-Absent -Path $maintenancePages -Pattern "THE FOLLOWING ARE REQUIRED" -Des
 Assert-Absent -Path $maintenancePages -Pattern '"Zip Coder"' -Description "No page hard-codes the Zip Coder caption; ZipCoderController owns it"
 
 Write-Step "Save and concurrency contract"
-Assert-Pattern -Path ".\01_FW_Base_U.vb" -Pattern "CaptureOriginalRowVersion" -Description "RowVersion is captured for concurrency"
-Assert-Pattern -Path ".\01_FW_Base_U.vb" -Pattern "ShowConcurrencyUnavailable" -Description "Missing concurrency protection is surfaced"
+Assert-Pattern -Path ".\000_FRAMEWORK\000_BASECLASSES\Base_U.vb" -Pattern "CaptureOriginalRowVersion" -Description "RowVersion is captured for concurrency"
+Assert-Pattern -Path ".\000_FRAMEWORK\000_BASECLASSES\Base_U.vb" -Pattern "ShowConcurrencyUnavailable" -Description "Missing concurrency protection is surfaced"
 
 # Documented exception: Page Generation is a one-off page whose questions are numbered and laid out
 # in the order they must be answered, so it opts out of the shared tab order manager. The default
 # stays True in Base_U for every other _U page.
-Assert-Pattern -Path ".\01_FW_Base_U.vb" -Pattern "Protected Overridable Function SupportsTabOrderManager" -Description "Tab order manager is opt-out, defaulting to on"
-Assert-Pattern -Path ".\PageGeneration_U.vb" -Pattern "Protected Overrides Function SupportsTabOrderManager" -Description "Page Generation declares its tab order manager exception"
+Assert-Pattern -Path ".\000_FRAMEWORK\000_BASECLASSES\Base_U.vb" -Pattern "Protected Overridable Function SupportsTabOrderManager" -Description "Tab order manager is opt-out, defaulting to on"
+Assert-Pattern -Path ".\000_FRAMEWORK\070_PAGEGENERATION\PageGeneration_U.vb" -Pattern "Protected Overrides Function SupportsTabOrderManager" -Description "Page Generation declares its tab order manager exception"
 foreach ($page in $maintenancePages) {
     if (Select-String -Path $page -Pattern "Overrides Function SaveRecord" -SimpleMatch -Quiet) {
         if (-not (Select-String -Path $page -Pattern "CaptureOriginalRowVersion" -SimpleMatch -Quiet) -and

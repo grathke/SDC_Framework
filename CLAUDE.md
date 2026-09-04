@@ -63,7 +63,7 @@ whether something is expected of them.
   decision; length for its own sake is not.
 - Read the full relevant file before changing it. Never apply a generic solution without first
   understanding the existing code.
-- Before editing `01_FW_Base_B.vb` or `01_FW_Base_U.vb`, read the section of `FRAMEWORK_NOTES.md`
+- Before editing `000_FRAMEWORK\000_BASECLASSES\Base_B.vb` or `000_FRAMEWORK\000_BASECLASSES\Base_U.vb`, read the section of `FRAMEWORK_NOTES.md`
   that covers the behavior being changed. The contracts there are not obvious from a single call
   site, and getting one backwards is expensive: the required-field colour precedence was argued the
   wrong way round on 2026-08-31 because the documented rule was never consulted.
@@ -111,7 +111,57 @@ alone.
 ## Project
 
 VB.NET Windows Forms line-of-business application targeting `net10.0-windows` (.NET SDK 10 preview).
-Source files live flat in the repository root.
+Source files live under `000_FRAMEWORK/`, in numbered bands ordered by how often a folder is
+opened rather than by layer. Folder names are uppercase throughout, which reads faster in a tree
+than mixed case does:
+
+```
+000_BASECLASSES   Base_B, Base_U             <- edited directly
+005_STARTUP       Program, LoginForm
+010_MAINMENU      the shell
+020_DASHBOARDS    Application, Company, ...
+
+040_USERS         050_REGISTRATION   060_ROLES      070_PAGEGENERATION
+080_HELPDESK      085_MESSAGING      090_DIAGNOSTICS
+
+500_INFRASTRUCTURE/  Controllers  Data  Helpers  Security  Widgets
+```
+
+**The number carries the meaning, not the name.** Below 500 is worked on. `500_INFRASTRUCTURE` is
+the plumbing — read far more often than it is changed — so it is one folder rather than four in
+the scroll, and it sits at the bottom. Move a folder into the 500 band when it turns out to be one
+nobody opens.
+
+**Case says how deep you are.** A numbered band folder is `UPPERCASE`; anything nested inside one
+is `PascalCase` — `500_INFRASTRUCTURE/Data`. Nested folders take no
+number, because once they are grouped nothing about their order matters. The two cases together
+mean a path tells you its own shape before you have read the words.
+
+`100_PROJECTS/` is for the applications built on the framework, one folder per project. Its first
+occupant is `SDC/MenuFormInitializer.vb`, which is the boundary made concrete: `FW_MainMenu` in
+`010_MAINMENU` renders a ribbon, and the initializer decides which tiles that ribbon has, under
+its own `MenuSurfaceName` so each application's saved arrangements stay separate. A second
+application writes its own and changes nothing in `000_FRAMEWORK`.
+
+`900_SANDBOX/` is for experiments, and is excluded from compilation in the project file, the way
+`tests` and `project-backup` are.
+
+A generated `_B`/`_U` pair is written to the **repository root**, deliberately. It is a draft: you
+review it and then file it by hand, either into a band under `000_FRAMEWORK` or into the project it
+belongs to under `100_PROJECTS`. Which of those it is depends on what the page turns out to be, and
+the generator cannot know that — so it leaves the pair in plain sight rather than in a folder that
+would make an unfiled page look settled. The SDK glob compiles the root, so the page works before
+it is filed.
+
+Folder numbers are three digits throughout, so they sort correctly under a plain lexicographic
+sort as well as a natural one. **Files inside them carry no number and no `FW_` prefix** — the
+folder says both, and two orderings that can disagree is how they drift apart. Class names are
+unchanged: `000_FRAMEWORK/000_BASECLASSES/Base_B.vb` still declares `FW_Base_B`.
+
+A script that scans for pages must recurse. Two guardrail scripts scanned the root
+non-recursively and, after the move, one failed outright and the other passed while checking
+nothing — the second being the more dangerous. Both now recurse and report how many files they
+found.
 
 **Delivery: Thinfinity VirtualUI, in the browser over HTML5.** The application is not installed on
 the user's machine. It runs on a server and the browser carries pixels and events, so "the user's
@@ -133,7 +183,7 @@ session, so delivery constraints do not apply to it.
 
 Key areas:
 
-- Page framework: `01_FW_Base_B.vb` (browse pages) and `01_FW_Base_U.vb` (maintenance pages).
+- Page framework: `000_FRAMEWORK\000_BASECLASSES\Base_B.vb` (browse pages) and `000_FRAMEWORK\000_BASECLASSES\Base_U.vb` (maintenance pages).
 - Data access: `DataAccess.vb`, plus `HelpDeskDataAccess.vb` and `MessagingDataAccess.vb`.
 - Models: `Models.vb`.
 - Entry point and shell: `Program.vb`, `LoginForm.vb`, `MainMenu.vb`.
@@ -363,7 +413,7 @@ name that no longer resolves.
 
 ## QBE Visibility Guardrail (Required)
 
-- Before the first substantive edit to `01_FW_Base_B.vb`, run the `Create Base_B Restore Point` task. Do not edit Base_B until its timestamped restore point is created.
+- Before the first substantive edit to `000_FRAMEWORK\000_BASECLASSES\Base_B.vb`, run the `Create Base_B Restore Point` task. Do not edit Base_B until its timestamped restore point is created.
 - QBE fields must be derived only from visible browse-grid columns after all standard hiding and saved-layout rules have been applied.
 - Internal maintenance aliases, including `PK`, must never appear in the browse grid, QBE, columns manager, or user-facing field lists.
 - A real ID column explicitly selected by page SQL, such as `IssueID`, is distinct from the internal `PK` alias and may appear when visible.
@@ -425,7 +475,7 @@ See also `BASE_B_QBE_LAYOUT_GUIDE.md`.
 
 ## Save And Model Contract Guardrail (Required)
 
-- Before the first substantive edit to `01_FW_Base_U.vb`, run the `Create Base_U Restore Point` task. Do not edit Base_U until its timestamped restore point is created.
+- Before the first substantive edit to `000_FRAMEWORK\000_BASECLASSES\Base_U.vb`, run the `Create Base_U Restore Point` task. Do not edit Base_U until its timestamped restore point is created.
 - Standard `_U` pages must use the shared save result contract and must distinguish success, conflict, deleted record, unavailable concurrency protection, and failure.
 - Record identity, registration context, and concurrency tokens must survive every load, clone, form-bind, validation, and record-rebuild path.
 - Model and data-reader nullability must match the database contract. A nullable database column must map to a nullable model property and safe `DBNull` conversion; never make it required merely because a current page does not display it.

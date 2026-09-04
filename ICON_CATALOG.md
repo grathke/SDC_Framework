@@ -8,7 +8,7 @@ rule, click behavior.
 
 Registration happens in two places:
 
-- `03_FW_MainMenu.vb` builds the ribbon and owns `UpsertActionTile`, `ConfigureActionVisibility`,
+- `000_FRAMEWORK\010_MAINMENU\MainMenu.vb` builds the ribbon and owns `UpsertActionTile`, `ConfigureActionVisibility`,
   `SetActionIconFromFile`.
 - `MenuFormInitializer.Configure` decides which actions are visible for the session and adds
   page-specific tiles such as `user-admin`.
@@ -27,8 +27,8 @@ last is supplied by `MenuFormInitializer`, not by the menu form, because one men
 more than one application; a second application's initializer passes its own name and keeps its own
 pictures.
 
-- The filename written in `02_FW_Dashboard_Application.vb`, `02_FW_Dashboard_Company.vb` or the
-  `AddActionTile` calls in `03_FW_MainMenu.vb` is the **default**, not necessarily what is on
+- The filename written in `000_FRAMEWORK\020_DASHBOARDS\Dashboard_Application.vb`, `000_FRAMEWORK\020_DASHBOARDS\Dashboard_Company.vb` or the
+  `AddActionTile` calls in `000_FRAMEWORK\010_MAINMENU\MainMenu.vb` is the **default**, not necessarily what is on
   screen. "Reset to Default" clears the override and returns to it.
 - `UpdateRoleSelectionTile` rebuilds the role tile from source on every role change, picture
   included, and puts the chosen one back afterwards. Anything else that rewrites a tile's `Image`
@@ -57,7 +57,7 @@ can only have their pictures changed. It is a flow panel so that a pinned tile h
 permission lets the rest close up behind it.
 
 Both panels use one tile size and one margin — `TileWidth`, `TileHeight`, `TileMargin` in
-`03_FW_MainMenu.vb` — so spacing is identical across the ribbon and the pinned panel is sized to
+`000_FRAMEWORK\010_MAINMENU\MainMenu.vb` — so spacing is identical across the ribbon and the pinned panel is sized to
 exactly the tiles it holds. When a tile is hidden the remaining ones pack together and the spare
 room collects at the end of the panel; no hole is left where the hidden one was.
 
@@ -210,7 +210,7 @@ all of it. There is deliberately no way to ask for different behavior.
 
 ## database-config
 
-- placement: Application dashboard (`02_FW_Dashboard_Application.vb`), grid cell 2,4
+- placement: Application dashboard (`000_FRAMEWORK\020_DASHBOARDS\Dashboard_Application.vb`), grid cell 2,4
 - ActionType: Command / configuration dialog
 - target: `FW_DatabaseConfig`, behind `DeveloperAccessGate.Prompt`
 - caption source: fixed (`Database Config`)
@@ -223,7 +223,7 @@ all of it. There is deliberately no way to ask for different behavior.
 
 ## dashboard-company
 
-- placement: Application dashboard (`02_FW_Dashboard_Application.vb`), grid cell 3,2
+- placement: Application dashboard (`000_FRAMEWORK\020_DASHBOARDS\Dashboard_Application.vb`), grid cell 3,2
 - ActionType: Navigation / dialog
 - target: `Dashboard_Company`, opened with `ShowDialog`
 - caption source: fixed (`Company` / `Dashboard`, on two lines)

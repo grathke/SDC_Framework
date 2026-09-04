@@ -89,7 +89,7 @@ App Admin only. Both are global: one arrangement and one set of pictures for eve
 
 ## U — Maintenance pages
 
-Mostly verified on `Users_AppAdmin_U` during 2026-08-29/30. Re-run after changes to `01_FW_Base_U.vb`.
+Mostly verified on `Users_AppAdmin_U` during 2026-08-29/30. Re-run after changes to `000_FRAMEWORK\000_BASECLASSES\Base_U.vb`.
 
 | ID | Case | Expected | Status |
 |---|---|---|---|
@@ -193,6 +193,7 @@ compiled**.
 | GEN-21 | A saved lookup survives a key rename | Rename a lookup table's key, then open the request and save it. The stored spec is rebuilt from the declared foreign key rather than written back as loaded, and regenerating emits the new key. **Was a defect:** `FW_Gender.ID` became `GenderID` and every saved spec still said `ID`. Re-saving could not correct it — `JoinLookupFields` replayed the sentence it loaded, and the schema was consulted only when the Lookup box was ticked. The generated `_U` page then threw `Invalid column name 'ID'` on load. Note the browse SQL was correct throughout, because it reads `LookupTarget` instead. | pass 2026-09-02 — untick/re-tick produced `FW_Gender.GenderID`; the rebuild now makes the tick unnecessary |
 | GEN-22 | A lookup needs a declared foreign key | With no foreign key on the column, the `_B` grid's Displays cell is a read-only grey box and the `_U` Lookup tick is disabled — the generator reads declared relationships only. Declare the key and both become live. **Was a defect:** `FW_ENTITY.GenderID -> FW_GENDER` was never created because `sql/049` named `FW_GENDER.ID`, a column that has never existed; the statement failed and the `GO` after it let the second key succeed, so one of the two was silently missing. | pass 2026-09-02 — `sql/056` declared it against `FW_Gender.GenderID`, trusted; the Displays dropdown appeared |
 | GEN-23 | A page that cannot load says why | Force a generated page to throw on load. A dialog names the error and the log path instead of the window silently never opening. **Was a defect:** `Program.OnThreadException` logged to `startup.log` and showed nothing, so double-click and Modify appeared to do nothing at all — the failure was invisible for an entire session despite being logged 48 times. | untested |
+| GEN-24 | The dashboard is found wherever it lives | Generate a browse page with `MenuCaller` set to `Dashboard_Application`. The icon is added to `000_FRAMEWORK\020_DASHBOARDS\Dashboard_Application.vb`, and Preview Code names that file rather than one that does not exist. **Was a defect:** the path was derived as `"02_FW_" & menuCaller & ".vb"` at the workspace root, and the 2026-09-04 folder reorganisation invalidated both halves — the `##_FW_` prefix went and the file moved into a band folder. Generation reported "could not be found"; Preview Code silently claimed the button would be added to `02_FW_Dashboard_Application.vb`. Invisible to both the build and a normal run, since only the generator executes this path. Now searched for rather than derived. | untested |
 
 ---
 

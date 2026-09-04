@@ -25,11 +25,17 @@ $restorePoint = Join-Path $repoRoot "restore-points\$timestamp-base-u-$safeDescr
 
 New-Item -ItemType Directory -Path $restorePoint -Force | Out-Null
 
+# The maintenance counterparts, not the browse ones. This list was copied from
+# create-base-b-restore-point.ps1 and kept its siblings' script and guide, so a Base_U restore point
+# preserved the browse validation script and the Base_B QBE guide - neither of which a Base_U change
+# can invalidate - while capturing nothing that describes the contract being changed. It restored
+# cleanly and protected the wrong thing, which is the failure a restore point cannot afford.
 $files = @(
-    "01_FW_Base_U.vb",
-    "scripts\validate-browse-regression.ps1",
+    "000_FRAMEWORK\000_BASECLASSES\Base_U.vb",
+    "scripts\validate-maintenance-regression.ps1",
     "CLAUDE.md",
-    "BASE_B_QBE_LAYOUT_GUIDE.md"
+    "FRAMEWORK_NOTES.md",
+    "COMBO_CHECKLIST.md"
 )
 
 foreach ($relativePath in $files) {
@@ -47,10 +53,11 @@ foreach ($relativePath in $files) {
 - Created: $(Get-Date -Format "yyyy-MM-dd HH:mm:ss")
 - Purpose: $Description
 - Files captured:
-    - 01_FW_Base_U.vb
-    - scripts/validate-browse-regression.ps1
+    - 000_FRAMEWORK\000_BASECLASSES\Base_U.vb
+    - scripts/validate-maintenance-regression.ps1
     - CLAUDE.md
-    - BASE_B_QBE_LAYOUT_GUIDE.md
+    - FRAMEWORK_NOTES.md
+    - COMBO_CHECKLIST.md
 "@ | Set-Content -LiteralPath (Join-Path $restorePoint "RESTORE_POINT.md") -Encoding ascii
 
 Write-Host "BASE_U RESTORE POINT CREATED: $restorePoint" -ForegroundColor Green

@@ -226,6 +226,14 @@ Namespace SDC.Framework
             End If
             If Not plan.IsValid Then Return plan
 
+            ' Written to the workspace root on purpose, not left there by the 2026-09-04 folder
+            ' reorganisation. A generated pair is a draft: it is reviewed and then filed by hand,
+            ' either into a band under 000_FRAMEWORK or into the project it belongs to under
+            ' 100_PROJECTS, and which of those it is depends on what the page turns out to be. The
+            ' generator cannot know that, so it does not guess - it leaves the pair in plain sight
+            ' at the root, where an unfiled page is obvious rather than buried in a folder that
+            ' makes it look settled. The SDK glob compiles the root, so a page works before it is
+            ' filed and nothing breaks while the decision is pending.
             plan.BrowsePath = Path.Combine(workspaceRoot, plan.BrowsePageName & ".vb")
             plan.MaintenancePath = Path.Combine(workspaceRoot, plan.MaintenancePageName & ".vb")
 
@@ -304,9 +312,9 @@ Namespace SDC.Framework
             If Not plan.GenerateBrowsePage OrElse Not IsDashboardCaller(plan.MenuCaller) Then
                 lines.Add("  NONE. MENU CALLER IS " & If(String.IsNullOrWhiteSpace(plan.MenuCaller), "NOT SET", plan.MenuCaller) & ", WHICH IS NOT A DASHBOARD")
             ElseIf DashboardIconExists(workspaceRoot, plan.MenuCaller, plan.BrowsePageName) Then
-                lines.Add("  ALREADY PRESENT ON " & DashboardSourceFileName(plan.MenuCaller) & ", NO CHANGE")
+                lines.Add("  ALREADY PRESENT ON " & DashboardSourceFileName(workspaceRoot, plan.MenuCaller) & ", NO CHANGE")
             Else
-                lines.Add("  WOULD BE ADDED TO " & DashboardSourceFileName(plan.MenuCaller) & " FOR " & plan.BrowsePageName)
+                lines.Add("  WOULD BE ADDED TO " & DashboardSourceFileName(workspaceRoot, plan.MenuCaller) & " FOR " & plan.BrowsePageName)
                 lines.Add("  IMAGE: " & If(String.IsNullOrWhiteSpace(plan.IconFileName),
                                            "NONE CHOSEN, THE DEFAULT GLYPH IS USED",
                                            plan.IconFileName))
@@ -470,11 +478,17 @@ Namespace SDC.Framework
             })
         End Function
 
-        ''' A dashboard is a class named Dashboard_<Name>, and its source file is
-        ''' "02_FW_Dashboard_<Name>.vb" - the ##_FW_ file naming convention. Both halves are
-        ''' convention, so adding a dashboard needs no
-        ''' edit here and none in the Menu Caller list: create the pair and it becomes a valid
-        ''' target. DashboardCallers discovers the classes; DashboardSourceFileName derives the file.
+        ''' A dashboard is a class named Dashboard_<Name>, and its source file is the file that
+        ''' declares it. Adding a dashboard needs no edit here and none in the Menu Caller list:
+        ''' create the pair and it becomes a valid target. DashboardCallers discovers the classes;
+        ''' ResolveDashboardSourcePath finds the file.
+        '''
+        ''' The path is searched for rather than derived. It used to be built as
+        ''' "02_FW_" & menuCaller & ".vb" at the workspace root, and the folder reorganisation on
+        ''' 2026-09-04 invalidated both halves at once - the prefix went and the file moved into
+        ''' 000_FRAMEWORK\020_DASHBOARDS. A derived path fails on the next move too, and it fails
+        ''' where nothing is watching: the build cannot see it, and the running application never
+        ''' executes this code. A search survives any arrangement of folders.
         Public Const DashboardCallerPrefix As String = "Dashboard_"
 
         ''' <summary>
@@ -544,9 +558,65 @@ Namespace SDC.Framework
             Return DashboardCallers().Any(Function(name) String.Equals(name, menuCaller.Trim(), StringComparison.OrdinalIgnoreCase))
         End Function
 
-        Private Shared Function DashboardSourceFileName(menuCaller As String) As String
+        ''' <summary>
+        ''' Folders that hold no source worth searching. bin and obj would return a copy, and the
+        ''' rest are archives of files that used to be real - matching one of those would patch a
+        ''' dashboard nobody compiles.
+        ''' </summary>
+        Private Shared ReadOnly NonSourceFolders As String() =
+            {"bin", "obj", "restore-points", "project-backup", "tests", "900_SANDBOX"}
+
+        Private Shared Function IsInNonSourceFolder(path As String) As Boolean
+            Dim parts = path.Split({IO.Path.DirectorySeparatorChar, IO.Path.AltDirectorySeparatorChar})
+            Return parts.Any(Function(part) NonSourceFolders.Contains(part, StringComparer.OrdinalIgnoreCase))
+        End Function
+
+        ''' <summary>
+        ''' The file that declares this dashboard class, wherever it currently lives, or an empty
+        ''' string when there is no such file. Searched rather than derived - see the note on
+        ''' DashboardCallerPrefix.
+        '''
+        ''' Matched on file name first, because the convention is that a file is named for the class
+        ''' it declares. Where that finds nothing the declaration itself is searched for, so a file
+        ''' named against convention is still found rather than silently reported missing.
+        ''' </summary>
+        Private Shared Function ResolveDashboardSourcePath(workspaceRoot As String, menuCaller As String) As String
             If Not IsDashboardCaller(menuCaller) Then Return String.Empty
-            Return "02_FW_" & menuCaller.Trim() & ".vb"
+            If String.IsNullOrWhiteSpace(workspaceRoot) OrElse Not Directory.Exists(workspaceRoot) Then Return String.Empty
+
+            Dim className = menuCaller.Trim()
+
+            Try
+                Dim byName = Directory.EnumerateFiles(workspaceRoot, className & ".vb", SearchOption.AllDirectories).
+                                       Where(Function(path) Not IsInNonSourceFolder(path)).
+                                       OrderBy(Function(path) path, StringComparer.OrdinalIgnoreCase).
+                                       FirstOrDefault()
+                If Not String.IsNullOrEmpty(byName) Then Return byName
+
+                Dim declaration = New Regex("(^|\s)Class\s+" & Regex.Escape(className) & "(\s|$)",
+                                            RegexOptions.IgnoreCase Or RegexOptions.Multiline)
+                Return Directory.EnumerateFiles(workspaceRoot, "*.vb", SearchOption.AllDirectories).
+                                 Where(Function(path) Not IsInNonSourceFolder(path)).
+                                 OrderBy(Function(path) path, StringComparer.OrdinalIgnoreCase).
+                                 FirstOrDefault(Function(path) declaration.IsMatch(File.ReadAllText(path)))
+            Catch ex As IOException
+                ' A locked or vanished file must not take the whole search down: the caller reports
+                ' "could not be found", which is the truth from here.
+                Return String.Empty
+            Catch ex As UnauthorizedAccessException
+                Return String.Empty
+            End Try
+        End Function
+
+        ''' <summary>
+        ''' The dashboard's file name for reporting. Resolved from the real file where one exists,
+        ''' so a report never names a path that does not.
+        ''' </summary>
+        Private Shared Function DashboardSourceFileName(workspaceRoot As String, menuCaller As String) As String
+            Dim resolved = ResolveDashboardSourcePath(workspaceRoot, menuCaller)
+            If resolved.Length > 0 Then Return Path.GetFileName(resolved)
+            If Not IsDashboardCaller(menuCaller) Then Return String.Empty
+            Return menuCaller.Trim() & ".vb"
         End Function
 
         ''' <summary>
@@ -596,10 +666,8 @@ Namespace SDC.Framework
         End Function
 
         Private Shared Function DashboardIconExists(workspaceRoot As String, menuCaller As String, browsePageName As String) As Boolean
-            Dim fileName = DashboardSourceFileName(menuCaller)
-            If fileName.Length = 0 Then Return False
-            Dim dashboardPath = Path.Combine(workspaceRoot, fileName)
-            If Not File.Exists(dashboardPath) Then Return False
+            Dim dashboardPath = ResolveDashboardSourcePath(workspaceRoot, menuCaller)
+            If dashboardPath.Length = 0 OrElse Not File.Exists(dashboardPath) Then Return False
             Dim source = File.ReadAllText(dashboardPath)
             Return source.IndexOf("ActionKey_" & browsePageName, StringComparison.OrdinalIgnoreCase) >= 0 OrElse
                    source.IndexOf("New " & browsePageName & "_B", StringComparison.OrdinalIgnoreCase) >= 0
@@ -636,17 +704,18 @@ Namespace SDC.Framework
                                                 created As List(Of String),
                                                 skipped As List(Of String),
                                                 errors As List(Of String))
-            Dim dashboardFileName = DashboardSourceFileName(menuCaller)
-            If dashboardFileName.Length = 0 Then
+            If Not IsDashboardCaller(menuCaller) Then
                 errors.Add("ICON WARNING: " & menuCaller & " is not a dashboard, so no icon was generated.")
                 Return
             End If
 
-            Dim dashboardPath = Path.Combine(workspaceRoot, dashboardFileName)
-            If Not File.Exists(dashboardPath) Then
-                errors.Add(dashboardFileName & " could not be found for icon generation.")
+            Dim dashboardPath = ResolveDashboardSourcePath(workspaceRoot, menuCaller)
+            If dashboardPath.Length = 0 OrElse Not File.Exists(dashboardPath) Then
+                errors.Add(menuCaller & ".vb could not be found under " & workspaceRoot & " for icon generation.")
                 Return
             End If
+
+            Dim dashboardFileName = Path.GetFileName(dashboardPath)
 
             Dim source = File.ReadAllText(dashboardPath)
             Dim newLine = SourceNewLine(source)

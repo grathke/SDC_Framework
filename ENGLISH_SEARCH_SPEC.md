@@ -14,7 +14,7 @@ several of them were argued the other way first and the reasons are what stop th
 
 ## 1. The controls
 
-A pair, added to `01_FW_Base_B.vb` **once**, so every browse page inherits them and there is no
+A pair, added to `000_FRAMEWORK\000_BASECLASSES\Base_B.vb` **once**, so every browse page inherits them and there is no
 second copy to drift:
 
 - a single-line text box for the English statement
@@ -260,7 +260,7 @@ Also observed while tracing, unverified as to intent: the filtered `DataView` br
 | new parser file | English → predicate + parameters | pure function; no database, no message loop |
 | `tests\SDC.Framework.Tests` | parser tests | every phrasing becomes a test case |
 | `DataAccess.vb` | sibling of `AddBrowseScopePredicate`; optional predicate + parameters on `GetBrowseRowsByRegistration` | additive — existing callers unaffected |
-| `01_FW_Base_B.vb` | the text box, the button, the wire-up | **`Create Base_B Restore Point` before the first substantive edit** — QBE Visibility Guardrail |
+| `000_FRAMEWORK\000_BASECLASSES\Base_B.vb` | the text box, the button, the wire-up | **`Create Base_B Restore Point` before the first substantive edit** — QBE Visibility Guardrail |
 
 Build order: **parser and its tests first, Base_B last.** The parser is a pure function, so nearly
 all the risk is retired before the protected file is opened at all.
@@ -278,7 +278,7 @@ Then `scripts\validate-browse-regression.ps1` and the manual checklist it prints
 - **An echo of what was parsed.** Populating the grid would have shown the user what was understood;
   this route does not, so a misparse is invisible. Recommendation: a read-only line — *"Filtering:
   First Last starts with Glenn, City = Stuart"* — beside the existing active-filter label that
-  `UpdateActiveFilterLabel` maintains (`01_FW_Base_B.vb:4103`).
+  `UpdateActiveFilterLabel` maintains (`000_FRAMEWORK\000_BASECLASSES\Base_B.vb:4103`).
 - **Dates.** Whether relative phrases — `last 30 days`, `this year` — earn their place, or v1 takes
   explicit dates only. The one part of the lexicon where scope can quietly grow.
 ~~The silent-unfiltered defect in §8~~ — fixed 2026-09-03, along with the QBE honouring a typed

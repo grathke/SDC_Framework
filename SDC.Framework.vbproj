@@ -23,6 +23,11 @@
     <Content Include="assets\images\**" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
   <ItemGroup>
+    <!-- 900_SANDBOX is for experiments, not for the application. Without this it compiles in,
+         the same way tests and project-backup would. -->
+    <Compile Remove="900_SANDBOX/**" />
+    <EmbeddedResource Remove="900_SANDBOX/**" />
+    <None Remove="900_SANDBOX/**" />
     <Compile Remove="project-backup/**" />
     <EmbeddedResource Remove="project-backup/**" />
     <None Remove="project-backup/**" />
