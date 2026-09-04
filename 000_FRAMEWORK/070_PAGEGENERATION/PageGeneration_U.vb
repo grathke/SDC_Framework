@@ -445,8 +445,8 @@ Namespace SDC.Framework
                 Return
             End If
 
-            Dim browsePagePath = Path.Combine(Environment.CurrentDirectory, browsePageNameTextBox.Text.Trim() & ".vb")
-            Dim maintenancePagePath = Path.Combine(Environment.CurrentDirectory, maintenancePageNameTextBox.Text.Trim() & ".vb")
+            Dim browsePagePath = PageGenerator.GeneratedPagePath(Environment.CurrentDirectory, browsePageNameTextBox.Text)
+            Dim maintenancePagePath = PageGenerator.GeneratedPagePath(Environment.CurrentDirectory, maintenancePageNameTextBox.Text)
             Dim overwriteExistingPages = False
             If manualChangesOverridden Then
                 ' Already authorised, three times over, when the page was opened.
@@ -516,10 +516,22 @@ Namespace SDC.Framework
                 lines.Add("ICON:")
                 lines.AddRange(createdIconResults)
             End If
-            If skippedPageResults.Count > 0 Then
+            ' Files and database rows are both skipped into one list, so the heading cannot claim
+            ' either. It said "SKIPPED BECAUSE THE FILE ALREADY EXISTS" over entries like
+            ' "FW_Pages:UsersY_B", which is a row whose SQL already matched - no file involved, and
+            ' nothing for the reader to go and look at. Splitting them says which is which.
+            Dim skippedRecords = skippedPageResults.Where(Function(entry) entry.StartsWith("FW_Pages", StringComparison.OrdinalIgnoreCase)).ToList()
+            Dim skippedFiles = skippedPageResults.Where(Function(entry) Not entry.StartsWith("FW_Pages", StringComparison.OrdinalIgnoreCase)).ToList()
+
+            If skippedFiles.Count > 0 Then
                 lines.Add(String.Empty)
                 lines.Add("SKIPPED BECAUSE THE FILE ALREADY EXISTS:")
-                lines.AddRange(skippedPageResults)
+                lines.AddRange(skippedFiles)
+            End If
+            If skippedRecords.Count > 0 Then
+                lines.Add(String.Empty)
+                lines.Add("ALREADY REGISTERED, NOTHING TO CHANGE:")
+                lines.AddRange(skippedRecords)
             End If
             If skippedIconResults.Count > 0 Then
                 lines.Add(String.Empty)
@@ -564,7 +576,7 @@ Namespace SDC.Framework
             Dim expectedHash = DbText(dataRow.Row(hashColumn)).Trim()
             If expectedHash = String.Empty Then Return False
 
-            Dim pagePath = Path.Combine(Environment.CurrentDirectory, pageName.Trim() & ".vb")
+            Dim pagePath = PageGenerator.GeneratedPagePath(Environment.CurrentDirectory, pageName)
             If Not File.Exists(pagePath) Then Return False
 
             Dim hasher As SHA256 = SHA256.Create()
@@ -583,7 +595,7 @@ Namespace SDC.Framework
             manualChangesOverridden = False
             If isNewRecord Then Return
 
-            Dim pagePath = Path.Combine(Environment.CurrentDirectory, maintenancePageNameTextBox.Text.Trim() & ".vb")
+            Dim pagePath = PageGenerator.GeneratedPagePath(Environment.CurrentDirectory, maintenancePageNameTextBox.Text)
 
             Dim row = formBindingSource.Current
             Dim dataRow = TryCast(row, DataRowView)

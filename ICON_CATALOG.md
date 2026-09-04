@@ -51,10 +51,10 @@ menu sees the ribbon everybody else sees. Which tiles can move is said in a tool
 "Moveable" or "Fixed position", and only for an App Admin, since nobody else can drag anything.
 `RibbonTileArrangementController` owns this.
 
-The pinned row on the right (`my-profile`, `login-as-substitute`, `select-role`, `help-desk`) is a
-flow panel too, but no drag is wired to it: those four keep the order `LayoutPinnedActions` sets and
-can only have their pictures changed. It is a flow panel so that a pinned tile hidden by a
-permission lets the rest close up behind it.
+The pinned row on the right (`my-profile`, `select-role`, `help-desk` — `login-as-substitute` is
+registered but hidden since 2026-09-04) is a flow panel too, but no drag is wired to it: they keep
+the order `LayoutPinnedActions` sets and can only have their pictures changed. It is a flow panel
+so that a pinned tile hidden by a permission lets the rest close up behind it.
 
 Both panels use one tile size and one margin — `TileWidth`, `TileHeight`, `TileMargin` in
 `000_FRAMEWORK\010_MAINMENU\MainMenu.vb` — so spacing is identical across the ribbon and the pinned panel is sized to
@@ -117,16 +117,25 @@ holds its anchored place in the row; the old target is gone and is not what it w
 
 ## application-settings
 
-- placement: main ribbon (left)
-- ActionType: role-routed page/command
-- target: AppAdmin -> `AppAdminSettingsForm`; CompanyAdmin -> `CompanyAdminSettingsForm`
-- caption source: role-driven (App Admin Settings / Company Admin Settings)
+- placement: main ribbon (left), anchored third
+- ActionType: role-routed drop-down menu (App Admin) / role-routed page (Company Admin)
+- target: AppAdmin -> drop-down over the regions below; CompanyAdmin -> `Dashboard_Company`
+- caption source: fixed (`Application Settings`, on two lines)
 - icon file: `gear.png`
-- visibility rule: `MenuFormInitializer.vb:118`, visible and enabled when
+- visibility rule: `MenuFormInitializer.ApplyActionAccess`, visible and enabled when
   `SessionState.Current.IsApplicationAdminRole` or `IsCompanyAdminRole`
-- click behavior: opens the settings form for the active admin role
+- click behavior: an App Admin gets a menu; anyone else gets the old behaviour, which opens the
+  dashboard for their role. The role is read on click, not when the ribbon is configured, so there
+  is no handler to keep in step with a role change.
+- menu items (App Admin only), built by `MenuFormInitializer.BuildApplicationSettingsItems`:
+    - `Admin Dashboard` -> `FW_MainMenu.OpenApplicationSettings` — first, because it is what the
+      button did before it grew a menu
+    - separator
+    - `Switch User` -> `FW_MainMenu.OpenSubstituteUser` — still a placeholder message
+- note: every item invokes the tile handler that owns the action rather than repeating it, so the
+  Application-versus-Company dashboard decision stays in one place. Opening and closing the menu
+  belongs to `TileDropDownController` and is written nowhere here.
 - note: inside either settings form, the Roles and User Admin icons stay enabled at all times
-
 ## users
 
 - placement: main ribbon (left)
@@ -189,14 +198,20 @@ all of it. There is deliberately no way to ask for different behavior.
 
 ## login-as-substitute
 
-- placement: main ribbon (right, pinned)
+- placement: registered but **not on the ribbon**. It was a pinned tile on the right until
+  2026-09-04, when the action moved into the `application-settings` drop-down.
 - ActionType: Command/Page placeholder
 - target: not yet implemented
-- caption source: fixed (`Login as Different User`, on two lines)
-- icon file: `substitute-user.png`
-- visibility rule: always visible (pinned)
-- click behavior: placeholder message
-
+- caption source: fixed (`Login as Different User`, on two lines) — unused while hidden; the menu
+  row that replaced it reads `Switch User`
+- icon file: `substitute-user.png` — unused while hidden
+- visibility rule: `MenuFormInitializer.ApplyActionAccess` hides it unconditionally
+- click behavior: placeholder message, reached through `FW_MainMenu.OpenSubstituteUser` from the
+  Application Settings menu
+- note: hidden rather than unregistered, because the menu item invokes this tile's own handler.
+  Unregistering it would mean writing the workflow somewhere else and moving it back when the tile
+  returns. The pinned row closes up on its own — `LayoutPinnedActions` skips a tile that is not
+  there and `LayoutRibbonPanels` resizes the panel to what remains.
 ## select-role
 
 - placement: main ribbon (right, pinned)

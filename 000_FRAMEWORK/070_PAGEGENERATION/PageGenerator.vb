@@ -142,6 +142,26 @@ Namespace SDC.Framework
                 Catch ex As Exception
                     errors.Add("ICON WARNING: " & ex.Message)
                 End Try
+            ElseIf plan.GenerateBrowsePage AndAlso IsMainMenuCaller(plan.MenuCaller) Then
+                Dim before = errors.Count
+                Try
+                    EnsureMainMenuTile(workspaceRoot, plan.BrowsePageName, plan.IconFileName, created, skipped, errors)
+                Catch ex As Exception
+                    errors.Add("MAIN MENU WARNING: " & ex.Message)
+                End Try
+
+                ' The ribbon was full, or could not be written to. The page still needs a way in, so
+                ' it goes to the App Admin dashboard and the report says so - rather than leaving a
+                ' generated page reachable from nowhere, which is what naming Main Menu did before
+                ' this branch existed.
+                If errors.Count > before Then
+                    Try
+                        EnsureDashboardIcon(workspaceRoot, "Dashboard_Application", plan.IconFileName, plan.BrowsePageName, plan.MaintenancePageName, created, skipped, errors)
+                        created.Add("PLACED ON THE APP ADMIN DASHBOARD INSTEAD: " & plan.BrowsePageName)
+                    Catch ex As Exception
+                        errors.Add("ICON WARNING: the App Admin dashboard fallback also failed - " & ex.Message)
+                    End Try
+                End If
             End If
 
             Return New PageGenerationResult(created, skipped, errors)
@@ -226,16 +246,8 @@ Namespace SDC.Framework
             End If
             If Not plan.IsValid Then Return plan
 
-            ' Written to the workspace root on purpose, not left there by the 2026-09-04 folder
-            ' reorganisation. A generated pair is a draft: it is reviewed and then filed by hand,
-            ' either into a band under 000_FRAMEWORK or into the project it belongs to under
-            ' 100_PROJECTS, and which of those it is depends on what the page turns out to be. The
-            ' generator cannot know that, so it does not guess - it leaves the pair in plain sight
-            ' at the root, where an unfiled page is obvious rather than buried in a folder that
-            ' makes it look settled. The SDK glob compiles the root, so a page works before it is
-            ' filed and nothing breaks while the decision is pending.
-            plan.BrowsePath = Path.Combine(workspaceRoot, plan.BrowsePageName & ".vb")
-            plan.MaintenancePath = Path.Combine(workspaceRoot, plan.MaintenancePageName & ".vb")
+            plan.BrowsePath = GeneratedPagePath(workspaceRoot, plan.BrowsePageName)
+            plan.MaintenancePath = GeneratedPagePath(workspaceRoot, plan.MaintenancePageName)
 
             If plan.GenerateBrowsePage Then
                 plan.BrowseSource = BuildBrowseSource(plan.BrowsePageName,
@@ -309,7 +321,23 @@ Namespace SDC.Framework
 
             lines.Add(String.Empty)
             lines.Add("DASHBOARD ICON")
-            If Not plan.GenerateBrowsePage OrElse Not IsDashboardCaller(plan.MenuCaller) Then
+            If plan.GenerateBrowsePage AndAlso IsMainMenuCaller(plan.MenuCaller) Then
+                ' Main Menu used to fall into the "not a dashboard" line below, which read as though
+                ' nothing had been asked for. It says what will happen now, including the number the
+                ' decision turns on.
+                Dim inUse = CountMovableRibbonTiles(workspaceRoot)
+                If inUse >= MainMenuMovableTileCapacity Then
+                    lines.Add("  MAIN MENU IS FULL - " & inUse.ToString() & " of " &
+                              MainMenuMovableTileCapacity.ToString() & " movable tiles at the narrowest window.")
+                    lines.Add("  " & plan.BrowsePageName & " WOULD GO ON THE APP ADMIN DASHBOARD INSTEAD.")
+                Else
+                    lines.Add("  WOULD BE ADDED TO THE MAIN MENU RIBBON FOR " & plan.BrowsePageName &
+                              " (" & (inUse + 1).ToString() & " of " & MainMenuMovableTileCapacity.ToString() & " tiles)")
+                    lines.Add("  IMAGE: " & If(String.IsNullOrWhiteSpace(plan.IconFileName),
+                                               "NONE CHOSEN, THE DEFAULT GLYPH IS USED",
+                                               plan.IconFileName))
+                End If
+            ElseIf Not plan.GenerateBrowsePage OrElse Not IsDashboardCaller(plan.MenuCaller) Then
                 lines.Add("  NONE. MENU CALLER IS " & If(String.IsNullOrWhiteSpace(plan.MenuCaller), "NOT SET", plan.MenuCaller) & ", WHICH IS NOT A DASHBOARD")
             ElseIf DashboardIconExists(workspaceRoot, plan.MenuCaller, plan.BrowsePageName) Then
                 lines.Add("  ALREADY PRESENT ON " & DashboardSourceFileName(workspaceRoot, plan.MenuCaller) & ", NO CHANGE")
@@ -552,6 +580,181 @@ Namespace SDC.Framework
                 OrderBy(Function(name) name, StringComparer.OrdinalIgnoreCase).
                 ToList()
         End Function
+
+        ''' <summary>
+        ''' Where a generated page is written, and the one place that decides it.
+        '''
+        ''' GENERATEDPAGES at the repository root, not the root itself. A generated pair is a draft:
+        ''' it is reviewed and then filed by hand into a band under 000_FRAMEWORK or into the project
+        ''' it belongs to under 100_PROJECTS, and which of those depends on what the page turns out
+        ''' to be. The generator cannot know that, so it does not guess - but it should not scatter
+        ''' loose files across the root either, where an unfiled page looks like part of the
+        ''' repository rather than something waiting on a decision. One folder says both: these are
+        ''' generated, and none of them has been filed yet.
+        '''
+        ''' The SDK glob compiles the folder like any other, so a page works before it is filed.
+        '''
+        ''' PageGeneration_U built this path itself in four places. They agreed until they didn't:
+        ''' this move would have changed the generator's idea of where a page lives and left the
+        ''' page's "has it been edited by hand" checks looking at the old spot.
+        ''' </summary>
+        Public Const GeneratedPagesFolder As String = "GENERATEDPAGES"
+
+        ''' <summary>
+        ''' The caller that means the main ribbon rather than a dashboard. It has been in the Menu
+        ''' Caller list all along and the generator did nothing with it: a request naming it was
+        ''' accepted, the pages were written, and the button was never placed. The only trace was a
+        ''' line in Preview Code reading "NOT A DASHBOARD", which reads as information rather than
+        ''' as a refusal.
+        ''' </summary>
+        Public Const MainMenuCaller As String = "Main Menu"
+
+        ''' <summary>
+        ''' How many movable tiles the ribbon can hold, measured at the narrowest window the form
+        ''' allows rather than at whatever width it happens to be open at.
+        '''
+        ''' It has to be the narrow figure. The flow panel neither wraps nor scrolls, so a tile past
+        ''' the end is not drawn at all - and a tile placed against the default width would simply be
+        ''' missing for anyone whose window is smaller, with nothing said and nothing to see.
+        '''
+        ''' Kept in step with FW_MainMenu by hand, because the generator runs as a development tool
+        ''' with no menu instantiated to ask. FW_MainMenu.MovableTileCapacityAtMinimumWidth is the
+        ''' same calculation against live controls; if the ribbon's geometry changes, both move.
+        ''' </summary>
+        Public Const MainMenuMovableTileCapacity As Integer = 8
+
+        ''' Tiles that live in the pinned row on the right and so cost nothing from the movable row.
+        Private Shared ReadOnly PinnedRibbonKeys As String() =
+            {"my-profile", "login-as-substitute", "select-role", "help-desk"}
+
+        Private Shared Function ResolveSourceFile(workspaceRoot As String, fileName As String) As String
+            If String.IsNullOrWhiteSpace(workspaceRoot) OrElse Not Directory.Exists(workspaceRoot) Then Return String.Empty
+
+            Try
+                Return If(Directory.EnumerateFiles(workspaceRoot, fileName, SearchOption.AllDirectories).
+                                    Where(Function(path) Not IsInNonSourceFolder(path)).
+                                    OrderBy(Function(path) path, StringComparer.OrdinalIgnoreCase).
+                                    FirstOrDefault(), String.Empty)
+            Catch ex As IOException
+                Return String.Empty
+            Catch ex As UnauthorizedAccessException
+                Return String.Empty
+            End Try
+        End Function
+
+        ''' <summary>
+        ''' Every movable ribbon tile, counted from source rather than guessed at.
+        '''
+        ''' Two files register tiles and they have to be read together: FW_MainMenu adds the built-in
+        ''' ones, and the application's MenuFormInitializer adds its own. An UpsertActionTile naming
+        ''' a key FW_MainMenu already registered replaces that tile rather than adding one, so the
+        ''' keys are unioned and not summed - counting the calls would say eight where the ribbon
+        ''' holds six, and refuse a tile that fits.
+        ''' </summary>
+        Private Shared Function CountMovableRibbonTiles(workspaceRoot As String) As Integer
+            Dim keys As New HashSet(Of String)(StringComparer.OrdinalIgnoreCase)
+
+            For Each fileName In {"MainMenu.vb", "MenuFormInitializer.vb"}
+                Dim path = ResolveSourceFile(workspaceRoot, fileName)
+                If path.Length = 0 Then Continue For
+
+                Dim source = File.ReadAllText(path)
+                For Each match As Match In Regex.Matches(source,
+                                                         "(?:AddActionTile\(|UpsertActionTile\(\s*actionKey:=)""([^""]+)""",
+                                                         RegexOptions.IgnoreCase)
+                    keys.Add(match.Groups(1).Value)
+                Next
+            Next
+
+            For Each pinned In PinnedRibbonKeys
+                keys.Remove(pinned)
+            Next
+
+            Return keys.Count
+        End Function
+
+        Public Shared Function GeneratedPagePath(workspaceRoot As String, pageName As String) As String
+            Return Path.Combine(workspaceRoot, GeneratedPagesFolder, pageName.Trim() & ".vb")
+        End Function
+
+        Private Shared Function IsMainMenuCaller(menuCaller As String) As Boolean
+            Return Not String.IsNullOrWhiteSpace(menuCaller) AndAlso
+                   String.Equals(menuCaller.Trim(), MainMenuCaller, StringComparison.OrdinalIgnoreCase)
+        End Function
+
+        ''' <summary>
+        ''' Puts a generated browse page on the main ribbon, or says why it could not and puts it on
+        ''' the App Admin dashboard instead.
+        '''
+        ''' The fallback is the point. A ribbon that is full is not a failure the generator can fix,
+        ''' and refusing outright would leave a page with no way in - so the button goes somewhere
+        ''' real and the report says where, rather than the request half-succeeding in silence the
+        ''' way naming Main Menu used to.
+        '''
+        ''' The tile is written into MenuFormInitializer, not FW_MainMenu. Which tiles an
+        ''' application's ribbon carries is the application's decision; the framework's menu form
+        ''' serves whichever application configures it, and a generated page belongs to one
+        ''' application.
+        ''' </summary>
+        Private Shared Sub EnsureMainMenuTile(workspaceRoot As String,
+                                              browsePageName As String,
+                                              iconFileName As String,
+                                              created As List(Of String),
+                                              skipped As List(Of String),
+                                              errors As List(Of String))
+            Dim initializerPath = ResolveSourceFile(workspaceRoot, "MenuFormInitializer.vb")
+            If initializerPath.Length = 0 Then
+                errors.Add("MenuFormInitializer.vb could not be found under " & workspaceRoot & ", so no main menu button was placed.")
+                Return
+            End If
+
+            Dim actionKey = "generated-" & browsePageName.ToLowerInvariant()
+            Dim source = File.ReadAllText(initializerPath)
+
+            If source.IndexOf("""" & actionKey & """", StringComparison.OrdinalIgnoreCase) >= 0 Then
+                skipped.Add("Main Menu button: " & actionKey & " is already on the ribbon, unchanged.")
+                Return
+            End If
+
+            Dim inUse = CountMovableRibbonTiles(workspaceRoot)
+            If inUse >= MainMenuMovableTileCapacity Then
+                errors.Add("MAIN MENU FULL: the ribbon holds " & MainMenuMovableTileCapacity.ToString() &
+                           " movable tiles at the narrowest window and " & inUse.ToString() &
+                           " are in use, so " & browsePageName & " was not added to it. " &
+                           "Free a tile, or choose a dashboard as the Menu Caller.")
+                Return
+            End If
+
+            Dim anchor = "            AddMenuTestTile(menu)"
+            If source.IndexOf(anchor, StringComparison.Ordinal) < 0 Then
+                errors.Add("MenuFormInitializer.vb has no recognised place to add a ribbon tile, so " &
+                           browsePageName & " was not added to the main menu.")
+                Return
+            End If
+
+            Dim newLine = SourceNewLine(source)
+            Dim tile = String.Join(newLine, {
+                "            menu.UpsertActionTile(",
+                "                actionKey:=""" & actionKey & """,",
+                "                caption:=""" & DisplayPageCaption(browsePageName).Replace("""", """""") & """,",
+                "                onClick:=Sub(sender, e)",
+                "                             Using frm As New " & browsePageName & "(user, profile)",
+                "                                 frm.ShowDialog(menu)",
+                "                             End Using",
+                "                         End Sub,",
+                "                iconFileName:=""" & If(String.IsNullOrWhiteSpace(iconFileName), "users.png", iconFileName) & """,",
+                "                fallbackIcon:=SystemIcons.Application.ToBitmap(),",
+                "                isVisible:=True,",
+                "                isEnabled:=True)",
+                "",
+                anchor
+            })
+
+            source = source.Replace(anchor, tile)
+            File.WriteAllText(initializerPath, source, New UTF8Encoding(False))
+            created.Add("Main Menu button: " & actionKey & " - " & DescribeIcon(iconFileName) &
+                        " (" & (inUse + 1).ToString() & " of " & MainMenuMovableTileCapacity.ToString() & " tiles)")
+        End Sub
 
         Private Shared Function IsDashboardCaller(menuCaller As String) As Boolean
             If String.IsNullOrWhiteSpace(menuCaller) Then Return False
@@ -854,6 +1057,14 @@ Namespace SDC.Framework
                 skipped.Add(System.IO.Path.GetFileName(path))
                 Return False
             End If
+
+            ' The pages now go in a folder rather than at the root, and the first generation on a
+            ' fresh clone would otherwise fail on a directory nothing has created yet.
+            Dim folder = System.IO.Path.GetDirectoryName(path)
+            If Not String.IsNullOrEmpty(folder) AndAlso Not Directory.Exists(folder) Then
+                Directory.CreateDirectory(folder)
+            End If
+
             File.WriteAllText(path, content, New UTF8Encoding(False))
             created.Add(If(existed, "OVERWRITTEN: ", String.Empty) & System.IO.Path.GetFileName(path))
             Return True

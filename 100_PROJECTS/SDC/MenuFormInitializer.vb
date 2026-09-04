@@ -130,7 +130,7 @@ Namespace SDC.Framework
 
             menu.SetAccessProfile(profile)
 
-            ApplyActionAccess(menu, profile)
+            ApplyActionAccess(menu, user, profile)
             ApplyRegionAccess(menu, profile)
 
             ' Last, because ApplyActionAccess adds a tile and rewrites captions and pictures. The
@@ -139,7 +139,11 @@ Namespace SDC.Framework
             menu.ConfigureArrangement(MenuSurfaceName, AnchoredMenuKeys)
         End Sub
 
-        Private Sub ApplyActionAccess(menu As FW_MainMenu, profile As AccessProfile)
+        ' user is carried through because a generated ribbon tile opens a page whose constructor
+        ' takes it. Nothing else here needed it, so it was not passed - and a generated tile is
+        ' written into this method, where currentUser is not in scope and no shared helper builds
+        ' one.
+        Private Sub ApplyActionAccess(menu As FW_MainMenu, user As UserContext, profile As AccessProfile)
             If menu Is Nothing OrElse profile Is Nothing Then
                 Return
             End If
@@ -156,6 +160,7 @@ Namespace SDC.Framework
             Dim canAccessApplicationSettings = isAppAdminSession OrElse isCompanyAdminSession
             menu.ConfigureActionVisibility("application-settings", canAccessApplicationSettings, canAccessApplicationSettings)
             menu.SetActionCaption("application-settings", applicationSettingsCaption)
+            ConfigureApplicationSettingsTile(menu, applicationSettingsCaption, canAccessApplicationSettings)
             menu.ConfigureActionVisibility("users", True, True)
             menu.ConfigureActionVisibility("dashboard", True, True)
 
@@ -167,7 +172,13 @@ Namespace SDC.Framework
             ' so this hides a button that does nothing rather than protecting anything. When the
             ' workflow is written, the check that matters goes at its action boundary; a hidden tile
             ' is not authorization.
-            menu.ConfigureActionVisibility("login-as-substitute", isAppAdminSession, isAppAdminSession)
+            '
+            ' The button itself is gone as of 2026-09-04: the action moved into the Application
+            ' Settings drop-down, so the ribbon no longer spends a tile on it. Hidden rather than
+            ' unregistered, because the menu item invokes this tile's own handler - see
+            ' FW_MainMenu.OpenSubstituteUser. The pinned row closes up on its own, since
+            ' LayoutPinnedActions skips what is not there and SizePinnedPanelToVisibleTiles resizes.
+            menu.ConfigureActionVisibility("login-as-substitute", False, False)
 
             menu.ConfigureActionVisibility("select-role", True, True)
 
@@ -184,8 +195,87 @@ Namespace SDC.Framework
                 isVisible:=True,
                 isEnabled:=True)
 
+            menu.UpsertActionTile(
+                actionKey:="generated-usersy_b",
+                caption:="UsersY",
+                onClick:=Sub(sender, e)
+                             Using frm As New UsersY_B(user, profile)
+                                 frm.ShowDialog(menu)
+                             End Using
+                         End Sub,
+                iconFileName:="Color_OK.png",
+                fallbackIcon:=SystemIcons.Application.ToBitmap(),
+                isVisible:=True,
+                isEnabled:=True)
+
             AddMenuTestTile(menu)
         End Sub
+
+
+        ''' <summary>
+        ''' Application Settings drops a menu down for an App Admin, and stays a plain button for a
+        ''' Company Admin.
+        '''
+        ''' The two roles want different things from it. An App Admin has more than one
+        ''' administrative action, so the tile becomes the way in to all of them; a Company Admin
+        ''' has exactly one - their own dashboard - and a one-item menu is a worse button.
+        '''
+        ''' The role is read when the tile is clicked rather than when the ribbon is configured.
+        ''' Selecting a role rebuilds the menu, so reading it here would work too - but it would
+        ''' leave a handler behind that is right only until the next role change, and this way there
+        ''' is nothing to keep in step.
+        '''
+        ''' No icon is passed. UpsertActionTile only touches the picture when it is given one, and
+        ''' an App Admin may have chosen their own - rewriting it here is the bug that wiped Help
+        ''' Desk's picture on every ribbon resize.
+        ''' </summary>
+        Private Sub ConfigureApplicationSettingsTile(menu As FW_MainMenu, caption As String, isAvailable As Boolean)
+            menu.UpsertActionTile(
+                actionKey:="application-settings",
+                caption:=caption,
+                onClick:=Sub(sender, e)
+                             If IsApplicationAdminSession() Then
+                                 tileDropDowns.Open(TryCast(sender, Control),
+                                                    Function() BuildApplicationSettingsItems(menu))
+                             Else
+                                 menu.OpenApplicationSettings()
+                             End If
+                         End Sub,
+                isVisible:=isAvailable,
+                isEnabled:=isAvailable)
+        End Sub
+
+        Private Function IsApplicationAdminSession() As Boolean
+            Dim session = SessionState.Current
+            Return session.HasValue AndAlso
+                   session.Value.RoleID > 0 AndAlso
+                   session.Value.RegistrationID > 0 AndAlso
+                   session.Value.IsApplicationAdminRole
+        End Function
+
+        ''' <summary>
+        ''' What an App Admin can reach from Application Settings. The dashboard first, because it is
+        ''' what the button did before it grew a menu and muscle memory should still land on it.
+        '''
+        ''' Every item invokes the tile handler that already owns the action rather than repeating
+        ''' it - Application Settings still decides between the Application and Company dashboards
+        ''' by role, in one place.
+        ''' </summary>
+        Private Function BuildApplicationSettingsItems(menu As FW_MainMenu) As IEnumerable(Of ToolStripItem)
+            Dim items As New List(Of ToolStripItem)()
+
+            items.Add(BuildActionItem("Admin Dashboard", Sub() menu.OpenApplicationSettings()))
+            items.Add(New ToolStripSeparator())
+            items.Add(BuildActionItem("Switch User", Sub() menu.OpenSubstituteUser()))
+
+            Return items
+        End Function
+
+        Private Function BuildActionItem(label As String, invoke As Action) As ToolStripMenuItem
+            Dim item As New ToolStripMenuItem(label)
+            AddHandler item.Click, Sub() invoke()
+            Return item
+        End Function
 
         ''' <summary>
         ''' A demonstration tile: it drops a menu down over the regions below, and choosing an item

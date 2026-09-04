@@ -346,14 +346,25 @@ Namespace SDC.Framework
             Next
 
             If firstMovable Is Nothing OrElse lastVisible Is Nothing Then Return
-            If lastVisible.Right <= firstMovable.Left Then Return
+
+            ' To the end of the panel, not to the end of the tiles.
+            '
+            ' The bar stopped at lastVisible.Right, so it marked only the tiles already there and
+            ' said nothing about the empty room after them - which is exactly where a tile can be
+            ' dropped, and where a new one lands. With three free slots showing as bare panel, the
+            ' bar looked like the row was full.
+            '
+            ' The panel is now a whole number of tiles wide (FW_MainMenu.LayoutRibbonPanels), so its
+            ' right edge is the real end of the droppable span rather than an arbitrary cut.
+            Dim spanRight = Math.Max(lastVisible.Right, panel.ClientSize.Width)
+            If spanRight <= firstMovable.Left Then Return
 
             Dim top = panel.ClientSize.Height - DragBarThickness
             Using bar As New SolidBrush(DragBarColor)
                 e.Graphics.FillRectangle(bar,
                                          firstMovable.Left,
                                          top,
-                                         lastVisible.Right - firstMovable.Left,
+                                         spanRight - firstMovable.Left,
                                          DragBarThickness)
             End Using
         End Sub

@@ -64,8 +64,13 @@ Namespace SDC.Framework
         '''
         ''' 96 rather than the 122 these were: at 126 to a tile the left panel ran out of room at
         ''' six tiles and silently clipped the last one, because the panel neither wraps nor
-        ''' scrolls. At 100 to a tile seven fit at the smallest window the form allows, and eight at
-        ''' the default width.
+        ''' scrolls. At 100 to a tile eight fit at the smallest window the form allows, and nine at
+        ''' the default width - two and three spare against the six tiles in use. The pinned row
+        ''' dropping to three tiles on 2026-09-04 bought the last of those.
+        '''
+        ''' Ask MovableTileCapacityAtMinimumWidth rather than counting from these by hand. The
+        ''' figure that matters is the one at the narrowest allowed window, since a tile that fits
+        ''' only at the default width disappears the moment somebody drags the window in.
         ''' </summary>
         Private Const TileWidth As Integer = 96
         Private Const TileHeight As Integer = 96
@@ -117,10 +122,13 @@ Namespace SDC.Framework
                 .Font = New Font("Segoe UI", 10.5F, FontStyle.Regular)
             }
 
+            ' Not anchored Right. Its width is a whole number of tiles, worked out by
+            ' LayoutRibbonPanels on every resize; a Right anchor would stretch it to a fractional
+            ' tile between those calculations and the row would jitter as it resized.
             leftActionsFlow = New FlowLayoutPanel() With {
                 .Location = New Point(PanelInset, 32),
                 .Size = New Size(760, 102),
-                .Anchor = AnchorStyles.Top Or AnchorStyles.Left Or AnchorStyles.Right,
+                .Anchor = AnchorStyles.Top Or AnchorStyles.Left,
                 .WrapContents = False,
                 .FlowDirection = FlowDirection.LeftToRight,
                 .AutoScroll = False,
@@ -130,10 +138,13 @@ Namespace SDC.Framework
             ' A flow panel like the left one, so that a pinned tile hidden by a permission lets the
             ' rest close up behind it rather than leaving a hole. Its tiles are still fixed in place
             ' - no drag is wired here - and their order is set by LayoutPinnedActions.
+            ' Not anchored Right either. It is placed where the flow panel ends, so the gap between
+            ' the last movable tile and the first pinned one is the same TileMargin as every other
+            ' gap in the ribbon.
             rightPinnedActionsPanel = New FlowLayoutPanel() With {
                 .Location = New Point(ribbonPanel.Width - PinnedPanelWidth - PanelInset - 4, 32),
                 .Size = New Size(PinnedPanelWidth, 102),
-                .Anchor = AnchorStyles.Top Or AnchorStyles.Right,
+                .Anchor = AnchorStyles.Top Or AnchorStyles.Left,
                 .WrapContents = False,
                 .FlowDirection = FlowDirection.LeftToRight,
                 .AutoScroll = False,
@@ -787,7 +798,7 @@ Namespace SDC.Framework
                 position += 1
             Next
 
-            SizePinnedPanelToVisibleTiles()
+            LayoutRibbonPanels()
         End Sub
 
         ''' <summary>
@@ -802,8 +813,23 @@ Namespace SDC.Framework
         ''' Called on every visibility change as well as on resize, because hiding a tile does not
         ''' raise a resize.
         ''' </summary>
-        Private Sub SizePinnedPanelToVisibleTiles()
-            If rightPinnedActionsPanel Is Nothing Then
+        ''' <summary>
+        ''' Sizes and places both ribbon panels, because their geometry is one calculation and not
+        ''' two: the flow panel's width depends on how wide the pinned panel is, and the pinned
+        ''' panel's position depends on where the flow panel ends.
+        '''
+        ''' The flow panel is given a whole number of tiles of the room available, never a fraction,
+        ''' and the pinned panel starts exactly where it ends. The gap between the last movable tile
+        ''' and the first pinned one is then the same TileMargin as every other gap in the row, so
+        ''' every button in the ribbon is spaced identically - which is only visible when the row is
+        ''' full, and is the point of doing it this way.
+        '''
+        ''' The leftover pixels - never as much as one tile - collect to the right of the pinned
+        ''' panel. They have to go somewhere, and the middle of the row is the one place a varying
+        ''' gap would read as a mistake rather than as margin.
+        ''' </summary>
+        Private Sub LayoutRibbonPanels()
+            If rightPinnedActionsPanel Is Nothing OrElse leftActionsFlow Is Nothing Then
                 Return
             End If
 
@@ -816,12 +842,37 @@ Namespace SDC.Framework
 
             rightPinnedActionsPanel.Width = Math.Max(TilePitch, visibleTiles * TilePitch)
 
-            ' Skipped while the form is still being built - ribbonPanel has no width yet, and
-            ' UpdateRibbonLayout sets this properly on the first resize.
-            If ribbonPanel IsNot Nothing AndAlso ribbonPanel.ClientSize.Width > 0 Then
-                rightPinnedActionsPanel.Left = ribbonPanel.ClientSize.Width - rightPinnedActionsPanel.Width - PanelInset
+            ' Skipped while the form is still being built - ribbonPanel has no width yet, and the
+            ' first resize runs this properly.
+            If ribbonPanel Is Nothing OrElse ribbonPanel.ClientSize.Width <= 0 Then
+                Return
             End If
+
+            Dim roomForFlow = ribbonPanel.ClientSize.Width -
+                              leftActionsFlow.Left -
+                              PanelInset -
+                              rightPinnedActionsPanel.Width
+
+            leftActionsFlow.Width = Math.Max(1, roomForFlow \ TilePitch) * TilePitch
+            rightPinnedActionsPanel.Left = leftActionsFlow.Left + leftActionsFlow.Width
         End Sub
+
+        ''' <summary>
+        ''' How many tiles the movable row can hold at the window's narrowest allowed size, which is
+        ''' the only capacity worth quoting: a tile that fits today and is clipped when somebody
+        ''' drags the window in has not fitted at all.
+        '''
+        ''' The flow panel does not wrap and does not scroll, so a tile past the end is not moved to
+        ''' a second row or reachable by scrolling - it is simply not drawn, with nothing said.
+        ''' </summary>
+        Public Function MovableTileCapacityAtMinimumWidth() As Integer
+            Dim pinnedWidth = If(rightPinnedActionsPanel Is Nothing, PinnedPanelWidth, rightPinnedActionsPanel.Width)
+            Dim flowLeft = If(leftActionsFlow Is Nothing, PanelInset, leftActionsFlow.Left)
+
+            ' The ribbon is inset 8 each side of the form and draws a one-pixel border.
+            Dim narrowestRibbonClient = Me.MinimumSize.Width - 16 - 2
+            Return Math.Max(1, (narrowestRibbonClient - flowLeft - PanelInset - pinnedWidth) \ TilePitch)
+        End Function
 
         ''' <summary>
         ''' Tiles that live in the pinned panel on the right rather than the movable flow on the
@@ -998,9 +1049,12 @@ Namespace SDC.Framework
         ''' panel ends - measuring before it moves leaves the flow a cycle behind, which shows up
         ''' as a stale gap the first time a pinned tile is hidden.
         ''' </summary>
+        ''' The flow panel's width used to be set here, from wherever the pinned panel had ended up.
+        ''' Both panels are now placed by one calculation in LayoutRibbonPanels, which
+        ''' LayoutPinnedActions runs - setting the width again here would undo it, and would put back
+        ''' the fractional tile that left an uneven gap in the middle of a full row.
         Private Sub UpdateRibbonLayout()
             LayoutPinnedActions()
-            leftActionsFlow.Width = Math.Max(TilePitch, rightPinnedActionsPanel.Left - leftActionsFlow.Left - TileMargin)
             rightPinnedActionsPanel.BringToFront()
         End Sub
 
@@ -1057,6 +1111,26 @@ Namespace SDC.Framework
 
         Private Sub LoginAsSubstitute_Click(sender As Object, e As EventArgs)
             MessageBox.Show("Hook your substitute user workflow here.", "Framework Menu", MessageBoxButtons.OK, MessageBoxIcon.Information)
+        End Sub
+
+        ''' <summary>
+        ''' The two actions above, reachable from a tile's drop-down menu as well as from its button.
+        '''
+        ''' They exist so a menu item can invoke the action rather than repeat it. Application
+        ''' Settings in particular decides between the Application and Company dashboards by role,
+        ''' and a menu item that opened Dashboard_Application directly would be a second copy of
+        ''' that decision - correct on the day it was written and wrong the first time the rule
+        ''' changed in only one of them.
+        '''
+        ''' Deliberately not a general "invoke this action key" method. The tile's own Click is what
+        ''' opens the menu, so invoking the tile from inside its own menu would reopen it.
+        ''' </summary>
+        Public Sub OpenApplicationSettings()
+            ApplicationSettings_Click(Me, EventArgs.Empty)
+        End Sub
+
+        Public Sub OpenSubstituteUser()
+            LoginAsSubstitute_Click(Me, EventArgs.Empty)
         End Sub
 
         ''' From the menu an administrator is handling the queue, not reporting against a page, so
