@@ -618,8 +618,14 @@ Namespace SDC.Framework
         ''' missing for anyone whose window is smaller, with nothing said and nothing to see.
         '''
         ''' Kept in step with FW_MainMenu by hand, because the generator runs as a development tool
-        ''' with no menu instantiated to ask. FW_MainMenu.MovableTileCapacityAtMinimumWidth is the
-        ''' same calculation against live controls; if the ribbon's geometry changes, both move.
+        ''' with no menu instantiated to ask. This is the only place the figure lives: a function on
+        ''' the menu form computing the same thing was written and never called, so it was deleted
+        ''' rather than left as a second answer nothing consulted.
+        '''
+        ''' Eight comes from FW_MainMenu's geometry at MinimumSize 1180: a ribbon client of 1146,
+        ''' less the two 10px insets and the 300px pinned row, is 826 - eight tiles of 100 with 26
+        ''' spare. Change TileWidth, TileMargin, PanelInset, MinimumSize or the number of pinned
+        ''' tiles and this needs recomputing.
         ''' </summary>
         Public Const MainMenuMovableTileCapacity As Integer = 8
 

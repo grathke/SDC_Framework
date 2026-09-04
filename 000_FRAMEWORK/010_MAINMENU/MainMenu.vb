@@ -68,9 +68,18 @@ Namespace SDC.Framework
         ''' the default width - two and three spare against the six tiles in use. The pinned row
         ''' dropping to three tiles on 2026-09-04 bought the last of those.
         '''
-        ''' Ask MovableTileCapacityAtMinimumWidth rather than counting from these by hand. The
-        ''' figure that matters is the one at the narrowest allowed window, since a tile that fits
-        ''' only at the default width disappears the moment somebody drags the window in.
+        ''' The figure that matters is the one at the narrowest allowed window, since a tile that
+        ''' fits only at the default width disappears the moment somebody drags the window in - the
+        ''' panel neither wraps nor scrolls, so it is not moved or reachable, it is simply not drawn.
+        ''' That figure is PageGenerator.MainMenuMovableTileCapacity, which is where the decision to
+        ''' place a tile is actually taken.
+        '''
+        ''' There was a MovableTileCapacityAtMinimumWidth here to answer the same question against
+        ''' live controls. Nothing ever called it: the generator runs as a development tool with no
+        ''' menu instantiated to ask, so it reads the constant instead. It was deleted on 2026-09-04
+        ''' rather than corrected - it had a sixteen-pixel error that happened to floor to the right
+        ''' answer, and a public function that looks authoritative and is wrong is worse than no
+        ''' function at all.
         ''' </summary>
         Private Const TileWidth As Integer = 96
         Private Const TileHeight As Integer = 96
@@ -856,23 +865,6 @@ Namespace SDC.Framework
             leftActionsFlow.Width = Math.Max(1, roomForFlow \ TilePitch) * TilePitch
             rightPinnedActionsPanel.Left = leftActionsFlow.Left + leftActionsFlow.Width
         End Sub
-
-        ''' <summary>
-        ''' How many tiles the movable row can hold at the window's narrowest allowed size, which is
-        ''' the only capacity worth quoting: a tile that fits today and is clipped when somebody
-        ''' drags the window in has not fitted at all.
-        '''
-        ''' The flow panel does not wrap and does not scroll, so a tile past the end is not moved to
-        ''' a second row or reachable by scrolling - it is simply not drawn, with nothing said.
-        ''' </summary>
-        Public Function MovableTileCapacityAtMinimumWidth() As Integer
-            Dim pinnedWidth = If(rightPinnedActionsPanel Is Nothing, PinnedPanelWidth, rightPinnedActionsPanel.Width)
-            Dim flowLeft = If(leftActionsFlow Is Nothing, PanelInset, leftActionsFlow.Left)
-
-            ' The ribbon is inset 8 each side of the form and draws a one-pixel border.
-            Dim narrowestRibbonClient = Me.MinimumSize.Width - 16 - 2
-            Return Math.Max(1, (narrowestRibbonClient - flowLeft - PanelInset - pinnedWidth) \ TilePitch)
-        End Function
 
         ''' <summary>
         ''' Tiles that live in the pinned panel on the right rather than the movable flow on the
