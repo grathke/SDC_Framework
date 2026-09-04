@@ -400,6 +400,14 @@ Namespace SDC.Framework
 
             tile.Button.Visible = isVisible
             tile.Button.Enabled = isEnabled
+
+            ' Hiding a pinned tile does not raise a resize, so the panel would keep the width of
+            ' the tile that just left and the row would sit off the ribbon's right edge. The whole
+            ' ribbon is re-laid rather than just the panel, because the movable flow's width is
+            ' measured from where the pinned panel ends and has just changed too.
+            If IsPinnedActionKey(actionKey) AndAlso ribbonPanel IsNot Nothing AndAlso ribbonPanel.ClientSize.Width > 0 Then
+                UpdateRibbonLayout()
+            End If
         End Sub
 
         Public Sub SetAccessProfile(profile As AccessProfile)
@@ -704,7 +712,7 @@ Namespace SDC.Framework
                 .OnClick = onClick
             }
 
-            If IsAlwaysVisibleActionKey(key) Then
+            If IsPinnedActionKey(key) Then
                 rightPinnedActionsPanel.Controls.Add(tileButton)
                 LayoutPinnedActions()
             Else
@@ -778,15 +786,83 @@ Namespace SDC.Framework
                 rightPinnedActionsPanel.Controls.SetChildIndex(tile.Button, position)
                 position += 1
             Next
+
+            SizePinnedPanelToVisibleTiles()
         End Sub
 
-        Private Shared Function IsAlwaysVisibleActionKey(actionKey As String) As Boolean
+        ''' <summary>
+        ''' Shrinks the pinned panel to the tiles actually showing, and puts its right edge back
+        ''' against the ribbon's.
+        '''
+        ''' The panel was a fixed four tiles wide. A flow panel packs its children to the left, so
+        ''' hiding one left the gap at the **right** edge and the remaining tiles looked as though
+        ''' they had slid away from the corner. Sizing the panel to what is in it moves the gap to
+        ''' the left, where the empty ribbon already is, and the tiles stay in the corner.
+        '''
+        ''' Called on every visibility change as well as on resize, because hiding a tile does not
+        ''' raise a resize.
+        ''' </summary>
+        Private Sub SizePinnedPanelToVisibleTiles()
+            If rightPinnedActionsPanel Is Nothing Then
+                Return
+            End If
+
+            Dim visibleTiles As Integer = 0
+            For Each control As Control In rightPinnedActionsPanel.Controls
+                If control.Visible Then
+                    visibleTiles += 1
+                End If
+            Next
+
+            rightPinnedActionsPanel.Width = Math.Max(TilePitch, visibleTiles * TilePitch)
+
+            ' Skipped while the form is still being built - ribbonPanel has no width yet, and
+            ' UpdateRibbonLayout sets this properly on the first resize.
+            If ribbonPanel IsNot Nothing AndAlso ribbonPanel.ClientSize.Width > 0 Then
+                rightPinnedActionsPanel.Left = ribbonPanel.ClientSize.Width - rightPinnedActionsPanel.Width - PanelInset
+            End If
+        End Sub
+
+        ''' <summary>
+        ''' Tiles that live in the pinned panel on the right rather than the movable flow on the
+        ''' left. Placement only - it says nothing about whether a tile can be hidden.
+        '''
+        ''' Split from IsAlwaysVisibleActionKey on 2026-09-03. One list had been answering two
+        ''' questions, so taking a key out to let a permission hide it would have moved the tile to
+        ''' the other side of the ribbon as well.
+        ''' </summary>
+        Private Shared Function IsPinnedActionKey(actionKey As String) As Boolean
             If String.IsNullOrWhiteSpace(actionKey) Then
                 Return False
             End If
 
             Select Case actionKey.Trim().ToLowerInvariant()
                 Case "my-profile", "login-as-substitute", "select-role", "help-desk"
+                    Return True
+                Case Else
+                    Return False
+            End Select
+        End Function
+
+        ''' <summary>
+        ''' Tiles that stay on screen whatever visibility is asked for. ConfigureActionVisibility
+        ''' honours the enabled flag for these and ignores the visible one.
+        '''
+        ''' They are the ways out of wherever the user is: their own profile, the role they are
+        ''' working under, and the way to report that something is wrong. A permission that hid one
+        ''' would strand somebody with no route back, so the tile is kept and disabled instead.
+        '''
+        ''' login-as-substitute was in this list until 2026-09-03 and is not a way out - it is an
+        ''' administrator's action, offered only to an App Admin. Being here is what stopped
+        ''' MenuFormInitializer hiding it: the visibility passed in was simply discarded.
+        ''' </summary>
+        Private Shared Function IsAlwaysVisibleActionKey(actionKey As String) As Boolean
+            If String.IsNullOrWhiteSpace(actionKey) Then
+                Return False
+            End If
+
+            Select Case actionKey.Trim().ToLowerInvariant()
+                Case "my-profile", "select-role", "help-desk"
                     Return True
                 Case Else
                     Return False
@@ -916,10 +992,15 @@ Namespace SDC.Framework
             UpdateRibbonLayout()
         End Sub
 
+        ''' <summary>
+        ''' The pinned panel is sized and placed first, then the movable flow takes whatever is left
+        ''' beside it. In that order, because the flow's width is measured from where the pinned
+        ''' panel ends - measuring before it moves leaves the flow a cycle behind, which shows up
+        ''' as a stale gap the first time a pinned tile is hidden.
+        ''' </summary>
         Private Sub UpdateRibbonLayout()
-            rightPinnedActionsPanel.Left = ribbonPanel.ClientSize.Width - rightPinnedActionsPanel.Width - PanelInset
-            leftActionsFlow.Width = Math.Max(TilePitch, rightPinnedActionsPanel.Left - leftActionsFlow.Left - TileMargin)
             LayoutPinnedActions()
+            leftActionsFlow.Width = Math.Max(TilePitch, rightPinnedActionsPanel.Left - leftActionsFlow.Left - TileMargin)
             rightPinnedActionsPanel.BringToFront()
         End Sub
 

@@ -159,6 +159,16 @@ Namespace SDC.Framework
             menu.ConfigureActionVisibility("users", True, True)
             menu.ConfigureActionVisibility("dashboard", True, True)
 
+            ' Signing in as somebody else is an administrator's action, so only an App Admin is
+            ' offered it. Company Admin is deliberately excluded, unlike Application Settings above:
+            ' administering a company is not the same as being able to become one of its users.
+            '
+            ' The tile is still a placeholder - its handler says the workflow is not hooked up yet -
+            ' so this hides a button that does nothing rather than protecting anything. When the
+            ' workflow is written, the check that matters goes at its action boundary; a hidden tile
+            ' is not authorization.
+            menu.ConfigureActionVisibility("login-as-substitute", isAppAdminSession, isAppAdminSession)
+
             menu.ConfigureActionVisibility("select-role", True, True)
 
             menu.UpsertActionTile(
