@@ -538,7 +538,7 @@ Namespace SDC.Framework
                     ' it: removing somebody's access left them able to sign in, and LOGIN-03 recorded
                     ' that it should be refused while sitting untested.
                     If Not isActive Then
-                        errorMessage = "This account is not active. Ask an administrator to restore access."
+                        errorMessage = "This account is not active."
                         Return False
                     End If
 
@@ -1994,6 +1994,11 @@ Namespace SDC.Framework
                 ' Refused here as well as validated on the page, for the same reason the password is
                 ' hashed here: a rule that lives only in a form is not a rule. Two accounts sharing
                 ' an email leave login picking one by row order.
+                ' Normalised before it is checked and before it is written, so the value compared
+                ' for duplicates is the value stored. Checking one form and storing another is how
+                ' two rows end up different to the index and identical to login.
+                NormalizeGeneratedEmailValue(values)
+
                 Dim proposedEmail = GetGeneratedValueText(values, "Email")
                 If proposedEmail <> String.Empty Then
                     Dim emailProblem = GetEmailUnavailableMessage(proposedEmail, Math.Max(0, recordId))
@@ -2096,6 +2101,27 @@ Namespace SDC.Framework
             Return String.Equals(name, "Password", StringComparison.OrdinalIgnoreCase) OrElse
                    String.Equals(name, "PasswordHash", StringComparison.OrdinalIgnoreCase)
         End Function
+
+        ''' <summary>
+        ''' Rewrites an Email in a generated page's value set to its stored form, in place.
+        ''' </summary>
+        Private Shared Sub NormalizeGeneratedEmailValue(values As Dictionary(Of String, Object))
+            If values Is Nothing Then
+                Return
+            End If
+
+            For Each key In values.Keys.Where(Function(k) String.Equals(k, "Email", StringComparison.OrdinalIgnoreCase)).ToList()
+                Dim raw = values(key)
+                If raw Is Nothing OrElse IsDBNull(raw) Then
+                    Continue For
+                End If
+
+                Dim normalized = NormalizeEmailForStorage(raw.ToString())
+                If normalized <> String.Empty Then
+                    values(key) = normalized
+                End If
+            Next
+        End Sub
 
         ''' <summary>
         ''' A value from a generated page's dictionary as trimmed text, or empty when absent or null.
@@ -2565,6 +2591,22 @@ Namespace SDC.Framework
                     Return registrationId > 0
                 End Using
             End Using
+        End Function
+
+        ''' <summary>
+        ''' The form an email is stored in: lower case, trimmed, no spaces.
+        '''
+        ''' The same shape login compares by, so what is stored is already what a lookup asks for.
+        ''' That is the point of normalising on the way in rather than on every read - the column
+        ''' becomes canonical, so a plain unique index on Email means exactly what the application
+        ''' means, and LOWER(REPLACE(...)) at read time stops being the only thing standing between
+        ''' two rows login cannot tell apart.
+        '''
+        ''' Public because it is a write-side rule that pages and the data layer both need, unlike
+        ''' the read-side normaliser below.
+        ''' </summary>
+        Public Shared Function NormalizeEmailForStorage(email As String) As String
+            Return NormalizeEmailForLookup(email)
         End Function
 
         Private Shared Function NormalizeEmailForLookup(email As String) As String
@@ -4898,7 +4940,7 @@ Namespace SDC.Framework
                             cmd.Parameters.AddWithValue("@RegistrationID", record.RegistrationID)
                             cmd.Parameters.AddWithValue("@FirstName", CType(If(String.IsNullOrWhiteSpace(record.FirstName), DBNull.Value, CObj(record.FirstName.Trim())), Object))
                             cmd.Parameters.AddWithValue("@LastName", CType(If(String.IsNullOrWhiteSpace(record.LastName), DBNull.Value, CObj(record.LastName.Trim())), Object))
-                            cmd.Parameters.AddWithValue("@Email", CType(If(String.IsNullOrWhiteSpace(record.Email), DBNull.Value, CObj(record.Email.Trim())), Object))
+                            cmd.Parameters.AddWithValue("@Email", CType(If(String.IsNullOrWhiteSpace(record.Email), DBNull.Value, CObj(NormalizeEmailForStorage(record.Email))), Object))
                             cmd.Parameters.AddWithValue("@Phone", CType(If(String.IsNullOrWhiteSpace(record.Phone), DBNull.Value, CObj(record.Phone.Trim())), Object))
                             cmd.Parameters.AddWithValue("@Address1", CType(If(String.IsNullOrWhiteSpace(record.Address1), DBNull.Value, CObj(record.Address1.Trim())), Object))
                             cmd.Parameters.AddWithValue("@Address2", CType(If(String.IsNullOrWhiteSpace(record.Address2), DBNull.Value, CObj(record.Address2.Trim())), Object))
@@ -4939,7 +4981,7 @@ Namespace SDC.Framework
                     cmd.Parameters.AddWithValue("@UserID", record.UserID)
                     cmd.Parameters.AddWithValue("@FirstName", CType(If(String.IsNullOrWhiteSpace(record.FirstName), DBNull.Value, CObj(record.FirstName.Trim())), Object))
                     cmd.Parameters.AddWithValue("@LastName", CType(If(String.IsNullOrWhiteSpace(record.LastName), DBNull.Value, CObj(record.LastName.Trim())), Object))
-                    cmd.Parameters.AddWithValue("@Email", CType(If(String.IsNullOrWhiteSpace(record.Email), DBNull.Value, CObj(record.Email.Trim())), Object))
+                    cmd.Parameters.AddWithValue("@Email", CType(If(String.IsNullOrWhiteSpace(record.Email), DBNull.Value, CObj(NormalizeEmailForStorage(record.Email))), Object))
                     cmd.Parameters.AddWithValue("@Phone", CType(If(String.IsNullOrWhiteSpace(record.Phone), DBNull.Value, CObj(record.Phone.Trim())), Object))
                     cmd.Parameters.AddWithValue("@Address1", CType(If(String.IsNullOrWhiteSpace(record.Address1), DBNull.Value, CObj(record.Address1.Trim())), Object))
                     cmd.Parameters.AddWithValue("@Address2", CType(If(String.IsNullOrWhiteSpace(record.Address2), DBNull.Value, CObj(record.Address2.Trim())), Object))
