@@ -560,12 +560,20 @@ Namespace SDC.Framework
             If Not SupportsTabOrderManager() Then Return
             If Not IsApplicationAdminSession() OrElse tabOrderToggleButton IsNot Nothing Then Return
 
+            ' UseVisualStyleBackColor keeps the themed button face instead of the page tint, which
+            ' is what KeepButtonsUntinted does for every other button on the page.
+            '
+            ' Set here rather than left to that sweep, because this button does not exist when the
+            ' sweep runs. ApplyInheritedPageBackground untints on Shown; this button is created a
+            ' BeginInvoke later, so it was the one button on a tinted page still wearing the tint.
             tabOrderToggleButton = New Button() With {
                 .Name = "Button_TabOrderManager",
                 .Text = TabOrderCollapsedText,
                 .Size = New Size(100, 28),
                 .Anchor = AnchorStyles.Top Or AnchorStyles.Right,
-                .TabStop = False
+                .TabStop = False,
+                .FlatStyle = FlatStyle.Standard,
+                .UseVisualStyleBackColor = True
             }
             ' ReservedWidth already includes the edge margin, so it is not subtracted again here.
             ' Doing both left a 22px gap where every browse page has 12.
