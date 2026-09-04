@@ -584,7 +584,7 @@ Namespace SDC.Framework
         ''' <summary>
         ''' Where a generated page is written, and the one place that decides it.
         '''
-        ''' GENERATEDPAGES at the repository root, not the root itself. A generated pair is a draft:
+        ''' GENERATED PAGES at the repository root, not the root itself. A generated pair is a draft:
         ''' it is reviewed and then filed by hand into a band under 000_FRAMEWORK or into the project
         ''' it belongs to under 100_PROJECTS, and which of those depends on what the page turns out
         ''' to be. The generator cannot know that, so it does not guess - but it should not scatter
@@ -598,7 +598,7 @@ Namespace SDC.Framework
         ''' this move would have changed the generator's idea of where a page lives and left the
         ''' page's "has it been edited by hand" checks looking at the old spot.
         ''' </summary>
-        Public Const GeneratedPagesFolder As String = "GENERATEDPAGES"
+        Public Const GeneratedPagesFolder As String = "GENERATED PAGES"
 
         ''' <summary>
         ''' The caller that means the main ribbon rather than a dashboard. It has been in the Menu
@@ -673,8 +673,25 @@ Namespace SDC.Framework
             Return keys.Count
         End Function
 
+        ''' <summary>
+        ''' Where this page is written: where it already lives if it has been filed, and GENERATED
+        ''' PAGES if it has not.
+        '''
+        ''' Filing a generated page is the expected next step - it is a draft, and it belongs in a
+        ''' band under 000_FRAMEWORK or in a project under 100_PROJECTS once you know which. Writing
+        ''' by name alone made that a one-way door: regenerating a filed page put a second copy in
+        ''' GENERATED PAGES, two files declaring the same class in the same namespace, which is a
+        ''' hard compile error rather than a duplicate anybody would spot.
+        '''
+        ''' So the page is looked for before it is placed, the same way a dashboard is. Move a page
+        ''' anywhere in the tree and regeneration follows it.
+        ''' </summary>
         Public Shared Function GeneratedPagePath(workspaceRoot As String, pageName As String) As String
-            Return Path.Combine(workspaceRoot, GeneratedPagesFolder, pageName.Trim() & ".vb")
+            Dim fileName = pageName.Trim() & ".vb"
+            Dim existing = ResolveSourceFile(workspaceRoot, fileName)
+            If existing.Length > 0 Then Return existing
+
+            Return Path.Combine(workspaceRoot, GeneratedPagesFolder, fileName)
         End Function
 
         Private Shared Function IsMainMenuCaller(menuCaller As String) As Boolean
