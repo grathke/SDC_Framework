@@ -202,6 +202,11 @@ Key areas:
   parsed locally into a SQL predicate. Read it before building any of it, and before changing QBE
   filtering: section 8 records the three filter paths a change has to reach, which is not obvious
   from any one of them.
+- `PAGE_GENERATION_SIMPLIFICATION.md` — **proposed, not built.** Why a generated `_B` is almost
+  entirely boilerplate, and what follows from that: the three duplicated handlers belong in
+  `FW_Base_B`, and a browse page may not need to be a compiled class at all. Read it before
+  changing the page generator or adding anything to a generated page template — section 2 is worth
+  doing on its own merits and is independent of the rest.
 - `.github/new-page-request-template.md` and `.github/new-page-request-manual.md` — the page
   request template and how to interpret a filled-in one.
 
