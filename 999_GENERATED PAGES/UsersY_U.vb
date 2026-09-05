@@ -96,7 +96,9 @@ Namespace SDC.Framework
         Protected Overrides Sub ApplyMode()
             For Each control In Controls.OfType(Of TextBox)()
                 Dim columnName = If(control.Name.StartsWith("TextBox_", StringComparison.OrdinalIgnoreCase), control.Name.Substring("TextBox_".Length), String.Empty)
-                control.ReadOnly = String.Equals(columnName, primaryKey, StringComparison.OrdinalIgnoreCase) OrElse computedFields.Contains(columnName)
+                Dim isComputed = computedFields.Contains(columnName)
+                control.ReadOnly = String.Equals(columnName, primaryKey, StringComparison.OrdinalIgnoreCase) OrElse isComputed
+                If isComputed Then ShowComputedFieldHint(control)
             Next
         End Sub
 

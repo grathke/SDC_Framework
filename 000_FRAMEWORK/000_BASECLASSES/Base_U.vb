@@ -1352,6 +1352,36 @@ Namespace SDC.Framework
             End Get
         End Property
 
+        ''' <summary>
+        ''' Why a computed field cannot be typed into.
+        '''
+        ''' It still takes focus and still draws the green focus border, so it looks like every
+        ''' other field right up until the first keystroke does nothing. Both are worth keeping -
+        ''' the border says where the user is, and the value is worth reading - so the field
+        ''' explains itself rather than being made unreachable.
+        '''
+        ''' One owner for the wording. A generated page asks for the hint and carries no text.
+        ''' </summary>
+        Public Const ComputedFieldHint As String = "COMPUTED FIELD, ENTRY NOT POSSIBLE."
+
+        Private ReadOnly fieldHintToolTip As New ToolTip()
+
+        ''' <summary>
+        ''' Puts the computed-field explanation on the field and on its label, so it is found from
+        ''' whichever the pointer reaches first - the label is the wider target of the two.
+        ''' </summary>
+        Protected Sub ShowComputedFieldHint(field As Control)
+            If field Is Nothing OrElse String.IsNullOrWhiteSpace(field.Name) Then Return
+
+            fieldHintToolTip.SetToolTip(field, ComputedFieldHint)
+
+            If Not field.Name.StartsWith("TextBox_", StringComparison.OrdinalIgnoreCase) Then Return
+
+            For Each label In Controls.Find("Label_" & field.Name.Substring("TextBox_".Length), True)
+                fieldHintToolTip.SetToolTip(label, ComputedFieldHint)
+            Next
+        End Sub
+
         Protected Overridable Function IsViewOnly() As Boolean
             Return False
         End Function
