@@ -325,13 +325,14 @@ Namespace SDC.Framework
                 ' nothing had been asked for. It says what will happen now, including the number the
                 ' decision turns on.
                 Dim inUse = CountMovableRibbonTiles(workspaceRoot)
-                If inUse >= MainMenuMovableTileCapacity Then
+                Dim capacity = FW_MainMenu.MovableTileCapacityAtMinimumWidth()
+                If inUse >= capacity Then
                     lines.Add("  MAIN MENU IS FULL - " & inUse.ToString() & " of " &
-                              MainMenuMovableTileCapacity.ToString() & " movable tiles at the narrowest window.")
+                              capacity.ToString() & " movable tiles at the narrowest window.")
                     lines.Add("  " & plan.BrowsePageName & " WOULD GO ON THE APP ADMIN DASHBOARD INSTEAD.")
                 Else
                     lines.Add("  WOULD BE ADDED TO THE MAIN MENU RIBBON FOR " & plan.BrowsePageName &
-                              " (" & (inUse + 1).ToString() & " of " & MainMenuMovableTileCapacity.ToString() & " tiles)")
+                              " (" & (inUse + 1).ToString() & " of " & capacity.ToString() & " tiles)")
                     lines.Add("  IMAGE: " & If(String.IsNullOrWhiteSpace(plan.IconFileName),
                                                "NONE CHOSEN, THE DEFAULT GLYPH IS USED",
                                                plan.IconFileName))
@@ -608,25 +609,11 @@ Namespace SDC.Framework
         ''' </summary>
         Public Const MainMenuCaller As String = "Main Menu"
 
-        ''' <summary>
-        ''' How many movable tiles the ribbon can hold, measured at the narrowest window the form
-        ''' allows rather than at whatever width it happens to be open at.
-        '''
-        ''' It has to be the narrow figure. The flow panel neither wraps nor scrolls, so a tile past
-        ''' the end is not drawn at all - and a tile placed against the default width would simply be
-        ''' missing for anyone whose window is smaller, with nothing said and nothing to see.
-        '''
-        ''' Kept in step with FW_MainMenu by hand, because the generator runs as a development tool
-        ''' with no menu instantiated to ask. This is the only place the figure lives: a function on
-        ''' the menu form computing the same thing was written and never called, so it was deleted
-        ''' rather than left as a second answer nothing consulted.
-        '''
-        ''' Eight comes from FW_MainMenu's geometry at MinimumSize 1180: a ribbon client of 1146,
-        ''' less the two 10px insets and the 300px pinned row, is 826 - eight tiles of 100 with 26
-        ''' spare. Change TileWidth, TileMargin, PanelInset, MinimumSize or the number of pinned
-        ''' tiles and this needs recomputing.
-        ''' </summary>
-        Public Const MainMenuMovableTileCapacity As Integer = 8
+        ' How many movable tiles the ribbon holds is FW_MainMenu.MovableTileCapacityAtMinimumWidth().
+        ' It used to be the constant MainMenuMovableTileCapacity = 8 here, kept in step by hand with
+        ' the geometry that decides it - tile pitch, panel inset, pinned tile count, minimum width -
+        ' every one of which lives on the menu form. Nothing failed when the two disagreed; the
+        ' ribbon simply stopped drawing a tile.
 
         ''' Tiles that live in the pinned row on the right and so cost nothing from the movable row.
         Private Shared ReadOnly PinnedRibbonKeys As String() =
@@ -739,15 +726,19 @@ Namespace SDC.Framework
             End If
 
             Dim inUse = CountMovableRibbonTiles(workspaceRoot)
-            If inUse >= MainMenuMovableTileCapacity Then
-                errors.Add("MAIN MENU FULL: the ribbon holds " & MainMenuMovableTileCapacity.ToString() &
+            Dim capacity = FW_MainMenu.MovableTileCapacityAtMinimumWidth()
+            If inUse >= capacity Then
+                errors.Add("MAIN MENU FULL: the ribbon holds " & capacity.ToString() &
                            " movable tiles at the narrowest window and " & inUse.ToString() &
                            " are in use, so " & browsePageName & " was not added to it. " &
                            "Free a tile, or choose a dashboard as the Menu Caller.")
                 Return
             End If
 
-            Dim anchor = "            AddMenuTestTile(menu)"
+            ' A marker put there for this, rather than whatever line happened to be last. The anchor
+            ' was AddMenuTestTile(menu) until 2026-09-05, so removing a demonstration tile would have
+            ' silently stopped every future page reaching the ribbon.
+            Dim anchor = "            ' PAGEGEN RIBBON ANCHOR"
             If source.IndexOf(anchor, StringComparison.Ordinal) < 0 Then
                 errors.Add("MenuFormInitializer.vb has no recognised place to add a ribbon tile, so " &
                            browsePageName & " was not added to the main menu.")
@@ -775,7 +766,7 @@ Namespace SDC.Framework
             source = source.Replace(anchor, tile)
             File.WriteAllText(initializerPath, source, New UTF8Encoding(False))
             created.Add("Main Menu button: " & actionKey & " - " & DescribeIcon(iconFileName) &
-                        " (" & (inUse + 1).ToString() & " of " & MainMenuMovableTileCapacity.ToString() & " tiles)")
+                        " (" & (inUse + 1).ToString() & " of " & capacity.ToString() & " tiles)")
         End Sub
 
         Private Shared Function IsDashboardCaller(menuCaller As String) As Boolean

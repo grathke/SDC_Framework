@@ -71,15 +71,15 @@ Namespace SDC.Framework
         ''' The figure that matters is the one at the narrowest allowed window, since a tile that
         ''' fits only at the default width disappears the moment somebody drags the window in - the
         ''' panel neither wraps nor scrolls, so it is not moved or reachable, it is simply not drawn.
-        ''' That figure is PageGenerator.MainMenuMovableTileCapacity, which is where the decision to
-        ''' place a tile is actually taken.
+        ''' That figure is MovableTileCapacityAtMinimumWidth below, and PageGenerator asks it.
         '''
-        ''' There was a MovableTileCapacityAtMinimumWidth here to answer the same question against
-        ''' live controls. Nothing ever called it: the generator runs as a development tool with no
-        ''' menu instantiated to ask, so it reads the constant instead. It was deleted on 2026-09-04
-        ''' rather than corrected - it had a sixteen-pixel error that happened to floor to the right
-        ''' answer, and a public function that looks authoritative and is wrong is worse than no
-        ''' function at all.
+        ''' A function of that name was deleted on 2026-09-04 for measuring live controls with a
+        ''' sixteen-pixel error, leaving PageGenerator holding the answer as the constant 8 while
+        ''' every value deciding it stayed here. It is back on 2026-09-05 as arithmetic on these
+        ''' constants, which is what the generator can actually ask with no form instantiated.
+        '''
+        ''' It returns 7, not the 8 that constant held: 8 was the figure for a session that cannot
+        ''' see login-as-substitute, and an eighth tile would have been invisible to every App Admin.
         ''' </summary>
         Private Const TileWidth As Integer = 96
         Private Const TileHeight As Integer = 96
@@ -94,6 +94,44 @@ Namespace SDC.Framework
         ''' How far each panel sits from its end of the ribbon. The same on both sides, so the row
         ''' is inset evenly.
         Private Const PanelInset As Integer = 10
+
+        ''' The narrowest the window may be dragged. Read by MovableTileCapacityAtMinimumWidth as
+        ''' well as by MinimumSize, so the two cannot say different things.
+        Private Const MinimumWindowWidth As Integer = 1180
+
+        ''' What the ribbon loses before any of it is usable for tiles: the window's own border,
+        ''' then ribbonPanel's 8px margin at each side, then its FixedSingle border of one pixel a
+        ''' side. Named rather than folded into one number so a change to any of them is findable.
+        Private Const WindowBorderWidth As Integer = 16
+        Private Const RibbonPanelMargin As Integer = 16
+        Private Const RibbonPanelBorder As Integer = 2
+
+        ''' <summary>
+        ''' How many movable tiles fit at the narrowest window the form allows, with every pinned
+        ''' tile showing.
+        '''
+        ''' One owner for a number that used to be written down twice. PageGenerator held 8 as a
+        ''' constant while every value that decides it - tile pitch, panel inset, pinned tile count,
+        ''' minimum width - lives here. Nothing failed when they disagreed; the ribbon simply
+        ''' stopped drawing a tile.
+        '''
+        ''' Worst case deliberately. login-as-substitute is pinned but shown only to an App Admin,
+        ''' so an ordinary session has room for one more tile than this returns. Sizing to the
+        ''' session that sees the most is the entire point: the panel neither wraps nor scrolls, so
+        ''' a tile that does not fit is not moved and not reachable, it is simply not drawn. The old
+        ''' constant of 8 was the ordinary user's figure, and would have allowed an eighth tile that
+        ''' no App Admin could ever see.
+        '''
+        ''' Asked before any form exists - the generator is a development tool with no menu to
+        ''' query - so this is arithmetic on the constants rather than a measurement of live
+        ''' controls. It mirrors LayoutRibbonPanels, which does the same sum against real widths.
+        ''' </summary>
+        Public Shared Function MovableTileCapacityAtMinimumWidth() As Integer
+            Dim ribbonClientWidth = MinimumWindowWidth - WindowBorderWidth - RibbonPanelMargin - RibbonPanelBorder
+            Dim roomForFlow = ribbonClientWidth - (PanelInset * 2) - PinnedPanelWidth
+
+            Return Math.Max(0, roomForFlow \ TilePitch)
+        End Function
 
         Private Shared ReadOnly RibbonHoverBackColor As Color = Color.FromArgb(232, 245, 255)
         Private Shared ReadOnly RibbonHoverBorderColor As Color = Color.FromArgb(91, 161, 217)
@@ -110,7 +148,7 @@ Namespace SDC.Framework
             Me.FormBorderStyle = FormBorderStyle.Sizable
             Me.MaximizeBox = True
             Me.MinimizeBox = True
-            Me.MinimumSize = New Size(1180, 760)
+            Me.MinimumSize = New Size(MinimumWindowWidth, 760)
             Me.ClientSize = New Size(1280, 800)
             Me.BackColor = Color.White
 

@@ -208,7 +208,12 @@ Namespace SDC.Framework
                 isVisible:=True,
                 isEnabled:=True)
 
-            AddMenuTestTile(menu)
+            ' Generated ribbon tiles are inserted above this marker. PageGenerator matches the next
+            ' line exactly, so rewording it stops generation placing tiles on the ribbon - it says it
+            ' found no recognised place rather than failing quietly. It used to anchor on an
+            ' AddMenuTestTile call that happened to sit last in this method, which meant deleting a
+            ' demonstration tile would have broken page generation.
+            ' PAGEGEN RIBBON ANCHOR
         End Sub
 
 
@@ -277,59 +282,11 @@ Namespace SDC.Framework
             Return item
         End Function
 
-        ''' <summary>
-        ''' A demonstration tile: it drops a menu down over the regions below, and choosing an item
-        ''' only says what was chosen. Kept deliberately, as the working example to copy when a real
-        ''' tile needs a menu.
-        '''
-        ''' Note what it does not do. It says what its menu contains and nothing about how the menu
-        ''' behaves - opening, and closing when the pointer leaves, both belong to
-        ''' TileDropDownController. A real tile copying this inherits that behaviour by writing no
-        ''' part of it.
-        '''
-        ''' The items are built on first open rather than here, so a menu may be assembled from
-        ''' state that does not exist yet when the ribbon is configured.
-        ''' </summary>
-        Private Sub AddMenuTestTile(menu As FW_MainMenu)
-            menu.UpsertActionTile(
-                actionKey:="menu-test",
-                caption:="Menu" & Environment.NewLine & "Test",
-                onClick:=Sub(sender, e) tileDropDowns.Open(TryCast(sender, Control),
-                                                           Function() BuildMenuTestItems(menu)),
-                iconFileName:="Fluent_Open.png",
-                fallbackIcon:=SystemIcons.Application.ToBitmap(),
-                isVisible:=True,
-                isEnabled:=True)
-        End Sub
-
-        Private Function BuildMenuTestItems(owner As FW_MainMenu) As IEnumerable(Of ToolStripItem)
-            Dim items As New List(Of ToolStripItem)()
-
-            For Each choice In {"Messages", "General Dashboard", "Acme Dashboard"}
-                items.Add(BuildMenuTestItem(owner, choice))
-            Next
-
-            items.Add(New ToolStripSeparator())
-            items.Add(BuildMenuTestItem(owner, "Users && Lists"))
-            items.Add(BuildMenuTestItem(owner, "Evolution of Acme Products"))
-
-            Return items
-        End Function
-
-        Private Function BuildMenuTestItem(owner As FW_MainMenu, label As String) As ToolStripMenuItem
-            Dim item As New ToolStripMenuItem(label)
-
-            AddHandler item.Click,
-                Sub()
-                    MessageBox.Show(owner,
-                                    "Menu test - you chose: " & label.Replace("&&", "&"),
-                                    "Menu Test",
-                                    MessageBoxButtons.OK,
-                                    MessageBoxIcon.Information)
-                End Sub
-
-            Return item
-        End Function
+        ' The Menu Test tile was removed on 2026-09-05. It was a demonstration - it dropped a menu
+        ' down and said what you chose - kept as the working example to copy when a real tile needed
+        ' a menu. ConfigureApplicationSettingsTile above is now that example, doing the same thing
+        ' through the same TileDropDownController for a real purpose, so the demonstration was
+        ' costing a ribbon slot to show what a live tile already shows.
 
         Private Sub ApplyRegionAccess(menu As FW_MainMenu, profile As AccessProfile)
             If menu Is Nothing OrElse profile Is Nothing Then
