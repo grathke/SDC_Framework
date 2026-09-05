@@ -23,20 +23,24 @@ Namespace SDC.Framework.Tests
     Public Class RibbonCapacityTests
 
         <TestMethod>
-        Public Sub CapacityAtMinimumWidth_IsSeven()
-            ' A ribbon client of 1146 at MinimumSize 1180, less the two 10px insets and the 400px
-            ' pinned row, is 726 - seven tiles of 100 with 26 spare.
-            Assert.AreEqual(7, FW_MainMenu.MovableTileCapacityAtMinimumWidth())
+        Public Sub CapacityAtMinimumWidth_IsNine()
+            ' A ribbon client of 1226 at MinimumSize 1260, less the two 10px insets and the 300px
+            ' pinned row, is 906 - nine tiles of 100 with 6 spare.
+            '
+            ' It read 7 that morning, then 8 once the minimum width went from 1180 to 1260, then 9
+            ' once the pinned row stopped reserving a slot for login-as-substitute, whose button had
+            ' been gone since 2026-09-04. Narrow the window minimum or re-pin a tile and this fails,
+            ' rather than a tile quietly ceasing to be drawn.
+            Assert.AreEqual(9, FW_MainMenu.MovableTileCapacityAtMinimumWidth())
         End Sub
 
         <TestMethod>
-        Public Sub CapacityIsTheWorstCase_NotTheOrdinaryUsers()
-            ' The old constant said 8, which is right only for a session that cannot see
-            ' login-as-substitute - it is pinned but offered to an App Admin alone. Sizing to the
-            ' session that sees the most is the whole point of the figure, so an eighth tile that no
-            ' App Admin could ever see must not be allowed.
-            Assert.IsLessThan(8, FW_MainMenu.MovableTileCapacityAtMinimumWidth(),
-                              "Capacity must assume every pinned tile is visible, not just three of them.")
+        Public Sub CapacityLeavesRoomForThePinnedRow()
+            ' Without the pinned row the same width would give twelve. The subtraction is the whole
+            ' reason this function exists rather than a division: drop it and every generated page
+            ' would be told there is room where the pinned tiles already are.
+            Assert.IsLessThan(12, FW_MainMenu.MovableTileCapacityAtMinimumWidth(),
+                              "Capacity must subtract the pinned row, not just divide the ribbon width.")
         End Sub
 
         <TestMethod>

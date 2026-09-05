@@ -78,26 +78,47 @@ Namespace SDC.Framework
         ''' every value deciding it stayed here. It is back on 2026-09-05 as arithmetic on these
         ''' constants, which is what the generator can actually ask with no form instantiated.
         '''
-        ''' It returns 7, not the 8 that constant held: 8 was the figure for a session that cannot
-        ''' see login-as-substitute, and an eighth tile would have been invisible to every App Admin.
         ''' </summary>
         Private Const TileWidth As Integer = 96
         Private Const TileHeight As Integer = 96
         Private Const TileMargin As Integer = 4
         Private Const TilePitch As Integer = TileWidth + TileMargin
 
-        ''' The pinned row holds four tiles and is sized to them, so the last one finishes at the
-        ''' panel edge instead of 12px short of it.
-        Private Const PinnedTileCount As Integer = 4
+        ''' <summary>
+        ''' The pinned row holds three tiles and is sized to them, so the last one finishes at the
+        ''' panel edge instead of short of it.
+        '''
+        ''' Three, not four, since 2026-09-05. login-as-substitute was counted here long after its
+        ''' button went on 2026-09-04 - the action moved into the Application Settings drop-down and
+        ''' the tile stayed registered only so the menu item could invoke its handler, hidden
+        ''' unconditionally by MenuFormInitializer. It is still pinned by IsPinnedActionKey and still
+        ''' excluded from PageGenerator's movable count, both of which keep a hidden tile out of the
+        ''' movable row; what it must not do any longer is reserve 100px that nothing occupies.
+        '''
+        ''' That reservation cost a whole tile: the row is 100px wider in practice than the capacity
+        ''' figure assumed, so MovableTileCapacityAtMinimumWidth reported 8 where 9 fit.
+        ''' </summary>
+        Private Const PinnedTileCount As Integer = 3
         Private Const PinnedPanelWidth As Integer = PinnedTileCount * TilePitch
 
         ''' How far each panel sits from its end of the ribbon. The same on both sides, so the row
         ''' is inset evenly.
         Private Const PanelInset As Integer = 10
 
+        ''' <summary>
         ''' The narrowest the window may be dragged. Read by MovableTileCapacityAtMinimumWidth as
         ''' well as by MinimumSize, so the two cannot say different things.
-        Private Const MinimumWindowWidth As Integer = 1180
+        '''
+        ''' Raised from 1180 to 1260 on 2026-09-05 to buy an eighth movable tile. Eight tiles need
+        ''' 800px of flow, and the flow gets the window width less 52 for the borders and insets and
+        ''' less the pinned row's 400 - so 1252 is the least that works and this is 1260 for slack.
+        '''
+        ''' Chosen against a laptop rather than a desktop. A 1366-wide screen leaves roughly 1350 of
+        ''' browser viewport under Thinfinity, so this still clears it by about 90px. Width was never
+        ''' the tight dimension there; the 760 height is the one that does not fit a 768-tall screen,
+        ''' and raising this does not make that worse.
+        ''' </summary>
+        Private Const MinimumWindowWidth As Integer = 1260
 
         ''' What the ribbon loses before any of it is usable for tiles: the window's own border,
         ''' then ribbonPanel's 8px margin at each side, then its FixedSingle border of one pixel a
@@ -115,12 +136,10 @@ Namespace SDC.Framework
         ''' minimum width - lives here. Nothing failed when they disagreed; the ribbon simply
         ''' stopped drawing a tile.
         '''
-        ''' Worst case deliberately. login-as-substitute is pinned but shown only to an App Admin,
-        ''' so an ordinary session has room for one more tile than this returns. Sizing to the
-        ''' session that sees the most is the entire point: the panel neither wraps nor scrolls, so
-        ''' a tile that does not fit is not moved and not reachable, it is simply not drawn. The old
-        ''' constant of 8 was the ordinary user's figure, and would have allowed an eighth tile that
-        ''' no App Admin could ever see.
+        ''' Counted against the pinned tiles that actually appear. The panel neither wraps nor
+        ''' scrolls, so a tile that does not fit is not moved and not reachable, it is simply not
+        ''' drawn - which makes over-counting the pinned row expensive in exactly one direction:
+        ''' every 100px reserved for a tile nobody sees is a movable tile nobody gets.
         '''
         ''' Asked before any form exists - the generator is a development tool with no menu to
         ''' query - so this is arithmetic on the constants rather than a measurement of live
@@ -144,12 +163,35 @@ Namespace SDC.Framework
             currentUser = user
 
             Me.Text = "Main Menu"
-            Me.StartPosition = FormStartPosition.CenterParent
+            ' CenterScreen, not CenterParent. The parent is the login form, so the menu inherited
+            ' wherever that happened to be and was only centred if the login form was.
+            '
+            ' Under Thinfinity the screen is the browser session surface, so this centres the menu
+            ' in the browser rather than on a desktop that is not there. It centres vertically too,
+            ' which is wanted for the same reason.
+            Me.StartPosition = FormStartPosition.CenterScreen
             Me.FormBorderStyle = FormBorderStyle.Sizable
             Me.MaximizeBox = True
             Me.MinimizeBox = True
+
+            ' No grip in the corner. The default is Auto, which draws one whenever a form is shown
+            ' as a dialog - and the menu is, through LoginForm's ShowDialog - so the shell carried a
+            ' dialog's furniture without anyone asking for it.
+            '
+            ' Hide removes the handle, not the resizing: the borders and the maximise box still
+            ' work, and the ribbon still lays itself out on every resize.
+            Me.SizeGripStyle = SizeGripStyle.Hide
             Me.MinimumSize = New Size(MinimumWindowWidth, 760)
-            Me.ClientSize = New Size(1280, 800)
+            ' Opens at exactly its narrowest, so the ribbon shows its durable layout from the first
+            ' moment rather than one that shrinks under the user. The width is MinimumWindowWidth
+            ' less the 16px the window border takes, so the two move together; it was 1280 against a
+            ' 1260 minimum, leaving 36px of play that showed nothing extra because the row is capped
+            ' at the slots that survive the narrowest window anyway.
+            '
+            ' The height still has 40px of play. It is left alone deliberately: 760 is already taller
+            ' than a 768-high laptop's browser viewport, and that wants measuring rather than
+            ' guessing before anything here moves.
+            Me.ClientSize = New Size(MinimumWindowWidth - WindowBorderWidth, 800)
             Me.BackColor = Color.White
 
             ribbonPanel = New Panel() With {
@@ -169,9 +211,9 @@ Namespace SDC.Framework
                 .Font = New Font("Segoe UI", 10.5F, FontStyle.Regular)
             }
 
-            ' Not anchored Right. Its width is a whole number of tiles, worked out by
-            ' LayoutRibbonPanels on every resize; a Right anchor would stretch it to a fractional
-            ' tile between those calculations and the row would jitter as it resized.
+            ' Not anchored Right. Its width is set by LayoutRibbonPanels on every resize, to end
+            ' exactly where the pinned row begins; a Right anchor would stretch it between those
+            ' calculations and the row would jitter as it resized.
             leftActionsFlow = New FlowLayoutPanel() With {
                 .Location = New Point(PanelInset, 32),
                 .Size = New Size(760, 102),
@@ -185,9 +227,9 @@ Namespace SDC.Framework
             ' A flow panel like the left one, so that a pinned tile hidden by a permission lets the
             ' rest close up behind it rather than leaving a hole. Its tiles are still fixed in place
             ' - no drag is wired here - and their order is set by LayoutPinnedActions.
-            ' Not anchored Right either. It is placed where the flow panel ends, so the gap between
-            ' the last movable tile and the first pinned one is the same TileMargin as every other
-            ' gap in the ribbon.
+            ' Not anchored Right either, for the same jitter reason as the flow panel, but
+            ' LayoutRibbonPanels does place it against the right-hand edge - PanelInset from it, the
+            ' same inset the flow panel has on the left, so the ribbon is evenly inset at both ends.
             rightPinnedActionsPanel = New FlowLayoutPanel() With {
                 .Location = New Point(ribbonPanel.Width - PinnedPanelWidth - PanelInset - 4, 32),
                 .Size = New Size(PinnedPanelWidth, 102),
@@ -501,6 +543,11 @@ Namespace SDC.Framework
                                                                            surfaceName,
                                                                            sessionUserId,
                                                                            If(anchoredKeys, New String() {}))
+
+                ' The same figure the generator asks before placing a tile, so what an App Admin is
+                ' shown as free and what a new page is allowed to occupy are one number rather than
+                ' two that can disagree.
+                arrangementController.DurableSlotCount = MovableTileCapacityAtMinimumWidth()
             End If
 
             If imageController Is Nothing Then
@@ -900,8 +947,27 @@ Namespace SDC.Framework
                               PanelInset -
                               rightPinnedActionsPanel.Width
 
-            leftActionsFlow.Width = Math.Max(1, roomForFlow \ TilePitch) * TilePitch
-            rightPinnedActionsPanel.Left = leftActionsFlow.Left + leftActionsFlow.Width
+            ' All the room there is, rather than the largest whole number of tiles that fits into it.
+            ' The remainder used to be discarded and collected at the right-hand end as dead space;
+            ' now the panel keeps it, so the drop zone for arranging tiles runs right up to the
+            ' pinned row instead of stopping at the last whole tile. Only whole tiles are ever drawn,
+            ' so this changes where a tile may be dropped and not how many fit.
+            '
+            ' A drop past the last tile is already handled: IndexUnderPointer returns the last
+            ' visible tile once the pointer is beyond it, so the extra width means "put it at the
+            ' end" rather than an index off the end of the row.
+            leftActionsFlow.Width = Math.Max(TilePitch, roomForFlow)
+
+            ' Against the right edge, PanelInset from it, so the ribbon is inset by the same amount
+            ' at both ends. It used to sit immediately after the flow panel, which was meant to make
+            ' the gap before the first pinned tile match the gap between any two tiles - but the flow
+            ' panel is rounded up to a whole number of tiles and is wider than its contents whenever
+            ' the ribbon is not full, so that gap was never the tile gap anyway. The leftover width
+            ' simply collected at the right-hand end, and the ribbon looked inset on the left and
+            ' ragged on the right.
+            rightPinnedActionsPanel.Left = ribbonPanel.ClientSize.Width -
+                                           PanelInset -
+                                           rightPinnedActionsPanel.Width
         End Sub
 
         ''' <summary>

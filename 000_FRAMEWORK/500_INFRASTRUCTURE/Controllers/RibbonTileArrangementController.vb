@@ -120,6 +120,25 @@ Namespace SDC.Framework
         ''' because the bar is painted and there is nothing on the panel to read.
         Private showingDragBounds As Boolean
 
+        ''' Whether this session may arrange the ribbon at all. Held because the empty slots are
+        ''' drawn for an App Admin whenever the menu is on screen, not only mid-drag, and Paint has
+        ''' no other way to ask.
+        Private canArrangeNow As Boolean
+
+        ''' <summary>
+        ''' How many slots this row keeps whatever the window is doing, or 0 to use whatever the
+        ''' panel is wide enough for right now.
+        '''
+        ''' Marking every slot the current width allows would promise room that is not durable: the
+        ''' window size is not saved, so a tile dropped into a slot that exists only while the window
+        ''' is stretched is simply not drawn the next time somebody opens the menu narrower. The
+        ''' panel does not wrap or scroll, so there is nothing to scroll it back into view.
+        '''
+        ''' Set by the caller rather than worked out here, because how narrow a window may get is the
+        ''' menu's business - see FW_MainMenu.MovableTileCapacityAtMinimumWidth.
+        ''' </summary>
+        Public Property DurableSlotCount As Integer
+
         Public Sub New(owner As Form,
                        panel As FlowLayoutPanel,
                        surfaceName As String,
@@ -191,6 +210,7 @@ Namespace SDC.Framework
         ''' </summary>
         Private Sub ApplyRoleAffordances()
             Dim canArrange = SessionState.IsApplicationAdmin
+            canArrangeNow = canArrange
 
             For Each pair In keysByButton
                 Dim button = pair.Key
@@ -236,10 +256,15 @@ Namespace SDC.Framework
                 tips.SetToolTip(button, If(canArrange, AnchoredTileTip, String.Empty))
             Next
 
-            ' Not shown to an App Admin merely because they could drag something - only while they
-            ' are. A role switch cannot land in the middle of a drag, but this clears the bar
-            ' rather than assuming it: nothing else here would ever take one down.
+            ' The bar is not shown to an App Admin merely because they could drag something - only
+            ' while they are. A role switch cannot land in the middle of a drag, but this clears it
+            ' rather than assuming: nothing else here would ever take one down.
+            '
+            ' The empty slots are the other way round, and deliberately so - they answer "what room
+            ' is there" and that is worth knowing before deciding to drag, not only after starting.
+            ' Repainted here because a role change is exactly when the answer changes.
             ShowDragBounds(False)
+            panel.Invalidate()
         End Sub
 
         ''' <summary>
@@ -333,7 +358,7 @@ Namespace SDC.Framework
         ''' tile there is no span to draw and nothing is drawn.
         ''' </summary>
         Private Sub Panel_Paint(sender As Object, e As PaintEventArgs)
-            If Not showingDragBounds Then Return
+            If Not showingDragBounds AndAlso Not canArrangeNow Then Return
 
             Dim firstMovable As Control = Nothing
             Dim lastVisible As Control = Nothing
@@ -347,25 +372,78 @@ Namespace SDC.Framework
 
             If firstMovable Is Nothing OrElse lastVisible Is Nothing Then Return
 
-            ' To the end of the panel, not to the end of the tiles.
+            ' To the last whole slot, not to the end of the tiles and not to the end of the panel.
             '
             ' The bar stopped at lastVisible.Right, so it marked only the tiles already there and
             ' said nothing about the empty room after them - which is exactly where a tile can be
             ' dropped, and where a new one lands. With three free slots showing as bare panel, the
             ' bar looked like the row was full.
             '
-            ' The panel is now a whole number of tiles wide (FW_MainMenu.LayoutRibbonPanels), so its
-            ' right edge is the real end of the droppable span rather than an arbitrary cut.
-            Dim spanRight = Math.Max(lastVisible.Right, panel.ClientSize.Width)
+            ' The panel's own right edge answered that while LayoutRibbonPanels sized it to a whole
+            ' number of tiles. Since 2026-09-05 it keeps the remainder instead, so the drop zone
+            ' reaches the pinned row - and its edge now falls part way through a slot too narrow to
+            ' hold a tile. A bar drawn to there would promise a drop that cannot happen.
+            '
+            ' The pitch is read from a tile rather than from FW_MainMenu's constants, so this holds
+            ' for any panel of equally sized tiles without the two having to agree about a number.
+            Dim pitch = lastVisible.Width + lastVisible.Margin.Horizontal
+            Dim spanRight = lastVisible.Right
+            If pitch > 0 Then
+                Dim slots = panel.ClientSize.Width \ pitch
+
+                ' Capped at the slots that survive the narrowest window, not the ones this width
+                ' happens to allow. Stretching the window would otherwise offer slots that vanish
+                ' when it is narrowed again, and the size is not saved.
+                If DurableSlotCount > 0 Then slots = Math.Min(slots, DurableSlotCount)
+
+                spanRight = Math.Max(spanRight, slots * pitch)
+            End If
             If spanRight <= firstMovable.Left Then Return
 
-            Dim top = panel.ClientSize.Height - DragBarThickness
-            Using bar As New SolidBrush(DragBarColor)
-                e.Graphics.FillRectangle(bar,
-                                         firstMovable.Left,
-                                         top,
-                                         spanRight - firstMovable.Left,
-                                         DragBarThickness)
+            If showingDragBounds Then
+                Dim top = panel.ClientSize.Height - DragBarThickness
+                Using bar As New SolidBrush(DragBarColor)
+                    e.Graphics.FillRectangle(bar,
+                                             firstMovable.Left,
+                                             top,
+                                             spanRight - firstMovable.Left,
+                                             DragBarThickness)
+                End Using
+            End If
+
+            If canArrangeNow Then
+                DrawEmptySlots(e.Graphics, lastVisible, pitch, spanRight)
+            End If
+        End Sub
+
+        ''' <summary>
+        ''' Outlines the slots after the last tile, faintly, for as long as a drag is under way.
+        '''
+        ''' The bar underneath says a span will take a drop; these say what that span is *for* - one
+        ''' tile per outline, at the size and pitch the row already uses. Two free slots read as two
+        ''' outlines rather than as an unexplained length of bar.
+        '''
+        ''' Shown to an App Admin for as long as the menu is open, not only mid-drag. "How much room
+        ''' is left" is worth knowing *before* deciding to move anything, and an App Admin is the
+        ''' only person who can act on the answer - everybody else sees the ribbon unmarked.
+        '''
+        ''' Dashed and part transparent on purpose: it marks room, and a solid border would read as
+        ''' a control that failed to draw.
+        ''' </summary>
+        Private Shared Sub DrawEmptySlots(graphics As Graphics, lastVisible As Control, pitch As Integer, spanRight As Integer)
+            If graphics Is Nothing OrElse lastVisible Is Nothing OrElse pitch <= 0 Then Return
+
+            Dim slotWidth = lastVisible.Width
+            Dim slotHeight = lastVisible.Height
+            If slotWidth <= 0 OrElse slotHeight <= 0 Then Return
+
+            Using ghost As New Pen(Color.FromArgb(90, DragBarColor)) With {.DashStyle = Drawing2D.DashStyle.Dash}
+                Dim left = lastVisible.Right + lastVisible.Margin.Right
+
+                While left + slotWidth <= spanRight
+                    graphics.DrawRectangle(ghost, left, lastVisible.Top, slotWidth, slotHeight)
+                    left += pitch
+                End While
             End Using
         End Sub
 
