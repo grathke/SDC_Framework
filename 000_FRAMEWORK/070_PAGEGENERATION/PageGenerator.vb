@@ -136,6 +136,16 @@ Namespace SDC.Framework
                 End Select
             End If
 
+            ' Before placing anything, and only ever reporting: a button this page already has
+            ' somewhere else is about to become a second way in, and nothing here will remove it.
+            If plan.GenerateBrowsePage Then
+                Try
+                    ReportButtonsOnOtherSurfaces(workspaceRoot, plan.BrowsePageName, plan.MenuCaller, skipped)
+                Catch ex As Exception
+                    skipped.Add("Could not check the other surfaces for an existing button: " & ex.Message)
+                End Try
+            End If
+
             If plan.GenerateBrowsePage AndAlso IsDashboardCaller(plan.MenuCaller) Then
                 Try
                     EnsureDashboardIcon(workspaceRoot, plan.MenuCaller, plan.IconFileName, plan.BrowsePageName, plan.MaintenancePageName, created, skipped, errors)
@@ -346,6 +356,21 @@ Namespace SDC.Framework
                 lines.Add("  IMAGE: " & If(String.IsNullOrWhiteSpace(plan.IconFileName),
                                            "NONE CHOSEN, THE DEFAULT GLYPH IS USED",
                                            plan.IconFileName))
+            End If
+
+            ' Said here as well as in the generation report, because this is the one place it can
+            ' still be acted on. Generation only adds to the surface named, and removes from none.
+            If plan.GenerateBrowsePage Then
+                Dim elsewhere As New List(Of String)()
+                Try
+                    ReportButtonsOnOtherSurfaces(workspaceRoot, plan.BrowsePageName, plan.MenuCaller, elsewhere)
+                Catch ex As Exception
+                    elsewhere.Add("Could not check the other surfaces for an existing button: " & ex.Message)
+                End Try
+
+                For Each warning In elsewhere
+                    lines.Add("  " & warning.ToUpperInvariant())
+                Next
             End If
 
             Return lines
@@ -880,6 +905,58 @@ Namespace SDC.Framework
             File.WriteAllText(dashboardPath, source, New UTF8Encoding(False))
             Return True
         End Function
+
+        ''' <summary>
+        ''' Whether this page already has a ribbon tile, whatever the request now asks for.
+        '''
+        ''' The same test EnsureMainMenuTile makes before adding one, lifted out so the surfaces can
+        ''' be asked about each other rather than only about themselves.
+        ''' </summary>
+        Private Shared Function MainMenuTileExists(workspaceRoot As String, browsePageName As String) As Boolean
+            Dim initializerPath = ResolveSourceFile(workspaceRoot, "MenuFormInitializer.vb")
+            If initializerPath.Length = 0 OrElse Not File.Exists(initializerPath) Then Return False
+
+            Dim actionKey = "generated-" & browsePageName.ToLowerInvariant()
+            Return File.ReadAllText(initializerPath).IndexOf("""" & actionKey & """", StringComparison.OrdinalIgnoreCase) >= 0
+        End Function
+
+        ''' <summary>
+        ''' Reports a button this page already has somewhere the request is no longer asking for.
+        '''
+        ''' Generation only ever *adds* to the surface currently named, and nothing removes a button
+        ''' from anywhere - a button is source, so removing one means deleting a field, a constructor
+        ''' block, a layout line and a click handler by text manipulation. Generate a page onto a
+        ''' dashboard, regenerate it naming Main Menu, and both buttons open it.
+        '''
+        ''' Each surface is already idempotent about itself, which is what makes this easy to miss:
+        ''' it behaves perfectly until the surface changes. The ribbon-full fallback reaches the same
+        ''' place without anyone changing anything - a page put on the App Admin dashboard because
+        ''' the ribbon was full gains a tile as well once a slot is freed.
+        '''
+        ''' This does not fix it. It stops the duplicate being silent, which is the part that costs
+        ''' somebody an afternoon.
+        ''' </summary>
+        Private Shared Sub ReportButtonsOnOtherSurfaces(workspaceRoot As String,
+                                                        browsePageName As String,
+                                                        menuCaller As String,
+                                                        skipped As List(Of String))
+            If String.IsNullOrWhiteSpace(browsePageName) Then Return
+
+            If Not IsMainMenuCaller(menuCaller) AndAlso MainMenuTileExists(workspaceRoot, browsePageName) Then
+                skipped.Add("ALREADY ON THE MAIN MENU: " & browsePageName &
+                            " has a ribbon tile from an earlier generation. Remove it from " &
+                            "MenuFormInitializer.vb by hand, or the page will have two buttons.")
+            End If
+
+            For Each dashboard In DashboardCallers()
+                If String.Equals(dashboard, menuCaller, StringComparison.OrdinalIgnoreCase) Then Continue For
+                If Not DashboardIconExists(workspaceRoot, dashboard, browsePageName) Then Continue For
+
+                skipped.Add("ALREADY ON " & dashboard.ToUpperInvariant() & ": " & browsePageName &
+                            " has an icon there from an earlier generation. Remove it from " &
+                            dashboard & ".vb by hand, or the page will have two buttons.")
+            Next
+        End Sub
 
         Private Shared Function DashboardIconExists(workspaceRoot As String, menuCaller As String, browsePageName As String) As Boolean
             Dim dashboardPath = ResolveDashboardSourcePath(workspaceRoot, menuCaller)

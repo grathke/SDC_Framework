@@ -659,6 +659,33 @@ rather than dead-ending.
 - **A dashboard icon**, but only when the request's `MenuCaller` is `Dashboard_Application`. An icon
   failure is reported as `ICON WARNING` and does not fail generation.
 
+### Changing a page's button surface leaves the old button behind
+
+**A button is only ever added, never moved and never removed.** Placement is one
+`If dashboard … ElseIf main menu …`, and neither branch looks at the other surface.
+
+Generate a page onto a dashboard, then regenerate it naming Main Menu, and you have **two** buttons.
+The dashboard keeps its field declaration, constructor block, layout line and click handler — all
+compiled source — and the ribbon gains a tile. The `FW_DashboardLayouts` row keyed
+`ActionKey_<page>` stays too, holding the old position and picture.
+
+Each surface is idempotent about *itself*, which is what makes this easy to miss: the ribbon skips a
+key already in `MenuFormInitializer.vb`, the dashboard skips an icon already present. It behaves
+perfectly until the surface changes.
+
+**It happens without anyone changing the request, too.** When the ribbon is full or unwritable the
+page falls back to the App Admin dashboard, deliberately, so a generated page is never reachable
+from nowhere. Free a ribbon slot, regenerate, and the fallback icon and the new tile both exist.
+
+Since 2026-09-05 both the preview and the generation report say so —
+`ALREADY ON DASHBOARD_APPLICATION: UsersY_B has an icon there from an earlier generation` — naming
+the file to edit. **It is a warning, not a fix.** Removing the old button is still by hand.
+
+Removing it automatically means deleting four separate pieces of generated code from a `.vb` file by
+text manipulation, which is a good deal harder than inserting at an anchor. It is also section 4 of
+`PAGE_GENERATION_SIMPLIFICATION.md` in its sharpest form: were a button's existence a row, moving one
+between surfaces would be an update and the question would not arise.
+
 ### What it still leaves to you
 
 - **`ICON_CATALOG.md`** is never updated, even when it adds the dashboard button. The Action Icon
