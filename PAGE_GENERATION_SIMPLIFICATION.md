@@ -130,13 +130,32 @@ Every awkward part of the 2026-09-04 main-menu work exists **only because a butt
 | patching `MenuFormInitializer.vb` by inserting text at a literal anchor | improved, not removed |
 | scanning two source files to count the tiles already placed | outstanding |
 | checking the source for an existing `generated-<page>` key so a second run does not double it | outstanding |
-| rebuilding before a generated button appears at all | outstanding |
+| rebuilding before a generated button appears at all | outstanding — **and worth far less than it reads**, see below |
 
 `FW_DashboardLayouts` already stores a tile's **position and picture** as data, keyed by ActionKey.
 Its **existence** is source that has to be patched in and compiled.
 
 **That split is the problem.** The same button is half row and half code, and the two halves can
 disagree.
+
+### What this does not buy, despite how the list reads
+
+**The rebuild does not go away.** A row-driven button would appear without one, but the page it
+opens is a compiled `_B` class, so clicking it would fail to find the type until the build happened
+anyway. For a **newly generated page** this section saves nothing at all on that count.
+
+That saving needs section 3 as well, and section 3 is decided against for good reasons. Listing them
+as separate sections made them look independently valuable; on the rebuild they are not.
+
+What survives is the case where the **page already exists and is already compiled**:
+
+- moving a button between surfaces — one field on one row, instead of regenerating and then deleting
+  four pieces of source by hand
+- removing a button while keeping the page
+- adding a second way in to a page that is already there
+
+So this is about **managing buttons for pages that already exist**, not about getting a new page in
+front of somebody faster. Worth knowing before anyone spends a day on it.
 
 ### What was done
 
