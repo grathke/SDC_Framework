@@ -16,9 +16,11 @@ Namespace SDC.Framework
         Private ReadOnly accessProfile As AccessProfile
         Private ReadOnly tableName As String = "FW_USERS"
         Private ReadOnly primaryKey As String = "UserId"
+        Private ReadOnly computedFields As New HashSet(Of String)(StringComparer.OrdinalIgnoreCase) From {"FirstLast"}
         Private record As DataRow
         Private ReadOnly formBindingSource As New BindingSource()
         Private originalRowVersion As Byte()
+        Private ReadOnly firstLastTextBox As TextBox
         Private ReadOnly firstNameTextBox As TextBox
         Private ReadOnly lastNameTextBox As TextBox
         Private ReadOnly address1TextBox As TextBox
@@ -34,24 +36,25 @@ Namespace SDC.Framework
             recordId = id
             currentUser = user
             accessProfile = profile
-            ClientSize = New Size(600, 433)
+            ClientSize = New Size(600, 475)
             okButton.Location = New Point(ClientSize.Width - 270, ClientSize.Height - 46)
             cancelActionButton.Location = New Point(ClientSize.Width - 135, ClientSize.Height - 46)
-            firstNameTextBox = AddField("FirstName", 20, False, True)
-            lastNameTextBox = AddField("LastName", 62, False, True)
-            address1TextBox = AddField("Address1", 104, False, False)
-            cityTextBox = AddField("City", 146, False, False)
-            stateTextBox = AddField("State", 188, False, False)
-            zipTextBox = AddField("Zip", 230, False, False)
-            emailTextBox = AddField("Email", 272, False, True)
-            passwordTextBox = AddField("Password", 314, False, True)
-            assignedManagerIDComboBox = AddComboField("AssignedManagerID", 356, True, 20, 320)
-            SetManualTabOrder(firstNameTextBox, lastNameTextBox, address1TextBox, cityTextBox, stateTextBox, zipTextBox, emailTextBox, passwordTextBox, assignedManagerIDComboBox, okButton, cancelActionButton)
+            firstLastTextBox = AddField("FirstLast", 20, False, False)
+            firstNameTextBox = AddField("FirstName", 62, False, True)
+            lastNameTextBox = AddField("LastName", 104, False, True)
+            address1TextBox = AddField("Address1", 146, False, False)
+            cityTextBox = AddField("City", 188, False, False)
+            stateTextBox = AddField("State", 230, False, False)
+            zipTextBox = AddField("Zip", 272, False, False)
+            emailTextBox = AddField("Email", 314, False, True)
+            passwordTextBox = AddField("Password", 356, False, True)
+            assignedManagerIDComboBox = AddComboField("AssignedManagerID", 398, True, 20, 320)
+            SetManualTabOrder(firstLastTextBox, firstNameTextBox, lastNameTextBox, address1TextBox, cityTextBox, stateTextBox, zipTextBox, emailTextBox, passwordTextBox, assignedManagerIDComboBox, okButton, cancelActionButton)
             BindToForm()
             ApplyMode()
         End Sub
 
-        Public ReadOnly Property SavedRecordId As Integer
+        Public Overrides ReadOnly Property SavedRecordId As Integer
             Get
                 If record Is Nothing OrElse record.Table Is Nothing OrElse Not record.Table.Columns.Contains(primaryKey) OrElse record.IsNull(primaryKey) Then Return 0
                 Return Convert.ToInt32(record(primaryKey), Globalization.CultureInfo.InvariantCulture)
@@ -77,7 +80,7 @@ Namespace SDC.Framework
             End If
             formBindingSource.DataSource = record.Table
             formBindingSource.Position = record.Table.Rows.IndexOf(record)
-            For Each control In New Control() {firstNameTextBox, lastNameTextBox, address1TextBox, cityTextBox, stateTextBox, zipTextBox, emailTextBox, passwordTextBox}
+            For Each control In New Control() {firstLastTextBox, firstNameTextBox, lastNameTextBox, address1TextBox, cityTextBox, stateTextBox, zipTextBox, emailTextBox, passwordTextBox}
                 Dim fieldName = control.Name.Substring("TextBox_".Length)
                 control.DataBindings.Clear()
                 control.DataBindings.Add("Text", formBindingSource, fieldName, True, DataSourceUpdateMode.Never)
@@ -88,9 +91,14 @@ Namespace SDC.Framework
             CaptureOriginalRowVersion(originalRowVersion)
         End Sub
 
+        ''' <summary>
+        ''' The key and any computed column are shown but never edited. Typing into a computed
+        ''' column invites a value the database would refuse and then discard.
+        ''' </summary>
         Protected Overrides Sub ApplyMode()
             For Each control In Controls.OfType(Of TextBox)()
-                control.ReadOnly = String.Equals(control.Name, "TextBox_" & primaryKey, StringComparison.OrdinalIgnoreCase)
+                Dim columnName = If(control.Name.StartsWith("TextBox_", StringComparison.OrdinalIgnoreCase), control.Name.Substring("TextBox_".Length), String.Empty)
+                control.ReadOnly = String.Equals(columnName, primaryKey, StringComparison.OrdinalIgnoreCase) OrElse computedFields.Contains(columnName)
             Next
         End Sub
 
@@ -119,6 +127,7 @@ Namespace SDC.Framework
 
         Protected Overrides Function SaveRecord() As Boolean
             Dim values As New Dictionary(Of String, Object)(StringComparer.OrdinalIgnoreCase)
+            values("FirstLast") = firstLastTextBox.Text
             values("FirstName") = firstNameTextBox.Text
             values("LastName") = lastNameTextBox.Text
             values("Address1") = address1TextBox.Text

@@ -16,6 +16,7 @@ Namespace SDC.Framework
         Private ReadOnly accessProfile As AccessProfile
         Private ReadOnly tableName As String = "FW_USERS"
         Private ReadOnly primaryKey As String = "UserId"
+        Private ReadOnly computedFields As New HashSet(Of String)(StringComparer.OrdinalIgnoreCase) From {"FirstLast"}
         Private record As DataRow
         Private ReadOnly formBindingSource As New BindingSource()
         Private originalRowVersion As Byte()
@@ -37,7 +38,7 @@ Namespace SDC.Framework
             ClientSize = New Size(600, 433)
             okButton.Location = New Point(ClientSize.Width - 270, ClientSize.Height - 46)
             cancelActionButton.Location = New Point(ClientSize.Width - 135, ClientSize.Height - 46)
-            firstLastTextBox = AddField("FirstLast", 20, False, True)
+            firstLastTextBox = AddField("FirstLast", 20, False, False)
             lastNameTextBox = AddField("LastName", 62, False, True)
             address1TextBox = AddField("Address1", 104, False, False)
             cityTextBox = AddField("City", 146, False, False)
@@ -51,7 +52,7 @@ Namespace SDC.Framework
             ApplyMode()
         End Sub
 
-        Public ReadOnly Property SavedRecordId As Integer
+        Public Overrides ReadOnly Property SavedRecordId As Integer
             Get
                 If record Is Nothing OrElse record.Table Is Nothing OrElse Not record.Table.Columns.Contains(primaryKey) OrElse record.IsNull(primaryKey) Then Return 0
                 Return Convert.ToInt32(record(primaryKey), Globalization.CultureInfo.InvariantCulture)
@@ -88,9 +89,14 @@ Namespace SDC.Framework
             CaptureOriginalRowVersion(originalRowVersion)
         End Sub
 
+        ''' <summary>
+        ''' The key and any computed column are shown but never edited. Typing into a computed
+        ''' column invites a value the database would refuse and then discard.
+        ''' </summary>
         Protected Overrides Sub ApplyMode()
             For Each control In Controls.OfType(Of TextBox)()
-                control.ReadOnly = String.Equals(control.Name, "TextBox_" & primaryKey, StringComparison.OrdinalIgnoreCase)
+                Dim columnName = If(control.Name.StartsWith("TextBox_", StringComparison.OrdinalIgnoreCase), control.Name.Substring("TextBox_".Length), String.Empty)
+                control.ReadOnly = String.Equals(columnName, primaryKey, StringComparison.OrdinalIgnoreCase) OrElse computedFields.Contains(columnName)
             Next
         End Sub
 

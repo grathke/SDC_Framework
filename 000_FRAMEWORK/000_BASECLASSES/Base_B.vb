@@ -1264,8 +1264,54 @@ Namespace SDC.Framework
             Return ToFriendlyCaption(tableName) & " Listing"
         End Function
 
-        Protected Overridable Function HandleDefaultCreateAction() As Boolean
+        ''' <summary>
+        ''' The session context the page was opened with, for a child page that has to pass it on.
+        '''
+        ''' Every generated _B used to keep its own copy of both, assigned in its constructor from
+        ''' the arguments it had just handed to MyBase.New - a second store of state the base was
+        ''' already holding.
+        ''' </summary>
+        Protected ReadOnly Property CurrentUserContext As UserContext
+            Get
+                Return currentUser
+            End Get
+        End Property
+
+        Protected ReadOnly Property CurrentAccessProfile As AccessProfile
+            Get
+                Return accessProfile
+            End Get
+        End Property
+
+        ''' <summary>
+        ''' The maintenance page this browse page opens for Create and Update, or Nothing when the
+        ''' page has no _U partner.
+        '''
+        ''' This is the one page-specific fact in what used to be fifty duplicated lines. Every
+        ''' generated _B carried its own Create, Update and Delete handlers, identical in every page
+        ''' apart from this type name - so a defect in any of them had to be fixed once per page.
+        ''' Supplying the page here lets FW_Base_B own the workflow instead.
+        ''' </summary>
+        Protected Overridable Function CreateMaintenancePage(recordId As Integer) As FW_Base_U
+            Return Nothing
+        End Function
+
+        ''' <summary>
+        ''' Whether Delete soft-deletes the selected record through the shared path.
+        '''
+        ''' Off by default, deliberately. Pages written before this hook existed - FW_Registration_B,
+        ''' FW_AuditTrail_B, FW_HD_Admin_B and the rest - reach Delete with no handler and say so.
+        ''' Defaulting it to True would hand every one of them a live delete button they never had.
+        '''
+        ''' Independent of CreateMaintenancePage: a browse page generated without a _U partner
+        ''' still deletes.
+        ''' </summary>
+        Protected Overridable Function UsesStandardSoftDelete() As Boolean
             Return False
+        End Function
+
+        Protected Overridable Function HandleDefaultCreateAction() As Boolean
+            Return OpenMaintenancePageForRecord(0)
         End Function
 
         Protected Overridable Function HandleDefaultReadAction() As Boolean
@@ -1273,15 +1319,112 @@ Namespace SDC.Framework
         End Function
 
         Protected Overridable Function HandleDefaultUpdateAction(recordId As Integer) As Boolean
-            Return False
+            Return OpenMaintenancePageForRecord(recordId)
         End Function
 
+        ''' <summary>
+        ''' Opens the page's maintenance partner, and refreshes the grid when something was saved.
+        '''
+        ''' A recordId of 0 means Create. Create reselects the row the maintenance page reports
+        ''' through SavedRecordId, because the id does not exist until the save; Update already
+        ''' knows which row it opened.
+        ''' </summary>
+        Private Function OpenMaintenancePageForRecord(recordId As Integer) As Boolean
+            Dim maintenancePage = CreateMaintenancePage(recordId)
+            If maintenancePage Is Nothing Then Return False
+
+            Using maintenancePage
+                If ShouldRefreshAfterMaintenance(maintenancePage.ShowDialog(Me)) Then
+                    RefreshGridForCustomAction(If(recordId > 0, recordId, maintenancePage.SavedRecordId))
+                End If
+            End Using
+
+            Return True
+        End Function
+
+        ''' <summary>
+        ''' Soft-deletes the selected record, for pages that opt in through UsesStandardSoftDelete.
+        '''
+        ''' The primary key is read from the database rather than written into the page, so a
+        ''' renamed key cannot leave a page deleting against a column that no longer exists.
+        ''' </summary>
         Protected Overridable Function HandleDefaultDeleteAction() As Boolean
-            Return False
+            If Not UsesStandardSoftDelete() Then Return False
+
+            Dim recordId = GetSelectedRecordIdForCustomAction()
+            If Not recordId.HasValue Then Return False
+
+            Dim primaryKey = DataAccess.GetPrimaryKeyFieldName(accessTableName)
+            If String.IsNullOrWhiteSpace(primaryKey) Then
+                MessageBox.Show(Me,
+                                "THIS TABLE HAS NO PRIMARY KEY, SO A RECORD CANNOT BE IDENTIFIED FOR DELETION.",
+                                "DELETE FAILED",
+                                MessageBoxButtons.OK,
+                                MessageBoxIcon.Warning)
+                Return True
+            End If
+
+            Dim summary = GetSelectedRowSummary()
+            Dim prompt = If(String.IsNullOrWhiteSpace(summary), "Delete the selected record?", "Delete " & summary & "?")
+            If MessageBox.Show(Me,
+                               (prompt & Environment.NewLine & Environment.NewLine &
+                                "It will be removed from this list.").ToUpperInvariant(),
+                               "CONFIRM DELETE",
+                               MessageBoxButtons.YesNo,
+                               MessageBoxIcon.Question) <> DialogResult.Yes Then
+                Return True
+            End If
+
+            Dim failure = DataAccess.SoftDeleteGeneratedPageRecord(accessTableName,
+                                                                  primaryKey,
+                                                                  recordId.Value,
+                                                                  If(SessionState.IsActive, SessionState.Current.Value.UserID, 0),
+                                                                  ResolveBrowsePageName())
+            If Not String.IsNullOrWhiteSpace(failure) Then
+                MessageBox.Show(Me, failure.ToUpperInvariant(), "DELETE FAILED", MessageBoxButtons.OK, MessageBoxIcon.Warning)
+                Return True
+            End If
+
+            RefreshGridForCustomAction()
+            Return True
         End Function
 
-        Protected Overridable Function HandleDefaultRestoreAction() As Boolean
-            Return False
+        ''' <summary>
+        ''' Puts the selected record back into the normal view, for pages that opt in through
+        ''' UsesStandardSoftDelete.
+        '''
+        ''' The same hook governs both halves on purpose. A page that can soft-delete a record and
+        ''' not put it back is a trap: the row is still there, the deleted view shows it, and the
+        ''' only button offering to undo says the page is unwired.
+        '''
+        ''' Called after RestoreButton_Click has established the deleted view, a usable key, a
+        ''' selected row and the user's confirmation - so this owns the write and nothing else.
+        ''' </summary>
+        Protected Overridable Function HandleDefaultRestoreAction(recordId As Integer) As Boolean
+            If Not UsesStandardSoftDelete() Then Return False
+
+            Dim primaryKey = DataAccess.GetPrimaryKeyFieldName(accessTableName)
+            If String.IsNullOrWhiteSpace(primaryKey) Then
+                MessageBox.Show(Me,
+                                "THIS TABLE HAS NO PRIMARY KEY, SO A RECORD CANNOT BE IDENTIFIED FOR RESTORE.",
+                                "RESTORE FAILED",
+                                MessageBoxButtons.OK,
+                                MessageBoxIcon.Warning)
+                Return True
+            End If
+
+            Dim failure = DataAccess.RestoreGeneratedPageRecord(accessTableName,
+                                                                primaryKey,
+                                                                recordId,
+                                                                If(SessionState.IsActive, SessionState.Current.Value.UserID, 0),
+                                                                ResolveBrowsePageName())
+            If Not String.IsNullOrWhiteSpace(failure) Then
+                MessageBox.Show(Me, failure.ToUpperInvariant(), "RESTORE FAILED", MessageBoxButtons.OK, MessageBoxIcon.Warning)
+                Return True
+            End If
+
+            RefreshGridForCustomAction()
+            Return True
         End Function
 
         Private Sub BrowsePage_Load(sender As Object, e As EventArgs)
@@ -3591,7 +3734,7 @@ Namespace SDC.Framework
                 Return
             End If
 
-            MessageBox.Show("Create is not wired for this browse page yet.", "Create", MessageBoxButtons.OK, MessageBoxIcon.Information)
+            MessageBox.Show("Create is not wired for " & ResolveBrowsePageName() & " yet.", "Create", MessageBoxButtons.OK, MessageBoxIcon.Information)
         End Sub
 
         Private Sub ReadButton_Click(sender As Object, e As EventArgs)
@@ -3603,7 +3746,7 @@ Namespace SDC.Framework
                 Return
             End If
 
-            MessageBox.Show("Read detail is not wired for this browse page yet.", "Read", MessageBoxButtons.OK, MessageBoxIcon.Information)
+            MessageBox.Show("Read detail is not wired for " & ResolveBrowsePageName() & " yet.", "Read", MessageBoxButtons.OK, MessageBoxIcon.Information)
         End Sub
 
         ''' <summary>
@@ -3628,7 +3771,7 @@ Namespace SDC.Framework
                 Return
             End If
 
-            MessageBox.Show("Update is not wired for this browse page yet.", "Update", MessageBoxButtons.OK, MessageBoxIcon.Information)
+            MessageBox.Show("Update is not wired for " & ResolveBrowsePageName() & " yet.", "Update", MessageBoxButtons.OK, MessageBoxIcon.Information)
         End Sub
 
         Private Sub UpdateButton_Click(sender As Object, e As EventArgs)
@@ -3646,11 +3789,21 @@ Namespace SDC.Framework
                 Return
             End If
 
+            ' The same guard Update has, and for the same reason. Every delete handler begins by
+            ' resolving the selected row and returns False when there is none, so without this a
+            ' click with nothing selected falls through all of them and reports the page as
+            ' unwired - which is a different problem with a different fix, and sends anyone
+            ' diagnosing it to the wrong place.
+            If Not SelectedRecordId().HasValue Then
+                MessageBox.Show("Select a row first.", "Delete", MessageBoxButtons.OK, MessageBoxIcon.Information)
+                Return
+            End If
+
             If HandleDefaultDeleteAction() Then
                 Return
             End If
 
-            MessageBox.Show("Delete is not wired for this browse page yet.", "Delete", MessageBoxButtons.OK, MessageBoxIcon.Information)
+            MessageBox.Show("Delete is not wired for " & ResolveBrowsePageName() & " yet.", "Delete", MessageBoxButtons.OK, MessageBoxIcon.Information)
             Return
         End Sub
 
@@ -3670,11 +3823,14 @@ Namespace SDC.Framework
             Return False
         End Function
 
+        ''' <summary>
+        ''' The guards come first and the handler last, so the handler owns only the write.
+        '''
+        ''' The hook used to be called before any of this and took no arguments, which left a page
+        ''' wanting to implement restore with no choice but to repeat the deleted-view test, the key
+        ''' test, the selection test and the confirmation. No page ever did.
+        ''' </summary>
         Private Sub RestoreButton_Click(sender As Object, e As EventArgs)
-            If HandleDefaultRestoreAction() Then
-                Return
-            End If
-
             If Not showDeletedRecordsOnly Then
                 Return
             End If
@@ -3689,11 +3845,22 @@ Namespace SDC.Framework
                 Return
             End If
 
-            If MessageBox.Show("Restore the selected record?", "Confirm Restore", MessageBoxButtons.YesNo, MessageBoxIcon.Question) <> DialogResult.Yes Then
+            Dim summary = GetSelectedRowSummary()
+            Dim prompt = If(String.IsNullOrWhiteSpace(summary), "Restore the selected record?", "Restore " & summary & "?")
+            If MessageBox.Show(Me,
+                               (prompt & Environment.NewLine & Environment.NewLine &
+                                "It will return to the normal list.").ToUpperInvariant(),
+                               "CONFIRM RESTORE",
+                               MessageBoxButtons.YesNo,
+                               MessageBoxIcon.Question) <> DialogResult.Yes Then
                 Return
             End If
 
-            MessageBox.Show("Restore is not wired for this browse page yet.", "Restore", MessageBoxButtons.OK, MessageBoxIcon.Information)
+            If HandleDefaultRestoreAction(id.Value) Then
+                Return
+            End If
+
+            MessageBox.Show("Restore is not wired for " & ResolveBrowsePageName() & " yet.", "Restore", MessageBoxButtons.OK, MessageBoxIcon.Information)
         End Sub
 
         Private Sub ApplySqlButton_Click(sender As Object, e As EventArgs)

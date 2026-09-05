@@ -34,6 +34,46 @@ function Assert-Pattern {
     Write-Host "PASS: $Description" -ForegroundColor Green
 }
 
+function Assert-NotPattern {
+    param(
+        [string]$Path,
+        [string]$Pattern,
+        [string]$Description
+    )
+
+    if (-not (Test-Path $Path)) {
+        throw "Missing expected file: $Path"
+    }
+
+    if (Select-String -Path $Path -Pattern $Pattern -SimpleMatch -Quiet) {
+        throw "Unexpected pattern for $Description in ${Path}: $Pattern"
+    }
+
+    Write-Host "PASS: $Description" -ForegroundColor Green
+}
+
+# Assert-Pattern matches one line at a time, so it cannot say what a function *returns* - only that
+# the function exists. A default that has been flipped from False to True is exactly the case that
+# needs the body, hence a raw whole-file comparison.
+function Assert-Block {
+    param(
+        [string]$Path,
+        [string]$Block,
+        [string]$Description
+    )
+
+    if (-not (Test-Path $Path)) {
+        throw "Missing expected file: $Path"
+    }
+
+    $content = (Get-Content -LiteralPath $Path -Raw) -replace "`r`n", "`n"
+    if (-not $content.Contains(($Block.TrimEnd() -replace "`r`n", "`n"))) {
+        throw "Missing expected block for $Description in ${Path}"
+    }
+
+    Write-Host "PASS: $Description" -ForegroundColor Green
+}
+
 Write-Step "Browse framework static validation"
 
 if (-not $SkipBuild) {
@@ -178,6 +218,32 @@ Assert-Pattern -Path ".\000_FRAMEWORK\000_BASECLASSES\Base_U.vb" -Pattern "bypas
 Assert-Pattern -Path ".\000_FRAMEWORK\500_INFRASTRUCTURE\Helpers\DeletedViewGuard.vb" -Pattern "TableSupportsDeletedView" -Description "Soft-delete policy is shared"
 Assert-Pattern -Path ".\000_FRAMEWORK\500_INFRASTRUCTURE\Data\DataAccess.vb" -Pattern "LogUpdateAudit" -Description "Write operations have audit integration"
 Assert-Pattern -Path ".\000_FRAMEWORK\060_ROLES\Roles_U.vb" -Pattern "Confirm Delete" -Description "Role permission removal requires confirmation"
+
+# The three browse actions moved out of every generated page and into FW_Base_B on 2026-09-05. The
+# hooks that reach them must stay off by default: pages written before they existed - Registration,
+# AuditTrail, HD_Admin - reach Delete with no handler and say so. Flip either default to on and each
+# of them silently gains a live command it never had, with nothing failing to show it.
+Write-Step "Browse action hooks default to off"
+Assert-Block -Path ".\000_FRAMEWORK\000_BASECLASSES\Base_B.vb" -Block @"
+        Protected Overridable Function CreateMaintenancePage(recordId As Integer) As FW_Base_U
+            Return Nothing
+        End Function
+"@ -Description "No maintenance page unless a page supplies one"
+Assert-Block -Path ".\000_FRAMEWORK\000_BASECLASSES\Base_B.vb" -Block @"
+        Protected Overridable Function UsesStandardSoftDelete() As Boolean
+            Return False
+        End Function
+"@ -Description "No standard delete unless a page opts in"
+Assert-Pattern -Path ".\000_FRAMEWORK\000_BASECLASSES\Base_B.vb" -Pattern "SoftDeleteGeneratedPageRecord" -Description "FW_Base_B owns the standard delete"
+Assert-Pattern -Path ".\000_FRAMEWORK\000_BASECLASSES\Base_B.vb" -Pattern "RestoreGeneratedPageRecord" -Description "FW_Base_B owns the standard restore"
+# Both halves of the soft-delete lifecycle answer to one hook. A page that could delete a record and
+# not put it back would leave the deleted view showing a row whose only undo button says "not wired".
+Assert-Block -Path ".\000_FRAMEWORK\000_BASECLASSES\Base_B.vb" -Block @"
+        Protected Overridable Function HandleDefaultRestoreAction(recordId As Integer) As Boolean
+            If Not UsesStandardSoftDelete() Then Return False
+"@ -Description "Restore answers to the same opt-in as delete"
+Assert-NotPattern -Path ".\000_FRAMEWORK\050_REGISTRATION\Registration_B.vb" -Pattern "UsesStandardSoftDelete" -Description "Registration did not silently gain a delete"
+Assert-NotPattern -Path ".\999_GENERATED PAGES\UsersY_B.vb" -Pattern "SoftDeleteGeneratedPageRecord" -Description "A generated browse page does not copy the delete logic"
 
 Write-Step "Main menu message workspace"
 Assert-Pattern -Path ".\000_FRAMEWORK\010_MAINMENU\MainMenu.vb" -Pattern "SizeType.Percent, 34.0F" -Description "Messages region is widened"

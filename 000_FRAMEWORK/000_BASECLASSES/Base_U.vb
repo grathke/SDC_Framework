@@ -1336,6 +1336,22 @@ Namespace SDC.Framework
             Return True
         End Function
 
+        ''' <summary>
+        ''' The record this page saved, so the browse page can reselect its row after a Create.
+        '''
+        ''' Zero means nothing was saved, or the page does not track it - which is why the default
+        ''' is safe for every page that has never needed this.
+        '''
+        ''' It lives here rather than on each generated page because FW_Base_B reads it through
+        ''' whatever CreateMaintenancePage handed back, and the browse base cannot see a
+        ''' page-local property on a class it does not know.
+        ''' </summary>
+        Public Overridable ReadOnly Property SavedRecordId As Integer
+            Get
+                Return 0
+            End Get
+        End Property
+
         Protected Overridable Function IsViewOnly() As Boolean
             Return False
         End Function
