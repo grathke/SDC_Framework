@@ -1535,6 +1535,38 @@ Namespace SDC.Framework
         End Function
 
         ''' <summary>
+        ''' The columns SQL Server fills for itself, which no write may ever name.
+        '''
+        ''' Nothing else in the framework reads is_computed, so a generated page had no way to know
+        ''' and offered FW_Users.FirstLast as an ordinary text box. SQL Server refuses any UPDATE or
+        ''' INSERT naming a computed column, so the record could not be saved at all - and the page
+        ''' had invited the value in the first place.
+        ''' </summary>
+        Public Shared Function GetComputedColumnNames(tableName As String) As HashSet(Of String)
+            Dim computed As New HashSet(Of String)(StringComparer.OrdinalIgnoreCase)
+            If String.IsNullOrWhiteSpace(tableName) Then Return computed
+
+            Using conn As New SqlConnection(ConnectionString)
+                conn.Open()
+                Using cmd As New SqlCommand(
+                    "SELECT c.name " &
+                    "FROM sys.columns AS c " &
+                    "INNER JOIN sys.tables AS t ON t.object_id = c.object_id " &
+                    "INNER JOIN sys.schemas AS s ON s.schema_id = t.schema_id " &
+                    "WHERE s.name = N'dbo' AND t.name = @TableName AND c.is_computed = 1", conn)
+                    cmd.Parameters.Add("@TableName", SqlDbType.VarChar, 128).Value = tableName.Trim()
+                    Using reader = cmd.ExecuteReader()
+                        While reader.Read()
+                            computed.Add(reader.GetString(0))
+                        End While
+                    End Using
+                End Using
+            End Using
+
+            Return computed
+        End Function
+
+        ''' <summary>
         ''' Where a dashboard's icons have been dragged to, as ActionKey -> (column, row).
         '''
         ''' Only icons that have been moved appear. Anything missing is still where its source put
@@ -1902,6 +1934,70 @@ Namespace SDC.Framework
             End Try
         End Function
 
+        ''' <summary>
+        ''' Clears the soft delete so the record returns to the normal view. The other half of
+        ''' SoftDeleteGeneratedPageRecord, undoing exactly what that one sets.
+        '''
+        ''' Uniqueness needs no check here. A deleted row keeps its address, and
+        ''' GetEmailUnavailableMessage refuses to hand that address to anybody else while the row
+        ''' exists - so the duplicate a restore could otherwise create is refused at the point it
+        ''' would have been created, not at this one.
+        '''
+        ''' A table with some other unique constraint could still refuse the UPDATE. That surfaces
+        ''' as the SQL Server message rather than being anticipated here, because the framework
+        ''' cannot know which constraint a generated page's table carries.
+        ''' </summary>
+        Public Shared Function RestoreGeneratedPageRecord(tableName As String,
+                                                          primaryKey As String,
+                                                          recordId As Integer,
+                                                          userId As Integer,
+                                                          pageName As String) As String
+            Dim normalizedTable = NormalizeTableName(tableName)
+            If String.IsNullOrWhiteSpace(normalizedTable) OrElse String.IsNullOrWhiteSpace(primaryKey) OrElse recordId <= 0 Then
+                Return "The record could not be identified."
+            End If
+
+            If Not TableHasColumn(normalizedTable, "DeletedFlag") Then
+                Return "This table does not support restore. It has no DeletedFlag column, so nothing was ever soft-deleted."
+            End If
+
+            Try
+                Dim assignments As New List(Of String)() From {"[DeletedFlag] = 0"}
+                If TableHasColumn(normalizedTable, "DeletedBy") Then assignments.Add("[DeletedBy] = NULL")
+                If TableHasColumn(normalizedTable, "DeletedOn") Then assignments.Add("[DeletedOn] = NULL")
+                If TableHasColumn(normalizedTable, "IsActive") Then assignments.Add("[IsActive] = 1")
+                If TableHasColumn(normalizedTable, "UpdatedBy") Then assignments.Add("[UpdatedBy] = @UserID")
+                If TableHasColumn(normalizedTable, "UpdatedOn") Then assignments.Add("[UpdatedOn] = GETDATE()")
+
+                Using conn As New SqlConnection(ConnectionString)
+                    conn.Open()
+                    Using cmd As New SqlCommand(
+                        "UPDATE dbo." & QuoteGeneratedIdentifier(normalizedTable) &
+                        " SET " & String.Join(", ", assignments) &
+                        " WHERE " & QuoteGeneratedIdentifier(primaryKey) & " = @RecordID", conn)
+                        cmd.Parameters.Add("@RecordID", SqlDbType.Int).Value = recordId
+                        cmd.Parameters.Add("@UserID", SqlDbType.Int).Value = If(userId > 0, CType(userId, Object), DBNull.Value)
+
+                        If cmd.ExecuteNonQuery() <> 1 Then
+                            Return "The record was not found. It may already have been restored."
+                        End If
+                    End Using
+                End Using
+
+                LogUpdateAudit(If(String.IsNullOrWhiteSpace(pageName), "FW_Base_B", pageName),
+                               normalizedTable,
+                               "Restore",
+                               "AfterSave",
+                               recordId.ToString(CultureInfo.InvariantCulture),
+                               String.Empty,
+                               True)
+
+                Return String.Empty
+            Catch ex As Exception
+                Return ex.Message
+            End Try
+        End Function
+
         Public Shared Function GetGeneratedPageSchema(tableName As String) As DataTable
             Using conn As New SqlConnection(ConnectionString)
                 conn.Open()
@@ -2009,9 +2105,19 @@ Namespace SDC.Framework
                 End If
             End If
 
+            ' Computed columns are the database's to fill, and SQL Server refuses outright any write
+            ' that names one. Dropped here, alongside the key and RowVersion, for the same reason the
+            ' password is hashed here rather than on the page: a rule that lives in one form is not a
+            ' rule. A page offering FW_Users.FirstLast as an ordinary text box could not save at all,
+            ' and every page the generator produced would have carried the same fault.
+            '
+            ' Dropping the value is correct rather than merely safe - the database recomputes the
+            ' column from the fields that were written, so nothing the user meant is lost.
+            Dim computedColumns = GetComputedColumnNames(tableName)
             Dim writableValues = values.Where(Function(pair) schema.Columns.Contains(pair.Key) AndAlso
                                                        Not String.Equals(pair.Key, primaryKey, StringComparison.OrdinalIgnoreCase) AndAlso
                                                        Not String.Equals(pair.Key, "RowVersion", StringComparison.OrdinalIgnoreCase) AndAlso
+                                                       Not computedColumns.Contains(pair.Key) AndAlso
                                                        Not IsProtectedPasswordColumn(tableName, pair.Key)).ToList()
             Using conn As New SqlConnection(ConnectionString)
                 conn.Open()
