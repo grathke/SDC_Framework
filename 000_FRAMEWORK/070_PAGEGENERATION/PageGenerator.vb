@@ -252,7 +252,6 @@ Namespace SDC.Framework
             If plan.GenerateBrowsePage Then
                 plan.BrowseSource = BuildBrowseSource(plan.BrowsePageName,
                                                       plan.TableName,
-                                                      plan.PrimaryKey,
                                                       useQbeOnly,
                                                       plan.GenerateMaintenancePage)
             End If
@@ -1123,28 +1122,31 @@ Namespace SDC.Framework
             End Try
         End Function
 
+        ''' <summary>
+        ''' The whole of a generated browse page.
+        '''
+        ''' It used to be about ninety lines here, producing a sixty-six line page of which fifty
+        ''' were identical in every page ever generated - Create, Update and Delete handlers whose
+        ''' only page-specific fact was the name of the _U partner. Two pages generated from this
+        ''' template were byte-identical apart from the class name.
+        '''
+        ''' Those handlers now live in FW_Base_B, so what is left here is genuinely page-specific:
+        ''' the class name, the table, and which maintenance page to open.
+        ''' </summary>
         Private Shared Function BuildBrowseSource(pageName As String,
                               tableName As String,
-                              primaryKey As String,
                               useQbeOnly As Boolean,
                               generateMaintenancePage As Boolean) As String
             Return String.Join(Environment.NewLine, {
                 "Option Strict On",
                 "Option Explicit On",
                 "",
-                "Imports System.Windows.Forms",
-                "",
                 "Namespace SDC.Framework",
                 "    Public Class " & pageName,
                 "        Inherits FW_Base_B",
                 "",
-                "        Private ReadOnly currentUser As UserContext",
-                "        Private ReadOnly accessProfile As AccessProfile",
-                "",
                 "        Public Sub New(user As UserContext, Optional profile As AccessProfile = Nothing)",
                 "            MyBase.New(user, profile, """ & EscapeLiteral(tableName) & """)",
-                "            currentUser = user",
-                "            accessProfile = profile",
                 "        End Sub",
                 "",
                 If(useQbeOnly,
@@ -1157,51 +1159,13 @@ Namespace SDC.Framework
                    String.Empty),
                 If(generateMaintenancePage,
                    String.Join(Environment.NewLine, {
-                       "        Protected Overrides Function HandleDefaultCreateAction() As Boolean",
-                       "            Using page As New " & maintenancePageNameForBrowse(pageName) & "(0, currentUser, accessProfile)",
-                       "                If ShouldRefreshAfterMaintenance(page.ShowDialog(Me)) Then RefreshGridForCustomAction(page.SavedRecordId)",
-                       "            End Using",
-                       "            Return True",
+                       "        Protected Overrides Function CreateMaintenancePage(recordId As Integer) As FW_Base_U",
+                       "            Return New " & maintenancePageNameForBrowse(pageName) & "(recordId, CurrentUserContext, CurrentAccessProfile)",
                        "        End Function",
-                       "",
-                       "        Protected Overrides Function HandleDefaultUpdateAction(recordId As Integer) As Boolean",
-                       "            Using page As New " & maintenancePageNameForBrowse(pageName) & "(recordId, currentUser, accessProfile)",
-                       "                If ShouldRefreshAfterMaintenance(page.ShowDialog(Me)) Then RefreshGridForCustomAction(recordId)",
-                       "            End Using",
-                       "            Return True",
-                       "        End Function"
+                       ""
                    }),
                    String.Empty),
-                "        ''' <summary>",
-                "        ''' Soft-deletes the selected record. Without this the Delete button falls through to",
-                "        ''' the base placeholder and silently does nothing.",
-                "        ''' </summary>",
-                "        Protected Overrides Function HandleDefaultDeleteAction() As Boolean",
-                "            Dim recordId = GetSelectedRecordIdForCustomAction()",
-                "            If Not recordId.HasValue Then Return False",
-                "",
-                "            Dim summary = GetSelectedRowSummary()",
-                "            Dim prompt = If(String.IsNullOrWhiteSpace(summary), ""Delete the selected record?"", ""Delete "" & summary & ""?"")",
-                "            If MessageBox.Show(Me,",
-                "                               (prompt & Environment.NewLine & Environment.NewLine &",
-                "                                ""It will be removed from this list."").ToUpperInvariant(),",
-                "                               ""CONFIRM DELETE"",",
-                "                               MessageBoxButtons.YesNo,",
-                "                               MessageBoxIcon.Question) <> DialogResult.Yes Then",
-                "                Return True",
-                "            End If",
-                "",
-                "            Dim failure = DataAccess.SoftDeleteGeneratedPageRecord(""" & EscapeLiteral(tableName) & """,",
-                "                                                                  """ & EscapeLiteral(primaryKey) & """,",
-                "                                                                  recordId.Value,",
-                "                                                                  If(SessionState.IsActive, SessionState.Current.Value.UserID, 0),",
-                "                                                                  NameOf(" & pageName & "))",
-                "            If Not String.IsNullOrWhiteSpace(failure) Then",
-                "                MessageBox.Show(Me, failure.ToUpperInvariant(), ""DELETE FAILED"", MessageBoxButtons.OK, MessageBoxIcon.Warning)",
-                "                Return True",
-                "            End If",
-                "",
-                "            RefreshGridForCustomAction()",
+                "        Protected Overrides Function UsesStandardSoftDelete() As Boolean",
                 "            Return True",
                 "        End Function",
                 "    End Class",
@@ -1214,7 +1178,17 @@ Namespace SDC.Framework
             Return If(browsePageName.EndsWith("_B", StringComparison.OrdinalIgnoreCase), browsePageName.Substring(0, browsePageName.Length - 2) & "_U", browsePageName & "_U")
         End Function
 
+        ''' <summary>
+        ''' Which of this page's fields the database computes for itself.
+        '''
+        ''' They are still put on the page, because FirstLast is worth reading on a saved record,
+        ''' but they are never editable and never required. SQL Server refuses any write naming a
+        ''' computed column, and on a new record the value does not exist until after the save - so
+        ''' a required computed field can never be satisfied and would block the save on its own.
+        ''' </summary>
         Private Shared Function BuildMaintenanceSource(pageName As String, tableName As String, primaryKey As String, fields As List(Of String), requiredFields As List(Of String), lookupFields As List(Of LookupFieldSpec)) As String
+            Dim computedColumns = DataAccess.GetComputedColumnNames(tableName)
+            Dim computedOnPage = fields.Where(Function(field) computedColumns.Contains(field)).ToList()
             Dim output As New StringBuilder()
             output.AppendLine("Option Strict On")
             output.AppendLine("Option Explicit On")
@@ -1234,6 +1208,12 @@ Namespace SDC.Framework
             output.AppendLine("        Private ReadOnly accessProfile As AccessProfile")
             output.AppendLine("        Private ReadOnly tableName As String = """ & EscapeLiteral(tableName) & """")
             output.AppendLine("        Private ReadOnly primaryKey As String = """ & EscapeLiteral(primaryKey) & """")
+            If computedOnPage.Count > 0 Then
+                output.AppendLine("        Private ReadOnly computedFields As New HashSet(Of String)(StringComparer.OrdinalIgnoreCase) From {" &
+                                  String.Join(", ", computedOnPage.Select(Function(field) """" & EscapeLiteral(field) & """")) & "}")
+            Else
+                output.AppendLine("        Private ReadOnly computedFields As New HashSet(Of String)(StringComparer.OrdinalIgnoreCase)")
+            End If
             output.AppendLine("        Private record As DataRow")
             output.AppendLine("        Private ReadOnly formBindingSource As New BindingSource()")
             output.AppendLine("        Private originalRowVersion As Byte()")
@@ -1258,7 +1238,11 @@ Namespace SDC.Framework
             output.AppendLine("            cancelActionButton.Location = New Point(ClientSize.Width - 135, ClientSize.Height - 46)")
             Dim y = 20
             For Each field In fields
-                Dim isRequired = requiredFields.Any(Function(item) String.Equals(item, field, StringComparison.OrdinalIgnoreCase))
+                ' A computed field is never required, whatever the request says. An older saved
+                ' request can still carry one, so the refusal is here as well as in the grid that
+                ' offers the tick - the page must not be generated with a rule it cannot satisfy.
+                Dim isRequired = requiredFields.Any(Function(item) String.Equals(item, field, StringComparison.OrdinalIgnoreCase)) AndAlso
+                                 Not computedColumns.Contains(field)
 
                 If IsLookupField(field, lookupFields) Then
                     ' A foreign key goes through AddComboField for the same reason a plain field
@@ -1279,7 +1263,7 @@ Namespace SDC.Framework
             output.AppendLine("            ApplyMode()")
             output.AppendLine("        End Sub")
             output.AppendLine()
-            output.AppendLine("        Public ReadOnly Property SavedRecordId As Integer")
+            output.AppendLine("        Public Overrides ReadOnly Property SavedRecordId As Integer")
             output.AppendLine("            Get")
             output.AppendLine("                If record Is Nothing OrElse record.Table Is Nothing OrElse Not record.Table.Columns.Contains(primaryKey) OrElse record.IsNull(primaryKey) Then Return 0")
             output.AppendLine("                Return Convert.ToInt32(record(primaryKey), Globalization.CultureInfo.InvariantCulture)")
@@ -1331,9 +1315,14 @@ Namespace SDC.Framework
             output.AppendLine("            CaptureOriginalRowVersion(originalRowVersion)")
             output.AppendLine("        End Sub")
             output.AppendLine()
+            output.AppendLine("        ''' <summary>")
+            output.AppendLine("        ''' The key and any computed column are shown but never edited. Typing into a computed")
+            output.AppendLine("        ''' column invites a value the database would refuse and then discard.")
+            output.AppendLine("        ''' </summary>")
             output.AppendLine("        Protected Overrides Sub ApplyMode()")
             output.AppendLine("            For Each control In Controls.OfType(Of TextBox)()")
-            output.AppendLine("                control.ReadOnly = String.Equals(control.Name, ""TextBox_"" & primaryKey, StringComparison.OrdinalIgnoreCase)")
+            output.AppendLine("                Dim columnName = If(control.Name.StartsWith(""TextBox_"", StringComparison.OrdinalIgnoreCase), control.Name.Substring(""TextBox_"".Length), String.Empty)")
+            output.AppendLine("                control.ReadOnly = String.Equals(columnName, primaryKey, StringComparison.OrdinalIgnoreCase) OrElse computedFields.Contains(columnName)")
             output.AppendLine("            Next")
             output.AppendLine("        End Sub")
             output.AppendLine()

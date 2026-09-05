@@ -177,6 +177,37 @@ rather than silently showing everything.
 Button visibility is a convenience, never the enforcement point. The write itself must check access
 at its own boundary.
 
+**What the buttons actually do** is owned by `FW_Base_B`, through two hooks a page overrides:
+
+| Hook | Default | Effect when supplied |
+|---|---|---|
+| `CreateMaintenancePage(recordId)` | `Nothing` | Create and Update open the returned `FW_Base_U`. `recordId` 0 means Create |
+| `UsesStandardSoftDelete()` | `False` | Delete **and Restore** work, through `SoftDeleteGeneratedPageRecord` and `RestoreGeneratedPageRecord` |
+
+**One hook governs both halves of the soft-delete lifecycle.** A page that could delete a record but
+not put it back is a trap: the row still exists, the deleted view shows it, and the only button
+offering to undo reports the page as unwired. Restore was a stub for *every* browse page until
+2026-09-05 — `RestoreButton_Click` ran the whole sequence and then said "not wired".
+
+`RestoreButton_Click` runs its guards first — deleted view, usable key, selected row, confirmation —
+and calls `HandleDefaultRestoreAction(recordId)` last, so the handler owns only the write. The hook
+used to be called before all of that and took no arguments, which left any page implementing restore
+with no choice but to repeat all four checks.
+
+**Both default to off, and that is deliberate.** A page that supplies neither reaches the existing
+"not wired for this browse page yet" message, exactly as before — which is what `FW_Registration_B`,
+`FW_AuditTrail_B` and `FW_HD_Admin_B` still do for Delete. Defaulting either to on would hand every
+page in the application a live command it never had.
+
+They are independent of each other: a browse page generated without a `_U` partner still deletes.
+
+Delete reads the primary key from the database via `GetPrimaryKeyFieldName` rather than having it
+written into the page, so a renamed key cannot leave a page deleting against a column that is gone.
+
+Until 2026-09-05 each generated `_B` carried its own copy of all three handlers — about fifty lines,
+identical in every page but the `_U` type name. `Users_AppAdmin_B` and `FW_Registration_B` still
+override `HandleDefault*` directly, which is the older path and still wins where present.
+
 ### QBE and the Find button
 
 `TryBuildFiltersFromQbe` turns the QBE grid into filters, and it is overridable for pages with
@@ -596,10 +627,20 @@ Generation stops and reports every problem at once rather than emitting a broken
   without it the page opens with a missing-key warning and Read, Update and Delete hidden
 - a lookup entry not matching `<Field> -> <Table>.<ValueColumn> displayed as <DisplayColumn>`
 
+### What the generated `_B` page contains
+
+Twenty lines: `Inherits FW_Base_B`, a `New(user, profile)` constructor naming the table, an override
+of `CreateMaintenancePage` returning the `_U` partner, and `UsesStandardSoftDelete` returning True.
+`OnlyUseQbe` is added when the request asks for it, and `CreateMaintenancePage` is omitted when no
+maintenance page was requested.
+
+That is the whole page. Everything else lives in `FW_Base_B` — see **CRUD buttons and permissions**.
+
 ### What the generated `_U` page contains
 
-`Inherits FW_Base_U`, a `New(id, user, profile)` constructor, and `SavedRecordId` so the browse page
-can reselect the saved row. Overrides emitted: `GetPageName`, `GetTableNameOverride`,
+`Inherits FW_Base_U`, a `New(id, user, profile)` constructor, and an override of `SavedRecordId` so
+the browse page can reselect the saved row after a Create. Overrides emitted: `GetPageName`,
+`GetTableNameOverride`,
 `BindToFormInternal`, `ApplyMode`, `TryBuildRecord`, `SaveRecord`, `ResolveAuditRecordKey`,
 `ShouldWarnOnCancel` (True) and `IsCreatingNewRecord` (`recordId <= 0`).
 

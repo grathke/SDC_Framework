@@ -1658,6 +1658,7 @@ Namespace SDC.Framework
             UpdateRegistrationOptionState(fields)
 
             Dim primaryKeyField = DataAccess.GetPrimaryKeyFieldName(tableName)
+            Dim computedFields = DataAccess.GetComputedColumnNames(tableName)
             ' 314 wider than it was: 224 for the browse grid's Displays column and 150 for the
             ' maintenance grid's, less the 60 the Edit button column gave back. The left panel is
             ' fixed at 560 and the right takes what remains, so each change in width lands on the
@@ -1954,6 +1955,23 @@ Namespace SDC.Framework
                     If Not relationships.ContainsKey(field) AndAlso Not lookupTargets.ContainsKey(field) Then
                         maintenanceRow.Cells("Lookup").ReadOnly = True
                         maintenanceRow.Cells("Lookup").Style.BackColor = SystemColors.Control
+                    End If
+
+                    ' A computed column is the database's to fill. It cannot be written at all, and
+                    ' on a new record it has no value until after the save - so requiring it would
+                    ' block every save on a rule nobody could satisfy. Greyed the same way a Lookup
+                    ' with nothing to point at is, and a tick carried by an older saved request is
+                    ' cleared rather than honoured.
+                    If computedFields.Contains(field) Then
+                        maintenanceRow.Cells("Required").Value = False
+                        maintenanceRow.Cells("Required").ReadOnly = True
+                        maintenanceRow.Cells("Required").Style.BackColor = SystemColors.Control
+
+                        ' A greyed cell says only that it cannot be ticked, never why. Both cells
+                        ' carry the reason so it is found from whichever one is hovered - the field
+                        ' name is the wider target and the likelier one.
+                        maintenanceRow.Cells("FieldName").ToolTipText = "COMPUTED - the database fills this column."
+                        maintenanceRow.Cells("Required").ToolTipText = "COMPUTED - it cannot be written, so it cannot be Required."
                     End If
                 Next
                 seedingSelectionGrids = False

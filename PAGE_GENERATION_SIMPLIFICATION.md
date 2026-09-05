@@ -1,7 +1,7 @@
 # Page Generation — A Simpler Shape
 
-**Proposed, not built.** Written 2026-09-04 at the end of a session that built main-menu
-placement into the generator. Nothing here has been implemented, and none of it is urgent.
+**Section 2 was built on 2026-09-05. Sections 3 and 4 are still proposals.** Written 2026-09-04 at
+the end of a session that built main-menu placement into the generator.
 
 The question that prompted it: *is there a better, simpler, more elegant way to generate pages?*
 
@@ -44,18 +44,34 @@ three times by hand.
 
 ---
 
-## 2. The cheap step, and the one to do first
+## 2. The cheap step, and the one to do first — BUILT 2026-09-05
 
-Move `HandleDefaultCreateAction`, `HandleDefaultUpdateAction` and `HandleDefaultDeleteAction` into
-`FW_Base_B`, parameterised by table and primary key. The base already knows the table; the key can
-be passed or read from the schema the same way the rest of the framework reads it.
+The three handlers now live in `FW_Base_B`, reached through two hooks a page overrides:
 
-The generated `_B` then collapses to a class declaration and a constructor — about twelve lines.
+| Hook | Default | Effect when supplied |
+|---|---|---|
+| `CreateMaintenancePage(recordId)` | `Nothing` | Create and Update open the returned `FW_Base_U` |
+| `UsesStandardSoftDelete()` | `False` | Delete soft-deletes the selected row |
 
-Nothing else in the system changes. No database work, no change to how pages are generated or
-filed. The next delete defect is fixed once instead of once per page.
+**Both default to off.** That was the part worth getting right: put working delete logic in the base
+ungated and `FW_Registration_B`, `FW_AuditTrail_B` and `FW_HD_Admin_B` all silently gain a live
+delete button they never had. Off by default, every page that opts into nothing behaves exactly as
+it did.
 
-**This is worth doing on its own merits, whatever is decided about the rest.**
+The primary key is read from the database rather than passed in, so a renamed key cannot leave a
+page deleting against a column that no longer exists.
+
+`SavedRecordId` moved to `FW_Base_U` — the base has to ask *some* maintenance page which record it
+saved, and cannot see a property on a class it does not know. `FW_Base_U` is already a `Form`, so
+the hook returns one thing that can be both shown and read. An interface would have needed a cast
+back to `Form` that compiles and fails at runtime.
+
+**Result: a generated `_B` went from 66 lines to 20.** `UserX_B.vb` and `UsersY_B.vb` had been
+byte-identical apart from the class name.
+
+One consequence: `FW_GeneratedPages` stores a hash of the generated source to detect hand edits.
+Changing the template invalidated it for the two existing requests, so regenerating `UserX` or
+`UsersY` reports them as manually edited until re-baselined.
 
 ---
 
@@ -121,7 +137,27 @@ behaviour of its own** — which is what filing a page out of `999_GENERATED PAG
 
 ## 6. If only one thing is done
 
-Section 2. The three duplicated handlers belong in the base class. It is small, safe, independent
-of every other decision here, and it makes the question in section 3 much easier to answer — because
-once the boilerplate is gone, what remains in a generated `_B` is the honest answer to *how much of
-a page really needs to be code*.
+Section 2, and it is done. What it leaves behind is the honest answer to section 3's question —
+*how much of a page really needs to be code*:
+
+```vb
+Public Class UsersY_B
+    Inherits FW_Base_B
+
+    Public Sub New(user As UserContext, Optional profile As AccessProfile = Nothing)
+        MyBase.New(user, profile, "FW_USERS")
+    End Sub
+
+    Protected Overrides Function CreateMaintenancePage(recordId As Integer) As FW_Base_U
+        Return New UsersY_U(recordId, CurrentUserContext, CurrentAccessProfile)
+    End Function
+
+    Protected Overrides Function UsesStandardSoftDelete() As Boolean
+        Return True
+    End Function
+End Class
+```
+
+Three facts: the class name, the table, and the partner page. The third is the only one that needs
+a compiler — and only because the partner is itself a class. Section 3 is now a much narrower
+question than it looked on 2026-09-04.
