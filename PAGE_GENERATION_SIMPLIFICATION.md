@@ -1,7 +1,8 @@
 # Page Generation — A Simpler Shape
 
-**Section 2 was built on 2026-09-05. Section 3 was decided against the same day. Section 4 is still a proposal.** Written 2026-09-04 at
-the end of a session that built main-menu placement into the generator.
+**Section 2 was built on 2026-09-05, section 3 was decided against the same day, and section 4 is
+part built.** Written 2026-09-04 at the end of a session that built main-menu placement into the
+generator.
 
 The question that prompted it: *is there a better, simpler, more elegant way to generate pages?*
 
@@ -66,7 +67,7 @@ saved, and cannot see a property on a class it does not know. `FW_Base_U` is alr
 the hook returns one thing that can be both shown and read. An interface would have needed a cast
 back to `Form` that compiles and fails at runtime.
 
-**Result: a generated `_B` went from 66 lines to 20.** `UserX_B.vb` and `UsersY_B.vb` had been
+**Result: a generated `_B` went from 66 lines to 21.** `UserX_B.vb` and `UsersY_B.vb` had been
 byte-identical apart from the class name.
 
 One consequence: `FW_GeneratedPages` stores a hash of the generated source to detect hand edits.
@@ -119,23 +120,72 @@ downstream of the file disappears:
 
 ---
 
-## 4. The same argument, sharper, for buttons
+## 4. The same argument, sharper, for buttons — PART DONE, 2026-09-05
 
 Every awkward part of the 2026-09-04 main-menu work exists **only because a button is code**:
 
-- patching `MenuFormInitializer.vb` by inserting text at a literal anchor
-- `MainMenuMovableTileCapacity`, a constant that must be kept in step with the ribbon's geometry
-- scanning two source files to count the tiles already placed
-- checking the source for an existing `generated-<page>` key so a second run does not double it
-- rebuilding before a generated button appears at all
+| Complaint | 2026-09-05 |
+|---|---|
+| `MainMenuMovableTileCapacity`, kept in step with the ribbon's geometry by hand | **done** |
+| patching `MenuFormInitializer.vb` by inserting text at a literal anchor | improved, not removed |
+| scanning two source files to count the tiles already placed | outstanding |
+| checking the source for an existing `generated-<page>` key so a second run does not double it | outstanding |
+| rebuilding before a generated button appears at all | outstanding |
 
 `FW_DashboardLayouts` already stores a tile's **position and picture** as data, keyed by ActionKey.
 Its **existence** is source that has to be patched in and compiled.
 
 **That split is the problem.** The same button is half row and half code, and the two halves can
-disagree. Make the existence a row as well and the whole apparatus above is unnecessary — and
-capacity becomes a runtime fact the ribbon can answer for itself, rather than a number written down
-in two places.
+disagree.
+
+### What was done
+
+`FW_MainMenu.MovableTileCapacityAtMinimumWidth()` computes the figure from the constants that decide
+it, and `PageGenerator` asks. The constant is gone, `MinimumSize` reads the same value the sum does,
+and three tests pin the result.
+
+Two things fell out of doing it, and both are the reason the section was right:
+
+- **The number had been wrong.** The pinned row still reserved 100px for `login-as-substitute`, whose
+  button was removed on 2026-09-04. A reserved slot costs a whole tile, so one stale constant was
+  worth a button — 8 where 9 fit. Nothing failed; the ribbon simply stopped drawing a tile.
+- **The anchor was a demonstration tile.** Generation inserted at the literal text
+  `AddMenuTestTile(menu)`, the call that happened to sit last in that method. Deleting a
+  demonstration tile — which we did the same day — would have silently stopped every future page
+  reaching the ribbon. It now anchors on a marker put there for the purpose, with a comment saying
+  that rewording it breaks generation. Still text-matching, so still section 4's complaint; at least
+  it is now a contract rather than an accident.
+
+Also added, which this section did not anticipate: an App Admin sees the free slots outlined for as
+long as the menu is open, capped at the slots that survive the narrowest window — the same figure the
+generator asks, so what is shown as free and what may be occupied are one number.
+
+### What is left, and what it costs
+
+The three outstanding complaints all need the same thing: **a generated tile's existence becomes a
+row**. Costed on 2026-09-05 and not built.
+
+1. **Schema** — `Caption`, `TargetPage`, `IsVisible`, `IsEnabled` on `FW_DashboardLayouts`. A row
+   with a `TargetPage` declares a tile; a row without keeps meaning "this code-declared tile was
+   moved here", exactly as now.
+2. **Loader** — after the code-declared tiles are added, the surface reads its declaring rows and
+   calls `UpsertActionTile` for each. That method is already upsert-shaped, so no new mechanism.
+3. **Target by name** — the click handler resolves `TargetPage` to a type in the application's own
+   assembly, requires it to inherit `FW_Base_B`, and constructs it with the live `UserContext` and
+   `AccessProfile`. The Action Icon Guardrail forbids the parameterless path. Anything that does not
+   resolve is logged and its tile disabled, never silently missing.
+4. **Generator** — inserts a row instead of patching source, and the anchors, the source scan and the
+   duplicate-key grep all go.
+
+**Only generated tiles.** Hand-written framework tiles keep their code, for the same reason section 3
+keeps the `_B` file: some have real behaviour worth protecting. Every complaint above is about
+generated tiles, so this takes the whole benefit at a fraction of the risk.
+
+Risks worth handling rather than discovering: the main menu is a Protected Area under `CLAUDE.md`; a
+renamed `_B` currently breaks the build and would instead break a tile, so every row wants validating
+on load; constructing a type named by a database row must be restricted to `FW_Base_B` descendants in
+the application's own assembly; and a removed page must take its row with it, which is already item 5
+of the eight-table list in `CLAUDE.md`.
 
 ---
 
