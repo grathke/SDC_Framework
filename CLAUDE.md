@@ -146,12 +146,27 @@ application writes its own and changes nothing in `000_FRAMEWORK`.
 `900_SANDBOX/` is for experiments, and is excluded from compilation in the project file, the way
 `tests` and `project-backup` are.
 
-A generated `_B`/`_U` pair is written to the **repository root**, deliberately. It is a draft: you
-review it and then file it by hand, either into a band under `000_FRAMEWORK` or into the project it
-belongs to under `100_PROJECTS`. Which of those it is depends on what the page turns out to be, and
-the generator cannot know that — so it leaves the pair in plain sight rather than in a folder that
-would make an unfiled page look settled. The SDK glob compiles the root, so the page works before
-it is filed.
+A generated `_B`/`_U` pair is written to **`999_GENERATED PAGES/`**, deliberately. It is a draft
+waiting to be filed, and the folder is numbered 999 so an unfiled page sits at the bottom of the
+tree looking like something outstanding rather than something settled.
+
+**Filing one is the user's decision, and theirs to make by hand.** A page moves to wherever it
+belongs — a band under `000_FRAMEWORK`, or any project folder under `100_PROJECTS` — and which of
+those it is depends on what the page turns out to be, which the generator cannot know. Do not file
+a page, and do not assume one is still where it was generated.
+
+Moving it breaks nothing. Every `.vb` under the project is compiled, `RootNamespace` is empty and
+each file declares its own namespace, so a page compiles wherever it sits. Regeneration follows it:
+`PageGenerator.GeneratedPagePath` looks a page up by name across the workspace before writing, so a
+filed page is rewritten where it now lives and only a genuinely new one lands in `999_GENERATED
+PAGES`. Nothing records where a page came from.
+
+The exception is the four folders the project file excludes — `900_SANDBOX`, `tests`,
+`project-backup` and `restore-points`. A page moved into one of those drops out of the build
+without saying so.
+
+`999_GENERATED PAGES/.gitkeep` carries the same guidance for whoever opens the folder, and keeps it
+alive in git for the case it should usually be in: empty.
 
 Folder numbers are three digits throughout, so they sort correctly under a plain lexicographic
 sort as well as a natural one. **Files inside them carry no number and no `FW_` prefix** — the
