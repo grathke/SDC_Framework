@@ -1,6 +1,6 @@
 # Page Generation — A Simpler Shape
 
-**Section 2 was built on 2026-09-05. Sections 3 and 4 are still proposals.** Written 2026-09-04 at
+**Section 2 was built on 2026-09-05. Section 3 was decided against the same day. Section 4 is still a proposal.** Written 2026-09-04 at
 the end of a session that built main-menu placement into the generator.
 
 The question that prompted it: *is there a better, simpler, more elegant way to generate pages?*
@@ -75,7 +75,27 @@ Changing the template invalidated it for the two existing requests, so regenerat
 
 ---
 
-## 3. The step that follows from it
+## 3. The step that follows from it — DECIDED AGAINST, 2026-09-05
+
+**Keep generating the file.** The argument below is sound and still loses, for a reason that was
+not written down when it was made:
+
+> A `_B` may need to be changed. Another table, parent and child, some other kind of search.
+
+A browse page is only boilerplate until the first one is not. Parent/child, a different search, SQL
+spanning tables — each needs somewhere to put behaviour, and a row in `FW_Pages` has nowhere. The
+file is that place, and it has to exist *before* anyone discovers they need it: a page that has to
+be converted from a row back into a class the moment it grows a requirement is worse than one that
+was always a class.
+
+Section 2 had already taken the win this section was chasing. The duplication is gone, and every
+override point on `FW_Base_B` is still reachable. Twenty-one lines is a cheap price for *this page
+can become anything later*.
+
+What follows is kept because the observation is still true, and because the same reasoning does
+**not** apply to buttons in section 4 — a button has no behaviour of its own to protect.
+
+---
 
 Once `_B` is only a constructor, it does not need to be a *class*.
 
@@ -158,6 +178,11 @@ Public Class UsersY_B
 End Class
 ```
 
-Three facts: the class name, the table, and the partner page. The third is the only one that needs
-a compiler — and only because the partner is itself a class. Section 3 is now a much narrower
-question than it looked on 2026-09-04.
+Three facts: the class name, the table, and the partner page.
+
+That was nearly the argument for doing away with the file altogether, and section 3 records why it
+was not: a page this small is *still the place* a parent/child relationship or a different search
+would go, and it has to exist before anyone finds they need it.
+
+So section 2 is where this ends for `_B` pages. Section 4, on buttons, is untouched by that
+reasoning and remains open.
