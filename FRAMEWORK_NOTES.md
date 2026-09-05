@@ -739,13 +739,15 @@ they are maintained, in two grids:
 
 | Roles_U grid | Table | Scope | Applies to |
 |---|---|---|---|
-| top | `FW_RoleDetails` | one caption per **table** | menu and dashboard button captions, page titles, entity aliases |
+| top | `FW_RoleDetails` | one caption per **table** | page titles — **and, intended but not built, menu and dashboard button captions** |
 | bottom | `FW_RoleFields` | one caption per **field** | `_B` grid column headings and `_U` control labels |
 
 Resolution paths:
 
 - **Table level** — `DataAccess.GetRoleDetailOverrideCaption(roleId, registrationId, tableName)`,
-  consumed by `EntityDisplayNameHelper.ResolveEntityAlias`, which falls back to the supplied alias.
+  consumed by `PageTitleHelper.ResolveTableAlias`, which falls back to the supplied alias. This
+  entry named `EntityDisplayNameHelper` until 2026-09-05; that module was deleted on 2026-09-03 with
+  `FW_Entity` and `PageTitleHelper` took its work.
 - **Field level, browse** — `GetRoleFieldCaptionMapForCurrentContext()` feeds
   `ApplyFriendlyColumnHeaders`. An override wins; otherwise the header falls back to
   `ToFriendlyCaption(sourceName)`.
@@ -760,6 +762,39 @@ Editing an `OverrideCaption` cell in `Roles_U` propagates the change
 table with an override caption never reaches it. So a caption that looks wrong is either a bad
 override in `FW_RoleFields`/`FW_RoleDetails`, or a formatter fallback — check which before
 changing either.
+
+### Button captions do not follow the override yet
+
+**Known gap, recorded 2026-09-05.** A table override reaches the page title and stops there. The
+whole chain is one call:
+
+```
+GetRoleDetailOverrideCaption  →  PageTitleHelper  →  Roles_B.vb:167
+```
+
+Every menu tile and dashboard icon carries a **string literal** — `"UsersY"`, `"User Admin"`,
+`"Application Settings"`, `"UserX"`. Nothing looks an override up for them. So a company that renames
+Gender to Pronoun sees it on the page and not on the button that opens the page, which reads as a
+half-applied setting rather than as a missing feature.
+
+It was never built rather than lost: `EntityDisplayNameHelper`, which this section used to name,
+built *titles* — `"... Listing"`, `"... Maintenance - Create"` — and no button ever consulted it.
+
+**What building it needs.** The missing link is tile to table, and both halves already exist:
+
+```
+tile → target page name → DataAccess.GetPageDbTableByWindowOrPage → FW_Pages.DB_Table
+     → PageTitleHelper → caption
+```
+
+So: tiles carry the page they open; the menu resolves and applies captions where
+`ApplyRoleAffordances` already runs, which is exactly when role or registration changes the answer;
+dashboards do the same. A tile with no page — Close, My Profile — keeps its literal.
+
+Two things to settle rather than discover. A tile's caption is deliberately two lines to fit a 96px
+button (`"User" & vbCrLf & "Admin"`), and an override arrives as one string, so it can overflow or
+wrap badly. And the tile must keep its coded caption to put back, or a role change that *removes* an
+override leaves the previous role's wording in place.
 
 ## Dashboard Grid And Generated Buttons
 
