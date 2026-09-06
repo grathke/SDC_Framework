@@ -21,7 +21,7 @@ Namespace SDC.Framework
     ''' Two things are the caller's to supply, because they are the only things that differ:
     '''
     ''' - The ActionKey for each button. A dashboard icon carries its key as its control name; a
-    '''   ribbon tile is named "ACTION_users" and its key is "users". Taking the key explicitly
+    '''   ribbon tile is named "ACTION_user-admin" and its key is "user-admin". Taking the key explicitly
     '''   keeps that prefix out of the database.
     ''' - How a file name becomes an image. A dashboard scales to its icon size; the ribbon scales
     '''   and then centres on a fixed canvas. Passing the loader in is what let the ribbon share

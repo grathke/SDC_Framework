@@ -364,6 +364,22 @@ Namespace SDC.Framework
             iconImageController.Attach(Me.Controls.OfType(Of DashboardIconButton)().
                                        Select(Function(icon) New KeyValuePair(Of String, ButtonBase)(icon.Name, icon)))
 
+            ' What the role calls each page, from the same FW_RoleDetails override the ribbon tiles
+            ' and the page titles read. Only icons that open a table-backed page appear: the database
+            ' configuration dialog and the tile that opens the company dashboard are not a table
+            ' under another name.
+            ActionCaptionOverrides.Apply(New Dictionary(Of ButtonBase, String) From {
+                {rolesButton, "Roles_B"},
+                {userAdminButton, "Users_AppAdmin_B"},
+                {registrationButton, "FW_Registration_B"},
+                {auditHistoryButton, "FW_AuditTrail_B"},
+                {helpDeskButton, "FW_HD_Admin_B"},
+                {helpDeskSupportButton, "FW_HD_Issues_Support_B"},
+                {newPageRequestsButton, "FW_PageGeneration_B"},
+                {generatedUserX_BButton, "UserX_B"},
+                {generatedFW_UserAccessExplanation_BButton, "FW_UserAccessExplanation_B"}
+            })
+
             rolesButton.Enabled = True
             userAdminButton.Enabled = True
             registrationButton.Enabled = True

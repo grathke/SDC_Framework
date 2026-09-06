@@ -1260,8 +1260,21 @@ Namespace SDC.Framework
             Return 4
         End Function
 
+        ''' <summary>
+        ''' The page title: what the role calls this table, then "Listing".
+        '''
+        ''' Followed the formatter alone until 2026-09-06, so a company that renamed Gender to
+        ''' Pronoun saw it in the grid headings and not in the title above them. Only Roles_B honoured
+        ''' the alias, because it asks PageTitleHelper by hand; every other browse page went straight
+        ''' to the formatter and could not.
+        '''
+        ''' ToFriendlyCaption is still the fallback rather than being bypassed, so a page that
+        ''' overrides it keeps its say when no alias is recorded.
+        ''' </summary>
         Protected Overridable Function BuildBrowseListingTitle(registrationId As Integer, tableName As String) As String
-            Return ToFriendlyCaption(tableName) & " Listing"
+            Dim aliasName = PageTitleHelper.ResolveTableAliasOverride(registrationId, tableName)
+
+            Return If(String.IsNullOrWhiteSpace(aliasName), ToFriendlyCaption(tableName), aliasName) & " Listing"
         End Function
 
         ''' <summary>

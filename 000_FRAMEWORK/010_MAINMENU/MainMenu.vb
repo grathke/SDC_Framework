@@ -24,6 +24,16 @@ Namespace SDC.Framework
             Public Property Key As String
             Public Property Button As Button
             Public Property OnClick As EventHandler
+
+            ''' The page this tile opens, or nothing for a tile that opens no page - Close, My
+            ''' Profile and Application Settings among them. Only a tile with a page has a table
+            ''' behind it, and only a table can carry a role's override caption.
+            Public Property PageName As String
+
+            ''' The caption the tile was given in code, kept so an override can be applied *and
+            ''' withdrawn*. Without it, a role change that removes an override would have nothing to
+            ''' put back and the previous role's wording would stick.
+            Public Property DefaultCaption As String
         End Class
 
         ''' <summary>
@@ -368,7 +378,11 @@ Namespace SDC.Framework
             AddActionTile("close", "Close", AddressOf CloseMenu_Click, LoadMenuIcon("close.png", SystemIcons.Error.ToBitmap()))
             AddActionTile("dashboard", "Dashboard", AddressOf Dashboard_Click, LoadMenuIcon("dashboard.png", SystemIcons.Application.ToBitmap()))
             AddActionTile("application-settings", "Application" & Environment.NewLine & "Settings", AddressOf ApplicationSettings_Click, LoadMenuIcon("gear.png", SystemIcons.Shield.ToBitmap()))
-            AddActionTile("users", "Users", AddressOf Users_Click, LoadMenuIcon("users.png", SystemIcons.Information.ToBitmap()))
+            ' The "users" tile was removed on 2026-09-06. It was captioned Users and opened Roles_B,
+            ' which is a mislabelled tile rather than a missing feature: Roles_B is reached from the
+            ' App Admin and Company dashboards, so nothing became unreachable. Found while wiring
+            ' caption overrides - the role's alias for FW_Roles would have re-captioned it "Roles",
+            ' correcting the label and making the mismatch obvious.
             AddActionTile("my-profile", "My" & Environment.NewLine & "Profile", AddressOf MyProfile_Click, LoadMenuIcon("my-profile.png", SystemIcons.Question.ToBitmap()))
             AddActionTile("login-as-substitute", "Login as" & Environment.NewLine & "Different User", AddressOf LoginAsSubstitute_Click, LoadMenuIcon("substitute-user.png", SystemIcons.Warning.ToBitmap()))
             AddActionTile("select-role", "Select a Role (Application Admin)", AddressOf SelectRole_Click, LoadMenuIcon("users.png", SystemIcons.WinLogo.ToBitmap()))
@@ -632,6 +646,10 @@ Namespace SDC.Framework
                 Return
             End If
 
+            ' The caption the caller supplies is the tile's own, whatever an override may later put
+            ' on top of it. Recorded before it is displayed so ApplyCaptionOverrides has something to
+            ' restore when an override is withdrawn.
+            tile.DefaultCaption = caption
             tile.Button.Text = caption
 
             If tile.OnClick IsNot Nothing Then
@@ -675,6 +693,77 @@ Namespace SDC.Framework
             tile.Button.Image = NormalizeActionIcon(actionKey, LoadMenuIcon(iconFileName, safeFallback))
         End Sub
 
+        ''' <summary>
+        ''' Tells a tile which page it opens, so its caption can follow the role's alias for that
+        ''' page's table.
+        '''
+        ''' Supplied rather than derived: a tile's click handler is a delegate, and there is nothing
+        ''' in it to read a page name out of. The application declares the association because the
+        ''' application is what decides which tile opens what.
+        '''
+        ''' A tile with no page keeps its coded caption forever, which is right - Close and My
+        ''' Profile are not a table under another name.
+        ''' </summary>
+        Public Sub SetActionPage(actionKey As String, pageName As String)
+            If String.IsNullOrWhiteSpace(actionKey) Then
+                Return
+            End If
+
+            Dim tile As ActionTile = Nothing
+            If Not actionTilesByKey.TryGetValue(actionKey, tile) Then
+                Return
+            End If
+
+            tile.PageName = If(pageName, String.Empty).Trim()
+        End Sub
+
+        ''' <summary>
+        ''' Re-captions every tile that opens a page, from the role's alias for that page's table.
+        '''
+        ''' A company that calls Gender "Pronoun" changes it once in Roles_U and it follows through
+        ''' the menu, the browse grid and the maintenance page. Until 2026-09-06 the menu was the one
+        ''' that did not follow: the override reached the page title and stopped, so a renamed table
+        ''' showed on the page and not on the button that opened it - which reads as a half-applied
+        ''' setting rather than as a missing feature.
+        '''
+        ''' Both directions, which is what DefaultCaption is for. Applying an override is only half
+        ''' the job; a role that has none must get the coded caption back, or the previous role's
+        ''' wording stays on the button after a role change.
+        '''
+        ''' Call this wherever role or registration may have changed. It reads the session itself, so
+        ''' it needs no arguments and cannot be called with a stale registration.
+        ''' </summary>
+        Public Sub ApplyCaptionOverrides()
+            Dim session = SessionState.Current
+            Dim registrationId = If(session.HasValue, session.Value.RegistrationID, 0)
+
+            For Each tile In actionTilesByKey.Values
+                If tile Is Nothing OrElse tile.Button Is Nothing Then Continue For
+                If String.IsNullOrWhiteSpace(tile.PageName) Then Continue For
+
+                Dim caption = tile.DefaultCaption
+
+                If registrationId > 0 Then
+                    Try
+                        ' A rename, not merely an override. FW_Users is aliased "Users" against four
+                        ' roles, which is exactly what the formatter derives from the name - applying
+                        ' it would replace a deliberate two-line "User Admin" with a word that
+                        ' renamed nothing, and leave User Admin and UsersY, two correct mappings onto
+                        ' one table, captioned identically.
+                        Dim renamed = PageTitleHelper.ResolvePageRename(registrationId, tile.PageName)
+                        If Not String.IsNullOrWhiteSpace(renamed) Then
+                            caption = renamed
+                        End If
+                    Catch
+                        ' A caption is not worth a broken menu. The tile keeps the wording it was
+                        ' given, which is the same thing every session saw before this existed.
+                    End Try
+                End If
+
+                tile.Button.Text = If(caption, String.Empty)
+            Next
+        End Sub
+
         Public Sub SetActionCaption(actionKey As String, caption As String)
             If String.IsNullOrWhiteSpace(actionKey) Then
                 Return
@@ -685,6 +774,10 @@ Namespace SDC.Framework
                 Return
             End If
 
+            ' Recorded as the tile's own caption as well as displayed. A caller setting a caption is
+            ' stating what the tile is called, not painting over an override, so this is what
+            ' ApplyCaptionOverrides restores to.
+            tile.DefaultCaption = If(caption, String.Empty)
             tile.Button.Text = If(caption, String.Empty)
         End Sub
 
@@ -814,7 +907,8 @@ Namespace SDC.Framework
             actionTilesByKey(key) = New ActionTile() With {
                 .Key = key,
                 .Button = tileButton,
-                .OnClick = onClick
+                .OnClick = onClick,
+                .DefaultCaption = caption
             }
 
             If IsPinnedActionKey(key) Then
@@ -1172,13 +1266,6 @@ Namespace SDC.Framework
 
             Using settings As New Dashboard_Application(currentUser, activeAccessProfile)
                 settings.ShowDialog(Me)
-            End Using
-            MenuFormInitializer.Configure(Me, currentUser, True)
-        End Sub
-
-        Private Sub Users_Click(sender As Object, e As EventArgs)
-            Using roles As New Roles_B(currentUser, activeAccessProfile, "ROLES")
-                roles.ShowDialog(Me)
             End Using
             MenuFormInitializer.Configure(Me, currentUser, True)
         End Sub

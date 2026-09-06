@@ -191,6 +191,23 @@ Namespace SDC.Framework
         ''' </summary>
         Protected Overridable Function BuildMaintenanceTitle() As String
             Dim subject = DisplayNameFormatter.ToPageDisplayName(Me.GetType().Name)
+
+            ' What the role calls the table wins over what the page is called, so a company that
+            ' renames Users to Staff gets "Edit Staff" here as well as "Staff Listing" on the browse
+            ' page and "Staff" on the button that opened it. One override, every surface.
+            '
+            ' ResolveTableRename rather than the plain override, so an alias that merely restates the
+            ' derived name changes nothing: FW_Users is aliased "Users" against four roles, and
+            ' applying that would flatten UsersY_U and Users_AppAdmin_U to one title while renaming
+            ' nothing.
+            Dim session = SessionState.Current
+            If session.HasValue AndAlso session.Value.RegistrationID > 0 Then
+                Dim renamed = PageTitleHelper.ResolveTableRename(session.Value.RegistrationID, ResolveTableNameForConstraints())
+                If Not String.IsNullOrWhiteSpace(renamed) Then
+                    subject = renamed
+                End If
+            End If
+
             Dim action = If(IsCreatingNewRecord(), "New", If(IsViewOnly(), "View", "Edit"))
             Return action & " " & subject
         End Function

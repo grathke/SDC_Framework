@@ -137,6 +137,11 @@ Namespace SDC.Framework
             ' saved arrangement and the chosen pictures are laid over the finished ribbon rather
             ' than over a half-built one.
             menu.ConfigureArrangement(MenuSurfaceName, AnchoredMenuKeys)
+
+            ' After the captions have been written, so an override lands on the finished wording
+            ' rather than being overwritten by it. Configure runs on every role change and on several
+            ' dialog returns, which is exactly when a role's aliases stop or start applying.
+            menu.ApplyCaptionOverrides()
         End Sub
 
         ' user is carried through because a generated ribbon tile opens a page whose constructor
@@ -161,7 +166,6 @@ Namespace SDC.Framework
             menu.ConfigureActionVisibility("application-settings", canAccessApplicationSettings, canAccessApplicationSettings)
             menu.SetActionCaption("application-settings", applicationSettingsCaption)
             ConfigureApplicationSettingsTile(menu, applicationSettingsCaption, canAccessApplicationSettings)
-            menu.ConfigureActionVisibility("users", True, True)
             menu.ConfigureActionVisibility("dashboard", True, True)
 
             ' Signing in as somebody else is an administrator's action, so only an App Admin is
@@ -207,6 +211,15 @@ Namespace SDC.Framework
                 fallbackIcon:=SystemIcons.Application.ToBitmap(),
                 isVisible:=True,
                 isEnabled:=True)
+
+            ' Which page each tile opens, so its caption can follow the role's alias for that page's
+            ' table. Declared here rather than inferred, because a click handler is a delegate and
+            ' there is nothing in one to read a page name out of.
+            '
+            ' Only tiles that open a table-backed page appear. Close, Dashboard, Application Settings
+            ' and the pinned row keep their coded captions: they are not a table under another name.
+            menu.SetActionPage("user-admin", "Users_AppAdmin_B")
+            menu.SetActionPage("generated-usersy_b", "UsersY_B")
 
             ' Generated ribbon tiles are inserted above this marker. PageGenerator matches the next
             ' line exactly, so rewording it stops generation placing tiles on the ribbon - it says it

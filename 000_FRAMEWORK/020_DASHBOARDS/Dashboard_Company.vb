@@ -169,6 +169,14 @@ Namespace SDC.Framework
             iconImageController.Attach(Me.Controls.OfType(Of DashboardIconButton)().
                                        Select(Function(icon) New KeyValuePair(Of String, ButtonBase)(icon.Name, icon)))
 
+            ' The same override the App Admin dashboard, the ribbon and the page titles read, so a
+            ' rename cannot show on one surface and not another.
+            ActionCaptionOverrides.Apply(New Dictionary(Of ButtonBase, String) From {
+                {rolesButton, "Roles_B"},
+                {userAdminButton, "Users_AppAdmin_B"},
+                {userDiagnosticButton, "FW_UserAccessExplanation_B"}
+            })
+
             rolesButton.Enabled = True
             userAdminButton.Enabled = True
             userDiagnosticButton.Enabled = True
