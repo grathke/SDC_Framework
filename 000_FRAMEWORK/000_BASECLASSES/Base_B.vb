@@ -203,6 +203,27 @@ Namespace SDC.Framework
         ''' Exposed read only, and only to derived pages. Visibility stays the widget's own business:
         ''' UpdateVisibility shows the button to an application administrator and nobody else.
         ''' </remarks>
+        ''' <summary>
+        ''' Repaints the page in its stored colour once the form is built and on screen.
+        ''' </summary>
+        ''' <remarks>
+        ''' A page that builds its own shell has its colour applied inside this class's constructor,
+        ''' which runs before that page has created a single control of its own. Everything it adds
+        ''' afterwards inherits the form's tint rather than getting the treatment ApplyColour gives
+        ''' each kind of control - so its buttons came out the colour of the page.
+        '''
+        ''' OnShown rather than the Shown handler wired further down, because that handler is inside
+        ''' the default shell block and a page skipping the shell never gets it. Costs nothing: the
+        ''' colour is already in hand and this repaints from it.
+        ''' </remarks>
+        Protected Overrides Sub OnShown(e As EventArgs)
+            MyBase.OnShown(e)
+
+            If backgroundColorPicker IsNot Nothing Then
+                backgroundColorPicker.Reapply()
+            End If
+        End Sub
+
         Protected ReadOnly Property PageColorPicker As PageBackgroundColorPicker
             Get
                 Return backgroundColorPicker

@@ -218,6 +218,19 @@ Namespace SDC.Framework
             End Try
         End Sub
 
+        ''' <summary>
+        ''' Repaints the page in the colour already loaded, without reading it again.
+        ''' </summary>
+        ''' <remarks>
+        ''' For a page whose controls are created after ApplyStored has run. Those controls were not
+        ''' there to be treated when the colour was first applied, so they simply inherited the form
+        ''' tint - which is how a button ends up the colour of the page instead of looking pressable.
+        ''' </remarks>
+        Public Sub Reapply()
+            ApplyColour(owner, currentColour)
+            pickerButton.Invalidate()
+        End Sub
+
         ''' <summary>Shows the button only to an application administrator.</summary>
         Public Sub UpdateVisibility()
             pickerButton.Visible = SessionState.IsApplicationAdmin
