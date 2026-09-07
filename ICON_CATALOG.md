@@ -278,6 +278,17 @@ anywhere and no caller — see Gaps.
 - `assets/images/helpdesk.png` exists but no catalogued action uses it. Either the Help Desk icon
   is uncatalogued or the asset is orphaned.
 - The `dashboard` target needs confirming (see above).
+- **`FW_AuditTrail_B` is protected by where it is placed, not by anything in the page.** Its
+  constructor is `Public Sub New()` - no `UserContext`, no `AccessProfile` - and its Delete and
+  Restore buttons, which soft-delete and restore audit rows, are gated only by whether the deleted
+  view is showing. It is reachable from one place, the App Admin dashboard, so today only an
+  Application Admin gets there.
+
+  **Before adding a second way in** - a tile, an icon, a button on another page - gate the two
+  commands first. `SessionState.IsApplicationAdmin` on both the buttons and their click handlers is
+  enough; the page does not need the full access profile, because deleting audit history is an
+  administrator act rather than something a role should be able to be granted. Reviewed and left as
+  it is on 2026-09-07, deliberately, on the strength of the single entry point.
 - `FW_UserAccessDiagnostic_B` has no icon, no menu tile and no caller anywhere in the source. It is
   unreachable code with a stale `FW_Pages` row (alias `Entity`). Removing it is the eight-table
   procedure in `CLAUDE.md`, not a row delete.
