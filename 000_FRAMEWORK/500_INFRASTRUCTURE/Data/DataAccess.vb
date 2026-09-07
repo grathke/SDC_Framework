@@ -1184,20 +1184,47 @@ Namespace SDC.Framework
                 Using conn As New SqlConnection(ConnectionString)
                     conn.Open()
                     
+                    ' The caller's spelling of the table is only a request. The database has the
+                    ' authoritative one, and the first statement below replaces @DBTable with it -
+                    ' in the same batch, so it costs nothing. Two writers reach here: the page
+                    ' generator, and Base_B when a page opens with no FW_Pages row, which passes the
+                    ' page's own hard-coded field. Generated pages carried an upper-cased name for a
+                    ' long time, which is why FW_Pages held FW_USERS and FW_Users for one table.
+                    ' Normalising here means those rows correct themselves as the pages are opened,
+                    ' without editing a single generated file.
+                    '
+                    ' ISNULL keeps the caller's value when sys.tables has no match, so a view - which
+                    ' is not in sys.tables at all - is stored exactly as it was passed.
+                    Dim storedTableName = dbTableName.Trim()
+
                     Using cmd As New SqlCommand(
+                        "SELECT @DBTable = ISNULL((SELECT name FROM sys.tables WHERE name = @DBTable), @DBTable); " &
                         "IF EXISTS (SELECT 1 FROM dbo." & PagesTable & " WHERE WindowOrPage = @WindowOrPage) " &
                         "UPDATE dbo." & PagesTable & " SET RegistrationID = NULL, DB_Table = @DBTable, Table_Alias = @TableAlias, Table_SQL = @TableSQL WHERE WindowOrPage = @WindowOrPage " &
                         "ELSE INSERT INTO dbo." & PagesTable & " (RegistrationID, WindowOrPage, DB_Table, Table_Alias, Table_SQL, CreatedBy) VALUES (NULL, @WindowOrPage, @DBTable, @TableAlias, @TableSQL, @CreatedBy)", conn)
                         cmd.Parameters.Add("@WindowOrPage", SqlDbType.VarChar, 100).Value = windowOrPageName.Trim()
-                        cmd.Parameters.Add("@DBTable", SqlDbType.VarChar, 100).Value = dbTableName.Trim()
+
+                        ' Sent back out so FW_TableAliases is keyed by the same spelling FW_Pages now
+                        ' holds, rather than by whatever the caller happened to pass.
+                        Dim dbTableParameter = cmd.Parameters.Add("@DBTable", SqlDbType.VarChar, 100)
+                        dbTableParameter.Direction = ParameterDirection.InputOutput
+                        dbTableParameter.Value = storedTableName
+
                         cmd.Parameters.Add("@TableAlias", SqlDbType.VarChar, 100).Value = If(String.IsNullOrWhiteSpace(tableAlias), dbTableName.Trim(), tableAlias.Trim())
                         cmd.Parameters.Add("@TableSQL", SqlDbType.VarChar, -1).Value = DbValue(tableSql)
                         cmd.Parameters.Add("@CreatedBy", SqlDbType.Int).Value = userId
                         cmd.ExecuteNonQuery()
+
+                        If dbTableParameter.Value IsNot Nothing AndAlso Not DBNull.Value.Equals(dbTableParameter.Value) Then
+                            Dim normalised = Convert.ToString(dbTableParameter.Value, CultureInfo.InvariantCulture)
+                            If Not String.IsNullOrWhiteSpace(normalised) Then
+                                storedTableName = normalised.Trim()
+                            End If
+                        End If
                     End Using
                     
                     ' Also save the table alias to FW_TableAliases for global reuse
-                    SaveTableAlias(dbTableName.Trim(), If(String.IsNullOrWhiteSpace(tableAlias), dbTableName.Trim(), tableAlias.Trim()))
+                    SaveTableAlias(storedTableName, If(String.IsNullOrWhiteSpace(tableAlias), storedTableName, tableAlias.Trim()))
                     
                     Return True
                 End Using
@@ -1262,6 +1289,16 @@ Namespace SDC.Framework
             End Try
         End Function
 
+        ''' <summary>
+        ''' Every table a page can be generated against, spelled as the database spells it.
+        ''' </summary>
+        ''' <remarks>
+        ''' This used to return UPPER(name). Upper case reads better in a picker, but the name the
+        ''' caller selected was also the name written into the generated page, and from there into
+        ''' every audit row that page wrote - which is why FW_AuditTrail holds both FW_Users and
+        ''' FW_USERS for one table. The upper-casing belongs to whatever displays the list, so it
+        ''' now happens there. Ordering is unchanged.
+        ''' </remarks>
         Public Shared Function GetDatabaseTables() As List(Of String)
             Dim tables As New List(Of String)()
 
@@ -1269,7 +1306,7 @@ Namespace SDC.Framework
                 Using conn As New SqlConnection(ConnectionString)
                     conn.Open()
                     Using cmd As New SqlCommand(
-                        "SELECT UPPER(name) FROM sys.tables WHERE name LIKE 'FW_%' OR name LIKE 'AS_%' OR name LIKE 'CRM_%' ORDER BY UPPER(name)", conn)
+                        "SELECT name FROM sys.tables WHERE name LIKE 'FW_%' OR name LIKE 'AS_%' OR name LIKE 'CRM_%' ORDER BY UPPER(name)", conn)
                         
                         Using reader = cmd.ExecuteReader()
                             While reader.Read()
@@ -1286,14 +1323,22 @@ Namespace SDC.Framework
             Return tables
         End Function
 
+        ''' <summary>
+        ''' Turns a table name into its display alias - FW_RoleDetails becomes "Role Details".
+        ''' </summary>
+        ''' <param name="tableName">
+        ''' Must carry the database's own casing. The word breaks are found by looking for a
+        ''' lower-to-upper transition, so an upper-cased name yields "ROLEDETAILS" rather than
+        ''' "Role Details". This used to be guaranteed by asking sys.tables for the real casing on
+        ''' every call, which cost one round trip per table - 26 in a single measured session.
+        ''' Every caller already holds the correctly-cased name, so the contract moved here.
+        ''' </param>
         Public Shared Function FormatTableNameAsAlias(tableName As String) As String
             If String.IsNullOrWhiteSpace(tableName) Then
                 Return tableName
             End If
 
-            ' Get the actual casing from the database
-            Dim actualName = GetActualTableNameFromSchema(tableName.Trim())
-            Dim name = actualName.Trim()
+            Dim name = tableName.Trim()
             
             ' Strip FW_ or AS_ prefix (case-insensitive in VB.NET)
             If name.ToUpper().StartsWith("FW_") Then
@@ -1335,14 +1380,39 @@ Namespace SDC.Framework
             End Sub
         End Structure
 
+        ''' <summary>
+        ''' Every selectable table, with the upper-cased name shown to the user and the display
+        ''' alias derived from it.
+        ''' </summary>
+        ''' <remarks>
+        ''' One round trip. The query returns the name twice - once as the database spells it, for
+        ''' FormatTableNameAsAlias, and once upper-cased, for the list the user reads. Deriving the
+        ''' alias used to re-query sys.tables per table to recover the casing this now simply keeps.
+        ''' </remarks>
         Public Shared Function GetDatabaseTablesWithAliases() As List(Of TableData)
             Dim tables As New List(Of TableData)()
-            Dim tableNames = GetDatabaseTables()
 
-            For Each tableName In tableNames
-                Dim displayAlias = FormatTableNameAsAlias(tableName)
-                tables.Add(New TableData(tableName, displayAlias))
-            Next
+            Try
+                Using conn As New SqlConnection(ConnectionString)
+                    conn.Open()
+                    Using cmd As New SqlCommand(
+                        "SELECT name, UPPER(name) AS DisplayName FROM sys.tables " &
+                        "WHERE name LIKE 'FW_%' OR name LIKE 'AS_%' OR name LIKE 'CRM_%' " &
+                        "ORDER BY UPPER(name)", conn)
+
+                        Using reader = cmd.ExecuteReader()
+                            While reader.Read()
+                                Dim actualName = reader.GetString(0)
+                                Dim displayName = reader.GetString(1)
+                                tables.Add(New TableData(displayName, FormatTableNameAsAlias(actualName)))
+                            End While
+                        End Using
+                    End Using
+                End Using
+            Catch
+                ' Return what was read; an empty list leaves the caller's picker empty rather than
+                ' failing, which is how GetDatabaseTables has always behaved.
+            End Try
 
             Return tables
         End Function
@@ -1523,32 +1593,6 @@ Namespace SDC.Framework
                 ' Intentionally swallow persistence errors; page should still load.
             End Try
         End Sub
-
-        Public Shared Function GetActualTableNameFromSchema(tableName As String) As String
-            If String.IsNullOrWhiteSpace(tableName) Then
-                Return tableName
-            End If
-
-            Try
-                Using conn As New SqlConnection(ConnectionString)
-                    conn.Open()
-                    Using cmd As New SqlCommand(
-                        "SELECT name FROM sys.tables WHERE UPPER(name) = @UpperName", conn)
-                        
-                        cmd.Parameters.AddWithValue("@UpperName", tableName.Trim().ToUpper())
-                        
-                        Dim result = cmd.ExecuteScalar()
-                        If result IsNot Nothing Then
-                            Return result.ToString()
-                        End If
-                    End Using
-                End Using
-            Catch
-                ' Return original if query fails
-            End Try
-
-            Return tableName
-        End Function
 
         Public Shared Function GetRolesByRegistration(registrationId As Integer, Optional baseSelectSql As String = Nothing) As DataTable
             Dim table As New DataTable()

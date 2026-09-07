@@ -2040,9 +2040,16 @@ Namespace SDC.Framework
                 layout.RowStyles.Add(New RowStyle(SizeType.Percent, 100))
                 layout.RowStyles.Add(New RowStyle(SizeType.Absolute, 44))
 
+                ' The list reads upper-cased, which is easier to scan and keeps the dialog uniform,
+                ' but the name carried away from here is the one the database uses. Storing what was
+                ' displayed is how FW_USERS came to sit beside FW_Users in the audit trail, for the
+                ' same table.
                 Dim tableList As New ListBox With {.Dock = DockStyle.Fill}
+                Dim actualNameByDisplay As New Dictionary(Of String, String)(StringComparer.OrdinalIgnoreCase)
                 For Each tableName In tables
-                    tableList.Items.Add(tableName)
+                    Dim displayName = tableName.ToUpperInvariant()
+                    actualNameByDisplay(displayName) = tableName
+                    tableList.Items.Add(displayName)
                 Next
 
                 Dim currentTable = underlyingTableNameTextBox.Text.Trim()
@@ -2065,7 +2072,11 @@ Namespace SDC.Framework
                 dialog.CancelButton = cancelButton
 
                 If dialog.ShowDialog(Me) = DialogResult.OK AndAlso tableList.SelectedItem IsNot Nothing Then
-                    Dim selectedTable = tableList.SelectedItem.ToString()
+                    Dim selectedDisplay = tableList.SelectedItem.ToString()
+                    Dim selectedTable As String = Nothing
+                    If Not actualNameByDisplay.TryGetValue(selectedDisplay, selectedTable) Then
+                        selectedTable = selectedDisplay
+                    End If
                     If Not String.Equals(underlyingTableNameTextBox.Text.Trim(), selectedTable, StringComparison.OrdinalIgnoreCase) Then
                         underlyingTableNameTextBox.Text = selectedTable
                         ClearTableDependentSelections()
