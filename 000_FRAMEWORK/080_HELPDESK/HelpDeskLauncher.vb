@@ -24,7 +24,9 @@ Namespace SDC.Framework
         Public Const ButtonName As String = "Button_HelpDesk"
         Private Const ButtonWidth As Integer = 110
         Private Const ButtonHeight As Integer = 28
-        Private Const EdgeMargin As Integer = 10
+        ' Widened from 10 on 2026-09-07: ten pixels put the button hard against the window frame,
+        ' reading as though it had been pushed off the page rather than placed on it.
+        Private Const EdgeMargin As Integer = 28
         Private Const NeighbourGap As Integer = 12
         Private Const TopMargin As Integer = 10
 
