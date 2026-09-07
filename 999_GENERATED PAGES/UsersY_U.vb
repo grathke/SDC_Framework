@@ -29,13 +29,14 @@ Namespace SDC.Framework
         Private ReadOnly emailTextBox As TextBox
         Private ReadOnly passwordTextBox As TextBox
         Private ReadOnly assignedManagerIDComboBox As ComboBox
+        Private ReadOnly genderIDTextBox As TextBox
 
         Public Sub New(id As Integer, user As UserContext, Optional profile As AccessProfile = Nothing)
             MyBase.New()
             recordId = id
             currentUser = user
             accessProfile = profile
-            ClientSize = New Size(600, 433)
+            ClientSize = New Size(600, 475)
             okButton.Location = New Point(ClientSize.Width - 270, ClientSize.Height - 46)
             cancelActionButton.Location = New Point(ClientSize.Width - 135, ClientSize.Height - 46)
             firstLastTextBox = AddField("FirstLast", 20, False, False)
@@ -47,7 +48,8 @@ Namespace SDC.Framework
             emailTextBox = AddField("Email", 272, False, True)
             passwordTextBox = AddField("Password", 314, False, True)
             assignedManagerIDComboBox = AddComboField("AssignedManagerID", 356, False, 20, 320)
-            SetManualTabOrder(firstLastTextBox, lastNameTextBox, address1TextBox, cityTextBox, stateTextBox, zipTextBox, emailTextBox, passwordTextBox, assignedManagerIDComboBox, okButton, cancelActionButton)
+            genderIDTextBox = AddField("GenderID", 398, False, False)
+            SetManualTabOrder(firstLastTextBox, lastNameTextBox, address1TextBox, cityTextBox, stateTextBox, zipTextBox, emailTextBox, passwordTextBox, assignedManagerIDComboBox, genderIDTextBox, okButton, cancelActionButton)
             BindToForm()
             ApplyMode()
         End Sub
@@ -78,7 +80,7 @@ Namespace SDC.Framework
             End If
             formBindingSource.DataSource = record.Table
             formBindingSource.Position = record.Table.Rows.IndexOf(record)
-            For Each control In New Control() {firstLastTextBox, lastNameTextBox, address1TextBox, cityTextBox, stateTextBox, zipTextBox, emailTextBox, passwordTextBox}
+            For Each control In New Control() {firstLastTextBox, lastNameTextBox, address1TextBox, cityTextBox, stateTextBox, zipTextBox, emailTextBox, passwordTextBox, genderIDTextBox}
                 Dim fieldName = control.Name.Substring("TextBox_".Length)
                 control.DataBindings.Clear()
                 control.DataBindings.Add("Text", formBindingSource, fieldName, True, DataSourceUpdateMode.Never)
@@ -136,6 +138,7 @@ Namespace SDC.Framework
             values("Email") = emailTextBox.Text
             values("Password") = passwordTextBox.Text
             values("AssignedManagerID") = GetComboSelectedIdOrNull(assignedManagerIDComboBox)
+            values("GenderID") = genderIDTextBox.Text
             Dim savedId As Integer = recordId
             If savedId <= 0 AndAlso record.Table.Columns.Contains(primaryKey) AndAlso Not record.IsNull(primaryKey) Then Integer.TryParse(Convert.ToString(record(primaryKey)), savedId)
             Dim updatedBy = If(SessionState.IsActive, SessionState.Current.Value.UserID, 0)
