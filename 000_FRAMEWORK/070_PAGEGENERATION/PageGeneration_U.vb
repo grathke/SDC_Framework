@@ -24,6 +24,15 @@ Namespace SDC.Framework
         Private pageBaseNameTextBox As TextBox
         Private browsePageNameTextBox As TextBox
         Private maintenancePageNameTextBox As TextBox
+
+        ''' <summary>
+        ''' Whether the generated browse page shows the Hot Fields strip.
+        ''' </summary>
+        ''' <remarks>
+        ''' Stored on the request so reopening it shows the answer as it was left, and written to
+        ''' FW_Pages.UseHotFields when the page is generated - which is what the running page reads.
+        ''' </remarks>
+        Private displayHotFieldsCheckBox As CheckBox
         Private createAsFrameworkPagesCheckBox As CheckBox
         Private underlyingTableNameTextBox As TextBox
         Private generateBrowsePageCheckBox As CheckBox
@@ -165,20 +174,29 @@ Namespace SDC.Framework
             maintenancePageNameTextBox = AddEntryField(fields, "MaintenancePageName", False, 34, 150, False, "4. Maintenance Page Name")
             generateBrowsePageCheckBox = New CheckBox With {.Text = "Generate", .Checked = False, .AutoSize = True, .Margin = New Padding(8, 6, 0, 0)}
             useQbeOnlyCheckBox = New CheckBox With {.Name = "CheckBox_UseQbeOnly", .Text = "Use QBE only", .Checked = False, .AutoSize = True, .Margin = New Padding(8, 6, 0, 0)}
+            displayHotFieldsCheckBox = New CheckBox With {.Name = "CheckBox_UseHotFields", .Text = "Display Hotfields", .Checked = False, .AutoSize = True, .Margin = New Padding(8, 6, 0, 0)}
             generateMaintenancePageCheckBox = New CheckBox With {.Text = "Generate", .Checked = False, .AutoSize = True, .Margin = New Padding(8, 6, 0, 0)}
+            ' Sized to its contents. Left at its default size it kept the width of an empty panel,
+            ' and with WrapContents off the third checkbox was simply clipped off the end rather
+            ' than wrapping into view.
             Dim browseGenerationOptions As New FlowLayoutPanel With {
                 .Dock = DockStyle.Fill,
                 .WrapContents = False,
+                .AutoSize = True,
+                .AutoSizeMode = AutoSizeMode.GrowAndShrink,
                 .FlowDirection = FlowDirection.LeftToRight,
                 .Padding = New Padding(0)
             }
             browseGenerationOptions.Controls.Add(generateBrowsePageCheckBox)
             browseGenerationOptions.Controls.Add(useQbeOnlyCheckBox)
+            browseGenerationOptions.Controls.Add(displayHotFieldsCheckBox)
             AddControlBesideField(fields, browsePageNameTextBox, browseGenerationOptions)
             AddControlBesideField(fields, maintenancePageNameTextBox, generateMaintenancePageCheckBox)
             AddHandler pageBaseNameTextBox.Leave, AddressOf PageBaseNameTextBox_Leave
             AddHandler createAsFrameworkPagesCheckBox.CheckedChanged, AddressOf CreateAsFrameworkPagesCheckBox_CheckedChanged
             AddHandler generateBrowsePageCheckBox.CheckedChanged, AddressOf GenerateBrowsePageCheckBox_CheckedChanged
+            AddHandler useQbeOnlyCheckBox.CheckedChanged, AddressOf BrowseOptionCheckBox_CheckedChanged
+            AddHandler displayHotFieldsCheckBox.CheckedChanged, AddressOf BrowseOptionCheckBox_CheckedChanged
             underlyingTableNameTextBox = AddEntryField(fields, "UnderlyingTableName", True, 34, 150, False, "5. Underlying Table Name")
             AddHandler underlyingTableNameTextBox.TextChanged, AddressOf UnderlyingTableNameTextBox_TextChanged
             Dim underlyingTableRow = fields.GetRow(underlyingTableNameTextBox)
@@ -1363,6 +1381,10 @@ Namespace SDC.Framework
             If pageGenerationTable IsNot Nothing AndAlso pageGenerationTable.Columns.Contains("UseQbeOnly") Then
                 useQbeOnlyCheckBox.DataBindings.Add("Checked", formBindingSource, "UseQbeOnly", True, DataSourceUpdateMode.Never)
             End If
+
+            If pageGenerationTable IsNot Nothing AndAlso pageGenerationTable.Columns.Contains("UseHotFields") Then
+                displayHotFieldsCheckBox.DataBindings.Add("Checked", formBindingSource, "UseHotFields", True, DataSourceUpdateMode.Never)
+            End If
             useRegistrationIdCheckBox.DataBindings.Clear()
             useRegistrationIdCheckBox.DataBindings.Add("Checked", formBindingSource, "UseRegistrationID", True, DataSourceUpdateMode.Never)
             browseSqlTextBox.DataBindings.Clear()
@@ -1373,9 +1395,31 @@ Namespace SDC.Framework
             validatedBrowseSql = String.Empty
         End Sub
 
+        ''' <summary>
+        ''' Generate owns the two options beside it: both describe a browse page that is going to
+        ''' exist, so neither can be set for one that is not.
+        ''' </summary>
         Private Sub GenerateBrowsePageCheckBox_CheckedChanged(sender As Object, e As EventArgs)
             If Not generateBrowsePageCheckBox.Checked Then
                 useQbeOnlyCheckBox.Checked = False
+                displayHotFieldsCheckBox.Checked = False
+            End If
+
+            MarkDirty(sender, e)
+            RefreshSavedPageDocumentTemplate()
+        End Sub
+
+        ''' <summary>
+        ''' Either option implies the page itself, so choosing one turns Generate on.
+        ''' </summary>
+        ''' <remarks>
+        ''' The two rules cannot chase each other. Turning Generate off clears both, and a cleared
+        ''' box does not turn it back on; turning one on sets Generate, which is already on by then
+        ''' and so clears nothing.
+        ''' </remarks>
+        Private Sub BrowseOptionCheckBox_CheckedChanged(sender As Object, e As EventArgs)
+            If useQbeOnlyCheckBox.Checked OrElse displayHotFieldsCheckBox.Checked Then
+                generateBrowsePageCheckBox.Checked = True
             End If
 
             MarkDirty(sender, e)
@@ -2746,6 +2790,7 @@ Namespace SDC.Framework
                     {"GenerateMaintenancePage", generateMaintenancePageCheckBox.Checked},
                     {"CreateAsFrameworkPages", createAsFrameworkPagesCheckBox.Checked},
                     {"UseQbeOnly", useQbeOnlyCheckBox.Checked},
+                    {"UseHotFields", displayHotFieldsCheckBox.Checked},
                     {"UnderlyingTableName", DbSaveValue(underlyingTableNameTextBox.Text)},
                     {"UseRegistrationID", useRegistrationIdCheckBox.Checked},
                     {"BrowseFields", DbSaveValue(browseFieldsTextBox.Text)},

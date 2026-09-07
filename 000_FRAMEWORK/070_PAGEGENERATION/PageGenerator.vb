@@ -59,6 +59,9 @@ Namespace SDC.Framework
         Public Property IconFileName As String = String.Empty
         Public Property CreatedBy As Integer
 
+        ''' <summary>Whether the generated browse page shows the Hot Fields strip.</summary>
+        Public Property UseHotFields As Boolean
+
         Public ReadOnly Property IsValid As Boolean
             Get
                 Return Errors.Count = 0
@@ -144,6 +147,20 @@ Namespace SDC.Framework
                             errors.Add("The existing FW_Pages row could not be updated for " & plan.BrowsePageName & ".")
                         End If
                 End Select
+            End If
+
+            ' The running page reads FW_Pages.UseHotFields, not the request, so the answer is
+            ' written onto the page's own row here. Done after registration so the row exists, and
+            ' reported rather than silent - a page that quietly lacked its Hot Fields button would
+            ' look like the feature was broken rather than unticked.
+            If plan.GenerateBrowsePage AndAlso Not String.IsNullOrWhiteSpace(plan.BrowsePageName) Then
+                If DataAccess.SetPageUsesHotFields(plan.BrowsePageName, plan.UseHotFields) Then
+                    If plan.UseHotFields Then
+                        created.Add("HOT FIELDS ENABLED:" & plan.BrowsePageName)
+                    End If
+                Else
+                    errors.Add("The Hot Fields setting could not be written for " & plan.BrowsePageName & ".")
+                End If
             End If
 
             ' Before placing anything, and only ever reporting: a button this page already has
@@ -270,6 +287,7 @@ Namespace SDC.Framework
             Dim lookupFields = ParseLookupFields(DbText(request("LookupFields")), plan.Errors)
             Dim requiredFields = ParseFields(DbText(request("AdminRequiredFields")))
             Dim useQbeOnly = ReadGenerationFlag(request, "UseQbeOnly", False)
+            plan.UseHotFields = ReadGenerationFlag(request, "UseHotFields", False)
 
             If Not plan.GenerateBrowsePage AndAlso Not plan.GenerateMaintenancePage Then
                 plan.Errors.Add("At least one page target must be selected.")
