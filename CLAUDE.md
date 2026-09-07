@@ -222,6 +222,11 @@ Key areas:
   `FW_Base_B`, and a browse page may not need to be a compiled class at all. Read it before
   changing the page generator or adding anything to a generated page template — section 2 is worth
   doing on its own merits and is independent of the rest.
+- `BASE_BHF_SPEC.md` — **proposed, partly built.** Hot Fields: a docking panel on every browse
+  page listing every field of the selected record, not just the columns the page SQL selects.
+  Read it before touching the layout row above the browse grid, and before adding anything to
+  `FW_Base_B`'s constructor - section 9 records why the widget must be built before the
+  `buildDefaultBrowseShell` early return, which the colour picker got wrong.
 - `.github/new-page-request-template.md` and `.github/new-page-request-manual.md` — the page
   request template and how to interpret a filled-in one.
 

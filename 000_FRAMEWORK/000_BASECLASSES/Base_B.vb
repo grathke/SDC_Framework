@@ -192,6 +192,22 @@ Namespace SDC.Framework
         Private backgroundColorPicker As PageBackgroundColorPicker
 
         ''' <summary>
+        ''' The Hot Fields strip. Built for every browse page; its button shows only where the
+        ''' page's FW_Pages row opts in. See BASE_BHF_SPEC.md.
+        ''' </summary>
+        Private hotFieldsPanel As HotFieldsPanel
+
+        ''' <summary>
+        ''' Someone asked for Hot Fields before choosing a record, so the strip opens itself as soon
+        ''' as they choose one.
+        ''' </summary>
+        ''' <remarks>
+        ''' Without this, being told to select a record first means going back to press the button a
+        ''' second time - and the message has already established what they were trying to do.
+        ''' </remarks>
+        Private hotFieldsWantedOnNextSelection As Boolean
+
+        ''' <summary>
         ''' The page colour picker, for a derived page that lays out its own action row.
         ''' </summary>
         ''' <remarks>
@@ -276,6 +292,15 @@ Namespace SDC.Framework
             ' a Nothing picker skipped in silence.
             backgroundColorPicker = New PageBackgroundColorPicker(Me, Me.GetType().Name)
             backgroundColorPicker.Attach()
+
+            ' Built here for the same reason as the picker: a page that skips the default shell has
+            ' to be able to have one too. Whether its button is ever shown is the page's FW_Pages
+            ' row's business, read from the cache the caption already loaded.
+            hotFieldsPanel = New HotFieldsPanel(Me)
+            hotFieldsPanel.Attach()
+            hotFieldsPanel.Button.Visible = DataAccess.GetPageUsesHotFields(Me.GetType().Name)
+            AddHandler hotFieldsPanel.OpenedOrClosed, AddressOf HotFields_OpenedOrClosed
+            AddHandler hotFieldsPanel.Opening, AddressOf HotFields_Opening
 
             If Not buildDefaultBrowseShell Then
                 ' The default shell does these two further down. A page building its own still needs
@@ -645,6 +670,14 @@ Namespace SDC.Framework
             layoutToolbarPanel.Controls.Add(resetLayoutButton)
             layoutToolbarPanel.Controls.Add(deleteLayoutButton)
             layoutToolbarPanel.Controls.Add(saveMyLayoutButton)
+
+            ' Moved out of the form and onto the toolbar it is laid out against. Attach put it on
+            ' the form, and the layout row's coordinates are relative to this panel - so a button
+            ' left on the form was positioned as though the panel's origin were the window's, and
+            ' landed at the top of the page. Adding it here removes it from its old parent.
+            If hotFieldsPanel IsNot Nothing Then
+                layoutToolbarPanel.Controls.Add(hotFieldsPanel.Button)
+            End If
             qbeSplitContainer.Panel1.Controls.Add(qbePanel)
             qbeSplitContainer.Panel2.Controls.Add(browseGrid)
             qbeSplitContainer.Panel2.Controls.Add(layoutToolbarPanel)
@@ -985,7 +1018,167 @@ Namespace SDC.Framework
         Protected Overridable Sub ConfigureBrowseContentPanel(panel As Panel)
         End Sub
 
+        ''' <summary>
+        ''' Re-reads the selected record into the Hot Fields strip.
+        ''' </summary>
+        ''' <remarks>
+        ''' Returns immediately when the strip is closed, which is the point: the feature costs a
+        ''' query per selection only while somebody is looking at it.
+        '''
+        ''' The record is read from the table rather than from the grid row, so a page whose SELECT
+        ''' names three columns still shows every field. Lookups are not resolved - a GenderID shows
+        ''' its id, not the description - because resolving them would mean a further query per
+        ''' lookup on every click, which is exactly the cost this design avoids.
+        ''' </remarks>
+        Private Sub RefreshHotFields()
+            If hotFieldsPanel Is Nothing Then
+                Return
+            End If
+
+            ' They pressed the button with nothing selected and were told to choose one. They have.
+            If hotFieldsWantedOnNextSelection AndAlso Not hotFieldsPanel.IsOpen AndAlso
+               browseGrid IsNot Nothing AndAlso browseGrid.SelectedRows.Count > 0 Then
+
+                hotFieldsWantedOnNextSelection = False
+                hotFieldsPanel.OpenPanel()
+            End If
+
+            If Not hotFieldsPanel.IsOpen Then
+                Return
+            End If
+
+            Dim keyColumn = GetRecordKeyColumnName()
+            If browseGrid Is Nothing OrElse browseGrid.SelectedRows.Count = 0 OrElse
+               String.IsNullOrWhiteSpace(keyColumn) OrElse Not browseGrid.Columns.Contains(keyColumn) Then
+                hotFieldsPanel.ShowNothing()
+                Return
+            End If
+
+            Dim keyValue = browseGrid.SelectedRows(0).Cells(keyColumn).Value
+            Dim record = DataAccess.GetRecordFields(ResolveCurrentRoleFieldTableName(), keyValue)
+
+            If record Is Nothing OrElse record.Rows.Count = 0 Then
+                hotFieldsPanel.ShowNothing()
+                Return
+            End If
+
+            hotFieldsPanel.ShowRecord(record.Rows(0),
+                                      GetRoleFieldCaptionMapForCurrentContext(),
+                                      BuildHotFieldExclusions(),
+                                      BuildResolvedValuesFromGrid())
+        End Sub
+
+        ''' <summary>
+        ''' What the browse row is already showing, by column name.
+        ''' </summary>
+        ''' <remarks>
+        ''' A page's SQL resolves its own lookups - it joins and aliases the description back to the
+        ''' field's name - so the selected row holds the manager's name where the table holds the
+        ''' manager's id. Handing those across lets the strip show what the page shows, without a
+        ''' lookup query per field, and without a second idea of how a lookup is resolved.
+        '''
+        ''' FormattedValue rather than Value, so a date or a tick reads as the grid renders it.
+        ''' </remarks>
+        Private Function BuildResolvedValuesFromGrid() As Dictionary(Of String, String)
+            Dim resolved As New Dictionary(Of String, String)(StringComparer.OrdinalIgnoreCase)
+
+            If browseGrid Is Nothing OrElse browseGrid.SelectedRows.Count = 0 Then
+                Return resolved
+            End If
+
+            Dim row = browseGrid.SelectedRows(0)
+            For Each column As DataGridViewColumn In browseGrid.Columns
+                If String.IsNullOrWhiteSpace(column.Name) OrElse
+                   String.Equals(column.Name, "PK", StringComparison.OrdinalIgnoreCase) Then
+                    Continue For
+                End If
+
+                Dim cell = row.Cells(column.Index)
+                If cell Is Nothing Then
+                    Continue For
+                End If
+
+                Dim shown = cell.FormattedValue
+                If shown Is Nothing OrElse shown Is DBNull.Value Then
+                    Continue For
+                End If
+
+                resolved(column.Name) = Convert.ToString(shown, Globalization.CultureInfo.CurrentCulture)
+            Next
+
+            Return resolved
+        End Function
+
+        ''' <summary>
+        ''' The fields the strip leaves out.
+        ''' </summary>
+        ''' <remarks>
+        ''' The same rules the browse grid already applies, rather than a second list that can drift
+        ''' from them: the internal PK alias and the real key, the soft-delete columns, the
+        ''' registration scope and the row version. RowVersion in particular is binary and unreadable.
+        '''
+        ''' Role-invisible fields go too. A permission that hides a field on one surface and not
+        ''' another is not a permission, and a panel showing everything would quietly become the way
+        ''' around the field permissions set in Roles_U.
+        ''' </remarks>
+        Private Function BuildHotFieldExclusions() As HashSet(Of String)
+            Dim excluded As New HashSet(Of String)(StringComparer.OrdinalIgnoreCase) From {
+                "PK", "RegistrationID", "RowVersion", "DeletedFlag", "DeletedBy", "DeletedOn"}
+
+            Dim tableName = ResolveCurrentRoleFieldTableName()
+
+            Dim keyField = DataAccess.GetPrimaryKeyFieldName(tableName)
+            If Not String.IsNullOrWhiteSpace(keyField) Then
+                excluded.Add(keyField)
+            End If
+
+            Dim session = SessionState.Current
+            If session.HasValue AndAlso session.Value.RoleID > 0 AndAlso session.Value.RegistrationID > 0 AndAlso
+               Not String.IsNullOrWhiteSpace(tableName) Then
+
+                Dim invisible = DataAccess.GetPageInitMetadata(session.Value.RoleID, session.Value.RegistrationID, tableName).InvisibleFields
+                If invisible IsNot Nothing Then
+                    For Each fieldName In invisible
+                        excluded.Add(fieldName)
+                    Next
+                End If
+            End If
+
+            Return excluded
+        End Function
+
+        ''' <summary>
+        ''' Refuses to open the strip until a record is chosen.
+        ''' </summary>
+        ''' <remarks>
+        ''' The strip exists to show the selected record's fields, so opening it with nothing
+        ''' selected would widen the window for an empty panel and leave the user to work out why.
+        ''' Saying so is shorter than showing nothing.
+        ''' </remarks>
+        Private Sub HotFields_Opening(sender As Object, e As System.ComponentModel.CancelEventArgs)
+            If browseGrid IsNot Nothing AndAlso browseGrid.SelectedRows.Count > 0 Then
+                Return
+            End If
+
+            e.Cancel = True
+            hotFieldsWantedOnNextSelection = True
+
+            MessageBox.Show(Me,
+                            "YOU NEED TO SELECT A RECORD FIRST",
+                            "HOT FIELDS",
+                            MessageBoxButtons.OK,
+                            MessageBoxIcon.Information)
+        End Sub
+
+        Private Sub HotFields_OpenedOrClosed(sender As Object, e As EventArgs)
+            LayoutQbeSection()
+            RefreshHotFields()
+        End Sub
+
         Protected Overridable Sub NotifyBrowseSelectionChanged()
+            ' The Hot Fields strip follows the selection. It returns at once when closed, so a page
+            ' without the strip open pays nothing for this call.
+            RefreshHotFields()
         End Sub
 
         Protected Overridable Function StartsEmptyOnInitialLoad() As Boolean
@@ -1344,8 +1537,17 @@ Namespace SDC.Framework
 
         Private Sub LayoutQbeSection()
             Dim margin As Integer = 20
-            Dim contentWidth = Math.Min(1120, Math.Max(300, Me.ClientSize.Width - (margin * 2)))
-            Dim contentLeft As Integer = Math.Max(margin, (Me.ClientSize.Width - contentWidth) \ 2)
+
+            ' Everything on this page is measured from contentLeft and contentWidth, so reserving
+            ' the strip here moves the whole page out of its way - title, QBE, grid and action row
+            ' together. Reserved is zero whenever opening was able to widen the form instead, which
+            ' is the usual case; it is only non-zero where there was no room to grow.
+            Dim reservedForHotFields As Integer = If(hotFieldsPanel Is Nothing, 0, hotFieldsPanel.ReservedWidth)
+            Dim usableWidth As Integer = Math.Max(300, Me.ClientSize.Width - reservedForHotFields)
+            Dim usableLeft As Integer = If(hotFieldsPanel IsNot Nothing AndAlso hotFieldsPanel.DockedLeft, reservedForHotFields, 0)
+
+            Dim contentWidth = Math.Min(1120, Math.Max(300, usableWidth - (margin * 2)))
+            Dim contentLeft As Integer = usableLeft + Math.Max(margin, (usableWidth - contentWidth) \ 2)
             Dim qbeContentTop As Integer = 32
             Dim adminQueryControlsVisible = IsAppAdminSession()
 
@@ -1423,6 +1625,33 @@ Namespace SDC.Framework
             qbeSplitContainer.Width = contentWidth
             qbeSplitContainer.Height = Math.Max(180, Me.ClientSize.Height - qbeSplitContainer.Top - margin)
 
+            ' Beside the grid and level with it, taking the width the content area just gave up.
+            ' Measured from the split container rather than from the window, so it lines up with
+            ' what it sits next to however tall the header above it turns out to be.
+            If hotFieldsPanel IsNot Nothing Then
+                hotFieldsPanel.PositionPanel(qbeSplitContainer.Top, qbeSplitContainer.Height)
+
+                ' Only while the strip is open. The Help Desk button is anchored to the form's right
+                ' edge, so a form widened for the strip carries it along and parks it underneath -
+                ' but with the strip closed its own placement is the right one, and overriding it
+                ' here would mean two rules deciding where one button goes.
+                If hotFieldsPanel.IsOpen Then
+                    Dim helpDeskMatches = Me.Controls.Find("Button_HelpDesk", True)
+                    If helpDeskMatches.Length > 0 Then
+                        Dim helpDeskButton = helpDeskMatches(0)
+                        helpDeskButton.Anchor = AnchorStyles.Top Or AnchorStyles.Left
+                        helpDeskButton.Left = Math.Max(0, contentLeft + contentWidth - helpDeskButton.Width)
+                    End If
+                End If
+            End If
+
+            ' Black captions across this row, applied here rather than once at construction: the
+            ' buttons are added at different times and the page tint is re-applied when a colour is
+            ' chosen, so a single pass at the start missed some of them and was undone for others.
+            For Each layoutControl As Control In layoutToolbarPanel.Controls
+                layoutControl.ForeColor = Color.Black
+            Next
+
             Dim toolbarWidth = Math.Max(220, layoutToolbarPanel.ClientSize.Width)
             Dim layoutTop As Integer = 6
             Dim layoutRightCursor As Integer = toolbarWidth - 8
@@ -1432,6 +1661,14 @@ Namespace SDC.Framework
             layoutRightCursor = toggleColumnsPanelButton.Left - 8
 
             saveMyLayoutButton.Top = layoutTop
+            ' Hot Fields takes the right-hand end of this row, and the cursor moves everything
+            ' already on it left by the button's width. A hidden button takes no space.
+            If hotFieldsPanel IsNot Nothing AndAlso hotFieldsPanel.Button.Visible Then
+                hotFieldsPanel.Button.Top = layoutTop
+                hotFieldsPanel.Button.Left = layoutRightCursor - hotFieldsPanel.Button.Width
+                layoutRightCursor = hotFieldsPanel.Button.Left - 8
+            End If
+
             saveMyLayoutButton.Left = layoutRightCursor - saveMyLayoutButton.Width
             layoutRightCursor = saveMyLayoutButton.Left - 8
 

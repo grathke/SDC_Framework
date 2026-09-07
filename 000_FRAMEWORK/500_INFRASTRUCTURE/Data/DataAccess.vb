@@ -95,6 +95,17 @@ Namespace SDC.Framework
         ''' holding it up.
         ''' </summary>
         Private Shared ReadOnly pageAliasCache As New Dictionary(Of String, String)(StringComparer.OrdinalIgnoreCase)
+
+        ''' <summary>
+        ''' Which pages show the Hot Fields button, by page name.
+        ''' </summary>
+        ''' <remarks>
+        ''' Filled by the same query and the same pass as the alias cache, so the flag costs no read
+        ''' of its own. It is a second dictionary rather than a richer cache entry only because the
+        ''' fold of DB_Table, Table_SQL and Background into this cache is still ahead of us; when
+        ''' that happens this belongs in the same record.
+        ''' </remarks>
+        Private Shared ReadOnly pageHotFieldsCache As New Dictionary(Of String, Boolean)(StringComparer.OrdinalIgnoreCase)
         Private Shared pageAliasCacheLoaded As Boolean
 
         ''' <summary>
@@ -127,6 +138,7 @@ Namespace SDC.Framework
                 roleFieldCaptionCache.Clear()
                 pageInitMetadataCache.Clear()
                 pageAliasCache.Clear()
+                pageHotFieldsCache.Clear()
                 pageAliasCacheLoaded = False
             End SyncLock
 
@@ -1038,18 +1050,85 @@ Namespace SDC.Framework
         ''' Pages with no alias are stored as empty rather than left out, so a page that has not been
         ''' named is answered from memory instead of re-querying on every look.
         ''' </summary>
+        ''' <summary>
+        ''' Whether this page shows the Hot Fields button.
+        ''' </summary>
+        ''' <remarks>
+        ''' Reads the cache the page's caption already loaded, so asking costs nothing. A page with
+        ''' no FW_Pages row does not show the button - the feature is opt in, and a page nobody has
+        ''' registered has not opted in.
+        ''' </remarks>
+        ''' <summary>
+        ''' Records whether a page shows the Hot Fields button.
+        ''' </summary>
+        ''' <remarks>
+        ''' Written when a page is generated, from the tick on the generation request. The cached
+        ''' value is corrected in the same breath, so a page opened later in this session reflects
+        ''' the change without the whole page cache being thrown away.
+        ''' </remarks>
+        Public Shared Function SetPageUsesHotFields(windowOrPageName As String, usesHotFields As Boolean) As Boolean
+            If String.IsNullOrWhiteSpace(windowOrPageName) Then
+                Return False
+            End If
+
+            Dim pageName = windowOrPageName.Trim()
+
+            Try
+                Using conn As New SqlConnection(ConnectionString)
+                    conn.Open()
+                    Using cmd As New SqlCommand(
+                        "UPDATE dbo." & PagesTable & " SET UseHotFields = @UseHotFields " &
+                        "WHERE WindowOrPage = @WindowOrPage", conn)
+
+                        cmd.Parameters.Add("@UseHotFields", SqlDbType.Bit).Value = usesHotFields
+                        cmd.Parameters.Add("@WindowOrPage", SqlDbType.VarChar, 100).Value = pageName
+                        cmd.ExecuteNonQuery()
+                    End Using
+                End Using
+            Catch
+                Return False
+            End Try
+
+            SyncLock metadataCacheLock
+                If pageAliasCacheLoaded Then
+                    pageHotFieldsCache(pageName) = usesHotFields
+                End If
+            End SyncLock
+
+            Return True
+        End Function
+
+        Public Shared Function GetPageUsesHotFields(windowOrPageName As String) As Boolean
+            If String.IsNullOrWhiteSpace(windowOrPageName) Then
+                Return False
+            End If
+
+            EnsurePageAliasCache()
+
+            SyncLock metadataCacheLock
+                Dim usesHotFields As Boolean
+                If pageHotFieldsCache.TryGetValue(windowOrPageName.Trim(), usesHotFields) Then
+                    Return usesHotFields
+                End If
+            End SyncLock
+
+            Return False
+        End Function
+
         Private Shared Sub EnsurePageAliasCache()
             SyncLock metadataCacheLock
                 If pageAliasCacheLoaded Then Return
             End SyncLock
 
             Dim loaded As New Dictionary(Of String, String)(StringComparer.OrdinalIgnoreCase)
+            Dim loadedHotFields As New Dictionary(Of String, Boolean)(StringComparer.OrdinalIgnoreCase)
 
             Try
                 Using conn As New SqlConnection(ConnectionString)
                     conn.Open()
                     Using cmd As New SqlCommand(
-                        "SELECT WindowOrPage, ISNULL(LTRIM(RTRIM(Table_Alias)), '') AS Table_Alias " &
+                        "SELECT WindowOrPage, ISNULL(LTRIM(RTRIM(Table_Alias)), '') AS Table_Alias, " &
+                        "ISNULL(UseHotFields, 0) AS UseHotFields " &
                         "FROM dbo." & PagesTable, conn)
 
                         Using reader = cmd.ExecuteReader()
@@ -1057,6 +1136,11 @@ Namespace SDC.Framework
                                 Dim pageName = SafeString(reader("WindowOrPage"))
                                 If pageName <> String.Empty Then
                                     loaded(pageName) = SafeString(reader("Table_Alias"))
+
+                                    Dim hotFields = reader("UseHotFields")
+                                    loadedHotFields(pageName) = hotFields IsNot Nothing AndAlso
+                                                                hotFields IsNot DBNull.Value AndAlso
+                                                                Convert.ToBoolean(hotFields, CultureInfo.InvariantCulture)
                                 End If
                             End While
                         End Using
@@ -1073,6 +1157,12 @@ Namespace SDC.Framework
                 For Each pair In loaded
                     pageAliasCache(pair.Key) = pair.Value
                 Next
+
+                pageHotFieldsCache.Clear()
+                For Each pair In loadedHotFields
+                    pageHotFieldsCache(pair.Key) = pair.Value
+                Next
+
                 pageAliasCacheLoaded = True
             End SyncLock
         End Sub
@@ -1950,6 +2040,56 @@ Namespace SDC.Framework
             Return True
         End Function
 
+        ''' <summary>
+        ''' Every column of one record, for the Hot Fields panel.
+        ''' </summary>
+        ''' <remarks>
+        ''' Called only while the panel is open. Closed - which is most pages most of the time - the
+        ''' feature costs nothing at all; open, it costs this one query per row the user clicks,
+        ''' which is what they opened the panel to see. See BASE_BHF_SPEC.md section 6 for why this
+        ''' is preferred over widening every browse page's SELECT to carry columns it never shows.
+        '''
+        ''' The table and key column are bracket quoted rather than parameterised, because neither
+        ''' can be a parameter in T-SQL. Both come from the schema - the page's own table name and
+        ''' GetPrimaryKeyFieldName - rather than from anything a user typed, and the closing bracket
+        ''' is doubled so a name containing one cannot end the quoting early.
+        ''' </remarks>
+        Public Shared Function GetRecordFields(tableName As String, keyValue As Object) As DataTable
+            Dim record As New DataTable("HotFields")
+
+            If String.IsNullOrWhiteSpace(tableName) OrElse keyValue Is Nothing OrElse keyValue Is DBNull.Value Then
+                Return record
+            End If
+
+            Dim keyColumn = GetPrimaryKeyFieldName(tableName)
+            If String.IsNullOrWhiteSpace(keyColumn) Then
+                Return record
+            End If
+
+            Dim quotedTable = "[" & tableName.Trim().Replace("]", "]]") & "]"
+            Dim quotedKey = "[" & keyColumn.Trim().Replace("]", "]]") & "]"
+
+            Try
+                Using conn As New SqlConnection(ConnectionString)
+                    conn.Open()
+                    Using cmd As New SqlCommand(
+                        "SELECT TOP 1 * FROM dbo." & quotedTable & " WHERE " & quotedKey & " = @RecordKey", conn)
+
+                        cmd.Parameters.AddWithValue("@RecordKey", keyValue)
+                        Using adapter As New SqlDataAdapter(cmd)
+                            adapter.Fill(record)
+                        End Using
+                    End Using
+                End Using
+            Catch
+                ' A panel that cannot read a record shows nothing. It must never be the reason the
+                ' page behind it stops working.
+                record.Clear()
+            End Try
+
+            Return record
+        End Function
+
         Public Shared Function GetPrimaryKeyFieldName(tableName As String) As String
             If String.IsNullOrWhiteSpace(tableName) Then Return String.Empty
 
@@ -2630,7 +2770,8 @@ Namespace SDC.Framework
             Dim writableColumns = New String() {
                 "RequestName", "PageBaseName", "BrowsePageName", "MaintenancePageName", "UnderlyingTableName",
                 "UseRegistrationID", "BrowseFields", "MaintenanceFields", "BrowseSql", "LookupFields", "AdminRequiredFields",
-                "MenuCaller", "IconFileName", "GenerateBrowsePage", "GenerateMaintenancePage", "UseQbeOnly"
+                "MenuCaller", "IconFileName", "GenerateBrowsePage", "GenerateMaintenancePage", "UseQbeOnly",
+                "UseHotFields"
             }
 
             Using conn As New SqlConnection(ConnectionString)
@@ -2662,7 +2803,8 @@ Namespace SDC.Framework
                 Dim parameter = If(String.Equals(pair.Key, "UseRegistrationID", StringComparison.OrdinalIgnoreCase) OrElse
                                    String.Equals(pair.Key, "GenerateBrowsePage", StringComparison.OrdinalIgnoreCase) OrElse
                                    String.Equals(pair.Key, "GenerateMaintenancePage", StringComparison.OrdinalIgnoreCase) OrElse
-                                   String.Equals(pair.Key, "UseQbeOnly", StringComparison.OrdinalIgnoreCase),
+                                   String.Equals(pair.Key, "UseQbeOnly", StringComparison.OrdinalIgnoreCase) OrElse
+                                   String.Equals(pair.Key, "UseHotFields", StringComparison.OrdinalIgnoreCase),
                                    command.Parameters.Add("@" & pair.Key, SqlDbType.Bit),
                                    command.Parameters.Add("@" & pair.Key, SqlDbType.VarChar, -1))
                 parameter.Value = If(pair.Value Is Nothing, DBNull.Value, pair.Value)
