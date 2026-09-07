@@ -281,7 +281,7 @@ anywhere and no caller — see Gaps.
 - `FW_UserAccessDiagnostic_B` has no icon, no menu tile and no caller anywhere in the source. It is
   unreachable code with a stale `FW_Pages` row (alias `Entity`). Removing it is the eight-table
   procedure in `CLAUDE.md`, not a row delete.
-- `Dashboard_Company` draws User Admin with a `SystemIcons` glyph where the Application dashboard
-  uses `Color_Favorites.png` for the same action, so that action still looks different depending on
-  which dashboard it is opened from. Roles no longer does: on 2026-09-07 it was changed to
-  `Color_Shield.png` at the shared `DashboardIconSize`, matching the Application dashboard.
+- `Dashboard_Company` and `Dashboard_Application` now draw Roles and User Admin identically -
+  `Color_Shield.png` and `Color_Favorites.png`, both at the shared `DashboardIconSize`. Until
+  2026-09-07 the Company dashboard used `SystemIcons` glyphs for both, so the same action looked
+  different depending on which dashboard it was opened from.
