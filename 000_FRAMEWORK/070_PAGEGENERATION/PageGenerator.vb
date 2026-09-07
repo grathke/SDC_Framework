@@ -148,14 +148,14 @@ Namespace SDC.Framework
 
             If plan.GenerateBrowsePage AndAlso IsDashboardCaller(plan.MenuCaller) Then
                 Try
-                    EnsureDashboardIcon(workspaceRoot, plan.MenuCaller, plan.IconFileName, plan.BrowsePageName, plan.MaintenancePageName, created, skipped, errors)
+                    EnsureDashboardIcon(workspaceRoot, plan.MenuCaller, plan.TableName, plan.IconFileName, plan.BrowsePageName, plan.MaintenancePageName, created, skipped, errors)
                 Catch ex As Exception
                     errors.Add("ICON WARNING: " & ex.Message)
                 End Try
             ElseIf plan.GenerateBrowsePage AndAlso IsMainMenuCaller(plan.MenuCaller) Then
                 Dim before = errors.Count
                 Try
-                    EnsureMainMenuTile(workspaceRoot, plan.BrowsePageName, plan.IconFileName, created, skipped, errors)
+                    EnsureMainMenuTile(workspaceRoot, plan.BrowsePageName, plan.TableName, plan.IconFileName, created, skipped, errors)
                 Catch ex As Exception
                     errors.Add("MAIN MENU WARNING: " & ex.Message)
                 End Try
@@ -166,7 +166,7 @@ Namespace SDC.Framework
                 ' this branch existed.
                 If errors.Count > before Then
                     Try
-                        EnsureDashboardIcon(workspaceRoot, "Dashboard_Application", plan.IconFileName, plan.BrowsePageName, plan.MaintenancePageName, created, skipped, errors)
+                        EnsureDashboardIcon(workspaceRoot, "Dashboard_Application", plan.TableName, plan.IconFileName, plan.BrowsePageName, plan.MaintenancePageName, created, skipped, errors)
                         created.Add("PLACED ON THE APP ADMIN DASHBOARD INSTEAD: " & plan.BrowsePageName)
                     Catch ex As Exception
                         errors.Add("ICON WARNING: the App Admin dashboard fallback also failed - " & ex.Message)
@@ -732,6 +732,7 @@ Namespace SDC.Framework
         ''' </summary>
         Private Shared Sub EnsureMainMenuTile(workspaceRoot As String,
                                               browsePageName As String,
+                                              tableName As String,
                                               iconFileName As String,
                                               created As List(Of String),
                                               skipped As List(Of String),
@@ -784,6 +785,7 @@ Namespace SDC.Framework
                 "                fallbackIcon:=SystemIcons.Application.ToBitmap(),",
                 "                isVisible:=True,",
                 "                isEnabled:=True)",
+                "            menu.SetActionPage(""" & actionKey & """, """ & EscapeLiteral(browsePageName) & """)",
                 "",
                 anchor
             })
@@ -991,6 +993,7 @@ Namespace SDC.Framework
 
         Private Shared Sub EnsureDashboardIcon(workspaceRoot As String,
                                                 menuCaller As String,
+                                                tableName As String,
                                                 iconFileName As String,
                                                 browsePageName As String,
                                                 maintenancePageName As String,
@@ -1038,6 +1041,7 @@ Namespace SDC.Framework
                 "",
                 "            generated" & browsePageName & "Button = New DashboardIconButton() With {",
                 "                .Name = ""ActionKey_" & browsePageName & """,",
+                "                .PageName = """ & EscapeLiteral(browsePageName) & """,",
                 "                .Text = """ & DisplayPageCaption(browsePageName) & """,",
                 "                .Location = DashboardGridLayout.CellLocation(" & gridCell.Y.ToString(Globalization.CultureInfo.InvariantCulture) & ", " & gridCell.X.ToString(Globalization.CultureInfo.InvariantCulture) & "),",
                 "                .Size = New Size(DashboardGridLayout.IconWidth, DashboardGridLayout.IconHeight),",

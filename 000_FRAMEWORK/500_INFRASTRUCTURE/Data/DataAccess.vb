@@ -78,6 +78,25 @@ Namespace SDC.Framework
         Private Shared ReadOnly roleFieldCaptionCache As New Dictionary(Of String, Dictionary(Of String, String))(StringComparer.OrdinalIgnoreCase)
         Private Shared ReadOnly pageInitMetadataCache As New Dictionary(Of String, PageInitMetadata)(StringComparer.OrdinalIgnoreCase)
 
+        ''' <summary>
+        ''' Every page's caption, read once and held.
+        '''
+        ''' One query for the whole application rather than one per page or one per button. The
+        ''' alternative was three round trips on a browse page load - table, SQL, then alias - all
+        ''' fetching different columns of the same row, and one more per ribbon tile.
+        '''
+        ''' Held whole rather than per page, because a ribbon asks about every tile at once and a
+        ''' page asks about one: filling it lazily would be one query per page anyway, which is the
+        ''' thing being avoided.
+        '''
+        ''' A page generated while the application is running is absent until the caches are cleared
+        ''' - a role change does it, and so does a restart. That is accepted: a generated page needs
+        ''' a rebuild before it can be opened at all, so its caption was never going to be the thing
+        ''' holding it up.
+        ''' </summary>
+        Private Shared ReadOnly pageAliasCache As New Dictionary(Of String, String)(StringComparer.OrdinalIgnoreCase)
+        Private Shared pageAliasCacheLoaded As Boolean
+
         Public Shared Sub InvalidateRoleMetadataCache()
             SyncLock metadataCacheLock
                 crudCaptionCache.Clear()
@@ -85,6 +104,8 @@ Namespace SDC.Framework
                 roleStartEmptyCache.Clear()
                 roleFieldCaptionCache.Clear()
                 pageInitMetadataCache.Clear()
+                pageAliasCache.Clear()
+                pageAliasCacheLoaded = False
             End SyncLock
         End Sub
 
@@ -935,29 +956,86 @@ Namespace SDC.Framework
             End Using
         End Function
 
+        ''' <summary>
+        ''' What a page is called: its Table_Alias, or an empty string when it has none.
+        '''
+        ''' The caption for a page and for every button that opens it, since 2026-09-06. Per page
+        ''' rather than per table, which is the point - Users_AppAdmin_B and UsersY_B are both views
+        ''' of FW_Users and can be called different things.
+        '''
+        ''' Empty means "nothing chosen", and the caller falls back to the formatter. UpsertPageRecord
+        ''' used to fill this with the table name for a page that had none, which made every page look
+        ''' as though it had been named when nothing had; it now leaves it blank.
+        '''
+        ''' registrationId is accepted and not used. FW_Pages rows are shared - UpsertPageRecord
+        ''' writes RegistrationID as NULL - so a page's caption is the same for every tenant. The
+        ''' parameter is kept because honouring it later is a change to this query alone.
+        ''' </summary>
         Public Shared Function GetPageAliasByWindowOrPage(registrationId As Integer, windowOrPageName As String) As String
             If String.IsNullOrWhiteSpace(windowOrPageName) Then
                 Return String.Empty
             End If
 
-            Using conn As New SqlConnection(ConnectionString)
-                conn.Open()
-                Using cmd As New SqlCommand(
-                    "SELECT TOP 1 Table_Alias FROM dbo." & PagesTable & " " &
-                    "WHERE WindowOrPage = @WindowOrPage " &
-                    "ORDER BY PageID DESC", conn)
-                    
-                    cmd.Parameters.AddWithValue("@WindowOrPage", windowOrPageName.Trim())
-                    
-                    Dim result = cmd.ExecuteScalar()
-                    If result Is Nothing OrElse IsDBNull(result) Then
-                        Return String.Empty
-                    End If
-                    
-                    Return result.ToString()
-                End Using
-            End Using
+            EnsurePageAliasCache()
+
+            Dim aliasName As String = Nothing
+            SyncLock metadataCacheLock
+                If pageAliasCache.TryGetValue(windowOrPageName.Trim(), aliasName) Then
+                    Return aliasName
+                End If
+            End SyncLock
+
+            Return String.Empty
         End Function
+
+        ''' <summary>
+        ''' Fills the caption cache, once, with every page in one query.
+        '''
+        ''' The query runs outside the lock. Holding it across a round trip would make every page on
+        ''' every thread wait for the database rather than for the dictionary, and the worst a race
+        ''' costs here is the same harmless query twice.
+        '''
+        ''' Pages with no alias are stored as empty rather than left out, so a page that has not been
+        ''' named is answered from memory instead of re-querying on every look.
+        ''' </summary>
+        Private Shared Sub EnsurePageAliasCache()
+            SyncLock metadataCacheLock
+                If pageAliasCacheLoaded Then Return
+            End SyncLock
+
+            Dim loaded As New Dictionary(Of String, String)(StringComparer.OrdinalIgnoreCase)
+
+            Try
+                Using conn As New SqlConnection(ConnectionString)
+                    conn.Open()
+                    Using cmd As New SqlCommand(
+                        "SELECT WindowOrPage, ISNULL(LTRIM(RTRIM(Table_Alias)), '') AS Table_Alias " &
+                        "FROM dbo." & PagesTable, conn)
+
+                        Using reader = cmd.ExecuteReader()
+                            While reader.Read()
+                                Dim pageName = SafeString(reader("WindowOrPage"))
+                                If pageName <> String.Empty Then
+                                    loaded(pageName) = SafeString(reader("Table_Alias"))
+                                End If
+                            End While
+                        End Using
+                    End Using
+                End Using
+            Catch
+                ' A caption is not worth a page that will not open. Nothing is marked loaded, so the
+                ' next look tries again, and until then every page falls back to the formatter.
+                Return
+            End Try
+
+            SyncLock metadataCacheLock
+                pageAliasCache.Clear()
+                For Each pair In loaded
+                    pageAliasCache(pair.Key) = pair.Value
+                Next
+                pageAliasCacheLoaded = True
+            End SyncLock
+        End Sub
 
         Public Shared Function GetExposedPageChoices() As DataTable
             Dim choices As New DataTable("ExposedPages")

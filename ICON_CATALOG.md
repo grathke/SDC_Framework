@@ -254,8 +254,33 @@ here is the default rather than necessarily where it will be found.
 
 ---
 
+## FW_UserAccessExplanation_B
+
+- placement: **both dashboards** — Application (`Dashboard_Application.vb`) and Company
+  (`Dashboard_Company.vb`), grid cell 1,4 in each
+- ActionType: Navigation / dialog
+- target: `FW_UserAccessExplanation_B`, opened with `ShowDialog`
+- caption source: **the caption chain**, because the button carries
+  `.PageName = "FW_UserAccessExplanation_B"`. The coded caption is `User Access Explanation`; what
+  shows is the role override if one is recorded, otherwise the page's `FW_Pages.Table_Alias`.
+  It currently reads `USERS`, which is the auto-filled table name rather than a chosen one.
+- icon file: `Color_Information.png`, falling back to `SystemIcons.Question`
+- visibility rule: always shown on either dashboard; the dashboards themselves are the access gate
+- click behavior: passes the owning dashboard's `currentUser` and `accessProfile` to the page
+
+Not to be confused with `FW_UserAccessDiagnostic_B`, which is a different page with no button
+anywhere and no caller — see Gaps.
+
+---
+
 ## Gaps
 
 - `assets/images/helpdesk.png` exists but no catalogued action uses it. Either the Help Desk icon
   is uncatalogued or the asset is orphaned.
 - The `dashboard` target needs confirming (see above).
+- `FW_UserAccessDiagnostic_B` has no icon, no menu tile and no caller anywhere in the source. It is
+  unreachable code with a stale `FW_Pages` row (alias `Entity`). Removing it is the eight-table
+  procedure in `CLAUDE.md`, not a row delete.
+- `Dashboard_Company` still draws Roles and User Admin with `SystemIcons` glyphs where the
+  Application dashboard uses colour PNGs for the same two actions, so the same action looks
+  different depending on which dashboard it is opened from.

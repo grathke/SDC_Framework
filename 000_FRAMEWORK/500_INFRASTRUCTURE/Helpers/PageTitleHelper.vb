@@ -76,25 +76,56 @@ Namespace SDC.Framework
         End Function
 
         ''' <summary>
-        ''' What the role calls the table behind a page, or an empty string when there is no rename
-        ''' to apply.
+        ''' What to call a page: the role's rename of its table, else the page's own alias, else
+        ''' nothing and the caller keeps what it has.
         '''
-        ''' The page-to-table step lives here rather than at each caller, so a button only has to
-        ''' know which page it opens. The ribbon and the dashboards ask exactly this question, and
-        ''' two answers to it is how a menu and a dashboard end up disagreeing about what something
-        ''' is called.
+        ''' **The one place this precedence is decided.** Buttons and titles all ask here, so a menu
+        ''' and the page it opens cannot disagree.
+        '''
+        ''' Role first because a rename is a statement about the thing itself - a company that calls
+        ''' Users "Staff" means it everywhere - and a page alias only distinguishes one view of that
+        ''' thing from another. The cost is accepted and worth knowing: a genuine rename applies to
+        ''' every page on the table, so "Users X" and "Users Y" both become "Staff". Without a rename
+        ''' recorded they keep their own names, which is the ordinary case.
+        '''
+        ''' ResolveTableRename rather than the plain override, so an alias that merely restates what
+        ''' the formatter derives does not count. FW_Users is aliased "Users" against four roles;
+        ''' treating that as a rename would beat "Users X" with a word that renamed nothing.
         ''' </summary>
-        Public Function ResolvePageRename(registrationId As Integer, pageName As String) As String
-            If registrationId <= 0 OrElse String.IsNullOrWhiteSpace(pageName) Then
-                Return String.Empty
+        Public Function ResolvePageCaption(registrationId As Integer, tableName As String, pageAlias As String) As String
+            Dim renamed = ResolveTableRename(registrationId, tableName)
+            If Not String.IsNullOrWhiteSpace(renamed) Then
+                Return renamed
             End If
 
-            Dim tableName = DataAccess.GetPageDbTableByWindowOrPage(registrationId, pageName.Trim())
-            If String.IsNullOrWhiteSpace(tableName) Then
-                Return String.Empty
+            Return If(pageAlias, String.Empty).Trim()
+        End Function
+
+        ''' <summary>
+        ''' The same order, decided from values already in hand. **Reads nothing.**
+        '''
+        ''' The form to prefer. A browse page fetches its table, SQL, alias and role override in one
+        ''' query, and a ribbon fetches them for every tile in one more - so by the time a caption is
+        ''' wanted the answer is already in memory, and asking the database again would be three
+        ''' round trips to rebuild what was just returned.
+        '''
+        ''' ResolvePageCaption above is the same rule for callers that do not have the values; it
+        ''' delegates here so there is still one definition of the order.
+        ''' </summary>
+        Public Function ResolvePageCaptionFrom(tableName As String,
+                                               roleOverrideCaption As String,
+                                               pageAlias As String) As String
+            Dim overrideCaption = RemoveFrameworkPrefix(If(roleOverrideCaption, String.Empty).Trim())
+
+            ' A rename, not merely an override. FW_Users is aliased "Users" against four roles, which
+            ' is exactly what the formatter derives, so counting it would beat a page's own "Users X"
+            ' with a word that renamed nothing.
+            If overrideCaption <> String.Empty AndAlso
+               Not String.Equals(overrideCaption, RemoveFrameworkPrefix(If(tableName, String.Empty).Trim()), StringComparison.OrdinalIgnoreCase) Then
+                Return overrideCaption
             End If
 
-            Return ResolveTableRename(registrationId, tableName)
+            Return If(pageAlias, String.Empty).Trim()
         End Function
 
         ''' <summary>
@@ -116,6 +147,46 @@ Namespace SDC.Framework
                                           tableName As String,
                                           fallbackAlias As String) As String
             Return ResolveTableAlias(registrationId, tableName, fallbackAlias) & " Listing"
+        End Function
+
+        ''' <summary>
+        ''' The caption for a page, found from the page's own name.
+        '''
+        ''' The form for a page that has no table context of its own - a one-off dialog that
+        ''' inherits Form rather than FW_Base_B, and so never fetched a table, an alias or an
+        ''' override on the way in. It looks up what the other callers already hold, then applies
+        ''' the same order through ResolvePageCaptionFrom, so a page cannot end up captioned by a
+        ''' different rule than the button that opened it.
+        '''
+        ''' **Costs no round trip in steady state.** Both lookups are served from caches held for
+        ''' the session - every page's alias in one query, the role overrides one per table - so
+        ''' this resolves from memory once any page has been opened.
+        '''
+        ''' Returns the fallback when nothing is recorded, so a page with no FW_Pages row keeps the
+        ''' wording written into it rather than losing its title.
+        ''' </summary>
+        Public Function ResolveCaptionForPage(registrationId As Integer,
+                                              pageName As String,
+                                              fallbackCaption As String) As String
+            If registrationId <= 0 OrElse String.IsNullOrWhiteSpace(pageName) Then
+                Return fallbackCaption
+            End If
+
+            Try
+                Dim tableName = DataAccess.GetPageDbTableByWindowOrPage(registrationId, pageName)
+                Dim pageAlias = DataAccess.GetPageAliasByWindowOrPage(registrationId, pageName)
+                Dim overrideCaption = ResolveTableAliasOverride(registrationId, tableName)
+
+                Dim resolved = ResolvePageCaptionFrom(tableName, overrideCaption, pageAlias)
+                If Not String.IsNullOrWhiteSpace(resolved) Then
+                    Return resolved
+                End If
+            Catch
+                ' A caption is not worth a page that will not open. The written wording stands,
+                ' which is what every session saw before the chain existed.
+            End Try
+
+            Return fallbackCaption
         End Function
 
         Private Function RemoveFrameworkPrefix(value As String) As String

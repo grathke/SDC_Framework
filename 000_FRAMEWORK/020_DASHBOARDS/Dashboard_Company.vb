@@ -94,6 +94,7 @@ Namespace SDC.Framework
 
             userAdminButton = New DashboardIconButton() With {
                 .Name = "ActionKey_UserAdmin",
+                .PageName = "Users_AppAdmin_B",
                 .Text = "User Admin",
                 .Location = DashboardGridLayout.CellLocation(1, 2),
                 .Size = New Size(DashboardGridLayout.IconWidth, DashboardGridLayout.IconHeight),
@@ -113,6 +114,7 @@ Namespace SDC.Framework
 
             userDiagnosticButton = New DashboardIconButton() With {
                 .Name = "ActionKey_FW_UserAccessExplanation_B",
+                .PageName = "FW_UserAccessExplanation_B",
                 .Text = "User Access Explanation",
                 .Location = DashboardGridLayout.CellLocation(1, 4),
                 .Size = New Size(DashboardGridLayout.IconWidth, DashboardGridLayout.IconHeight),
@@ -120,7 +122,7 @@ Namespace SDC.Framework
                 .UseVisualStyleBackColor = False,
                 .FlatStyle = FlatStyle.Flat,
                 .Font = New Font("Segoe UI", 13.0F, FontStyle.Regular),
-                .Image = SystemIcons.Question.ToBitmap(),
+                .Image = IconScaler.Load("Color_Information.png", DashboardIconSize, SystemIcons.Question.ToBitmap()),
                 .TextImageRelation = TextImageRelation.ImageAboveText,
                 .ImageAlign = ContentAlignment.TopCenter,
                 .TextAlign = ContentAlignment.BottomCenter,
@@ -171,11 +173,10 @@ Namespace SDC.Framework
 
             ' The same override the App Admin dashboard, the ribbon and the page titles read, so a
             ' rename cannot show on one surface and not another.
-            ActionCaptionOverrides.Apply(New Dictionary(Of ButtonBase, String) From {
-                {rolesButton, "Roles_B"},
-                {userAdminButton, "Users_AppAdmin_B"},
-                {userDiagnosticButton, "FW_UserAccessExplanation_B"}
-            })
+            '
+            ' Only the generated icon. Roles and User Admin were captioned by whoever asked for
+            ' them and are left alone.
+            ActionCaptionOverrides.Apply(Me)
 
             rolesButton.Enabled = True
             userAdminButton.Enabled = True

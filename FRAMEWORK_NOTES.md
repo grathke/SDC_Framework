@@ -768,19 +768,50 @@ they are maintained, in two grids:
 
 | Roles_U grid | Table | Scope | Applies to |
 |---|---|---|---|
-| top | `FW_RoleDetails` | one caption per **table** | every `_B` page title and every main-menu button that opens a page. **Not** dashboard icons or `_U` titles — see below |
+| top | `FW_RoleDetails` | one caption per **table** | see the order below — it is the second step, not the only one |
 | bottom | `FW_RoleFields` | one caption per **field** | `_B` grid column headings and `_U` control labels |
 
-Resolution paths:
+### What a page or a button is called
+
+Four steps, highest first. `PageTitleHelper.ResolvePageCaptionFrom` is the single owner of the order,
+and every surface asks it — `_B` titles, `_U` titles, ribbon tiles and dashboard icons — so a menu
+and the page it opens cannot disagree.
+
+| | Source | Wins when |
+|---|---|---|
+| 1 | the caption written in code | the button was given **no page**. One-off buttons never enter the chain, and that is the final word — Close, Admin and the pinned row keep what they were called |
+| 2 | `FW_RoleDetails.OverrideCaption` | it is a **genuine rename**, differing from what the formatter derives from the table name |
+| 3 | `FW_Pages.Table_Alias` | that page has one |
+| 4 | `DisplayNameFormatter` | nothing else applied |
+
+Step 2 above step 3 is a decision with a known cost: a genuine rename is keyed by **table**, so it
+reaches every page on that table. Rename `FW_Users` to Staff and "Users X" and "Users Y" both become
+"Staff" until it is cleared. Accepted deliberately — a rename is a statement about the thing itself,
+and a page alias only says which view of it this is.
+
+Step 2 tests for a *rename* rather than merely a value, because `FW_Users` is aliased "Users" against
+four roles — exactly what the formatter derives — and counting that would beat a page's own name with
+a word that renamed nothing.
+
+**Cost: none, in steady state.** Every page's alias is read in one query and held for the session
+(`pageAliasCache`), and role overrides were already cached (`roleOverrideCaptionCache`). Both are
+cleared by `InvalidateRoleMetadataCache`, which a role change already calls. A page generated while
+the application is running appears after a restart, which costs nothing — it needs a rebuild before
+it can be opened at all.
+
+A `_U` page has no `FW_Pages` row of its own and takes its `_B` partner's, derived by name through
+`BrowsePartnerPageName`.
+
+**Resolution paths:**
 
 - **Table level** — `DataAccess.GetRoleDetailOverrideCaption(roleId, registrationId, tableName)`,
-  consumed by `PageTitleHelper`, which offers three shapes of the same answer:
-  `ResolveTableAlias` falls back to a supplied name, `ResolveTableAliasOverride` returns an empty
-  string when there is no override, and `ResolveTableRename` also returns empty when the override
-  merely restates what the formatter derives. A caller that keeps its own wording unless overridden
-  needs one of the last two; a caller that always needs *some* text wants the first. This entry
-  named `EntityDisplayNameHelper` until 2026-09-05; that module was deleted on 2026-09-03 with
-  `FW_Entity` and `PageTitleHelper` took its work.
+  consumed by `PageTitleHelper`. Prefer `ResolvePageCaptionFrom`, which decides the whole order from
+  values already in hand and **reads nothing**; `ResolvePageCaption` is the same rule for a caller
+  without them. `ResolveTableAlias` falls back to a supplied name, `ResolveTableAliasOverride`
+  returns empty when there is no override, and `ResolveTableRename` also returns empty when the
+  override merely restates the derived name. This entry named `EntityDisplayNameHelper` until
+  2026-09-05; that module was deleted on 2026-09-03 with `FW_Entity` and `PageTitleHelper` took its
+  work.
 - **Field level, browse** — `GetRoleFieldCaptionMapForCurrentContext()` feeds
   `ApplyFriendlyColumnHeaders`. An override wins; otherwise the header falls back to
   `ToFriendlyCaption(sourceName)`.

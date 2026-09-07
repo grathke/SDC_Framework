@@ -186,13 +186,27 @@ Namespace SDC.Framework
 
             menu.ConfigureActionVisibility("select-role", True, True)
 
+            ' One caption, two destinations. An App Admin gets the application dashboard, everybody
+            ' else the company one - the same word for the same idea, and the role decides which
+            ' administration they are being given.
+            '
+            ' The role is read when the tile is clicked rather than here, matching Application
+            ' Settings. Selecting a role rebuilds the menu so reading it here would work too, but it
+            ' would leave a handler behind that is right only until the next role change.
             menu.UpsertActionTile(
                 actionKey:="user-admin",
-                caption:="User" & Environment.NewLine & "Admin",
+                caption:="Admin",
                 onClick:=Sub(sender, e)
-                             Using frm As New Users_AppAdmin_B(profile)
-                                 frm.ShowDialog(menu)
-                             End Using
+                             Dim clickSession = SessionState.Current
+                             If clickSession.HasValue AndAlso clickSession.Value.IsApplicationAdminRole Then
+                                 Using frm As New Dashboard_Application(user, profile)
+                                     frm.ShowDialog(menu)
+                                 End Using
+                             Else
+                                 Using frm As New Dashboard_Company(user, profile)
+                                     frm.ShowDialog(menu)
+                                 End Using
+                             End If
                          End Sub,
                 iconFileName:="users.png",
                 fallbackIcon:=SystemIcons.WinLogo.ToBitmap(),
@@ -212,13 +226,11 @@ Namespace SDC.Framework
                 isVisible:=True,
                 isEnabled:=True)
 
-            ' Which page each tile opens, so its caption can follow the role's alias for that page's
-            ' table. Declared here rather than inferred, because a click handler is a delegate and
-            ' there is nothing in one to read a page name out of.
+            ' The page each generated tile opens, so its caption can follow that page. Written by the
+            ' generator, and resolved from caches held for the session rather than per tile.
             '
-            ' Only tiles that open a table-backed page appear. Close, Dashboard, Application Settings
-            ' and the pinned row keep their coded captions: they are not a table under another name.
-            menu.SetActionPage("user-admin", "Users_AppAdmin_B")
+            ' One-off tiles are absent on purpose. User Admin, Close and the pinned row were
+            ' captioned by whoever asked for them, and an override would overrule that.
             menu.SetActionPage("generated-usersy_b", "UsersY_B")
 
             ' Generated ribbon tiles are inserted above this marker. PageGenerator matches the next

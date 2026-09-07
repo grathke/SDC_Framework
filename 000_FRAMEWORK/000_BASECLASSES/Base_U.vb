@@ -202,9 +202,14 @@ Namespace SDC.Framework
             ' nothing.
             Dim session = SessionState.Current
             If session.HasValue AndAlso session.Value.RegistrationID > 0 Then
-                Dim renamed = PageTitleHelper.ResolveTableRename(session.Value.RegistrationID, ResolveTableNameForConstraints())
-                If Not String.IsNullOrWhiteSpace(renamed) Then
-                    subject = renamed
+                ' The alias belongs to the _B partner: FW_Pages is keyed by browse page name and has
+                ' no rows for maintenance pages. Deriving it here rather than storing a second row
+                ' keeps one page name per page - a _U that drifted from its _B would be captioned
+                ' from a row nobody knew existed.
+                Dim pageAlias = DataAccess.GetPageAliasByWindowOrPage(session.Value.RegistrationID, BrowsePartnerPageName())
+                Dim caption = PageTitleHelper.ResolvePageCaption(session.Value.RegistrationID, ResolveTableNameForConstraints(), pageAlias)
+                If Not String.IsNullOrWhiteSpace(caption) Then
+                    subject = caption
                 End If
             End If
 
@@ -2025,6 +2030,22 @@ Namespace SDC.Framework
                 dialog.ShowDialog(Me)
             End Using
         End Sub
+
+        ''' <summary>
+        ''' This page's browse partner, by name: UsersY_U to UsersY_B.
+        '''
+        ''' FW_Pages is keyed by browse page name, so a maintenance page has no row of its own and
+        ''' takes the caption of the page it was opened from. A page whose partner is not named that
+        ''' way overrides BuildMaintenanceTitle instead - the convention is a default, not a rule.
+        ''' </summary>
+        Protected Overridable Function BrowsePartnerPageName() As String
+            Dim pageName = If(GetPageName(), String.Empty).Trim()
+            If Not pageName.EndsWith("_U", StringComparison.OrdinalIgnoreCase) Then
+                Return String.Empty
+            End If
+
+            Return pageName.Substring(0, pageName.Length - 2) & "_B"
+        End Function
 
         Private Function ResolveTableNameForConstraints() As String
             Dim tableName = If(GetTableNameOverride(), String.Empty).Trim()

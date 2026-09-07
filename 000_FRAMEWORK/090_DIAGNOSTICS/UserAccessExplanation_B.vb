@@ -16,6 +16,8 @@ Namespace SDC.Framework
         Private ReadOnly currentUser As UserContext
         Private ReadOnly accessProfile As AccessProfile
         Private ReadOnly registrationId As Integer
+        Private ReadOnly pageCaption As String
+        Private ReadOnly backgroundColorPicker As PageBackgroundColorPicker
         Private ReadOnly registrationLabel As Label
         Private ReadOnly closeButton As Button
         Private ReadOnly emailComboBox As ComboBox
@@ -39,7 +41,17 @@ Namespace SDC.Framework
             accessProfile = profile
             registrationId = If(SessionState.Current.HasValue, SessionState.Current.Value.RegistrationID, 0)
 
-            Me.Text = "USER ACCESS EXPLANATION"
+
+            ' The same name the button that opened this page carries, from the same chain: the
+            ' role's override where a table was genuinely renamed, otherwise FW_Pages.Table_Alias.
+            ' Written here rather than fixed, so a page and the icon that opens it cannot end up
+            ' called two different things - which is what happened when this read "User Access
+            ' Explanation" and its button read "User Access Diag.".
+            pageCaption = PageTitleHelper.ResolveCaptionForPage(registrationId,
+                                                                "FW_UserAccessExplanation_B",
+                                                                "User Access Explanation")
+
+            Me.Text = pageCaption.ToUpperInvariant()
             Me.StartPosition = FormStartPosition.CenterParent
             Me.FormBorderStyle = FormBorderStyle.FixedDialog
             Me.MaximizeBox = False
@@ -177,9 +189,24 @@ Namespace SDC.Framework
             Me.Controls.Add(comparisonFootnote)
             Me.Controls.Add(applyAccessChangesButton)
             Me.Controls.Add(resultTextBox)
+
+            ' The same picker every browse page carries, from PageBackgroundColorPicker rather than
+            ' a second one written here. Left of CLOSE, matched to its height so the two read as one
+            ' row. Admin only, and the colour it stores is restored for everyone.
+            backgroundColorPicker = New PageBackgroundColorPicker(Me, Me.GetType().Name)
+            backgroundColorPicker.Attach()
+            backgroundColorPicker.Button.Size = New Size(94, closeButton.Height)
+            backgroundColorPicker.Button.Location = New Point(closeButton.Left - 94 - 8, closeButton.Top)
+            backgroundColorPicker.Button.Anchor = AnchorStyles.Top Or AnchorStyles.Right
         End Sub
 
         Private Sub ExplanationPage_Load(sender As Object, e As EventArgs)
+            ' The button is admin only; the colour it set is applied for every user, because how a
+            ' page looks is not a permission. Both run here rather than in the constructor, so the
+            ' tint lands on controls that already exist.
+            backgroundColorPicker.UpdateVisibility()
+            backgroundColorPicker.ApplyStored()
+
             LoadTableChoices()
             If Not LoadRoles() Then
                 Return
@@ -378,7 +405,7 @@ Namespace SDC.Framework
                 End If
 
                 Dim result As New StringBuilder()
-                result.AppendLine("USER ACCESS EXPLANATION")
+                result.AppendLine(pageCaption.ToUpperInvariant())
                 result.AppendLine("User: " & userLabel.Text)
                 result.AppendLine("Registration: " & analysisRegistrationName)
                 result.AppendLine("Table / menu: " & tableAlias)

@@ -97,6 +97,7 @@ Namespace SDC.Framework
 
             userAdminButton = New DashboardIconButton() With {
                 .Name = "ActionKey_UserAdmin",
+                .PageName = "Users_AppAdmin_B",
                 .Text = "User Admin",
                 .Location = DashboardGridLayout.CellLocation(1, 2),
                 .Size = New Size(DashboardGridLayout.IconWidth, DashboardGridLayout.IconHeight),
@@ -253,6 +254,7 @@ Namespace SDC.Framework
 
             generatedFW_UserAccessExplanation_BButton = New DashboardIconButton() With {
                 .Name = "ActionKey_FW_UserAccessExplanation_B",
+                .PageName = "FW_UserAccessExplanation_B",
                 .Text = "User Access Explanation",
                 .Location = DashboardGridLayout.CellLocation(1, 4),
                 .Size = New Size(DashboardGridLayout.IconWidth, DashboardGridLayout.IconHeight),
@@ -260,7 +262,7 @@ Namespace SDC.Framework
                 .UseVisualStyleBackColor = False,
                 .FlatStyle = FlatStyle.Flat,
                 .Font = New Font("Segoe UI", 13.0F, FontStyle.Regular),
-                .Image = SystemIcons.Question.ToBitmap(),
+                .Image = LoadDashboardIcon("Color_Information.png", SystemIcons.Question.ToBitmap()),
                 .TextImageRelation = TextImageRelation.ImageAboveText,
                 .ImageAlign = ContentAlignment.TopCenter,
                 .TextAlign = ContentAlignment.BottomCenter,
@@ -273,6 +275,7 @@ Namespace SDC.Framework
 
             generatedUserX_BButton = New DashboardIconButton() With {
                 .Name = "ActionKey_UserX_B",
+                .PageName = "UserX_B",
                 .Text = "UserX",
                 .Location = DashboardGridLayout.CellLocation(1, 5),
                 .Size = New Size(DashboardGridLayout.IconWidth, DashboardGridLayout.IconHeight),
@@ -364,21 +367,14 @@ Namespace SDC.Framework
             iconImageController.Attach(Me.Controls.OfType(Of DashboardIconButton)().
                                        Select(Function(icon) New KeyValuePair(Of String, ButtonBase)(icon.Name, icon)))
 
-            ' What the role calls each page, from the same FW_RoleDetails override the ribbon tiles
-            ' and the page titles read. Only icons that open a table-backed page appear: the database
-            ' configuration dialog and the tile that opens the company dashboard are not a table
-            ' under another name.
-            ActionCaptionOverrides.Apply(New Dictionary(Of ButtonBase, String) From {
-                {rolesButton, "Roles_B"},
-                {userAdminButton, "Users_AppAdmin_B"},
-                {registrationButton, "FW_Registration_B"},
-                {auditHistoryButton, "FW_AuditTrail_B"},
-                {helpDeskButton, "FW_HD_Admin_B"},
-                {helpDeskSupportButton, "FW_HD_Issues_Support_B"},
-                {newPageRequestsButton, "FW_PageGeneration_B"},
-                {generatedUserX_BButton, "UserX_B"},
-                {generatedFW_UserAccessExplanation_BButton, "FW_UserAccessExplanation_B"}
-            })
+            ' What the role calls the table behind each generated icon, from the same
+            ' FW_RoleDetails override the ribbon tiles and the page titles read.
+            '
+            ' Generated icons only. Roles, User Admin, Registration, Audit History, Help Desk and
+            ' the rest were captioned by whoever asked for them, and an override would overrule a
+            ' deliberate name with a generic one. The table is written in rather than looked up,
+            ' because the generator knows it - the page was generated from it.
+            ActionCaptionOverrides.Apply(Me)
 
             rolesButton.Enabled = True
             userAdminButton.Enabled = True

@@ -116,7 +116,12 @@ Assert-Pattern -Path ".\000_FRAMEWORK\060_ROLES\Roles_B.vb" -Pattern "ResolveCur
 Write-Step "Action icon access propagation"
 Assert-Pattern -Path ".\000_FRAMEWORK\020_DASHBOARDS\Dashboard_Application.vb" -Pattern "New Users_AppAdmin_B(accessProfile)" -Description "Application action icon passes access profile to Users browse"
 Assert-Pattern -Path ".\000_FRAMEWORK\020_DASHBOARDS\Dashboard_Company.vb" -Pattern "New Users_AppAdmin_B(accessProfile)" -Description "Company action icon passes access profile to Users browse"
-Assert-Pattern -Path ".\100_PROJECTS\SDC\MenuFormInitializer.vb" -Pattern "New Users_AppAdmin_B(profile)" -Description "Main menu action icon passes access profile to Users browse"
+# The Admin tile opened Users_AppAdmin_B until 2026-09-06 and now opens a dashboard, chosen by role
+# at click time. The check follows the destination rather than being dropped: what it is really
+# asserting is the Action Icon Guardrail - a tile passes the live user and profile to whatever it
+# opens, and never constructs it bare.
+Assert-Pattern -Path ".\100_PROJECTS\SDC\MenuFormInitializer.vb" -Pattern "New Dashboard_Application(user, profile)" -Description "Main menu Admin tile passes access context to the application dashboard"
+Assert-Pattern -Path ".\100_PROJECTS\SDC\MenuFormInitializer.vb" -Pattern "New Dashboard_Company(user, profile)" -Description "Main menu Admin tile passes access context to the company dashboard"
 Assert-Pattern -Path ".\000_FRAMEWORK\040_USERS\Users_AppAdmin_B.vb" -Pattern "Optional profile As AccessProfile = Nothing" -Description "Users browse accepts action icon access profile"
 
 Write-Step "Shared concurrency contract"

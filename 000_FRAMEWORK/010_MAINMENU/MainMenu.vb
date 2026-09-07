@@ -25,9 +25,12 @@ Namespace SDC.Framework
             Public Property Button As Button
             Public Property OnClick As EventHandler
 
-            ''' The page this tile opens, or nothing for a tile that opens no page - Close, My
-            ''' Profile and Application Settings among them. Only a tile with a page has a table
-            ''' behind it, and only a table can carry a role's override caption.
+            ''' The page this tile opens, or nothing.
+            '''
+            ''' Given only to a tile whose caption should follow the page. A tile without one keeps
+            ''' the caption whoever asked for the button chose, whatever any override says - Close,
+            ''' Admin and My Profile among them. That is the final word in the order, and saying
+            ''' nothing here is how it is said.
             Public Property PageName As String
 
             ''' The caption the tile was given in code, kept so an override can be applied *and
@@ -694,15 +697,12 @@ Namespace SDC.Framework
         End Sub
 
         ''' <summary>
-        ''' Tells a tile which page it opens, so its caption can follow the role's alias for that
-        ''' page's table.
+        ''' Tells a tile which page it opens, so its caption can follow that page.
         '''
-        ''' Supplied rather than derived: a tile's click handler is a delegate, and there is nothing
-        ''' in it to read a page name out of. The application declares the association because the
-        ''' application is what decides which tile opens what.
-        '''
-        ''' A tile with no page keeps its coded caption forever, which is right - Close and My
-        ''' Profile are not a table under another name.
+        ''' Given to generated tiles, whose page the generator writes in. A one-off tile is never
+        ''' given one: its caption was chosen by whoever asked for the button, and that is the final
+        ''' word - Close, Admin and the pinned row all keep what they were called whatever any
+        ''' override says.
         ''' </summary>
         Public Sub SetActionPage(actionKey As String, pageName As String)
             If String.IsNullOrWhiteSpace(actionKey) Then
@@ -745,14 +745,16 @@ Namespace SDC.Framework
 
                 If registrationId > 0 Then
                     Try
-                        ' A rename, not merely an override. FW_Users is aliased "Users" against four
-                        ' roles, which is exactly what the formatter derives from the name - applying
-                        ' it would replace a deliberate two-line "User Admin" with a word that
-                        ' renamed nothing, and leave User Admin and UsersY, two correct mappings onto
-                        ' one table, captioned identically.
-                        Dim renamed = PageTitleHelper.ResolvePageRename(registrationId, tile.PageName)
-                        If Not String.IsNullOrWhiteSpace(renamed) Then
-                            caption = renamed
+                        ' Both sides come from caches held for the session - the page aliases in one
+                        ' query for every page, the role overrides one per table - so a ribbon of
+                        ' tiles costs no round trip after the first.
+                        Dim tableName = DataAccess.GetPageDbTableByWindowOrPage(registrationId, tile.PageName)
+                        Dim pageAlias = DataAccess.GetPageAliasByWindowOrPage(registrationId, tile.PageName)
+                        Dim overrideCaption = PageTitleHelper.ResolveTableAliasOverride(registrationId, tableName)
+
+                        Dim resolved = PageTitleHelper.ResolvePageCaptionFrom(tableName, overrideCaption, pageAlias)
+                        If Not String.IsNullOrWhiteSpace(resolved) Then
+                            caption = resolved
                         End If
                     Catch
                         ' A caption is not worth a broken menu. The tile keeps the wording it was

@@ -3,6 +3,7 @@ Option Explicit On
 
 Imports System
 Imports System.Collections.Generic
+Imports System.Linq
 Imports System.Windows.Forms
 
 Namespace SDC.Framework
@@ -29,15 +30,17 @@ Namespace SDC.Framework
     Public Module ActionCaptionOverrides
 
         ''' <summary>
-        ''' Re-captions each button from the role's alias for its page's table.
+        ''' Re-captions each button from the role's alias for the table behind it.
         '''
-        ''' A button whose page has no rename recorded is left exactly as it was, so the caller's
-        ''' coded caption stands. Pass only buttons that open a table-backed page: a dashboard tile
-        ''' that opens another dashboard, or a configuration dialog, is not a table under another
-        ''' name and has nothing to resolve.
+        ''' **Generated icons only.** The generator knows the table - it is what the page was
+        ''' generated from - so it writes it in and nothing is looked up at run time. A one-off icon
+        ''' is captioned by whoever asked for the button, and rewriting that would overrule a
+        ''' deliberate decision with a generic one.
+        '''
+        ''' A button whose table has no rename recorded is left exactly as it was.
         ''' </summary>
-        Public Sub Apply(buttonPages As IEnumerable(Of KeyValuePair(Of ButtonBase, String)))
-            If buttonPages Is Nothing Then
+        Public Sub Apply(owner As Control)
+            If owner Is Nothing Then
                 Return
             End If
 
@@ -47,20 +50,15 @@ Namespace SDC.Framework
                 Return
             End If
 
-            For Each pair In buttonPages
-                If pair.Key Is Nothing OrElse String.IsNullOrWhiteSpace(pair.Value) Then
+            For Each icon In owner.Controls.OfType(Of DashboardIconButton)()
+                If String.IsNullOrWhiteSpace(icon.PageName) Then
                     Continue For
                 End If
 
-                Try
-                    Dim renamed = PageTitleHelper.ResolvePageRename(registrationId, pair.Value)
-                    If Not String.IsNullOrWhiteSpace(renamed) Then
-                        pair.Key.Text = renamed
-                    End If
-                Catch
-                    ' A caption is not worth a broken dashboard. The button keeps the wording it was
-                    ' given, which is what every session saw before this existed.
-                End Try
+                ' One resolver, so an icon and the page it opens cannot be captioned by different
+                ' rules. Passing the coded caption as the fallback keeps a button with nothing
+                ' recorded exactly as it was written.
+                icon.Text = PageTitleHelper.ResolveCaptionForPage(registrationId, icon.PageName, icon.Text)
             Next
         End Sub
 
