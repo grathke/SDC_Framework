@@ -19,9 +19,16 @@ Namespace SDC.Framework
             Text = "Page Generation"
         End Sub
 
-        Protected Overrides Function ResolveBrowsePageName() As String
-            Return "PageGeneration_B"
-        End Function
+        ' ResolveBrowsePageName is not overridden. It used to return "PageGeneration_B", the name
+        ' this page had before it took the FW_ prefix, so the page looked itself up under two names
+        ' at once: its SQL, alias and caption came from a PageGeneration_B row while its background
+        ' colour and Hot Fields flag came from the FW_PageGeneration_B row, because those are keyed
+        ' on the class name. Two rows in FW_Pages for one page, each half used, and nothing on
+        ' screen to say so.
+        '
+        ' Deleting the leftover row twice did not fix it - sql/063 removed it and the application
+        ' recreated it, which sql/069 recorded and asked someone to explain. This override was the
+        ' explanation.
 
         Protected Overrides Sub ApplyPageSpecificLayout()
             Dim browseSplit = FindBrowseSplitContainer(Me)
