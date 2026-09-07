@@ -6,6 +6,7 @@ Imports System.Drawing
 Imports System.IO
 Imports System.Linq
 Imports System.Text
+Imports System.Text.Json
 Imports System.Text.RegularExpressions
 Imports System.Security.Cryptography
 
@@ -96,6 +97,15 @@ Namespace SDC.Framework
 
             Dim errors As New List(Of String)()
 
+            ' Generating a page writes source files to disk and creates or overwrites an FW_Pages
+            ' row, including that page's SQL. Until this pair existed the audit trail recorded only
+            ' that someone had edited the generation request - never that a page was actually
+            ' generated, and never that an existing page's SQL had been replaced.
+            Dim auditKey = If(String.IsNullOrWhiteSpace(plan.BrowsePageName), plan.MaintenancePageName, plan.BrowsePageName)
+            DataAccess.LogUpdateAudit("PageGenerator", "FW_Pages", "Generate", "BeforeSave",
+                                      auditKey, BuildGenerationSnapshot(plan, overwriteExistingPages, Nothing, Nothing, Nothing),
+                                      Nothing, Nothing, plan.CreatedBy)
+
             If plan.GenerateBrowsePage Then
                 If WriteGeneratedPage(plan.BrowsePath, plan.BrowseSource, overwriteExistingPages, created, skipped) Then
                     If Not SaveBrowseBaseline(requestId, plan.BrowseSource, errors) Then
@@ -174,7 +184,47 @@ Namespace SDC.Framework
                 End If
             End If
 
+            DataAccess.LogUpdateAudit("PageGenerator", "FW_Pages", "Generate", "AfterSave",
+                                      auditKey, BuildGenerationSnapshot(plan, overwriteExistingPages, created, skipped, errors),
+                                      errors.Count = 0, Nothing, plan.CreatedBy)
+
             Return New PageGenerationResult(created, skipped, errors)
+        End Function
+
+        ''' <summary>
+        ''' The generation snapshot, in the flat string map FW_Base_U uses, so the audit page can
+        ''' diff a Before against an After the same way it does for an ordinary save.
+        ''' </summary>
+        Private Shared Function BuildGenerationSnapshot(plan As PageGenerationPlan,
+                                                        overwriteExistingPages As Boolean,
+                                                        created As List(Of String),
+                                                        skipped As List(Of String),
+                                                        errors As List(Of String)) As String
+            Dim snapshot As New SortedDictionary(Of String, String)(StringComparer.OrdinalIgnoreCase)
+            snapshot("BrowsePageName") = If(plan.BrowsePageName, String.Empty)
+            snapshot("MaintenancePageName") = If(plan.MaintenancePageName, String.Empty)
+            snapshot("TableName") = If(plan.TableName, String.Empty)
+            snapshot("TableAlias") = If(plan.TableAlias, String.Empty)
+            snapshot("BrowsePath") = If(plan.BrowsePath, String.Empty)
+            snapshot("MaintenancePath") = If(plan.MaintenancePath, String.Empty)
+            snapshot("GenerateBrowsePage") = plan.GenerateBrowsePage.ToString()
+            snapshot("GenerateMaintenancePage") = plan.GenerateMaintenancePage.ToString()
+            snapshot("OverwriteExistingPages") = overwriteExistingPages.ToString()
+            snapshot("BrowseSql") = If(plan.BrowseSql, String.Empty)
+
+            ' Present only on the After row, which is what makes the Delta pane show the work done
+            ' rather than repeating the request.
+            If created IsNot Nothing Then
+                snapshot("Created") = String.Join(" | ", created)
+            End If
+            If skipped IsNot Nothing Then
+                snapshot("Skipped") = String.Join(" | ", skipped)
+            End If
+            If errors IsNot Nothing Then
+                snapshot("Errors") = String.Join(" | ", errors)
+            End If
+
+            Return JsonSerializer.Serialize(snapshot)
         End Function
 
         ' Builds the same plan Generate would act on, without writing a file, a database row or a
