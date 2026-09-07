@@ -56,7 +56,10 @@ Namespace SDC.Framework
             Me.StartPosition = FormStartPosition.CenterParent
             Me.MinimumSize = New Size(560, 350)
             Me.ClientSize = New Size(620, 600)
-            Me.BackColor = Color.White
+            ' No BackColor is set here. FW_Base_B's constructor has already applied this page's
+            ' stored colour, and assigning white a line later painted over it - which looked like
+            ' the colour never being saved, when it was saved and then immediately discarded.
+            ' With nothing stored the picker applies its own default, which is near white.
 
             titleLabel = New Label() With {
                 .Text = "ROLES LISTING",
@@ -121,6 +124,7 @@ Namespace SDC.Framework
             AddHandler showNormalButton.Click, AddressOf ShowNormalButton_Click
             AddHandler closeButton.Click, AddressOf CloseButton_Click
             AddHandler rolesGrid.CellDoubleClick, AddressOf RolesGrid_CellDoubleClick
+            AddHandler rolesGrid.CellFormatting, AddressOf RolesGrid_CellFormatting
             AddHandler rolesGrid.SelectionChanged, AddressOf RolesGrid_SelectionChanged
 
             AddHandler Me.Resize, AddressOf RolesForm_Resize
@@ -145,6 +149,17 @@ Namespace SDC.Framework
         End Sub
 
         Private Sub Roles_B_Shown(sender As Object, e As EventArgs)
+            ' The picker is built and shown or hidden by FW_Base_B's constructor, and placed by this
+            ' page's own layout. Doing both again once the form is on screen means neither depends on
+            ' when the other ran, and BringToFront settles the z-order: the button is added to the
+            ' form during the base constructor, so every control this page adds afterwards sits in
+            ' front of it.
+            If PageColorPicker IsNot Nothing Then
+                PageColorPicker.UpdateVisibility()
+                PageColorPicker.Button.BringToFront()
+                RolesForm_Resize(Me, EventArgs.Empty)
+            End If
+
             BeginInvoke(New MethodInvoker(AddressOf FocusRolesGridOnEntry))
         End Sub
 
@@ -194,14 +209,31 @@ Namespace SDC.Framework
             Dim buttonLeft As Integer = 20
             Dim buttonGap As Integer = 8
 
-            newButton.Top = buttonTop
-            newButton.Left = buttonLeft
-            modifyButton.Top = buttonTop
-            modifyButton.Left = newButton.Right + buttonGap
-            deleteButton.Top = buttonTop
-            deleteButton.Left = modifyButton.Right + buttonGap
+            ' The CRUD group closes up among itself when a permission hides one of its buttons: the
+            ' chain this replaced read each button's Right whether or not it was on screen, so a
+            ' hidden button left a hole behind it.
+            '
+            ' What sits to the right of the group does not move. Its position is measured from the
+            ' group's full width rather than from wherever the last visible button happens to end,
+            ' so Show Deleted stays where the eye expects it however many CRUD buttons are showing.
+            Dim crudButtons As Button() = {newButton, modifyButton, deleteButton}
+            Dim nextLeft As Integer = buttonLeft
+            Dim reservedRight As Integer = buttonLeft
+
+            For Each crudButton As Button In crudButtons
+                reservedRight += crudButton.Width + buttonGap
+
+                If Not crudButton.Visible Then
+                    Continue For
+                End If
+
+                crudButton.Top = buttonTop
+                crudButton.Left = nextLeft
+                nextLeft = crudButton.Right + buttonGap
+            Next
+
             showDeletedButton.Top = buttonTop
-            showDeletedButton.Left = deleteButton.Right + buttonGap
+            showDeletedButton.Left = reservedRight
             restoreDeletedButton.Top = buttonTop
             restoreDeletedButton.Left = showDeletedButton.Left
             showNormalButton.Top = buttonTop
@@ -210,15 +242,118 @@ Namespace SDC.Framework
             closeButton.Top = buttonTop
             closeButton.Left = gridRightEdge - closeButton.Width
 
+            ' This page lays out its own action row, so FW_Base_B never places the picker it built
+            ' for us. Positioned from Close rather than from the CRUD group, so it holds its place
+            ' when a permission hides one of those buttons.
+            If PageColorPicker IsNot Nothing Then
+                ' Matched to Close so the two sit on one baseline. The picker is built at the
+                ' standard 36 high and this page's buttons are 32, which put it 4px out.
+                PageColorPicker.Button.Height = closeButton.Height
+                PageColorPicker.Button.Top = buttonTop
+                PageColorPicker.Button.Left = closeButton.Left - PageColorPicker.Button.Width - buttonGap
+                PageColorPicker.PositionPanel()
+            End If
+
             rolesGrid.Width = Me.ClientSize.Width - 40
             rolesGrid.Height = Me.ClientSize.Height - 260
             GridColumnsManager.FitVisibleColumnsToAvailableWidth(rolesGrid)
         End Sub
 
+        ''' <summary>
+        ''' Shows only the CRUD buttons this role is allowed to use.
+        ''' </summary>
+        ''' <remarks>
+        ''' This page has its own New/Modify/Delete buttons rather than FW_Base_B's, so the base's
+        ''' permission gating never reached them: the profile was taken in the constructor, stored,
+        ''' and never read. A role with Can_Create withheld on FW_Roles still got a New button.
+        '''
+        ''' The capability lookup is AccessProfile's, not a second rule - and it is the same call
+        ''' FW_Base_B makes. NormalizeTableKey reduces FW_Roles and ROLES to one key, so the name
+        ''' this page was constructed with resolves correctly.
+        '''
+        ''' A missing profile hides everything. The constructor takes it as optional, so a caller
+        ''' that omits it must end up with no buttons rather than all of them.
+        ''' </remarks>
+        ''' <summary>
+        ''' Drops the Application Admin roles from the loaded table for a session that is not itself
+        ''' an Application Admin, before the grid ever sees them.
+        ''' </summary>
+        ''' <remarks>
+        ''' The row is removed rather than hidden, so it cannot be selected, modified or deleted -
+        ''' there is nothing to select. That is why no matching check was added to the commands.
+        '''
+        ''' The ids are fetched rather than read from the row. This page's SQL lives in FW_Pages and
+        ''' is editable, so Typ_AppAdmin cannot be assumed to be among the columns it selects - it is
+        ''' not among them today. Costs one query, and only for a session that is not already an
+        ''' Application Admin.
+        '''
+        ''' If the result carries no PK column the rows cannot be identified and none are removed.
+        ''' The page already warns about that case and disables maintenance for it.
+        ''' </remarks>
+        ''' <summary>
+        ''' Numbers the order column 1, 2, 3 down the grid, at the moment each cell is drawn.
+        ''' </summary>
+        ''' <remarks>
+        ''' Nothing is written. The first version of this rewrote the loaded DataTable, which worked
+        ''' - the grid is read only, and the table is thrown away - but it still meant the rows in
+        ''' memory no longer said what the database said. Formatting the value on its way to the
+        ''' screen leaves the data alone entirely.
+        '''
+        ''' The number is the row's position, so it stays 1..n with no gaps whatever the stored
+        ''' DisplayOrder values are, and the hole left by a hidden Application Admin role never
+        ''' shows. The stored DisplayOrder still orders the rows and is still what Roles_U edits.
+        ''' </remarks>
+        Private Sub RolesGrid_CellFormatting(sender As Object, e As DataGridViewCellFormattingEventArgs)
+            If e.RowIndex < 0 OrElse e.ColumnIndex < 0 Then
+                Return
+            End If
+
+            If Not String.Equals(rolesGrid.Columns(e.ColumnIndex).Name, "DisplayOrder", StringComparison.OrdinalIgnoreCase) Then
+                Return
+            End If
+
+            e.Value = (e.RowIndex + 1).ToString(Globalization.CultureInfo.InvariantCulture)
+            e.FormattingApplied = True
+        End Sub
+
+        Private Sub RemoveAppAdminRoles(table As DataTable, registrationId As Integer)
+            If table Is Nothing OrElse IsAppAdminSession() Then
+                Return
+            End If
+
+            If Not table.Columns.Contains("PK") Then
+                Return
+            End If
+
+            Dim hiddenRoleIds = DataAccess.GetAppAdminRoleIds(registrationId)
+            If hiddenRoleIds.Count = 0 Then
+                Return
+            End If
+
+            For index As Integer = table.Rows.Count - 1 To 0 Step -1
+                Dim rawKey = table.Rows(index)("PK")
+                If rawKey Is Nothing OrElse rawKey Is DBNull.Value Then
+                    Continue For
+                End If
+
+                Dim roleId As Integer
+                If Integer.TryParse(Convert.ToString(rawKey, Globalization.CultureInfo.InvariantCulture), roleId) AndAlso
+                   hiddenRoleIds.Contains(roleId) Then
+                    table.Rows.RemoveAt(index)
+                End If
+            Next
+
+            table.AcceptChanges()
+        End Sub
+
         Private Sub ApplyAccess()
-            newButton.Enabled = True
-            modifyButton.Enabled = True
-            deleteButton.Enabled = True
+            newButton.Visible = CanDo(AccessCapability.Create)
+            modifyButton.Visible = CanDo(AccessCapability.Update)
+            deleteButton.Visible = CanDo(AccessCapability.Delete)
+
+            newButton.Enabled = newButton.Visible
+            modifyButton.Enabled = modifyButton.Visible
+            deleteButton.Enabled = deleteButton.Visible
 
             Dim showRegistrationPicker = IsAppAdminSession()
             registrationLabel.Visible = showRegistrationPicker
@@ -227,6 +362,32 @@ Namespace SDC.Framework
 
             UpdateShowDeletedButtonState()
         End Sub
+
+        ''' <summary>Whether this role holds a capability on the roles table. Closed when unknown.</summary>
+        Private Function CanDo(required As AccessCapability) As Boolean
+            Return accessProfile IsNot Nothing AndAlso accessProfile.Can(accessTableName, required)
+        End Function
+
+        ''' <summary>
+        ''' Refuses the action when the role does not hold the capability.
+        ''' </summary>
+        ''' <remarks>
+        ''' Hiding a button is not authorization - a hidden button can still be reached by a
+        ''' keyboard shortcut, by code, or by a later edit that forgets why it was hidden. The
+        ''' command checks for itself.
+        ''' </remarks>
+        Private Function EnsureCapability(required As AccessCapability, actionName As String) As Boolean
+            If CanDo(required) Then
+                Return True
+            End If
+
+            MessageBox.Show(Me,
+                            "YOUR ROLE DOES NOT ALLOW YOU TO " & actionName & " ROLES.",
+                            "NOT PERMITTED",
+                            MessageBoxButtons.OK,
+                            MessageBoxIcon.Warning)
+            Return False
+        End Function
 
         Private Sub RolesGrid_SelectionChanged(sender As Object, e As EventArgs)
             Dim disableForMissingKey = missingMaintenanceKeyInResult
@@ -411,6 +572,7 @@ Namespace SDC.Framework
                                                        showDeletedRecordsOnly,
                                                        ResolveCurrentRoleFieldTableName(),
                                                        "ID")
+                RemoveAppAdminRoles(dt, registrationId)
                 rolesGrid.DataSource = dt
                 ApplyFriendlyColumnHeaders(rolesGrid)
                 MaintenanceKeyGuard.HidePkColumn(rolesGrid)
@@ -707,6 +869,10 @@ Namespace SDC.Framework
         End Function
 
         Private Sub NewButton_Click(sender As Object, e As EventArgs)
+            If Not EnsureCapability(AccessCapability.Create, "CREATE") Then
+                Return
+            End If
+
             Dim registrationId As Integer
             If Not TryGetActiveRegistrationId(registrationId) Then
                 Return
@@ -724,6 +890,10 @@ Namespace SDC.Framework
         End Sub
 
         Private Sub ModifyButton_Click(sender As Object, e As EventArgs)
+            If Not EnsureCapability(AccessCapability.Update, "MODIFY") Then
+                Return
+            End If
+
             If Not EnsureMaintenanceKeyAvailable("Modify") Then
                 Return
             End If
@@ -771,6 +941,10 @@ Namespace SDC.Framework
         End Sub
 
         Private Sub DeleteButton_Click(sender As Object, e As EventArgs)
+            If Not EnsureCapability(AccessCapability.Delete, "DELETE") Then
+                Return
+            End If
+
             If Not EnsureMaintenanceKeyAvailable("Delete") Then
                 Return
             End If
@@ -898,10 +1072,22 @@ Namespace SDC.Framework
                 showDeletedRecordsOnly = False
             End If
 
-            Dim isAdmin = IsAppAdminSession() OrElse IsCompanyAdminSession()
-            Dim showSplitDeletedActions = isAdmin AndAlso supportsDeletedView AndAlso showDeletedRecordsOnly
-            showDeletedButton.Visible = isAdmin AndAlso Not showSplitDeletedActions
-            showDeletedButton.Enabled = supportsDeletedView
+            ' The deleted view goes with the Delete button. A role that cannot delete a record has
+            ' no business in the bin those deletions land in, and the only action the view offers -
+            ' Restore - undoes a deletion it was never allowed to make.
+            '
+            ' Note this is stricter than FW_Base_B, which gates the same view on Update rather than
+            ' Delete, on the reading that restoring a record is an update to it. The two disagree
+            ' for a role holding Update without Delete.
+            ' Two conditions, deliberately, and the first is the backstop. The role must hold
+            ' Delete - but the session must also be an Application Admin, so that a registration
+            ' whose permissions were never set up cannot hand the deleted view to a Company Admin
+            ' by omission. A missing permission row should fail closed, not open.
+            Dim isAdmin = IsAppAdminSession()
+            Dim canUseDeletedView = isAdmin AndAlso CanDo(AccessCapability.Delete)
+            Dim showSplitDeletedActions = canUseDeletedView AndAlso supportsDeletedView AndAlso showDeletedRecordsOnly
+            showDeletedButton.Visible = canUseDeletedView AndAlso Not showSplitDeletedActions
+            showDeletedButton.Enabled = canUseDeletedView AndAlso supportsDeletedView
             showDeletedButton.Text = If(supportsDeletedView, ShowDeletedText, "Deleted N/A")
 
             restoreDeletedButton.Visible = showSplitDeletedActions

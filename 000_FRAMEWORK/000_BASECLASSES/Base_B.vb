@@ -192,6 +192,24 @@ Namespace SDC.Framework
         Private backgroundColorPicker As PageBackgroundColorPicker
 
         ''' <summary>
+        ''' The page colour picker, for a derived page that lays out its own action row.
+        ''' </summary>
+        ''' <remarks>
+        ''' Every browse page gets a picker: it is constructed and attached here, and this class
+        ''' positions it for any page using the standard action row. A page like Roles_B, which
+        ''' builds its own row, then has a button on the form that nothing ever places - so it needs
+        ''' to reach the one it already has. Constructing a second would put two pickers on one form.
+        '''
+        ''' Exposed read only, and only to derived pages. Visibility stays the widget's own business:
+        ''' UpdateVisibility shows the button to an application administrator and nobody else.
+        ''' </remarks>
+        Protected ReadOnly Property PageColorPicker As PageBackgroundColorPicker
+            Get
+                Return backgroundColorPicker
+            End Get
+        End Property
+
+        ''' <summary>
         ''' The page background before anyone chooses one. Kept here as well because maintenance
         ''' pages reach it as FW_Base_B.DefaultPageBackground - one default, named in two places
         ''' but defined in one.
@@ -231,7 +249,19 @@ Namespace SDC.Framework
             accessProfile = profile
             accessTableName = If(tableName, String.Empty).Trim()
 
+            ' Built before the early return, because the picker belongs to every browse page rather
+            ' than to the default shell. It used to be created further down, so Roles_B - the one
+            ' page that builds its own shell - had no picker at all, and every guard written against
+            ' a Nothing picker skipped in silence.
+            backgroundColorPicker = New PageBackgroundColorPicker(Me, Me.GetType().Name)
+            backgroundColorPicker.Attach()
+
             If Not buildDefaultBrowseShell Then
+                ' The default shell does these two further down. A page building its own still needs
+                ' its stored colour applied and its button shown or hidden - and it places the
+                ' button itself, through the PageColorPicker property.
+                backgroundColorPicker.ApplyStored()
+                backgroundColorPicker.UpdateVisibility()
                 Return
             End If
 
@@ -360,9 +390,6 @@ Namespace SDC.Framework
             deleteButton = New Button() With {.Text = "Delete", .Size = New Size(90, 36), .Location = New Point(320, 112)}
             closeButton = New Button() With {.Text = "Close", .Size = New Size(90, 36), .Location = New Point(520, 112)}
             toggleQbeButton = New Button() With {.Text = QbeCollapsedText, .Size = New Size(110, 36), .Location = New Point(620, 112)}
-
-            backgroundColorPicker = New PageBackgroundColorPicker(Me, Me.GetType().Name)
-            backgroundColorPicker.Attach()
 
             qbeSplitContainer = New SplitContainer() With {
                 .Location = New Point(20, 162),
@@ -1337,20 +1364,33 @@ Namespace SDC.Framework
                 End If
             Next
 
+            ' The right-hand end of the row is built from Close inwards, each button placed off its
+            ' neighbour so nothing can overlap at any window width.
+            '
+            ' The picker sits immediately left of Close on every browse page. It used to sit three
+            ' places further in, past Show Deleted, which put it in a different spot depending on
+            ' which of those buttons a page happened to show.
+            Dim rowRightEdge As Integer = closeButton.Left
+
+            If backgroundColorPicker IsNot Nothing Then
+                ' Height taken from Close rather than assumed, so the two stay on one baseline
+                ' whatever a page sizes its action buttons at.
+                backgroundColorPicker.Button.Height = closeButton.Height
+                backgroundColorPicker.Button.Top = actionTop
+                backgroundColorPicker.Button.Left = rowRightEdge - backgroundColorPicker.Button.Width - actionGap
+                backgroundColorPicker.PositionPanel()
+
+                If backgroundColorPicker.Button.Visible Then
+                    rowRightEdge = backgroundColorPicker.Button.Left
+                End If
+            End If
+
             toggleQbeButton.Top = actionTop
-            toggleQbeButton.Left = closeButton.Left - toggleQbeButton.Width - actionGap
+            toggleQbeButton.Left = rowRightEdge - toggleQbeButton.Width - actionGap
 
             Dim deletedActionLeft = toggleQbeButton.Left - showDeletedButton.Width - actionGap
             showDeletedButton.Top = actionTop
             showDeletedButton.Left = deletedActionLeft
-
-            ' Positioned from its neighbour like everything else in this row, so it cannot overlap
-            ' or be overlapped at any window width. This is the slot the Enum button used to hold.
-            If backgroundColorPicker IsNot Nothing Then
-                backgroundColorPicker.Button.Top = actionTop
-                backgroundColorPicker.Button.Left = deletedActionLeft - backgroundColorPicker.Button.Width - actionGap
-                backgroundColorPicker.PositionPanel()
-            End If
             restoreButton.Top = actionTop
             restoreButton.Left = deletedActionLeft
             showNormalButton.Top = actionTop

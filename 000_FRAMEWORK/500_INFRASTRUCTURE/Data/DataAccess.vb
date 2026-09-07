@@ -7765,6 +7765,41 @@ Namespace SDC.Framework
             End Using
         End Function
 
+        ''' <summary>The ids of the roles flagged as Application Admin for one registration.</summary>
+        ''' <remarks>
+        ''' Keyed on Typ_AppAdmin rather than on the role's name. A role can be renamed, and a name
+        ''' match would then quietly stop hiding it - which is the failure that matters here, since
+        ''' it fails open.
+        '''
+        ''' Errors are not swallowed. A visibility rule that cannot be evaluated must not quietly
+        ''' return an empty set, because an empty set means nothing is hidden.
+        ''' </remarks>
+        Public Shared Function GetAppAdminRoleIds(registrationId As Integer) As HashSet(Of Integer)
+            Dim roleIds As New HashSet(Of Integer)()
+            If registrationId <= 0 Then
+                Return roleIds
+            End If
+
+            Using conn As New SqlConnection(ConnectionString)
+                conn.Open()
+                Using cmd As New SqlCommand(
+                    "SELECT ID FROM dbo.FW_Roles " &
+                    "WHERE RegistrationID = @RegistrationID AND ISNULL(Typ_AppAdmin, 0) = 1", conn)
+
+                    cmd.Parameters.AddWithValue("@RegistrationID", registrationId)
+                    Using reader = cmd.ExecuteReader()
+                        While reader.Read()
+                            If Not reader.IsDBNull(0) Then
+                                roleIds.Add(reader.GetInt32(0))
+                            End If
+                        End While
+                    End Using
+                End Using
+            End Using
+
+            Return roleIds
+        End Function
+
         Public Shared Function GetRoleTypAppAdmin(roleId As Integer) As Boolean
             Using conn As New SqlConnection(ConnectionString)
                 conn.Open()
