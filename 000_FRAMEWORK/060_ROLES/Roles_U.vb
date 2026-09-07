@@ -5,6 +5,7 @@ Imports System
 Imports System.Collections.Generic
 Imports System.Data
 Imports System.Drawing
+Imports System.Text.Json
 Imports System.Windows.Forms
 
 Namespace SDC.Framework
@@ -303,7 +304,7 @@ Namespace SDC.Framework
                 .Name = "FieldName",
                 .DataPropertyName = "FieldName",
                 .HeaderText = "Field",
-                .Width = 180,
+                .Width = 240,
                 .AutoSizeMode = DataGridViewAutoSizeColumnMode.None
             })
             For Each rfDef In New (String, String, Integer, Boolean)() {
@@ -327,6 +328,13 @@ Namespace SDC.Framework
                 rfCol.DefaultCellStyle.Alignment = DataGridViewContentAlignment.MiddleCenter
                 roleFieldsGrid.Columns.Add(rfCol)
             Next
+
+            ' Hidden rather than removed: the save path reads this cell, and the value still
+            ' matters - it is only the column that is not wanted on screen. Its 110px goes back to
+            ' the grid, where the Field column takes part of it and the Fill caption column the rest.
+            If roleFieldsGrid.Columns.Contains("CA_CanChange") Then
+                roleFieldsGrid.Columns("CA_CanChange").Visible = False
+            End If
             roleFieldsGrid.Columns.Add(New DataGridViewTextBoxColumn() With {
                 .Name = "OrderBy",
                 .DataPropertyName = "OrderBy",
@@ -358,10 +366,185 @@ Namespace SDC.Framework
             End Try
         End Sub
 
+        ' --- Role change auditing -------------------------------------------------------------
+        ' This page writes on every grid edit rather than on a Save button, so it cannot use
+        ' FW_Base_U's SaveRecordWithAudit. It writes the same BeforeSave/AfterSave pair through the
+        ' same shared writer, DataAccess.LogUpdateAudit, so the audit page's Before, After and
+        ' Delta panes work here exactly as they do for a standard maintenance page.
+        '
+        ' The "before" state is the snapshot last loaded or last written for that row, held in
+        ' memory and keyed by its id. Re-reading the row from the database would be the obvious
+        ' alternative and would cost a round trip on every checkbox click.
+        '
+        ' LogUpdateAudit swallows its own errors, so a failure to audit can never interrupt or
+        ' roll back the permission change it is recording.
+        Private ReadOnly roleDetailSnapshots As New Dictionary(Of Integer, String)()
+        Private ReadOnly roleFieldSnapshots As New Dictionary(Of Integer, String)()
+        Private roleSettingsSnapshot As String = String.Empty
+
+        Private Const AuditPageName As String = "Roles_U"
+        Private Const RoleDetailsTableName As String = "FW_RoleDetails"
+        Private Const RoleFieldsTableName As String = "FW_RoleFields"
+        Private Const RolesTableName As String = "FW_Roles"
+
+        Private Shared ReadOnly RoleDetailAuditColumns As String() = {
+            "DB_Table", "Table_Alias", "OverrideCaption", "Can_Create", "Can_Read", "Can_Update",
+            "Can_Delete", "Can_ViewAllRecords", "Can_ViewOnlyMyRecords", "Can_UseQBE"}
+
+        ' RoleDetailID and TableName come first because FW_RoleFields is the child of
+        ' FW_RoleDetails. Without them an audit row says Address1 changed without saying which
+        ' table's Address1, and the same field name exists on more than one table.
+        Private Shared ReadOnly RoleFieldAuditColumns As String() = {
+            "RoleDetailID", "TableName", "FieldName", "FriendlyFieldName", "OverrideCaption",
+            "CA_CanChange", "Can_Create", "Can_Read", "Can_Update", "IsActive", "IsRequired",
+            "IsUnique", "Make_Invisible", "OrderBy"}
+
+        ''' <summary>Serialises a flat map the same way FW_Base_U does, so the Delta pane can diff it.</summary>
+        Private Shared Function BuildAuditSnapshot(values As Dictionary(Of String, String)) As String
+            Dim snapshot As New SortedDictionary(Of String, String)(StringComparer.OrdinalIgnoreCase)
+            For Each pair In values
+                snapshot(pair.Key) = If(pair.Value, String.Empty)
+            Next
+            Return JsonSerializer.Serialize(snapshot)
+        End Function
+
+        Private Shared Function AuditText(value As Object) As String
+            If value Is Nothing OrElse value Is DBNull.Value Then
+                Return String.Empty
+            End If
+            Return Convert.ToString(value, Globalization.CultureInfo.InvariantCulture)
+        End Function
+
+        ''' <summary>Snapshot of a loaded row, used to seed the before state after a grid load.</summary>
+        Private Shared Function SnapshotFromRow(row As DataRow, columns As String()) As String
+            Dim values As New Dictionary(Of String, String)(StringComparer.OrdinalIgnoreCase)
+            If row IsNot Nothing Then
+                For Each columnName In columns
+                    If row.Table.Columns.Contains(columnName) Then
+                        values(columnName) = AuditText(row(columnName))
+                    End If
+                Next
+            End If
+            Return BuildAuditSnapshot(values)
+        End Function
+
+        Private Shared Function SnapshotRoleDetailValues(dbTable As String, tableAlias As String, overrideCaption As String,
+                                                         canCreate As Boolean, canRead As Boolean, canUpdate As Boolean,
+                                                         canDelete As Boolean, canViewAllRecords As Boolean,
+                                                         canViewOnlyMyRecords As Boolean, canUseQbe As Boolean) As String
+            Dim values As New Dictionary(Of String, String)(StringComparer.OrdinalIgnoreCase)
+            values("DB_Table") = If(dbTable, String.Empty)
+            values("Table_Alias") = If(tableAlias, String.Empty)
+            values("OverrideCaption") = If(overrideCaption, String.Empty)
+            values("Can_Create") = canCreate.ToString()
+            values("Can_Read") = canRead.ToString()
+            values("Can_Update") = canUpdate.ToString()
+            values("Can_Delete") = canDelete.ToString()
+            values("Can_ViewAllRecords") = canViewAllRecords.ToString()
+            values("Can_ViewOnlyMyRecords") = canViewOnlyMyRecords.ToString()
+            values("Can_UseQBE") = canUseQbe.ToString()
+            Return BuildAuditSnapshot(values)
+        End Function
+
+        ''' <summary>
+        ''' The after state of a role field. FieldName is included because the before state - read
+        ''' from the loaded row - carries it, and a key present on one side only reads as a change.
+        ''' </summary>
+        Private Shared Function SnapshotRoleFieldValues(roleDetailId As String, tableName As String,
+                                                        fieldName As String, friendlyFieldName As String, overrideCaption As String,
+                                                        caCanChange As Object, canCreate As Boolean, canRead As Boolean,
+                                                        canUpdate As Boolean, isActive As Boolean, isRequired As Boolean,
+                                                        isUnique As Boolean, makeInvisible As Boolean,
+                                                        orderByValue As Object) As String
+            Dim values As New Dictionary(Of String, String)(StringComparer.OrdinalIgnoreCase)
+            values("RoleDetailID") = If(roleDetailId, String.Empty)
+            values("TableName") = If(tableName, String.Empty)
+            values("FieldName") = If(fieldName, String.Empty)
+            values("FriendlyFieldName") = If(friendlyFieldName, String.Empty)
+            values("OverrideCaption") = If(overrideCaption, String.Empty)
+            values("CA_CanChange") = AuditText(caCanChange)
+            values("Can_Create") = canCreate.ToString()
+            values("Can_Read") = canRead.ToString()
+            values("Can_Update") = canUpdate.ToString()
+            values("IsActive") = isActive.ToString()
+            values("IsRequired") = isRequired.ToString()
+            values("IsUnique") = isUnique.ToString()
+            values("Make_Invisible") = makeInvisible.ToString()
+            values("OrderBy") = AuditText(orderByValue)
+            Return BuildAuditSnapshot(values)
+        End Function
+
+        ''' <summary>Snapshot of the role's own settings.</summary>
+        ''' <param name="roleName">
+        ''' Passed in rather than read from roleNameComboBox. That combo is bound, and until its
+        ''' DisplayMember has resolved its .Text returns the bound row object's type name - so
+        ''' seeding the before state from it recorded "System.Data.DataRowView" as the old role
+        ''' name, and the Delta pane then reported a rename that never happened.
+        ''' </param>
+        Private Function CaptureRoleSettingsSnapshot(roleName As String) As String
+            Dim values As New Dictionary(Of String, String)(StringComparer.OrdinalIgnoreCase)
+            values("RoleName") = If(roleName, String.Empty).Trim()
+            values("DisplayOrder") = displayOrderTextBox.Text.Trim()
+            values("IsActive") = isActiveCheckBox.Checked.ToString()
+            values("Typ_ApplicationAdmin") = typApplicationAdminCheckBox.Checked.ToString()
+            values("Typ_CompanyAdmin") = typCompanyAdminCheckBox.Checked.ToString()
+            Return BuildAuditSnapshot(values)
+        End Function
+
+        Private Sub LogRoleAudit(tableName As String, operationType As String, phase As String,
+                                 recordKey As String, snapshotJson As String,
+                                 Optional saveSucceeded As Boolean? = Nothing)
+            DataAccess.LogUpdateAudit(AuditPageName,
+                                      tableName,
+                                      operationType,
+                                      phase,
+                                      recordKey,
+                                      snapshotJson,
+                                      saveSucceeded,
+                                      _registrationId)
+        End Sub
+
+        ''' <summary>
+        ''' True when the row is already in the state being saved, so both the write and its audit
+        ''' pair can be skipped.
+        ''' </summary>
+        ''' <remarks>
+        ''' This page persists a row on selection and on commit whether or not anything changed,
+        ''' which produced database updates that set a row to what it already held, and audit pairs
+        ''' whose Before and After were byte for byte identical.
+        '''
+        ''' An empty before state is never treated as unchanged: it means the row was not seeded
+        ''' rather than that it matches, and the write must go ahead.
+        ''' </remarks>
+        Private Shared Function NothingChanged(beforeSnapshot As String, afterSnapshot As String) As Boolean
+            If String.IsNullOrEmpty(beforeSnapshot) Then
+                Return False
+            End If
+            Return String.Equals(beforeSnapshot, afterSnapshot, StringComparison.Ordinal)
+        End Function
+
+        Private Function CachedSnapshot(cache As Dictionary(Of Integer, String), id As Integer) As String
+            Dim snapshot As String = Nothing
+            If cache.TryGetValue(id, snapshot) Then
+                Return snapshot
+            End If
+            Return String.Empty
+        End Function
+
         Private Sub LoadRightGrid()
             Try
                 Dim table = DataAccess.GetRoleDetailsForRole(_roleId, _registrationId)
                 rightGrid.DataSource = table
+
+                ' A freshly loaded row is the before state for whatever is edited next.
+                roleDetailSnapshots.Clear()
+                If table IsNot Nothing AndAlso table.Columns.Contains("ID") Then
+                    For Each detailRow As DataRow In table.Rows
+                        If detailRow("ID") IsNot DBNull.Value Then
+                            roleDetailSnapshots(CInt(detailRow("ID"))) = SnapshotFromRow(detailRow, RoleDetailAuditColumns)
+                        End If
+                    Next
+                End If
             Catch ex As Exception
                 MessageBox.Show("Error loading role permissions: " & ex.Message, "Error")
             End Try
@@ -399,6 +582,10 @@ Namespace SDC.Framework
                 End If
 
                 If isNewTable Then
+                    ' The before state is deliberately empty: the role had no permission row for
+                    ' this table at all, so there is nothing to show on the Before pane.
+                    LogRoleAudit(RoleDetailsTableName, "Create", "BeforeSave", dbTable, String.Empty)
+
                     ' Add the detail and initial fields atomically.
                     Dim newId = DataAccess.AddRoleTableWithFields(_roleId,
                                                                   _registrationId,
@@ -412,6 +599,12 @@ Namespace SDC.Framework
                     End If
                     LoadRightGrid()
                     
+                    ' Logged after the reload so the after state is the row as the database now
+                    ' holds it, rather than what this page asked for.
+                    Dim grantKey = newId.ToString(Globalization.CultureInfo.InvariantCulture)
+                    LogRoleAudit(RoleDetailsTableName, "Create", "AfterSave", grantKey,
+                                 CachedSnapshot(roleDetailSnapshots, newId), True)
+
                     ' Reload the role fields table so the selection change handler can filter properly
                     LoadRoleFieldsGrid()
                     
@@ -475,6 +668,10 @@ Namespace SDC.Framework
 
             If TypeOf rightGrid.CurrentCell.OwningColumn Is DataGridViewCheckBoxColumn Then
                 rightGrid.CommitEdit(DataGridViewDataErrorContexts.Commit)
+
+                ' CommitEdit alone does not leave edit mode, so CellEndEdit - which owns the write -
+                ' did not run until the cell lost focus. A tick is meant to save immediately.
+                rightGrid.EndEdit()
             End If
         End Sub
 
@@ -547,7 +744,38 @@ Namespace SDC.Framework
                 Dim canViewOnlyMyRecords = GetGridBoolean(row, "Can_ViewOnlyMyRecords")
                 Dim canUseQBE = GetGridBoolean(row, "Can_UseQBE")
 
-                DataAccess.UpdateRoleDetails(detailId, tableAlias, tableCaption, canCreate, canRead, canUpdate, canDelete, canViewAllRecords, canViewOnlyMyRecords, canUseQBE, propagateCaptionOverride)
+                ' Read from the bound row rather than a grid cell. DB_Table is in the DataTable but
+                ' has no column in the grid, so the cell lookup returned nothing and every After
+                ' snapshot recorded an empty table name - which the Delta pane then reported as the
+                ' table having been cleared.
+                Dim dbTableName As String = String.Empty
+                Dim boundDetail = TryCast(row.DataBoundItem, DataRowView)
+                If boundDetail IsNot Nothing AndAlso boundDetail.Row IsNot Nothing AndAlso
+                   boundDetail.Row.Table.Columns.Contains("DB_Table") Then
+                    dbTableName = AuditText(boundDetail("DB_Table"))
+                End If
+
+                Dim detailKey = detailId.ToString(Globalization.CultureInfo.InvariantCulture)
+                Dim detailAfter = SnapshotRoleDetailValues(dbTableName, tableAlias, tableCaption,
+                                                           canCreate, canRead, canUpdate, canDelete,
+                                                           canViewAllRecords, canViewOnlyMyRecords, canUseQBE)
+                Dim detailBefore = CachedSnapshot(roleDetailSnapshots, detailId)
+                If NothingChanged(detailBefore, detailAfter) Then
+                    Return
+                End If
+
+                LogRoleAudit(RoleDetailsTableName, "Update", "BeforeSave", detailKey, detailBefore)
+
+                Dim detailSaved = False
+                Try
+                    DataAccess.UpdateRoleDetails(detailId, tableAlias, tableCaption, canCreate, canRead, canUpdate, canDelete, canViewAllRecords, canViewOnlyMyRecords, canUseQBE, propagateCaptionOverride)
+                    detailSaved = True
+                Finally
+                    LogRoleAudit(RoleDetailsTableName, "Update", "AfterSave", detailKey, detailAfter, detailSaved)
+                    If detailSaved Then
+                        roleDetailSnapshots(detailId) = detailAfter
+                    End If
+                End Try
             Catch ex As Exception
                 MessageBox.Show("Error updating permission: " & ex.Message, "Error")
             End Try
@@ -570,7 +798,19 @@ Namespace SDC.Framework
                     suppressRightGridPersistence = True
                     suppressRoleFieldPersistence = True
                     Try
-                        DataAccess.DeleteRoleDetails(detailId)
+                        Dim removedKey = detailId.ToString(Globalization.CultureInfo.InvariantCulture)
+                        LogRoleAudit(RoleDetailsTableName, "Delete", "BeforeSave", removedKey,
+                                     CachedSnapshot(roleDetailSnapshots, detailId))
+
+                        Dim removeSaved = False
+                        Try
+                            DataAccess.DeleteRoleDetails(detailId)
+                            removeSaved = True
+                        Finally
+                            ' Nothing is left, so the after state is empty by design.
+                            LogRoleAudit(RoleDetailsTableName, "Delete", "AfterSave", removedKey, String.Empty, removeSaved)
+                        End Try
+
                         LoadRightGrid()
                         LoadRoleFieldsGrid()
                     Finally
@@ -601,7 +841,26 @@ Namespace SDC.Framework
                 Dim updatedBy = If(SessionState.Current.HasValue, SessionState.Current.Value.UserID, 0)
 
                 Dim inserted, deleted As Integer
-                Dim syncResult = DataAccess.SyncRoleFieldsWithSchema(schemaId, dbTable, _registrationId, _roleId, updatedBy, inserted, deleted)
+
+                ' A sync inserts and deletes FW_RoleFields rows in bulk, so what is worth recording
+                ' is how many of each, not the state of any one row.
+                Dim syncKey = schemaId.ToString(Globalization.CultureInfo.InvariantCulture)
+                Dim syncBefore As New Dictionary(Of String, String)(StringComparer.OrdinalIgnoreCase)
+                syncBefore("DB_Table") = dbTable
+                syncBefore("SchemaID") = syncKey
+                LogRoleAudit(RoleFieldsTableName, "Sync", "BeforeSave", syncKey, BuildAuditSnapshot(syncBefore))
+
+                Dim syncResult = False
+                Try
+                    syncResult = DataAccess.SyncRoleFieldsWithSchema(schemaId, dbTable, _registrationId, _roleId, updatedBy, inserted, deleted)
+                Finally
+                    Dim syncAfter As New Dictionary(Of String, String)(StringComparer.OrdinalIgnoreCase)
+                    syncAfter("DB_Table") = dbTable
+                    syncAfter("SchemaID") = syncKey
+                    syncAfter("FieldsInserted") = inserted.ToString(Globalization.CultureInfo.InvariantCulture)
+                    syncAfter("FieldsDeleted") = deleted.ToString(Globalization.CultureInfo.InvariantCulture)
+                    LogRoleAudit(RoleFieldsTableName, "Sync", "AfterSave", syncKey, BuildAuditSnapshot(syncAfter), syncResult)
+                End Try
 
                 ' Always refresh the role fields grid to reflect changes
                 LoadRoleFieldsGrid()
@@ -678,6 +937,7 @@ Namespace SDC.Framework
                 isActiveCheckBox.Checked = DataAccess.GetRoleIsActive(_roleId)
                 typApplicationAdminCheckBox.Checked = DataAccess.GetRoleTypAppAdmin(_roleId)
                 typCompanyAdminCheckBox.Checked = DataAccess.GetRoleTypCompanyAdmin(_roleId)
+                roleSettingsSnapshot = CaptureRoleSettingsSnapshot(_roleName)
             Catch ex As Exception
                 displayOrderTextBox.Text = ""
                 displayOrderTextBox.BackColor = Color.FromArgb(255, 255, 200)
@@ -702,9 +962,28 @@ Namespace SDC.Framework
                     Return
                 End If
 
-                ' Update role name, display order, active status and type flags
-                DataAccess.UpdateRoleNameAndDisplayOrder(_roleId, newRoleName, newDisplayOrder, isActiveCheckBox.Checked,
-                    typApplicationAdminCheckBox.Checked, typCompanyAdminCheckBox.Checked)
+                Dim roleKey = _roleId.ToString(Globalization.CultureInfo.InvariantCulture)
+                Dim roleAfter = CaptureRoleSettingsSnapshot(newRoleName)
+                If NothingChanged(roleSettingsSnapshot, roleAfter) Then
+                    _roleName = newRoleName
+                    Return
+                End If
+
+                LogRoleAudit(RolesTableName, "Update", "BeforeSave", roleKey, roleSettingsSnapshot)
+
+                Dim roleSaved = False
+                Try
+                    ' Update role name, display order, active status and type flags
+                    DataAccess.UpdateRoleNameAndDisplayOrder(_roleId, newRoleName, newDisplayOrder, isActiveCheckBox.Checked,
+                        typApplicationAdminCheckBox.Checked, typCompanyAdminCheckBox.Checked)
+                    roleSaved = True
+                Finally
+                    LogRoleAudit(RolesTableName, "Update", "AfterSave", roleKey, roleAfter, roleSaved)
+                    If roleSaved Then
+                        roleSettingsSnapshot = roleAfter
+                    End If
+                End Try
+
                 _roleName = newRoleName
                 Me.Text = BuildRolesTitle()
             Catch ex As Exception
@@ -752,6 +1031,15 @@ Namespace SDC.Framework
                 roleFieldsGrid.DataSource = Nothing
                 _roleFieldsTable = DataAccess.GetRoleFieldsForRole(_roleId)
                 _roleFieldsTable.DefaultView.RowFilter = String.Empty
+
+                roleFieldSnapshots.Clear()
+                If _roleFieldsTable.Columns.Contains("ID") Then
+                    For Each fieldRow As DataRow In _roleFieldsTable.Rows
+                        If fieldRow("ID") IsNot DBNull.Value Then
+                            roleFieldSnapshots(CInt(fieldRow("ID"))) = SnapshotFromRow(fieldRow, RoleFieldAuditColumns)
+                        End If
+                    Next
+                End If
                 ApplySelectedRoleDetailFieldFilter()
             Catch ex As Exception
                 MessageBox.Show("Error loading role fields: " & ex.Message, "Error")
@@ -863,13 +1151,27 @@ Namespace SDC.Framework
             roleFieldsGrid.InvalidateCell(row.Cells("IsActive"))
         End Sub
 
+        ''' <summary>
+        ''' Commits a checkbox the moment it is clicked, so the row is written immediately.
+        ''' </summary>
+        ''' <remarks>
+        ''' Any checkbox column qualifies, which is how the right grid has always decided this. The
+        ''' named list this replaced covered six of the grid's eight checkbox columns and left
+        ''' IsActive out, so ticking Active did not save until the cell lost focus. A list of column
+        ''' names has to be updated every time a column is added; asking what kind of column it is
+        ''' does not.
+        '''
+        ''' CommitEdit pushes the value into the data source but stays in edit mode, so CellEndEdit -
+        ''' which owns the database write - would not run. EndEdit is what closes that gap.
+        ''' </remarks>
         Private Sub RoleFieldsGrid_CurrentCellDirtyStateChanged(sender As Object, e As EventArgs)
-            If roleFieldsGrid.IsCurrentCellDirty Then
-                Dim colName = roleFieldsGrid.CurrentCell?.OwningColumn?.Name
-                Dim triggerColumns = New HashSet(Of String) From {"IsRequired", "IsUnique", "Make_Invisible", "Can_Create", "Can_Read", "Can_Update"}
-                If colName IsNot Nothing AndAlso triggerColumns.Contains(colName) Then
-                    roleFieldsGrid.CommitEdit(DataGridViewDataErrorContexts.Commit)
-                End If
+            If Not roleFieldsGrid.IsCurrentCellDirty OrElse roleFieldsGrid.CurrentCell Is Nothing Then
+                Return
+            End If
+
+            If TypeOf roleFieldsGrid.CurrentCell.OwningColumn Is DataGridViewCheckBoxColumn Then
+                roleFieldsGrid.CommitEdit(DataGridViewDataErrorContexts.Commit)
+                roleFieldsGrid.EndEdit()
             End If
         End Sub
 
@@ -917,7 +1219,36 @@ Namespace SDC.Framework
                 End If
 
                 Dim propagateCaptionOverride = String.Equals(editedColName, "OverrideCaption", StringComparison.OrdinalIgnoreCase)
-                DataAccess.UpdateRoleField(id, caCanChange, canCreate, canRead, canUpdate, isActive, isRequired, isUnique, makeInvisible, orderByVal, overrideCaption, friendlyFieldName, updatedBy, propagateCaptionOverride)
+                Dim fieldKey = id.ToString(Globalization.CultureInfo.InvariantCulture)
+                Dim auditFieldName As String = String.Empty
+                Dim auditRoleDetailId As String = String.Empty
+                Dim auditFieldTable As String = String.Empty
+                If dataRow IsNot Nothing Then
+                    If dataRow.Table.Columns.Contains("FieldName") Then auditFieldName = AuditText(dataRow("FieldName"))
+                    If dataRow.Table.Columns.Contains("RoleDetailID") Then auditRoleDetailId = AuditText(dataRow("RoleDetailID"))
+                    If dataRow.Table.Columns.Contains("TableName") Then auditFieldTable = AuditText(dataRow("TableName"))
+                End If
+                Dim fieldAfter = SnapshotRoleFieldValues(auditRoleDetailId, auditFieldTable,
+                                                         auditFieldName, friendlyFieldName, overrideCaption, caCanChange,
+                                                         canCreate, canRead, canUpdate, isActive,
+                                                         isRequired, isUnique, makeInvisible, orderByVal)
+                Dim fieldBefore = CachedSnapshot(roleFieldSnapshots, id)
+                If NothingChanged(fieldBefore, fieldAfter) Then
+                    Return
+                End If
+
+                LogRoleAudit(RoleFieldsTableName, "Update", "BeforeSave", fieldKey, fieldBefore)
+
+                Dim fieldSaved = False
+                Try
+                    DataAccess.UpdateRoleField(id, caCanChange, canCreate, canRead, canUpdate, isActive, isRequired, isUnique, makeInvisible, orderByVal, overrideCaption, friendlyFieldName, updatedBy, propagateCaptionOverride)
+                    fieldSaved = True
+                Finally
+                    LogRoleAudit(RoleFieldsTableName, "Update", "AfterSave", fieldKey, fieldAfter, fieldSaved)
+                    If fieldSaved Then
+                        roleFieldSnapshots(id) = fieldAfter
+                    End If
+                End Try
             Catch ex As Exception
                 MessageBox.Show("Error updating field setting: " & ex.Message, "Error")
             End Try
