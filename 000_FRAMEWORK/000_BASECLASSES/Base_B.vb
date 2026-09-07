@@ -1535,7 +1535,29 @@ Namespace SDC.Framework
             End If
         End Sub
 
+        ''' <summary>
+        ''' Lays out the default browse shell.
+        ''' </summary>
+        ''' <remarks>
+        ''' Does nothing for a page that built its own. Constructed with buildDefaultBrowseShell as
+        ''' False, this class returns before creating the QBE panel, the grid, the layout toolbar or
+        ''' the action row - so laying them out would be laying out controls that were never made.
+        ''' Roles_B is the only such page today.
+        '''
+        ''' The route in is not a code path but a database one: HotFields_OpenedOrClosed calls this,
+        ''' and whether a page has that button is a flag on its FW_Pages row. Without this guard the
+        ''' page falls over on an UPDATE, which no build, test or review would have caught.
+        '''
+        ''' Returning here stops the fault. It does not make Hot Fields work on such a page - the
+        ''' button and the strip would both be positioned by nothing, because the page places its
+        ''' own controls. Leave UseHotFields off for a page that builds its own shell until someone
+        ''' does the work of placing them there.
+        ''' </remarks>
         Private Sub LayoutQbeSection()
+            If qbeSplitContainer Is Nothing OrElse layoutToolbarPanel Is Nothing Then
+                Return
+            End If
+
             Dim margin As Integer = 20
 
             ' Everything on this page is measured from contentLeft and contentWidth, so reserving
