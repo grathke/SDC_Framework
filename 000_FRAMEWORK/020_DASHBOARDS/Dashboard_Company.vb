@@ -82,7 +82,7 @@ Namespace SDC.Framework
                 .UseVisualStyleBackColor = False,
                 .FlatStyle = FlatStyle.Flat,
                 .Font = New Font("Segoe UI", 13.0F, FontStyle.Regular),
-                .Image = SystemIcons.Information.ToBitmap(),
+                .Image = IconScaler.Load("Color_Shield.png", DashboardIconSize, SystemIcons.Application.ToBitmap()),
                 .TextImageRelation = TextImageRelation.ImageAboveText,
                 .ImageAlign = ContentAlignment.TopCenter,
                 .TextAlign = ContentAlignment.BottomCenter,
