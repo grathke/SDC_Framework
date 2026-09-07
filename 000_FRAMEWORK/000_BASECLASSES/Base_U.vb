@@ -53,6 +53,44 @@ Namespace SDC.Framework
         Protected ReadOnly okButton As Button
         Protected ReadOnly cancelActionButton As Button
         Private tabOrderToggleButton As Button
+
+        ''' <summary>
+        ''' Lines the header buttons up with Cancel, so the page has one right-hand edge.
+        ''' </summary>
+        ''' <remarks>
+        ''' HelpDeskLauncher places its button against the window, which is right for a page whose
+        ''' content runs to the window. A maintenance page's content ends at its Cancel button, so
+        ''' measuring from the window left the button floating past everything else on the form.
+        '''
+        ''' Tab Order moves with it rather than staying where it was. It has always been positioned
+        ''' relative to the Help Desk button - through HelpDeskLauncher.ReservedWidth - and the two
+        ''' are a pair; leaving one behind would open a gap where the other used to be.
+        '''
+        ''' Run from OnShown because the derived page places Cancel in its own constructor, after
+        ''' this class has finished building. Reading it any earlier reads where it used to be.
+        ''' </remarks>
+        Protected Overrides Sub OnShown(e As EventArgs)
+            MyBase.OnShown(e)
+            AlignHeaderButtonsToCancel()
+        End Sub
+
+        Private Sub AlignHeaderButtonsToCancel()
+            If cancelActionButton Is Nothing Then
+                Return
+            End If
+
+            Dim matches = Controls.Find(HelpDeskLauncher.ButtonName, True)
+            If matches.Length = 0 Then
+                Return
+            End If
+
+            Dim helpDeskButton = matches(0)
+            helpDeskButton.Left = Math.Max(0, cancelActionButton.Right - helpDeskButton.Width)
+
+            If tabOrderToggleButton IsNot Nothing AndAlso tabOrderToggleButton.Visible Then
+                tabOrderToggleButton.Left = Math.Max(0, helpDeskButton.Left - tabOrderToggleButton.Width - 12)
+            End If
+        End Sub
         Private tabOrderPanel As Panel
         Private tabOrderList As CheckedListBox
         Private tabOrderUpButton As Button
