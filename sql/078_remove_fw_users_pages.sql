@@ -24,6 +24,15 @@
     number is the signal that a page name here is wrong.
 */
 
+/*
+    QUOTED_IDENTIFIER and ANSI_NULLS are set explicitly, not left to the client. sqlcmd defaults
+    QUOTED_IDENTIFIER OFF, and FW_TableLayouts carries an index that refuses any DELETE under that
+    setting - so this script ran, deleted from two tables, hit that error on the third and rolled
+    the whole thing back. It cost nothing because the transaction did its job, but the failure is
+    invisible from SSMS, which defaults the option ON.
+*/
+SET QUOTED_IDENTIFIER ON;
+SET ANSI_NULLS ON;
 SET NOCOUNT ON;
 SET XACT_ABORT ON;
 
