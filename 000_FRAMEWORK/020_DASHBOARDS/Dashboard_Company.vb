@@ -15,7 +15,6 @@ Namespace SDC.Framework
         Private ReadOnly topStripLabel As Label
         Private ReadOnly headerLabel As Label
         Private ReadOnly rolesButton As DashboardIconButton
-        Private ReadOnly userAdminButton As DashboardIconButton
         Private ReadOnly userDiagnosticButton As DashboardIconButton
         Private iconDragController As DashboardIconDragController
         Private iconImageController As IconImageController
@@ -92,26 +91,6 @@ Namespace SDC.Framework
             rolesButton.FlatAppearance.MouseOverBackColor = Color.Transparent
             rolesButton.FlatAppearance.MouseDownBackColor = Color.Transparent
 
-            userAdminButton = New DashboardIconButton() With {
-                .Name = "ActionKey_UserAdmin",
-                .PageName = "Users_AppAdmin_B",
-                .Text = "User Admin",
-                .Location = DashboardGridLayout.CellLocation(1, 2),
-                .Size = New Size(DashboardGridLayout.IconWidth, DashboardGridLayout.IconHeight),
-                .BackColor = Color.Transparent,
-                .UseVisualStyleBackColor = False,
-                .FlatStyle = FlatStyle.Flat,
-                .Font = New Font("Segoe UI", 13.0F, FontStyle.Regular),
-                .Image = IconScaler.Load("Color_Favorites.png", DashboardIconSize, SystemIcons.Application.ToBitmap()),
-                .TextImageRelation = TextImageRelation.ImageAboveText,
-                .ImageAlign = ContentAlignment.TopCenter,
-                .TextAlign = ContentAlignment.BottomCenter,
-                .TabStop = False
-            }
-            userAdminButton.FlatAppearance.BorderSize = 0
-            userAdminButton.FlatAppearance.MouseOverBackColor = Color.Transparent
-            userAdminButton.FlatAppearance.MouseDownBackColor = Color.Transparent
-
             userDiagnosticButton = New DashboardIconButton() With {
                 .Name = "ActionKey_FW_UserAccessExplanation_B",
                 .PageName = "FW_UserAccessExplanation_B",
@@ -137,9 +116,6 @@ Namespace SDC.Framework
             AddHandler rolesButton.MouseEnter, AddressOf IconButton_MouseEnter
             AddHandler rolesButton.MouseLeave, AddressOf IconButton_MouseLeave
             AddHandler rolesButton.Click, AddressOf RolesButton_Click
-            AddHandler userAdminButton.MouseEnter, AddressOf IconButton_MouseEnter
-            AddHandler userAdminButton.MouseLeave, AddressOf IconButton_MouseLeave
-            AddHandler userAdminButton.Click, AddressOf UserAdminButton_Click
             AddHandler userDiagnosticButton.MouseEnter, AddressOf IconButton_MouseEnter
             AddHandler userDiagnosticButton.MouseLeave, AddressOf IconButton_MouseLeave
             AddHandler userDiagnosticButton.Click, AddressOf UserDiagnosticButton_Click
@@ -149,7 +125,6 @@ Namespace SDC.Framework
             Me.Controls.Add(closeIconButton)
             Me.Controls.Add(headerLabel)
             Me.Controls.Add(rolesButton)
-            Me.Controls.Add(userAdminButton)
             Me.Controls.Add(userDiagnosticButton)
         End Sub
 
@@ -179,13 +154,11 @@ Namespace SDC.Framework
             ActionCaptionOverrides.Apply(Me)
 
             rolesButton.Enabled = True
-            userAdminButton.Enabled = True
             userDiagnosticButton.Enabled = True
         End Sub
 
         Private Sub Dashboard_Company_Resize(sender As Object, e As EventArgs)
             rolesButton.Top = DashboardGridLayout.CellTop(1)
-            userAdminButton.Top = rolesButton.Top
             userDiagnosticButton.Top = rolesButton.Top
 
             ' Last, so a dragged arrangement is laid back over the cells this file pins.
@@ -202,13 +175,6 @@ Namespace SDC.Framework
             If ownerMenu IsNot Nothing Then
                 MenuFormInitializer.Configure(ownerMenu, currentUser, True)
             End If
-        End Sub
-
-        Private Sub UserAdminButton_Click(sender As Object, e As EventArgs)
-            ResetIconButtonVisuals()
-            Using frm As New Users_AppAdmin_B(accessProfile)
-                frm.ShowDialog(Me)
-            End Using
         End Sub
 
         Private Sub UserDiagnosticButton_Click(sender As Object, e As EventArgs)
@@ -242,8 +208,6 @@ Namespace SDC.Framework
         Private Sub ResetIconButtonVisuals()
             rolesButton.BackColor = Color.Transparent
             rolesButton.FlatAppearance.BorderSize = 0
-            userAdminButton.BackColor = Color.Transparent
-            userAdminButton.FlatAppearance.BorderSize = 0
             userDiagnosticButton.BackColor = Color.Transparent
             userDiagnosticButton.FlatAppearance.BorderSize = 0
         End Sub

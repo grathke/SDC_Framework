@@ -15,7 +15,6 @@ Namespace SDC.Framework
         Private ReadOnly topStripLabel As Label
         Private ReadOnly headerLabel As Label
         Private ReadOnly rolesButton As DashboardIconButton
-        Private ReadOnly userAdminButton As DashboardIconButton
         Private ReadOnly registrationButton As DashboardIconButton
         Private ReadOnly auditHistoryButton As DashboardIconButton
         Private ReadOnly helpDeskButton As DashboardIconButton
@@ -24,7 +23,6 @@ Namespace SDC.Framework
         Private ReadOnly databaseConfigButton As DashboardIconButton
         Private ReadOnly companyDashboardButton As DashboardIconButton
         Private ReadOnly closeIconButton As Button
-        Private ReadOnly generatedUserX_BButton As DashboardIconButton
         Private ReadOnly generatedFW_UserAccessExplanation_BButton As DashboardIconButton
         Private iconDragController As DashboardIconDragController
         Private iconImageController As IconImageController
@@ -94,26 +92,6 @@ Namespace SDC.Framework
             rolesButton.FlatAppearance.BorderSize = 0
             rolesButton.FlatAppearance.MouseOverBackColor = Color.Transparent
             rolesButton.FlatAppearance.MouseDownBackColor = Color.Transparent
-
-            userAdminButton = New DashboardIconButton() With {
-                .Name = "ActionKey_UserAdmin",
-                .PageName = "Users_AppAdmin_B",
-                .Text = "User Admin",
-                .Location = DashboardGridLayout.CellLocation(1, 2),
-                .Size = New Size(DashboardGridLayout.IconWidth, DashboardGridLayout.IconHeight),
-                .BackColor = Color.Transparent,
-                .UseVisualStyleBackColor = False,
-                .FlatStyle = FlatStyle.Flat,
-                .Font = New Font("Segoe UI", 13.0F, FontStyle.Regular),
-                .Image = LoadDashboardIcon("Color_Favorites.png", SystemIcons.Application.ToBitmap()),
-                .TextImageRelation = TextImageRelation.ImageAboveText,
-                .ImageAlign = ContentAlignment.TopCenter,
-                .TextAlign = ContentAlignment.BottomCenter,
-                .TabStop = False
-            }
-            userAdminButton.FlatAppearance.BorderSize = 0
-            userAdminButton.FlatAppearance.MouseOverBackColor = Color.Transparent
-            userAdminButton.FlatAppearance.MouseDownBackColor = Color.Transparent
 
             registrationButton = New DashboardIconButton() With {
                 .Name = "ActionKey_Registration",
@@ -273,25 +251,6 @@ Namespace SDC.Framework
             generatedFW_UserAccessExplanation_BButton.FlatAppearance.MouseDownBackColor = Color.Transparent
 
 
-            generatedUserX_BButton = New DashboardIconButton() With {
-                .Name = "ActionKey_UserX_B",
-                .PageName = "UserX_B",
-                .Text = "UserX",
-                .Location = DashboardGridLayout.CellLocation(1, 5),
-                .Size = New Size(DashboardGridLayout.IconWidth, DashboardGridLayout.IconHeight),
-                .BackColor = Color.Transparent,
-                .UseVisualStyleBackColor = False,
-                .FlatStyle = FlatStyle.Flat,
-                .Font = New Font("Segoe UI", 13.0F, FontStyle.Regular),
-                .Image = LoadDashboardIcon("Color_OK.png", SystemIcons.Application.ToBitmap()),
-                .TextImageRelation = TextImageRelation.ImageAboveText,
-                .ImageAlign = ContentAlignment.TopCenter,
-                .TextAlign = ContentAlignment.BottomCenter,
-                .TabStop = False
-            }
-            generatedUserX_BButton.FlatAppearance.BorderSize = 0
-            generatedUserX_BButton.FlatAppearance.MouseOverBackColor = Color.Transparent
-            generatedUserX_BButton.FlatAppearance.MouseDownBackColor = Color.Transparent
             AddHandler Me.Load, AddressOf Dashboard_Application_Load
             AddHandler Me.Resize, AddressOf Dashboard_Application_Resize
             AddHandler rolesButton.MouseEnter, AddressOf IconButton_MouseEnter
@@ -303,9 +262,6 @@ Namespace SDC.Framework
             AddHandler companyDashboardButton.MouseEnter, AddressOf IconButton_MouseEnter
             AddHandler companyDashboardButton.MouseLeave, AddressOf IconButton_MouseLeave
             AddHandler companyDashboardButton.Click, AddressOf CompanyDashboardButton_Click
-            AddHandler userAdminButton.MouseEnter, AddressOf IconButton_MouseEnter
-            AddHandler userAdminButton.MouseLeave, AddressOf IconButton_MouseLeave
-            AddHandler userAdminButton.Click, AddressOf UserAdminButton_Click
             AddHandler registrationButton.MouseEnter, AddressOf IconButton_MouseEnter
             AddHandler registrationButton.MouseLeave, AddressOf IconButton_MouseLeave
             AddHandler registrationButton.Click, AddressOf RegistrationButton_Click
@@ -324,19 +280,14 @@ Namespace SDC.Framework
             AddHandler generatedFW_UserAccessExplanation_BButton.MouseEnter, AddressOf IconButton_MouseEnter
             AddHandler generatedFW_UserAccessExplanation_BButton.MouseLeave, AddressOf IconButton_MouseLeave
             AddHandler generatedFW_UserAccessExplanation_BButton.Click, AddressOf GeneratedFW_UserAccessExplanation_BButton_Click
-            AddHandler generatedUserX_BButton.MouseEnter, AddressOf IconButton_MouseEnter
-            AddHandler generatedUserX_BButton.MouseLeave, AddressOf IconButton_MouseLeave
-            AddHandler generatedUserX_BButton.Click, AddressOf GeneratedUserX_BButton_Click
             AddHandler closeIconButton.Click, AddressOf CloseButton_Click
             Me.Controls.Add(generatedFW_UserAccessExplanation_BButton)
-            Me.Controls.Add(generatedUserX_BButton)
             Me.Controls.Add(topStripLabel)
             Me.Controls.Add(closeIconButton)
             Me.Controls.Add(headerLabel)
             Me.Controls.Add(databaseConfigButton)
             Me.Controls.Add(companyDashboardButton)
             Me.Controls.Add(rolesButton)
-            Me.Controls.Add(userAdminButton)
             Me.Controls.Add(registrationButton)
             Me.Controls.Add(auditHistoryButton)
             Me.Controls.Add(helpDeskButton)
@@ -377,7 +328,6 @@ Namespace SDC.Framework
             ActionCaptionOverrides.Apply(Me)
 
             rolesButton.Enabled = True
-            userAdminButton.Enabled = True
             registrationButton.Enabled = True
             auditHistoryButton.Enabled = True
             helpDeskButton.Enabled = True
@@ -387,11 +337,8 @@ Namespace SDC.Framework
 
         Private Sub Dashboard_Application_Resize(sender As Object, e As EventArgs)
             rolesButton.Top = DashboardGridLayout.CellTop(1)
-            generatedUserX_BButton.Left = DashboardGridLayout.CellLeft(5)
-            generatedUserX_BButton.Top = DashboardGridLayout.CellTop(1)
             generatedFW_UserAccessExplanation_BButton.Left = DashboardGridLayout.CellLeft(4)
             generatedFW_UserAccessExplanation_BButton.Top = DashboardGridLayout.CellTop(1)
-            userAdminButton.Top = DashboardGridLayout.CellTop(1)
             registrationButton.Top = DashboardGridLayout.CellTop(1)
             auditHistoryButton.Top = DashboardGridLayout.CellTop(2)
             helpDeskButton.Top = DashboardGridLayout.CellTop(2)
@@ -415,13 +362,6 @@ Namespace SDC.Framework
             If ownerMenu IsNot Nothing Then
                 MenuFormInitializer.Configure(ownerMenu, currentUser, True)
             End If
-        End Sub
-
-        Private Sub UserAdminButton_Click(sender As Object, e As EventArgs)
-            ResetIconButtonVisuals()
-            Using frm As New Users_AppAdmin_B(accessProfile)
-                frm.ShowDialog(Me)
-            End Using
         End Sub
 
         Private Sub RegistrationButton_Click(sender As Object, e As EventArgs)
@@ -498,12 +438,6 @@ Namespace SDC.Framework
             End Using
         End Sub
 
-        Private Sub GeneratedUserX_BButton_Click(sender As Object, e As EventArgs)
-            ResetIconButtonVisuals()
-            Using page As New UserX_B(currentUser, accessProfile)
-                page.ShowDialog(Me)
-            End Using
-        End Sub
         Private Sub IconButton_MouseEnter(sender As Object, e As EventArgs)
             Dim button = TryCast(sender, Button)
             If button Is Nothing Then
@@ -528,8 +462,6 @@ Namespace SDC.Framework
         Private Sub ResetIconButtonVisuals()
             rolesButton.BackColor = Color.Transparent
             rolesButton.FlatAppearance.BorderSize = 0
-            userAdminButton.BackColor = Color.Transparent
-            userAdminButton.FlatAppearance.BorderSize = 0
             registrationButton.BackColor = Color.Transparent
             registrationButton.FlatAppearance.BorderSize = 0
             auditHistoryButton.BackColor = Color.Transparent

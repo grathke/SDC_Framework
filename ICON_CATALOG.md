@@ -135,7 +135,8 @@ holds its anchored place in the row; the old target is gone and is not what it w
 - note: every item invokes the tile handler that owns the action rather than repeating it, so the
   Application-versus-Company dashboard decision stays in one place. Opening and closing the menu
   belongs to `TileDropDownController` and is written nowhere here.
-- note: inside either settings form, the Roles and User Admin icons stay enabled at all times
+- note: inside either settings form, the Roles icon stays enabled at all times. The User Admin icon
+  that sat beside it was removed on 2026-09-08 with the `FW_Users` pages.
 ## users
 
 - placement: main ribbon (left)
@@ -150,11 +151,15 @@ holds its anchored place in the row; the old target is gone and is not what it w
 
 - placement: main ribbon (left)
 - ActionType: Page
-- target: `Users_AppAdmin_B`
-- caption source: fixed (`User Admin`, on two lines)
+- target: `Dashboard_Application` for an App Admin, otherwise `Dashboard_Company`
+- caption source: fixed (`Admin`)
 - icon file: `users.png`
-- visibility rule: added by `MenuFormInitializer.vb:128`; currently always visible
-- click behavior: opens the `Users_AppAdmin_B` dialog
+- visibility rule: `MenuFormInitializer.vb:196`; always visible
+- click behavior: reads the role **when clicked**, not when built, and opens the dashboard that
+  matches it
+- note: this entry said `Users_AppAdmin_B` until 2026-09-08, which had not been true since the tile
+  was pointed at the dashboards. That page has now been deleted with the rest of the `FW_Users`
+  pages.
 
 ## menu-test
 
@@ -292,7 +297,8 @@ anywhere and no caller — see Gaps.
 - `FW_UserAccessDiagnostic_B` has no icon, no menu tile and no caller anywhere in the source. It is
   unreachable code with a stale `FW_Pages` row (alias `Entity`). Removing it is the eight-table
   procedure in `CLAUDE.md`, not a row delete.
-- `Dashboard_Company` and `Dashboard_Application` now draw Roles and User Admin identically -
-  `Color_Shield.png` and `Color_Favorites.png`, both at the shared `DashboardIconSize`. Until
-  2026-09-07 the Company dashboard used `SystemIcons` glyphs for both, so the same action looked
-  different depending on which dashboard it was opened from.
+- `Dashboard_Company` and `Dashboard_Application` draw Roles identically - `Color_Shield.png` at the
+  shared `DashboardIconSize`. Until 2026-09-07 the Company dashboard used `SystemIcons` glyphs, so
+  the same action looked different depending on which dashboard it was opened from. The User Admin
+  icon that shared this treatment (`Color_Favorites.png`) went from both dashboards on 2026-09-08,
+  along with the `UserX` icon on the Application dashboard, which this catalog never recorded.

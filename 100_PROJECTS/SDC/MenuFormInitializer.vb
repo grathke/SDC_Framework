@@ -213,25 +213,14 @@ Namespace SDC.Framework
                 isVisible:=True,
                 isEnabled:=True)
 
-            menu.UpsertActionTile(
-                actionKey:="generated-usersy_b",
-                caption:="UsersY",
-                onClick:=Sub(sender, e)
-                             Using frm As New UsersY_B(user, profile)
-                                 frm.ShowDialog(menu)
-                             End Using
-                         End Sub,
-                iconFileName:="Color_OK.png",
-                fallbackIcon:=SystemIcons.Application.ToBitmap(),
-                isVisible:=True,
-                isEnabled:=True)
-
             ' The page each generated tile opens, so its caption can follow that page. Written by the
             ' generator, and resolved from caches held for the session rather than per tile.
             '
-            ' One-off tiles are absent on purpose. User Admin, Close and the pinned row were
-            ' captioned by whoever asked for them, and an override would overrule that.
-            menu.SetActionPage("generated-usersy_b", "UsersY_B")
+            ' One-off tiles are absent on purpose. Close and the pinned row were captioned by
+            ' whoever asked for them, and an override would overrule that.
+            '
+            ' No SetActionPage calls remain: the generated UsersY tile went with the FW_Users pages
+            ' on 2026-09-08. The generator writes them back here as pages are generated.
 
             ' Generated ribbon tiles are inserted above this marker. PageGenerator matches the next
             ' line exactly, so rewording it stops generation placing tiles on the ribbon - it says it
