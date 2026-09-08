@@ -23,7 +23,7 @@ Namespace SDC.Framework
         Private ReadOnly databaseConfigButton As DashboardIconButton
         Private ReadOnly companyDashboardButton As DashboardIconButton
         Private ReadOnly closeIconButton As Button
-        Private ReadOnly generatedFW_UserAccessExplanation_BButton As DashboardIconButton
+        Private ReadOnly generatedFW_UserAccessDiagnostic_BButton As DashboardIconButton
         Private iconDragController As DashboardIconDragController
         Private iconImageController As IconImageController
 
@@ -230,10 +230,10 @@ Namespace SDC.Framework
 
 
 
-            generatedFW_UserAccessExplanation_BButton = New DashboardIconButton() With {
-                .Name = "ActionKey_FW_UserAccessExplanation_B",
-                .PageName = "FW_UserAccessExplanation_B",
-                .Text = "User Access Explanation",
+            generatedFW_UserAccessDiagnostic_BButton = New DashboardIconButton() With {
+                .Name = "ActionKey_FW_UserAccessDiagnostic_B",
+                .PageName = "FW_UserAccessDiagnostic_B",
+                .Text = "User Access Diagnostic",
                 .Location = DashboardGridLayout.CellLocation(1, 4),
                 .Size = New Size(DashboardGridLayout.IconWidth, DashboardGridLayout.IconHeight),
                 .BackColor = Color.Transparent,
@@ -246,9 +246,9 @@ Namespace SDC.Framework
                 .TextAlign = ContentAlignment.BottomCenter,
                 .TabStop = False
             }
-            generatedFW_UserAccessExplanation_BButton.FlatAppearance.BorderSize = 0
-            generatedFW_UserAccessExplanation_BButton.FlatAppearance.MouseOverBackColor = Color.Transparent
-            generatedFW_UserAccessExplanation_BButton.FlatAppearance.MouseDownBackColor = Color.Transparent
+            generatedFW_UserAccessDiagnostic_BButton.FlatAppearance.BorderSize = 0
+            generatedFW_UserAccessDiagnostic_BButton.FlatAppearance.MouseOverBackColor = Color.Transparent
+            generatedFW_UserAccessDiagnostic_BButton.FlatAppearance.MouseDownBackColor = Color.Transparent
 
 
             AddHandler Me.Load, AddressOf Dashboard_Application_Load
@@ -277,11 +277,11 @@ Namespace SDC.Framework
             AddHandler newPageRequestsButton.MouseEnter, AddressOf IconButton_MouseEnter
             AddHandler newPageRequestsButton.MouseLeave, AddressOf IconButton_MouseLeave
             AddHandler newPageRequestsButton.Click, AddressOf NewPageRequestsButton_Click
-            AddHandler generatedFW_UserAccessExplanation_BButton.MouseEnter, AddressOf IconButton_MouseEnter
-            AddHandler generatedFW_UserAccessExplanation_BButton.MouseLeave, AddressOf IconButton_MouseLeave
-            AddHandler generatedFW_UserAccessExplanation_BButton.Click, AddressOf GeneratedFW_UserAccessExplanation_BButton_Click
+            AddHandler generatedFW_UserAccessDiagnostic_BButton.MouseEnter, AddressOf IconButton_MouseEnter
+            AddHandler generatedFW_UserAccessDiagnostic_BButton.MouseLeave, AddressOf IconButton_MouseLeave
+            AddHandler generatedFW_UserAccessDiagnostic_BButton.Click, AddressOf GeneratedFW_UserAccessDiagnostic_BButton_Click
             AddHandler closeIconButton.Click, AddressOf CloseButton_Click
-            Me.Controls.Add(generatedFW_UserAccessExplanation_BButton)
+            Me.Controls.Add(generatedFW_UserAccessDiagnostic_BButton)
             Me.Controls.Add(topStripLabel)
             Me.Controls.Add(closeIconButton)
             Me.Controls.Add(headerLabel)
@@ -337,8 +337,8 @@ Namespace SDC.Framework
 
         Private Sub Dashboard_Application_Resize(sender As Object, e As EventArgs)
             rolesButton.Top = DashboardGridLayout.CellTop(1)
-            generatedFW_UserAccessExplanation_BButton.Left = DashboardGridLayout.CellLeft(4)
-            generatedFW_UserAccessExplanation_BButton.Top = DashboardGridLayout.CellTop(1)
+            generatedFW_UserAccessDiagnostic_BButton.Left = DashboardGridLayout.CellLeft(4)
+            generatedFW_UserAccessDiagnostic_BButton.Top = DashboardGridLayout.CellTop(1)
             registrationButton.Top = DashboardGridLayout.CellTop(1)
             auditHistoryButton.Top = DashboardGridLayout.CellTop(2)
             helpDeskButton.Top = DashboardGridLayout.CellTop(2)
@@ -431,9 +431,9 @@ Namespace SDC.Framework
 
 
 
-        Private Sub GeneratedFW_UserAccessExplanation_BButton_Click(sender As Object, e As EventArgs)
+        Private Sub GeneratedFW_UserAccessDiagnostic_BButton_Click(sender As Object, e As EventArgs)
             ResetIconButtonVisuals()
-            Using page As New FW_UserAccessExplanation_B(currentUser, accessProfile)
+            Using page As New FW_UserAccessDiagnostic_B(currentUser, accessProfile)
                 page.ShowDialog(Me)
             End Using
         End Sub

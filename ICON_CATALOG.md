@@ -259,16 +259,17 @@ here is the default rather than necessarily where it will be found.
 
 ---
 
-## FW_UserAccessExplanation_B
+## FW_UserAccessDiagnostic_B
 
 - placement: **both dashboards** — Application (`Dashboard_Application.vb`) and Company
   (`Dashboard_Company.vb`), grid cell 1,4 in each
 - ActionType: Navigation / dialog
-- target: `FW_UserAccessExplanation_B`, opened with `ShowDialog`
+- target: `FW_UserAccessDiagnostic_B`, opened with `ShowDialog`
 - caption source: **the caption chain**, because the button carries
-  `.PageName = "FW_UserAccessExplanation_B"`. The coded caption is `User Access Explanation`; what
+  `.PageName = "FW_UserAccessDiagnostic_B"`. The coded caption is `User Access Diagnostic`; what
   shows is the role override if one is recorded, otherwise the page's `FW_Pages.Table_Alias`.
-  It currently reads `USERS`, which is the auto-filled table name rather than a chosen one.
+  That alias is now `User Access Diagnostic`, set by `sql/082`, so all three agree. It has read
+  `USERS` and then `User Access Diag.` in the past, neither of which named this page.
 - icon file: `Color_Information.png`, falling back to `SystemIcons.Question`
 - visibility rule: always shown on either dashboard; the dashboards themselves are the access gate
 - click behavior: passes the owning dashboard's `currentUser` and `accessProfile` to the page

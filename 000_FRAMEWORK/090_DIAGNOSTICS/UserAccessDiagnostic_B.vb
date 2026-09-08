@@ -10,7 +10,7 @@ Imports System.Text
 Imports System.Windows.Forms
 
 Namespace SDC.Framework
-    Public Class FW_UserAccessExplanation_B
+    Public Class FW_UserAccessDiagnostic_B
         Inherits Form
 
         Private ReadOnly currentUser As UserContext
@@ -48,8 +48,8 @@ Namespace SDC.Framework
             ' called two different things - which is what happened when this read "User Access
             ' Explanation" and its button read "User Access Diag.".
             pageCaption = PageTitleHelper.ResolveCaptionForPage(registrationId,
-                                                                "FW_UserAccessExplanation_B",
-                                                                "User Access Explanation")
+                                                                "FW_UserAccessDiagnostic_B",
+                                                                "User Access Diagnostic")
 
             Me.Text = pageCaption.ToUpperInvariant()
             Me.StartPosition = FormStartPosition.CenterParent

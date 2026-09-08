@@ -92,9 +92,9 @@ Namespace SDC.Framework
             rolesButton.FlatAppearance.MouseDownBackColor = Color.Transparent
 
             userDiagnosticButton = New DashboardIconButton() With {
-                .Name = "ActionKey_FW_UserAccessExplanation_B",
-                .PageName = "FW_UserAccessExplanation_B",
-                .Text = "User Access Explanation",
+                .Name = "ActionKey_FW_UserAccessDiagnostic_B",
+                .PageName = "FW_UserAccessDiagnostic_B",
+                .Text = "User Access Diagnostic",
                 .Location = DashboardGridLayout.CellLocation(1, 4),
                 .Size = New Size(DashboardGridLayout.IconWidth, DashboardGridLayout.IconHeight),
                 .BackColor = Color.Transparent,
@@ -179,7 +179,7 @@ Namespace SDC.Framework
 
         Private Sub UserDiagnosticButton_Click(sender As Object, e As EventArgs)
             ResetIconButtonVisuals()
-            Using page As New FW_UserAccessExplanation_B(currentUser, accessProfile)
+            Using page As New FW_UserAccessDiagnostic_B(currentUser, accessProfile)
                 page.ShowDialog(Me)
             End Using
         End Sub

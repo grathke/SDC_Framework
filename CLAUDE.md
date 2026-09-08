@@ -272,7 +272,7 @@ Known exceptions in the current codebase, to be resolved rather than copied:
 - `Roles_B/_U`, `Users_AppAdmin_B/_U` and `PageGeneration_U` are framework pages without the
   `FW_` prefix.
 - Browse-only pages with no `_U` partner: `FW_AuditTrail_B`, `FW_HD_Admin_B`,
-  `FW_HD_AdminDashboard_B`, `FW_UserAccessDiagnostic_B`, `FW_UserAccessExplanation_B`.
+  `FW_HD_AdminDashboard_B`, `FW_UserAccessDiagnostic_B`.
 - `FW_HD_Issues_B` and `FW_HD_Issues_Support_B` share a single `FW_HD_Issues_U`.
 - Primary keys follow five conventions at once: bare `ID` (`FW_Gender`), `<Table>ID`
   (`AuditTrailID`), `<Table>_ID` (`BusinessRuleType_ID`), all-caps

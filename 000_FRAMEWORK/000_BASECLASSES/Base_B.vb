@@ -183,7 +183,7 @@ Namespace SDC.Framework
         ''' <summary>
         ''' The page colour picker, which now lives in PageBackgroundColorPicker so a form that
         ''' does not inherit from here can have one too. It was written in this class while browse
-        ''' pages were the only pages offering it; FW_UserAccessExplanation_B inherits Form
+        ''' pages were the only pages offering it; FW_UserAccessDiagnostic_B inherits Form
         ''' directly, and giving it a picker meant either moving this one out or writing a second.
         '''
         ''' Every browse page still gets it on the same terms: admin only, in the action row, its

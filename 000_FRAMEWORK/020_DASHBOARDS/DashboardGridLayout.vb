@@ -11,7 +11,7 @@ Namespace SDC.Framework
         ''' <summary>
         ''' An icon, and the cell it sits in. The cell is deliberately larger than the icon in both
         ''' directions: the gap is what stops 150-wide icons touching in a 150-wide column, and the
-        ''' extra height is room for a caption that runs to two lines - "User Access Explanation"
+        ''' extra height is room for a caption that runs to two lines - "User Access Diagnostic"
         ''' and "HD Support Tickets" both do - without the icon above it shifting up to make room.
         ''' </summary>
         Public Const IconWidth As Integer = 150
