@@ -27,14 +27,10 @@ in both. On a machine with VirtualUI installed the file is under:
 C:\Program Files\Thinfinity\VirtualUI\Dev\dotNet\
 ```
 
-VirtualUI is **not** installed on the development machine as at 2026-09-08 — the installation is on
-the server. That is a task rather than a constraint: **it can be installed locally**, and should be,
-so a change is run and looked at in a browser here before it goes near the server. The wrapper then
-comes from the local `Dev\dotNet\` folder.
-
-A copy of the public VB wrapper was read to write this document. The file that goes into the project
-should come from an actual install, because versions differ — section 11 lists what to check against
-it.
+**Installed on the development machine on 2026-09-08** (developer install, not the server), so a
+change is run and looked at in a browser here before it goes near the server. The local file is
+dated 19 December 2025 and is the one to use; section 11 records how it differs from the public copy
+this document was first written from.
 
 ## 2. It is safe to add before the SDK is installed
 
@@ -153,16 +149,17 @@ back out is a download, not a file write.
 `HTMLDoc.GetSafeUrl(filename, minutes)` gives a time-limited URL for a server file instead, which
 suits anything the browser should fetch rather than be handed.
 
-**`UploadFileEx` cannot return the filename in the shipped VB wrapper.** Both the class and the
-`IVirtualUI` interface declare the parameter **ByVal**:
+`UploadFileEx` returns the uploaded file's name through a `ByRef` parameter, in both the class and
+the `IVirtualUI` interface:
 
 ```vb
-Function UploadFileEx(ServerDirectory As String, FileName As String) As Boolean
+Function UploadFileEx(ServerDirectory As String, ByRef FileName As String) As Boolean
 ```
 
-where the C# wrapper has `out string FileName`. A `ByVal String` cannot carry a value back, so the
-name of the uploaded file is lost. Use the `OnUploadEnd(Filename)` event, or declare the parameter
-`ByRef` in our copy — and check the installed version first, since this may already be fixed.
+The public demo copy declares that parameter **ByVal**, where a returned name cannot come back at
+all. The installed December 2025 wrapper has it right. This is the reason to take the file from the
+install rather than from anywhere else — and if an upload ever returns `True` with an empty name,
+this is the first thing to check.
 
 ## 7. Printing
 
@@ -227,15 +224,79 @@ assumption.
 `SendMessage` with `OnReceiveMessage`, plus the `JSObject` and `JSBinding` classes, carry messages
 between the application and JavaScript in the page. Nothing here needs that yet.
 
-## 11. What to check against the installed version
+## 11. Checked against the installed wrapper, 2026-09-08
 
-The wrapper read for this document came from Cybele's public demo repository, not from the server.
-When the real file arrives, confirm:
+`C:\Program Files\Thinfinity\VirtualUI\Dev\dotNET\Thinfinity.VirtualUI.vb`, 19 December 2025.
 
-1. `UploadFileEx` — is the filename parameter `ByRef`, or does section 6's problem stand?
-2. The `Options` flag values, which are a bitmask and cheap to get subtly wrong.
-3. That `Start()` and the properties still guard on a missing DLL as section 2 describes. Everything
-   in this document about being safe to add early depends on that.
+1. `UploadFileEx` — **fixed here.** The parameter is `ByRef`. Section 6 is corrected.
+2. `Options` — **identical**, value for value.
+3. The missing-DLL guards — **identical**. Section 2 stands: `Start()` returns `False` and every
+   method no-ops rather than throwing.
+
+## 11.1 The application must be built 32-bit
+
+This one is not in any documentation and would be invisible if hit, so it is worth the space.
+
+The wrapper loads its DLL from the registry's `TargetDir_x64` when `IntPtr.Size = 8`, and looks for
+this file:
+
+```
+C:\Program Files\Thinfinity\VirtualUI\bin64\Thinfinity.VirtualUI.DLL
+```
+
+**That file does not exist.** In this install `Thinfinity.VirtualUI.dll` ships only in `bin32`, and
+it is the only one of the shipped libraries carrying the `DllGetInstance` entry point the wrapper
+resolves. `bin64` holds `Thinfinity.VUILib.dll` and `Thinfinity.VuiExLib.dll`, neither of which
+exports it.
+
+So a 64-bit process gets **silence**: `LoadLibrary` fails, `LibHandle` stays zero, and by section 2
+every call politely does nothing. `Active` returns `False`, the application runs on the desktop, and
+nothing anywhere reports a problem. It would look exactly like an integration that had not been
+wired up yet.
+
+**This is not a wrong or partial install.** The x64 setup of 3.6.1.106 is what is here — the product
+sits in `C:\Program Files\`, and its server components in `bin64` are 64-bit. Read from the PE
+headers and export tables, not inferred from folder names:
+
+| Library | Arch | Exports |
+|---|---|---|
+| `bin32\Thinfinity.VirtualUI.dll` | x86 | `DllGetInstance`, `DllCreateObject`, `DllCreateJSObject`, `DllRegisterServer`, `DllAutoRun` … — **the SDK** |
+| `bin64\Thinfinity.VUILib.dll` | x64 | `DllNewScraper`, `DllGetScraperId`, `DllSetDevMode`, `DllSetProductId` … |
+| `bin64\Thinfinity.VuiExLib.dll` | x64 | the same scraper set |
+
+The 64-bit libraries are not a 64-bit build of the SDK. They are a **different surface** — the
+scraper engine behind publishing an application that was never modified. Which is the useful half of
+the finding: the SDK is 32-bit only in 3.6.1, and the 64-bit half of the product is precisely the
+one that needs no SDK.
+
+`SDC.Framework.vbproj` sets no `PlatformTarget`, builds AnyCPU and runs 64-bit here.
+
+**Why their documentation never mentions this.** "Compiling and Testing a WinForms Application" in
+the 3.6 manual states no bitness requirement at all. The likely reason is that it never used to be
+one: its example is a .NET Framework project, and a WinForms executable built AnyCPU in that era had
+**Prefer 32-bit** enabled by default, so it ran as a 32-bit process whether or not anyone chose
+that. A 64-bit SDK library was never needed. That setting does not exist in .NET 5 and later, where
+AnyCPU means 64-bit — so this project is the case their SDK never had to handle, and the guide has
+no reason to warn about it.
+
+**The application is not to be built 32-bit — decided 2026-09-08.** 32-bit caps the process at 4GB
+and binds every dependency along with it, and none of that is worth paying for a delivery mechanism.
+That rules out the `PlatformTarget` fix and leaves two routes, neither yet tested:
+
+1. **Ask Cybele for a 64-bit SDK library.** The precise question is whether a 64-bit
+   `Thinfinity.VirtualUI.DLL` exists for the .NET SDK, given that `bin64` ships `VUILib` and
+   `VuiExLib` but neither exports `DllGetInstance`. If one exists, nothing else in this document
+   changes.
+2. **Publish through VirtualUI Server without the SDK.** VirtualUI 3.x publishes applications with
+   no code modification, and the 64-bit `injectlib` in `bin64` is what makes that possible for a
+   64-bit process. This needs **no change to the application at all** — no wrapper, no `Start()`, no
+   platform target.
+
+Route 2 costs the SDK surface: no `Active`, so nothing can ask whether it is in a browser session;
+no `StdDialogs`, which is what section 5 relies on to make the ordinary file dialogs work; no
+`UploadFile`/`DownloadFile`, no `PrintPdf`, no `BrowserInfo`. Some of that may be replaceable by
+settings on the server's application profile — that is the thing to find out, because attachments
+and printing are the two places this application actually touches the boundary.
 
 ## 12. Where the documentation actually is
 
