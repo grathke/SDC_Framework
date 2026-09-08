@@ -192,6 +192,8 @@ design decisions rather than merely being facts about deployment:
   the server. `Environment.SpecialFolder` and DPAPI resolve against the server account. Attachments
   use the Thinfinity VirtualUI file picker rather than `OpenFileDialog`.
 
+`THINFINITY_NOTES.md` holds the API behind both rules. None of it is built yet.
+
 The page generator — `PageGenerator.vb`, `PageGeneration_U`, `FW_PageGeneration_B` — is a local
 development tool that generates pages consumed at the next compile. It never runs in a VirtualUI
 session, so delivery constraints do not apply to it.
@@ -227,6 +229,11 @@ Key areas:
   Read it before touching the layout row above the browse grid, and before adding anything to
   `FW_Base_B`'s constructor - section 9 records why the widget must be built before the
   `buildDefaultBrowseShell` early return, which the colour picker got wrong.
+- `THINFINITY_NOTES.md` — **reference, nothing built.** The VirtualUI SDK surface behind the
+  delivery rules below: session detection, `StdDialogs` and the file dialogs, upload and download,
+  printing, the `Options` flags, `BrowserInfo`. Read it before adding the SDK to the project or
+  changing the Help Desk attachment path — section 2 records why the SDK can be added before it is
+  installed, and section 5 why a second attachment picker may not be needed at all.
 - `.github/new-page-request-template.md` and `.github/new-page-request-manual.md` — the page
   request template and how to interpret a filled-in one.
 
