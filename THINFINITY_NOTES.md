@@ -28,9 +28,13 @@ C:\Program Files\Thinfinity\VirtualUI\Dev\dotNet\
 ```
 
 VirtualUI is **not** installed on the development machine as at 2026-09-08 — the installation is on
-the server. A copy of the public VB wrapper was read to write this document, but the file that goes
-into the project should come from the actual server install, because versions differ. Section 11
-lists what to check when it arrives.
+the server. That is a task rather than a constraint: **it can be installed locally**, and should be,
+so a change is run and looked at in a browser here before it goes near the server. The wrapper then
+comes from the local `Dev\dotNet\` folder.
+
+A copy of the public VB wrapper was read to write this document. The file that goes into the project
+should come from an actual install, because versions differ — section 11 lists what to check against
+it.
 
 ## 2. It is safe to add before the SDK is installed
 
@@ -81,6 +85,12 @@ In `000_FRAMEWORK\005_STARTUP\Program.vb` that belongs at the top of `Main`, ahe
 Constructing `VirtualUI` also constructs a shared static instance the first time, which is what the
 event handlers attach to. Construct it **once**. It is `IDisposable`, and disposing it releases the
 COM object.
+
+**Running it locally.** With VirtualUI installed on the development machine, a debug run starts the
+application on the desktop *and* serves it through the development server at `http://127.0.0.1:6080`
+at the same time — the same code, both ways, side by side. That is how a change is checked in a
+browser before it reaches the server, and it is the only way to see the delivery assumptions in
+section 10 actually behave. `DevMode` and the `DevServer` property control it.
 
 ## 4. Session detection
 
