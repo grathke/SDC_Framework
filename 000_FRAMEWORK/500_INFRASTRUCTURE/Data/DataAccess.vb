@@ -3804,66 +3804,6 @@ Namespace SDC.Framework
             Return table
         End Function
 
-        Public Shared Function GetAccessDiagnosticRoleFields(roleId As Integer, registrationId As Integer, schemaId As Integer, dbTable As String) As DataTable
-            Dim table As New DataTable("AccessDiagnosticRoleFields")
-            Using conn As New SqlConnection(ConnectionString)
-                conn.Open()
-                Using cmd As New SqlCommand(
-                    "SELECT ID, FieldName, FriendlyFieldName, OverrideCaption, " &
-                    "ISNULL(Can_Create, 0) AS Can_Create, ISNULL(Can_Read, 0) AS Can_Read, ISNULL(Can_Update, 0) AS Can_Update " &
-                    "FROM dbo.FW_RoleFields WHERE RoleID = @RoleID AND RegistrationID = @RegistrationID " &
-                    "AND SchemaID = @SchemaID AND TableName = @DBTable " &
-                    "ORDER BY ISNULL(OrderBy, 9999), FieldName", conn)
-                    cmd.Parameters.AddWithValue("@RoleID", roleId)
-                    cmd.Parameters.AddWithValue("@RegistrationID", registrationId)
-                    cmd.Parameters.AddWithValue("@SchemaID", schemaId)
-                    cmd.Parameters.AddWithValue("@DBTable", dbTable)
-                    Using adapter As New SqlDataAdapter(cmd)
-                        adapter.Fill(table)
-                    End Using
-                End Using
-            End Using
-            Return table
-        End Function
-
-        Public Shared Sub UpdateDiagnosticRoleField(id As Integer, overrideCaption As String, canCreate As Boolean, canRead As Boolean, canUpdate As Boolean, updatedBy As Integer)
-            Using conn As New SqlConnection(ConnectionString)
-                conn.Open()
-                Using cmd As New SqlCommand(
-                    "UPDATE dbo.FW_RoleFields SET OverrideCaption = @OverrideCaption, Can_Create = @CanCreate, " &
-                    "Can_Read = @CanRead, Can_Update = @CanUpdate, UpdatedBy = @UpdatedBy, UpdatedOn = GETDATE() WHERE ID = @ID", conn)
-                    cmd.Parameters.AddWithValue("@ID", id)
-                    cmd.Parameters.AddWithValue("@OverrideCaption", If(String.IsNullOrWhiteSpace(overrideCaption), CType(DBNull.Value, Object), overrideCaption.Trim()))
-                    cmd.Parameters.AddWithValue("@CanCreate", canCreate)
-                    cmd.Parameters.AddWithValue("@CanRead", canRead)
-                    cmd.Parameters.AddWithValue("@CanUpdate", canUpdate)
-                    cmd.Parameters.AddWithValue("@UpdatedBy", updatedBy)
-                    cmd.ExecuteNonQuery()
-                End Using
-            End Using
-            InvalidateRoleMetadataCache()
-        End Sub
-
-        Public Shared Function GetAccessDiagnostic(userId As Integer,
-                                                    registrationId As Integer,
-                                                    dbTable As String) As DataTable
-            Dim table As New DataTable("AccessDiagnostic")
-            Using conn As New SqlConnection(ConnectionString)
-                conn.Open()
-                Using cmd As New SqlCommand("dbo.usp_FW_AccessDiagnostic", conn)
-                    cmd.CommandType = CommandType.StoredProcedure
-                    cmd.CommandTimeout = 10
-                    cmd.Parameters.AddWithValue("@UserID", userId)
-                    cmd.Parameters.AddWithValue("@RegistrationID", registrationId)
-                    cmd.Parameters.AddWithValue("@DB_Table", If(dbTable, String.Empty))
-                    Using da As New SqlDataAdapter(cmd)
-                        da.Fill(table)
-                    End Using
-                End Using
-            End Using
-            Return table
-        End Function
-
         Public Shared Function ApplyAccessDiagnosticChanges(userId As Integer,
                                                        registrationId As Integer,
                                                        roleId As Integer,
