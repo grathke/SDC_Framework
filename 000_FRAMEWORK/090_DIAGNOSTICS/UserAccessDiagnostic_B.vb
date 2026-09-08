@@ -15,10 +15,19 @@ Namespace SDC.Framework
 
         Private ReadOnly currentUser As UserContext
         Private ReadOnly accessProfile As AccessProfile
-        Private ReadOnly registrationId As Integer
+        ''' <summary>
+        ''' The registration everything on this page is asked about. Not ReadOnly since 2026-09-08:
+        ''' an App Admin picks it from the combo below, and every lookup here reads this field, so
+        ''' changing it is what re-points the page at another registration.
+        '''
+        ''' Seeded from the session, which is what a Company Admin keeps for the whole visit.
+        ''' </summary>
+        Private registrationId As Integer
         Private ReadOnly pageCaption As String
         Private ReadOnly backgroundColorPicker As PageBackgroundColorPicker
         Private ReadOnly registrationLabel As Label
+        Private ReadOnly registrationComboBox As ComboBox
+        Private isLoadingRegistrations As Boolean = False
         Private ReadOnly closeButton As Button
         Private ReadOnly emailComboBox As ComboBox
         Private ReadOnly findUserButton As Button
@@ -60,11 +69,28 @@ Namespace SDC.Framework
             Me.MinimumSize = New Size(700, 700)
             Me.BackColor = Color.White
 
+            ' An App Admin chooses the registration; anybody else is told which one they are in.
+            ' Same rule as Roles_B, and the same shared helper fills the combo, so "Make a
+            ' Selection" and the registration names mean the same thing on both pages.
+            Dim canChooseRegistration = SessionState.IsApplicationAdmin
+
             registrationLabel = New Label() With {
-                .Text = "REGISTRATION: " & GetRegistrationDisplayName(),
+                .Text = If(canChooseRegistration, "REGISTRATION:", "REGISTRATION: " & GetRegistrationDisplayName()),
                 .AutoSize = True,
                 .Location = New Point(24, 22),
                 .ForeColor = Color.DimGray
+            }
+
+            ' Hidden rather than absent for anyone else. The page still works from the session's
+            ' registration, and a hidden combo is not what stops them reaching another one - every
+            ' lookup here is scoped by registrationId, which they cannot change.
+            registrationComboBox = New ComboBox() With {
+                .Location = New Point(140, 18),
+                .Size = New Size(260, 26),
+                .DropDownStyle = ComboBoxStyle.DropDownList,
+                .DropDownWidth = 320,
+                .Visible = canChooseRegistration,
+                .Enabled = canChooseRegistration
             }
             closeButton = New Button() With {
                 .Text = "CLOSE",
@@ -174,7 +200,10 @@ Namespace SDC.Framework
             AddHandler tableComboBox.SelectedIndexChanged, AddressOf TableComboBox_SelectedIndexChanged
             AddHandler roleComboBox.SelectedIndexChanged, AddressOf RoleComboBox_SelectedIndexChanged
 
+            AddHandler registrationComboBox.SelectedIndexChanged, AddressOf RegistrationComboBox_SelectedIndexChanged
+
             Me.Controls.Add(registrationLabel)
+            Me.Controls.Add(registrationComboBox)
             Me.Controls.Add(closeButton)
             Me.Controls.Add(emailLabel)
             Me.Controls.Add(emailComboBox)
@@ -207,6 +236,10 @@ Namespace SDC.Framework
             backgroundColorPicker.UpdateVisibility()
             backgroundColorPicker.ApplyStored()
 
+            ' The session's registration is already selected on the way in, so an App Admin who only
+            ' wants the one they are in does not have to choose it first.
+            LoadRegistrations()
+
             LoadTableChoices()
             If Not LoadRoles() Then
                 Return
@@ -214,6 +247,76 @@ Namespace SDC.Framework
             LoadEmailSuggestions()
             explainButton.Enabled = False
             ShowResult("ENTER OR SELECT A USER EMAIL, THEN SELECT A TABLE AND ROLE.")
+        End Sub
+
+        ''' <summary>
+        ''' Fills the registration combo for an App Admin, with the session's registration selected.
+        '''
+        ''' Nothing to do for anybody else: the combo is hidden, registrationId already holds the
+        ''' session's registration, and populating it would be a round trip for a list nobody sees.
+        ''' </summary>
+        Private Sub LoadRegistrations()
+            If Not registrationComboBox.Visible Then
+                Return
+            End If
+
+            isLoadingRegistrations = True
+            Try
+                RegistrationComboHelper.Populate(registrationComboBox, registrationId, True)
+            Catch ex As Exception
+                ShowResult("REGISTRATION LIST COULD NOT BE LOADED" & Environment.NewLine & ex.Message)
+            Finally
+                isLoadingRegistrations = False
+            End Try
+        End Sub
+
+        ''' <summary>
+        ''' Re-points the page at another registration.
+        '''
+        ''' Everything on screen describes a user in the registration that was selected when it was
+        ''' loaded, so all of it is cleared rather than left to be read as belonging to the new one.
+        ''' The email list is the only part reloaded here: which user, table and role follow from a
+        ''' choice that has not been made yet.
+        '''
+        ''' "Make a Selection" leaves the page empty and says so. It is a real answer - an App Admin
+        ''' who has not chosen yet should not be looking at the last registration's users.
+        ''' </summary>
+        Private Sub RegistrationComboBox_SelectedIndexChanged(sender As Object, e As EventArgs)
+            If isLoadingRegistrations Then
+                Return
+            End If
+
+            ' Not merely hidden: a page that reads its registration from a control an unauthorised
+            ' user cannot see is still reading it from a control. This is the boundary.
+            If Not SessionState.IsApplicationAdmin Then
+                Return
+            End If
+
+            Dim selectedRegistrationId As Integer = 0
+            RegistrationComboHelper.TryGetSelectedId(registrationComboBox, selectedRegistrationId)
+            If selectedRegistrationId = registrationId Then
+                Return
+            End If
+
+            registrationId = selectedRegistrationId
+
+            selectedUserId = 0
+            userLabel.Text = String.Empty
+            emailComboBox.Items.Clear()
+            emailComboBox.Text = String.Empty
+            emailComboBox.AutoCompleteCustomSource = New AutoCompleteStringCollection()
+            roleComboBox.DataSource = Nothing
+            explainButton.Enabled = False
+            HideCorrectionControls()
+
+            If registrationId <= 0 Then
+                ShowResult("SELECT A REGISTRATION TO LIST ITS USERS.")
+                Return
+            End If
+
+            LoadEmailSuggestions()
+            ShowResult("REGISTRATION CHANGED TO " & GetRegistrationDisplayName() & Environment.NewLine &
+                       "ENTER OR SELECT A USER EMAIL, THEN SELECT A TABLE AND ROLE.")
         End Sub
 
         Private Function GetRegistrationDisplayName() As String
