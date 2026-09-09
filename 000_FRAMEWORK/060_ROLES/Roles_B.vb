@@ -202,7 +202,12 @@ Namespace SDC.Framework
 
         Private Sub RolesForm_Resize(sender As Object, e As EventArgs)
             Dim gridRightEdge As Integer = Me.ClientSize.Width - 20
-            Dim comboRightEdge As Integer = gridRightEdge - 20
+
+            ' Less the Help Desk button, which this page inherits from FW_Base_B and which places
+            ' itself against the form's right edge. Measured from the form here rather than from a
+            ' centred content width, so the two met at every window size rather than only at narrow
+            ' ones - the same collision the base page had, arrived at by a different route.
+            Dim comboRightEdge As Integer = gridRightEdge - 20 - HelpDeskLauncher.ReservedWidth
             registrationComboBox.Left = comboRightEdge - registrationComboBox.Width
 
             Dim buttonTop As Integer = 84

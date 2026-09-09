@@ -1606,12 +1606,22 @@ Namespace SDC.Framework
             titleLabel.Top = Math.Max(0, headerCenterY - (titleLabel.Height \ 2))
             HelpDeskLauncher.AlignToCaption(Me, titleLabel)
 
+            ' The Help Desk button places itself against the FORM's right edge, while this row is
+            ' built from the CONTENT's right edge. On a wide window those are far apart, because the
+            ' content is centred and capped at 1120 - so the collision only appears once the window
+            ' is narrow enough for the content to reach the frame, which is why it went unseen.
+            '
+            ' Reserved only when they would actually meet, so a wide page keeps its full width and
+            ' does not grow a gap where nothing sits.
+            Dim helpDeskLeft As Integer = Me.ClientSize.Width - HelpDeskLauncher.ReservedWidth
+            Dim topRowRight As Integer = Math.Min(contentLeft + contentWidth, helpDeskLeft)
+
             sqlLabel.Left = contentLeft
             Dim sqlBaseLeft = sqlLabel.Right + 8
-            applySqlButton.Left = contentLeft + contentWidth - applySqlButton.Width
+            applySqlButton.Left = topRowRight - applySqlButton.Width
             applySqlButton.Top = 78
 
-            registrationComboBox.Left = contentLeft + contentWidth - registrationComboBox.Width - HelpDeskLauncher.ReservedWidth
+            registrationComboBox.Left = topRowRight - registrationComboBox.Width - HelpDeskLauncher.ReservedWidth
             registrationComboBox.Top = Math.Max(0, headerCenterY - (registrationComboBox.Height \ 2))
             registrationIdLabel.Left = registrationComboBox.Left - registrationIdLabel.PreferredWidth - 8
             registrationIdLabel.Top = Math.Max(0, headerCenterY - (registrationIdLabel.Height \ 2))
@@ -1623,7 +1633,10 @@ Namespace SDC.Framework
             Dim actionTop As Integer = If(adminQueryControlsVisible, 112, 42)
             Dim actionLeft As Integer = contentLeft
             Dim actionGap As Integer = 10
-            Dim actionRight As Integer = contentLeft + contentWidth
+            ' Close anchors the right-hand end of the action row, and every button on that end is
+            ' placed off it, so this one number keeps the whole cluster clear of the Help Desk
+            ' button rather than each button being taught about it separately.
+            Dim actionRight As Integer = topRowRight
 
             closeButton.Top = actionTop
             closeButton.Left = actionRight - closeButton.Width
