@@ -106,6 +106,22 @@ Namespace SDC.Framework
         ''' that happens this belongs in the same record.
         ''' </remarks>
         Private Shared ReadOnly pageHotFieldsCache As New Dictionary(Of String, Boolean)(StringComparer.OrdinalIgnoreCase)
+
+        ''' <summary>
+        ''' The rest of the FW_Pages row, cached beside the alias because it arrives in the same read.
+        '''
+        ''' Three methods used to fetch these one page at a time - the table name once per dashboard
+        ''' icon, then the SQL and the colour on every page open - while EnsurePageAliasCache was
+        ''' already reading every row of the same table in one query and throwing these columns away.
+        ''' A measured five-page session spent 21 of its 144 round trips asking for columns it had
+        ''' already been sent.
+        '''
+        ''' Unlike the schema cache this helps a page that has never been opened, because it is
+        ''' loaded per application rather than per table.
+        ''' </summary>
+        Private Shared ReadOnly pageDbTableCache As New Dictionary(Of String, String)(StringComparer.OrdinalIgnoreCase)
+        Private Shared ReadOnly pageSqlCache As New Dictionary(Of String, String)(StringComparer.OrdinalIgnoreCase)
+        Private Shared ReadOnly pageBackgroundCache As New Dictionary(Of String, Integer?)(StringComparer.OrdinalIgnoreCase)
         Private Shared pageAliasCacheLoaded As Boolean
 
         ''' <summary>
@@ -130,6 +146,28 @@ Namespace SDC.Framework
         Private Shared ReadOnly rowVersionCache As New Dictionary(Of String, Boolean)(StringComparer.OrdinalIgnoreCase)
         Private Shared ReadOnly primaryKeyCache As New Dictionary(Of String, String)(StringComparer.OrdinalIgnoreCase)
 
+        ''' <summary>
+        ''' Drops the cached FW_Pages rows, so the next read reloads them.
+        '''
+        ''' For the writes that change a whole row - UpsertPageRecord and UpdatePageSql - rather than
+        ''' patching each cached column at every write site and eventually missing one. Both are rare:
+        ''' a page's first open, a generation, or the SQL fallback. One reload afterwards is cheaper
+        ''' than a stale table name, which would send a page's reads at the wrong table entirely.
+        '''
+        ''' SavePageBackgroundColor and SavePageUsesHotFields patch their own entry instead, because
+        ''' each changes one column and is called while somebody is watching the result.
+        ''' </summary>
+        Private Shared Sub InvalidatePageCache()
+            SyncLock metadataCacheLock
+                pageAliasCache.Clear()
+                pageHotFieldsCache.Clear()
+                pageDbTableCache.Clear()
+                pageSqlCache.Clear()
+                pageBackgroundCache.Clear()
+                pageAliasCacheLoaded = False
+            End SyncLock
+        End Sub
+
         Public Shared Sub InvalidateRoleMetadataCache()
             SyncLock metadataCacheLock
                 crudCaptionCache.Clear()
@@ -139,6 +177,9 @@ Namespace SDC.Framework
                 pageInitMetadataCache.Clear()
                 pageAliasCache.Clear()
                 pageHotFieldsCache.Clear()
+                pageDbTableCache.Clear()
+                pageSqlCache.Clear()
+                pageBackgroundCache.Clear()
                 pageAliasCacheLoaded = False
             End SyncLock
 
@@ -942,23 +983,18 @@ Namespace SDC.Framework
                 Return String.Empty
             End If
 
-            Using conn As New SqlConnection(ConnectionString)
-                conn.Open()
-                Using cmd As New SqlCommand(
-                    "SELECT TOP 1 Table_SQL FROM dbo." & PagesTable & " " &
-                    "WHERE WindowOrPage = @WindowOrPage " &
-                    "ORDER BY PageID DESC", conn)
-                    
-                    cmd.Parameters.AddWithValue("@WindowOrPage", windowOrPageName.Trim())
-                    
-                    Dim result = cmd.ExecuteScalar()
-                    If result Is Nothing OrElse IsDBNull(result) Then
-                        Return String.Empty
-                    End If
-                    
-                    Return result.ToString()
-                End Using
-            End Using
+            EnsurePageAliasCache()
+
+            SyncLock metadataCacheLock
+                Dim cachedSql As String = Nothing
+                If pageSqlCache.TryGetValue(windowOrPageName.Trim(), cachedSql) Then
+                    Return If(cachedSql, String.Empty)
+                End If
+            End SyncLock
+
+            ' Not in the cache means no such page, since the cache holds every row. Returning empty
+            ' is what the query did for a page with no row, so the caller's fallback is unchanged.
+            Return String.Empty
         End Function
 
         ''' <summary>
@@ -968,20 +1004,16 @@ Namespace SDC.Framework
         Public Shared Function GetPageBackgroundColor(windowOrPageName As String) As Integer?
             If String.IsNullOrWhiteSpace(windowOrPageName) Then Return Nothing
 
-            Using conn As New SqlConnection(ConnectionString)
-                conn.Open()
-                Using cmd As New SqlCommand(
-                    "SELECT TOP 1 Background FROM dbo." & PagesTable & " " &
-                    "WHERE WindowOrPage = @WindowOrPage " &
-                    "ORDER BY PageID DESC", conn)
+            EnsurePageAliasCache()
 
-                    cmd.Parameters.AddWithValue("@WindowOrPage", windowOrPageName.Trim())
+            SyncLock metadataCacheLock
+                Dim cachedBackground As Integer? = Nothing
+                If pageBackgroundCache.TryGetValue(windowOrPageName.Trim(), cachedBackground) Then
+                    Return cachedBackground
+                End If
+            End SyncLock
 
-                    Dim result = cmd.ExecuteScalar()
-                    If result Is Nothing OrElse IsDBNull(result) Then Return Nothing
-                    Return Convert.ToInt32(result, CultureInfo.InvariantCulture)
-                End Using
-            End Using
+            Return Nothing
         End Function
 
         ''' <summary>
@@ -1003,7 +1035,21 @@ Namespace SDC.Framework
                     cmd.Parameters.AddWithValue("@ModifiedBy", updatedBy)
                     cmd.Parameters.AddWithValue("@WindowOrPage", windowOrPageName.Trim())
 
-                    Return cmd.ExecuteNonQuery() > 0
+                    Dim saved = cmd.ExecuteNonQuery() > 0
+
+                    ' The colour is read from the cache now, so a save that does not reach the cache
+                    ' is a colour that appears not to have saved until the application restarts.
+                    ' Only on success, and only for a page already cached: writing an entry for a
+                    ' page with no row would answer a later question the database would not.
+                    If saved Then
+                        SyncLock metadataCacheLock
+                            If pageAliasCacheLoaded AndAlso pageBackgroundCache.ContainsKey(windowOrPageName.Trim()) Then
+                                pageBackgroundCache(windowOrPageName.Trim()) = argb
+                            End If
+                        End SyncLock
+                    End If
+
+                    Return saved
                 End Using
             End Using
         End Function
@@ -1122,14 +1168,23 @@ Namespace SDC.Framework
 
             Dim loaded As New Dictionary(Of String, String)(StringComparer.OrdinalIgnoreCase)
             Dim loadedHotFields As New Dictionary(Of String, Boolean)(StringComparer.OrdinalIgnoreCase)
+            Dim loadedDbTable As New Dictionary(Of String, String)(StringComparer.OrdinalIgnoreCase)
+            Dim loadedSql As New Dictionary(Of String, String)(StringComparer.OrdinalIgnoreCase)
+            Dim loadedBackground As New Dictionary(Of String, Integer?)(StringComparer.OrdinalIgnoreCase)
 
             Try
                 Using conn As New SqlConnection(ConnectionString)
                     conn.Open()
+                    ' ORDER BY PageID matters. Nothing stops two rows sharing a WindowOrPage, and the
+                    ' three methods this cache replaces each took the highest PageID - TOP 1 ORDER BY
+                    ' PageID DESC. Reading ascending and letting a later row overwrite an earlier one
+                    ' lands on the same row, so a duplicate resolves the same way it always has
+                    ' rather than depending on the order the server happened to return.
                     Using cmd As New SqlCommand(
                         "SELECT WindowOrPage, ISNULL(LTRIM(RTRIM(Table_Alias)), '') AS Table_Alias, " &
-                        "ISNULL(UseHotFields, 0) AS UseHotFields " &
-                        "FROM dbo." & PagesTable, conn)
+                        "ISNULL(UseHotFields, 0) AS UseHotFields, " &
+                        "DB_Table, Table_SQL, Background " &
+                        "FROM dbo." & PagesTable & " ORDER BY PageID", conn)
 
                         Using reader = cmd.ExecuteReader()
                             While reader.Read()
@@ -1141,6 +1196,16 @@ Namespace SDC.Framework
                                     loadedHotFields(pageName) = hotFields IsNot Nothing AndAlso
                                                                 hotFields IsNot DBNull.Value AndAlso
                                                                 Convert.ToBoolean(hotFields, CultureInfo.InvariantCulture)
+
+                                    loadedDbTable(pageName) = SafeString(reader("DB_Table"))
+                                    loadedSql(pageName) = SafeString(reader("Table_SQL"))
+
+                                    Dim background = reader("Background")
+                                    If background Is Nothing OrElse background Is DBNull.Value Then
+                                        loadedBackground(pageName) = Nothing
+                                    Else
+                                        loadedBackground(pageName) = Convert.ToInt32(background, CultureInfo.InvariantCulture)
+                                    End If
                                 End If
                             End While
                         End Using
@@ -1161,6 +1226,21 @@ Namespace SDC.Framework
                 pageHotFieldsCache.Clear()
                 For Each pair In loadedHotFields
                     pageHotFieldsCache(pair.Key) = pair.Value
+                Next
+
+                pageDbTableCache.Clear()
+                For Each pair In loadedDbTable
+                    pageDbTableCache(pair.Key) = pair.Value
+                Next
+
+                pageSqlCache.Clear()
+                For Each pair In loadedSql
+                    pageSqlCache(pair.Key) = pair.Value
+                Next
+
+                pageBackgroundCache.Clear()
+                For Each pair In loadedBackground
+                    pageBackgroundCache(pair.Key) = pair.Value
                 Next
 
                 pageAliasCacheLoaded = True
@@ -1205,23 +1285,16 @@ Namespace SDC.Framework
                 Return String.Empty
             End If
 
-            Using conn As New SqlConnection(ConnectionString)
-                conn.Open()
-                Using cmd As New SqlCommand(
-                    "SELECT TOP 1 DB_Table FROM dbo." & PagesTable & " " &
-                    "WHERE WindowOrPage = @WindowOrPage " &
-                    "ORDER BY PageID DESC", conn)
+            EnsurePageAliasCache()
 
-                    cmd.Parameters.AddWithValue("@WindowOrPage", windowOrPageName.Trim())
+            SyncLock metadataCacheLock
+                Dim cachedTable As String = Nothing
+                If pageDbTableCache.TryGetValue(windowOrPageName.Trim(), cachedTable) Then
+                    Return If(cachedTable, String.Empty)
+                End If
+            End SyncLock
 
-                    Dim result = cmd.ExecuteScalar()
-                    If result Is Nothing OrElse IsDBNull(result) Then
-                        Return String.Empty
-                    End If
-
-                    Return result.ToString()
-                End Using
-            End Using
+            Return String.Empty
         End Function
 
         Public Shared Function CheckIfPageRecordExists(registrationId As Integer, windowOrPageName As String) As Boolean
@@ -1315,7 +1388,11 @@ Namespace SDC.Framework
                     
                     ' Also save the table alias to FW_TableAliases for global reuse
                     SaveTableAlias(storedTableName, If(String.IsNullOrWhiteSpace(tableAlias), storedTableName, tableAlias.Trim()))
-                    
+
+                    ' This row is cached - alias, table name and SQL all come from it - so the cache
+                    ' has just been made wrong by the write above.
+                    InvalidatePageCache()
+
                     Return True
                 End Using
             Catch ex As Exception
@@ -1339,7 +1416,11 @@ Namespace SDC.Framework
                         "UPDATE dbo." & PagesTable & " SET Table_SQL = @TableSQL WHERE WindowOrPage = @WindowOrPage", conn)
                         cmd.Parameters.Add("@WindowOrPage", SqlDbType.VarChar, 100).Value = windowOrPageName.Trim()
                         cmd.Parameters.Add("@TableSQL", SqlDbType.VarChar, -1).Value = DbValue(tableSql)
-                        Return cmd.ExecuteNonQuery() > 0
+                        Dim updated = cmd.ExecuteNonQuery() > 0
+                        If updated Then
+                            InvalidatePageCache()
+                        End If
+                        Return updated
                     End Using
                 End Using
             Catch ex As Exception
