@@ -62,6 +62,11 @@ the next time the page opens. This is the ordinary way to add or remove a grid c
 owns that list once it exists. The request's HF column must say so on screen — *applied when the page
 is generated* — or it reads as a bug.
 
+**Ticking a field turns the panel on.** Built 2026-09-09 after generating a page with no ticks and no
+`Display Hotfields`, and finding no button and nothing to say why. Two switches that can disagree is
+how somebody picks their fields, forgets the checkbox, and concludes the feature is broken. The
+checkbox keeps its own meaning — show the panel with every field — and a tick simply implies it.
+
 ## 4. Hot Fields
 
 **Selection only.** An HF tick decides whether a field appears in the panel. It does not affect the

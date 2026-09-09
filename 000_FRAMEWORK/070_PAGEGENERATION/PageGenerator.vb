@@ -62,6 +62,12 @@ Namespace SDC.Framework
         ''' <summary>Whether the generated browse page shows the Hot Fields strip.</summary>
         Public Property UseHotFields As Boolean
 
+        ''' <summary>
+        ''' Which fields the Hot Fields panel shows. Empty means every field, which is what the panel
+        ''' does for a page nobody has curated.
+        ''' </summary>
+        Public Property HotFields As New List(Of String)()
+
         Public ReadOnly Property IsValid As Boolean
             Get
                 Return Errors.Count = 0
@@ -160,6 +166,18 @@ Namespace SDC.Framework
                     End If
                 Else
                     errors.Add("The Hot Fields setting could not be written for " & plan.BrowsePageName & ".")
+                End If
+
+                ' The field list is written on generation and not on save, because an App Admin owns
+                ' it once the page exists - ticking on the panel is how it changes thereafter, and a
+                ' save here would wipe that with no warning. Generating is the deliberate act that
+                ' takes it back to what the request says.
+                If DataAccess.SavePageHotFields(plan.BrowsePageName, plan.HotFields, plan.CreatedBy) Then
+                    If plan.HotFields.Count > 0 Then
+                        created.Add("HOT FIELDS SET:" & plan.BrowsePageName & " (" & plan.HotFields.Count.ToString() & " fields)")
+                    End If
+                Else
+                    errors.Add("The Hot Fields selection could not be written for " & plan.BrowsePageName & ".")
                 End If
             End If
 
@@ -287,7 +305,11 @@ Namespace SDC.Framework
             Dim lookupFields = ParseLookupFields(DbText(request("LookupFields")), plan.Errors)
             Dim requiredFields = ParseFields(DbText(request("AdminRequiredFields")))
             Dim useQbeOnly = ReadGenerationFlag(request, "UseQbeOnly", False)
-            plan.UseHotFields = ReadGenerationFlag(request, "UseHotFields", False)
+            ' Ticking a field is asking for the panel, so it turns it on by itself. Two switches that
+            ' can disagree is how somebody picks their fields, forgets the checkbox, and gets no Hot
+            ' Fields button at all - with nothing on screen to say the ticks were the wrong half.
+            plan.HotFields = ParseFields(If(request.Table.Columns.Contains("HotFields"), DbText(request("HotFields")), String.Empty))
+            plan.UseHotFields = ReadGenerationFlag(request, "UseHotFields", False) OrElse plan.HotFields.Count > 0
 
             If Not plan.GenerateBrowsePage AndAlso Not plan.GenerateMaintenancePage Then
                 plan.Errors.Add("At least one page target must be selected.")
