@@ -75,7 +75,6 @@ Namespace SDC.Framework
         Private Shared ReadOnly crudCaptionCache As New Dictionary(Of Integer, CrudButtonCaptions)()
         Private Shared ReadOnly roleOverrideCaptionCache As New Dictionary(Of String, String)(StringComparer.OrdinalIgnoreCase)
         Private Shared ReadOnly roleStartEmptyCache As New Dictionary(Of String, Boolean)(StringComparer.OrdinalIgnoreCase)
-        Private Shared ReadOnly roleFieldCaptionCache As New Dictionary(Of String, Dictionary(Of String, String))(StringComparer.OrdinalIgnoreCase)
         Private Shared ReadOnly pageInitMetadataCache As New Dictionary(Of String, PageInitMetadata)(StringComparer.OrdinalIgnoreCase)
 
         ''' <summary>
@@ -175,7 +174,6 @@ Namespace SDC.Framework
                 crudCaptionCache.Clear()
                 roleOverrideCaptionCache.Clear()
                 roleStartEmptyCache.Clear()
-                roleFieldCaptionCache.Clear()
                 pageInitMetadataCache.Clear()
                 pageAliasCache.Clear()
                 pageHotFieldsCache.Clear()
@@ -3023,94 +3021,6 @@ Namespace SDC.Framework
             Next
         End Sub
 
-        Public Shared Sub DeleteUser(userId As Integer, Optional updatedBy As Integer = 0)
-            Using conn As New SqlConnection(ConnectionString)
-                conn.Open()
-
-                If TableHasColumn("FW_Users", "DeletedFlag") Then
-                    Using cmd As New SqlCommand(
-                        "UPDATE dbo.FW_Users " &
-                        "SET IsActive = 0, DeletedFlag = 1, DeletedBy = @UpdatedBy, DeletedOn = SYSUTCDATETIME(), UpdatedBy = @UpdatedBy, UpdatedOn = GETDATE() " &
-                        "WHERE UserID = @UserID", conn)
-                        cmd.Parameters.AddWithValue("@UserID", userId)
-                        cmd.Parameters.AddWithValue("@UpdatedBy", If(updatedBy > 0, CType(updatedBy, Object), DBNull.Value))
-                        cmd.ExecuteNonQuery()
-                    End Using
-
-                    LogUpdateAudit("Users_AppAdmin_B",
-                                   "FW_Users",
-                                   "Delete",
-                                   "AfterSave",
-                                   userId.ToString(CultureInfo.InvariantCulture),
-                                   BuildSoftDeleteAuditSnapshotJson("Soft deleted user record."),
-                                   True,
-                                   Nothing,
-                                   updatedBy)
-                    Return
-                End If
-
-                Using cmd As New SqlCommand("DELETE FROM dbo.FW_Users WHERE UserID = @UserID", conn)
-                    cmd.Parameters.AddWithValue("@UserID", userId)
-                    cmd.ExecuteNonQuery()
-                End Using
-
-                LogUpdateAudit("Users_AppAdmin_B",
-                               "FW_Users",
-                               "Delete",
-                               "AfterSave",
-                               userId.ToString(CultureInfo.InvariantCulture),
-                               BuildSoftDeleteAuditSnapshotJson("Deleted user record."),
-                               True,
-                               Nothing,
-                               updatedBy)
-            End Using
-        End Sub
-
-        Public Shared Sub RestoreUser(userId As Integer, Optional updatedBy As Integer = 0)
-            Using conn As New SqlConnection(ConnectionString)
-                conn.Open()
-
-                If TableHasColumn("FW_Users", "DeletedFlag") Then
-                    Using cmd As New SqlCommand(
-                        "UPDATE dbo.FW_Users " &
-                        "SET IsActive = 1, DeletedFlag = 0, DeletedBy = NULL, DeletedOn = NULL, UpdatedBy = @UpdatedBy, UpdatedOn = GETDATE() " &
-                        "WHERE UserID = @UserID", conn)
-                        cmd.Parameters.AddWithValue("@UserID", userId)
-                        cmd.Parameters.AddWithValue("@UpdatedBy", If(updatedBy > 0, CType(updatedBy, Object), DBNull.Value))
-                        cmd.ExecuteNonQuery()
-                    End Using
-
-                    LogUpdateAudit("Users_AppAdmin_B",
-                                   "FW_Users",
-                                   "Restore",
-                                   "AfterSave",
-                                   userId.ToString(CultureInfo.InvariantCulture),
-                                   BuildSoftDeleteAuditSnapshotJson("Restored user record."),
-                                   True,
-                                   Nothing,
-                                   updatedBy)
-                    Return
-                End If
-
-                Using cmd As New SqlCommand(
-                    "UPDATE dbo.FW_Users SET IsActive = 1, UpdatedBy = @UpdatedBy, UpdatedOn = GETDATE() WHERE UserID = @UserID", conn)
-                    cmd.Parameters.AddWithValue("@UserID", userId)
-                    cmd.Parameters.AddWithValue("@UpdatedBy", If(updatedBy > 0, CType(updatedBy, Object), DBNull.Value))
-                    cmd.ExecuteNonQuery()
-                End Using
-
-                LogUpdateAudit("Users_AppAdmin_B",
-                               "FW_Users",
-                               "Restore",
-                               "AfterSave",
-                               userId.ToString(CultureInfo.InvariantCulture),
-                               BuildSoftDeleteAuditSnapshotJson("Restored user record."),
-                               True,
-                               Nothing,
-                               updatedBy)
-            End Using
-        End Sub
-
         Public Shared Function TryGetRegistrationContextForUser(userId As Integer, ByRef registrationId As Integer, ByRef registrationName As String) As Boolean
             registrationId = 0
             registrationName = String.Empty
@@ -3319,10 +3229,11 @@ Namespace SDC.Framework
         ''' separately.
         '''
         ''' A deleted row still holds its address. Letting the address be reused while that row
-        ''' exists creates a duplicate the moment somebody restores it, and RestoreUser sets
-        ''' IsActive = 1 and DeletedFlag = 0 with no check at all - so the conflict would be created
-        ''' by an operation this check never sees. Refusing up front means restore is always safe
-        ''' and needs no second rule.
+        ''' exists creates a duplicate the moment somebody restores it, and a restore clears
+        ''' DeletedFlag without checking anything - so the conflict would be created by an operation
+        ''' this check never sees. Refusing up front means restore is always safe and needs no
+        ''' second rule. The rule outlives any one restore path: the FW_Users one was deleted with
+        ''' its pages on 2026-09-09, and the next one will be no more careful.
         '''
         ''' Told apart rather than merged, because the two need different actions from whoever hit
         ''' them: an active holder means pick another address, a deleted one means restore that user,
@@ -6130,60 +6041,6 @@ Namespace SDC.Framework
             End SyncLock
 
             Return startEmpty
-        End Function
-
-        Public Shared Function GetRoleFieldDisplayCaptions(roleId As Integer, registrationId As Integer, tableName As String) As Dictionary(Of String, String)
-            Dim result As New Dictionary(Of String, String)(StringComparer.OrdinalIgnoreCase)
-            If roleId <= 0 OrElse registrationId <= 0 OrElse String.IsNullOrWhiteSpace(tableName) Then
-                Return result
-            End If
-
-            Dim cacheKey = BuildRoleDetailCacheKey(roleId, registrationId, tableName)
-            SyncLock metadataCacheLock
-                Dim cachedMap As Dictionary(Of String, String) = Nothing
-                If roleFieldCaptionCache.TryGetValue(cacheKey, cachedMap) Then
-                    Return CloneCaptionMap(cachedMap)
-                End If
-            End SyncLock
-
-            Using conn As New SqlConnection(ConnectionString)
-                conn.Open()
-                Using cmd As New SqlCommand(
-                    "SELECT FieldName, " &
-                    "ISNULL(LTRIM(RTRIM(OverrideCaption)), '') AS OverrideCaption, " &
-                    "ISNULL(LTRIM(RTRIM(FriendlyFieldName)), '') AS FriendlyFieldName " &
-                    "FROM dbo.FW_RoleFields " &
-                    "WHERE RoleID = @RoleID AND RegistrationID = @RegistrationID " &
-                    "AND UPPER(LTRIM(RTRIM(TableName))) = UPPER(@TableName) " &
-                    "AND ISNULL(IsActive, 1) = 1", conn)
-                    cmd.Parameters.AddWithValue("@RoleID", roleId)
-                    cmd.Parameters.AddWithValue("@RegistrationID", registrationId)
-                    cmd.Parameters.AddWithValue("@TableName", tableName.Trim())
-
-                    Using reader = cmd.ExecuteReader()
-                        While reader.Read()
-                            Dim fieldName = SafeString(reader("FieldName"))
-                            If fieldName = String.Empty Then
-                                Continue While
-                            End If
-
-                            Dim overrideCaption = SafeString(reader("OverrideCaption"))
-                            Dim friendlyName = SafeString(reader("FriendlyFieldName"))
-                            Dim caption = If(overrideCaption <> String.Empty, overrideCaption, friendlyName)
-
-                            If caption <> String.Empty Then
-                                result(fieldName) = caption
-                            End If
-                        End While
-                    End Using
-                End Using
-            End Using
-
-            SyncLock metadataCacheLock
-                roleFieldCaptionCache(cacheKey) = CloneCaptionMap(result)
-            End SyncLock
-
-            Return result
         End Function
 
         Public Shared Function AddRoleTablePermission(roleId As Integer, registrationId As Integer, 

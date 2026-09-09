@@ -149,9 +149,13 @@ Namespace SDC.Framework
             Me.Controls.Add(leftLabel)
 
             ' Left grid
+            ' The page has two vertical edges and no more: the left list at x=10, and everything
+            ' on the right starting at x=260 and ending at x=1150 - the permissions grid, the field
+            ' grid below it, and the buttons below that. The left list runs the full height beside
+            ' all of them, to 783, which is where the field grid ends.
             leftGrid = New DataGridView With {
                 .Location = New Point(10, 65),
-                .Size = New Size(160, 250),
+                .Size = New Size(160, 718),
                 .AllowUserToAddRows = False,
                 .AllowUserToDeleteRows = False,
                 .ReadOnly = True,
@@ -219,7 +223,7 @@ Namespace SDC.Framework
                 .Name = "Table_Alias",
                 .DataPropertyName = "Table_Alias",
                 .HeaderText = "Table",
-                .Width = 160,
+                .Width = 240,
                 .AutoSizeMode = DataGridViewAutoSizeColumnMode.None,
                 .ReadOnly = True
             })
@@ -242,6 +246,16 @@ Namespace SDC.Framework
                 col.DefaultCellStyle.Alignment = DataGridViewContentAlignment.MiddleCenter
                 rightGrid.Columns.Add(col)
             Next
+
+            ' Can_ViewAllRecords was captioned "By RegID", which names a column rather than a
+            ' capability - and RegistrationID is not a thing this page should be putting in front of
+            ' anyone. All it governs is whether an App Admin gets the registration selector, so it
+            ' is hidden rather than dropped: the permission is still read and written, and may yet
+            ' be wanted on screen under a name that says what it does. Its 70px joins the Fill
+            ' caption column.
+            If rightGrid.Columns.Contains("Can_ViewAllRecords") Then
+                rightGrid.Columns("Can_ViewAllRecords").Visible = False
+            End If
             rightGrid.Columns.Add(New DataGridViewTextBoxColumn() With {
                 .Name = "OverrideCaption",
                 .DataPropertyName = "OverrideCaption",
@@ -258,7 +272,7 @@ Namespace SDC.Framework
             ' OK Button
             okButton = New Button With {
                 .Text = "OK",
-                .Location = New Point(910, 800),
+                .Location = New Point(980, 800),
                 .Size = New Size(80, 35)
             }
             AddHandler okButton.Click, AddressOf OkButton_Click
@@ -267,7 +281,7 @@ Namespace SDC.Framework
             ' Cancel Button
             cancelButton = New Button With {
                 .Text = "Cancel",
-                .Location = New Point(1000, 800),
+                .Location = New Point(1070, 800),
                 .Size = New Size(80, 35),
                 .DialogResult = DialogResult.Cancel
             }
@@ -279,7 +293,7 @@ Namespace SDC.Framework
             ' Role Fields section label
             roleFieldsLabel = New Label With {
                 .Text = "Role Fields (Field-Level Permissions):",
-                .Location = New Point(10, 328),
+                .Location = New Point(260, 328),
                 .Size = New Size(400, 20),
                 .Font = New Font("Arial", 10, FontStyle.Bold)
             }
@@ -287,8 +301,8 @@ Namespace SDC.Framework
 
             ' Role Fields grid
             roleFieldsGrid = New DataGridView With {
-                .Location = New Point(10, 353),
-                .Size = New Size(1070, 430),
+                .Location = New Point(260, 353),
+                .Size = New Size(890, 430),
                 .AllowUserToAddRows = False,
                 .AllowUserToDeleteRows = False,
                 .ReadOnly = False,
@@ -307,6 +321,10 @@ Namespace SDC.Framework
                 .Width = 240,
                 .AutoSizeMode = DataGridViewAutoSizeColumnMode.None
             })
+            ' The two grids are read as one: first column 240 in both, then a middle section that
+            ' totals 420 in both - six ticks at 70 above, six at 60 plus Order at 60 here - so the
+            ' Fill caption column ends up the same width in each and every edge lines up. Changing
+            ' one width means changing another to keep the 420. Hidden columns cost nothing.
             For Each rfDef In New (String, String, Integer, Boolean)() {
                 ("CA_CanChange", "CA Can Change", 110, False),
                 ("Can_Create", "Create", 60, False),
@@ -335,11 +353,20 @@ Namespace SDC.Framework
             If roleFieldsGrid.Columns.Contains("CA_CanChange") Then
                 roleFieldsGrid.Columns("CA_CanChange").Visible = False
             End If
+
+            ' IsActive goes the same way, for a stronger reason: nothing sets it by hand. It is
+            ' derived - ShouldFieldBeActive recomputes it from the other ticks on the row, so a
+            ' field switches itself on the moment anything is configured on it. A checkbox that
+            ' overwrites itself is worse than no checkbox, and its 60px joins the Fill caption
+            ' column. The cell stays, because the save path and ShouldFieldBeActive both read it.
+            If roleFieldsGrid.Columns.Contains("IsActive") Then
+                roleFieldsGrid.Columns("IsActive").Visible = False
+            End If
             roleFieldsGrid.Columns.Add(New DataGridViewTextBoxColumn() With {
                 .Name = "OrderBy",
                 .DataPropertyName = "OrderBy",
                 .HeaderText = "Order",
-                .Width = 58,
+                .Width = 60,
                 .AutoSizeMode = DataGridViewAutoSizeColumnMode.None
             })
             roleFieldsGrid.Columns.Add(New DataGridViewTextBoxColumn() With {
