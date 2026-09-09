@@ -22,19 +22,19 @@ button, so the act that should be routine carries the weight of the act that sho
 | | Writes | Destroys | Needs a rebuild |
 |---|---|---|---|
 | **Save** | the `FW_Pages` row: grid columns and order, caption, Hot Fields on/off | nothing | no |
-| **Update** | the generated half of the page's code: its fields | nothing | yes |
+| **Apply Fields** | the generated half of the page's code: its fields | nothing | yes |
 | **Generate** | both halves, plus the menu or dashboard button | layouts, saved searches, the Hot Fields list | yes |
 
 **Save is built.** It applies on saving the request, updates a page that exists and never creates
 one, and says what it applied and what still needs generating.
 
-**Update is the one people would use most.** Adding a field to a `_U` page is ordinary maintenance.
+**Apply Fields is the one people would use most.** Adding a field to a `_U` page is ordinary maintenance.
 
 **Generate becomes rare, and can afford to be loud** - which is what makes the reset in
 `PAGE_FIELD_PICKER_SPEC.md` section 5 acceptable. Today Generate carries both meanings, which is
 why it feels heavy for adding a column.
 
-## 2. The file split, which is what makes Update safe
+## 2. The file split, which is what makes Apply Fields safe
 
 A generated `_U` page becomes two files:
 
@@ -47,7 +47,7 @@ VB partial classes, so both halves are one class at compile time. The generated 
 the custom file calls - `BuildGeneratedFields()` or similar - so the custom half decides where the
 generated controls sit rather than being interleaved with them.
 
-**Update then rewrites one file wholesale.** No merge, no hash comparison, no judgement about
+**Apply Fields then rewrites one file wholesale.** No merge, no hash comparison, no judgement about
 whether somebody touched it. The question "was this file edited" stops being asked, because the
 answer stops mattering.
 
@@ -66,7 +66,7 @@ answer stops mattering.
 error naming the line, at once. Today the same mistake is silent - the page is skipped as manually
 edited, so you get neither the change nor the error.
 
-## 3. A separate page, not an Update button
+## 3. A separate page, not an Apply Fields button
 
 `FW_PageSettings_U`: one page, offering only what can change after generation.
 
@@ -116,7 +116,7 @@ telling generated code from hand-written code in a file that has been edited is 
 the hash was standing in for.
 
 **Not automatic, and not urgent.** A page that is never split keeps today's behaviour, hash and all.
-The split is what buys it Update.
+The split is what buys it Apply Fields.
 
 **The baseline hash afterwards** covers only the generated file. A page that has been split can no
 longer be "manually edited" in the sense the generator means, so that report disappears for it - and
@@ -152,16 +152,19 @@ reason, and the reasons are worth keeping because they are what makes the page s
 So everything on the settings page is either data or the generated field list, and nothing on it can
 leave the application half-moved.
 
+**The action is called Apply Fields.** Decided 2026-09-09. Update would have read well beside Save
+and Generate, and it is the word every other page already uses for the CRUD action on a record -
+which is a different thing entirely, on the same screen.
+
+**`_B` pages are not split.** Decided 2026-09-09. A browse page already keeps its columns, their
+order, its caption and its Hot Fields in `FW_Pages` and names none of them in code, so there is
+almost nothing in a generated `_B` for the generator to own separately. Splitting it for symmetry
+would add a file per page to maintain and buy nothing. Only `_U` is split.
+
 **Still open:**
 
-1. **What the action is called.** The page is `FW_PageSettings_U`, decided 2026-09-09. The action
-   that rewrites the generated fields is still unnamed: **Update** reads well beside Save and
-   Generate but collides with the CRUD Update on every other page, so **Apply Fields** or **Rebuild
-   Fields** may serve the reader better.
-2. **`_B` pages.** They are already almost entirely data - `Table_SQL` decides their columns - so a
-   split may buy them nothing. Worth confirming before doing it to both halves out of symmetry.
-3. **What Update does when the `.Generated.vb` is missing** - a page generated before the split.
-   Probably: create it, and say the page has been split.
+1. **What Apply Fields does when the `.Generated.vb` is missing** - a page generated before the
+   split. Probably: create it, and say the page has been split.
 
 ## 7. Before this is called done
 
@@ -169,7 +172,7 @@ It crosses page generation, the browse and maintenance base classes, and the dat
 Application-Wide Change Gate applies. The behaviour matrix must cover:
 
 - a split page and an unsplit one, through all three actions
-- Update adding a field, and removing one that custom code references - the second must fail the
+- Apply Fields adding a field, and removing one that custom code references - the second must fail the
   build, not silently
 - Generate on a split page: both halves rewritten, custom half replaced, the reset applied
 - Save on a page that does not exist yet - it must not create a row
@@ -178,4 +181,4 @@ Application-Wide Change Gate applies. The behaviour matrix must cover:
   overwriting the live value on Save
 
 Manual verification on real pages, not compilation. Both regression scripts, and a page that has
-been hand-edited must survive an Update with its edits intact - which is the whole point.
+been hand-edited must survive an Apply Fields with its edits intact - which is the whole point.

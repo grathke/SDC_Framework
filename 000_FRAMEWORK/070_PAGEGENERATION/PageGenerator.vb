@@ -49,6 +49,13 @@ Namespace SDC.Framework
         Public Property MaintenancePageName As String = String.Empty
         Public Property BrowsePath As String = String.Empty
         Public Property MaintenancePath As String = String.Empty
+
+        ''' <summary>
+        ''' The generated half of the maintenance page - <c>PageName.Generated.vb</c> beside the
+        ''' hand-written one. Always overwritten; see BuildMaintenanceGeneratedSource.
+        ''' </summary>
+        Public Property MaintenanceGeneratedPath As String = String.Empty
+        Public Property MaintenanceGeneratedSource As String = String.Empty
         Public Property BrowseSource As String = String.Empty
         Public Property MaintenanceSource As String = String.Empty
         Public Property TableName As String = String.Empty
@@ -123,11 +130,18 @@ Namespace SDC.Framework
                 End If
             End If
             If plan.GenerateMaintenancePage Then
-                If WriteGeneratedPage(plan.MaintenancePath, plan.MaintenanceSource, overwriteExistingPages, created, skipped) Then
-                    If Not SaveMaintenanceBaseline(requestId, plan.MaintenanceSource, errors) Then
+                ' The generated half first and always. It is the generator's own file - nothing else
+                ' writes to it, so there is nothing to protect and no question to ask about whether
+                ' somebody edited it.
+                If WriteAlways(plan.MaintenanceGeneratedPath, plan.MaintenanceGeneratedSource, created, errors) Then
+                    If Not SaveMaintenanceBaseline(requestId, plan.MaintenanceGeneratedSource, errors) Then
                         errors.Add("The generated maintenance source baseline could not be saved.")
                     End If
                 End If
+
+                ' The hand-written half goes through the existing protection, which now guards
+                ' something worth guarding: a file the generator never reads and never needs to.
+                WriteGeneratedPage(plan.MaintenancePath, plan.MaintenanceSource, overwriteExistingPages, created, skipped)
             End If
 
             If plan.GenerateBrowsePage Then
@@ -354,6 +368,13 @@ Namespace SDC.Framework
             plan.BrowsePath = GeneratedPagePath(workspaceRoot, plan.BrowsePageName)
             plan.MaintenancePath = GeneratedPagePath(workspaceRoot, plan.MaintenancePageName)
 
+            ' Beside the hand-written half, wherever that turned out to be. A filed page keeps its
+            ' two halves together, which is the only arrangement that makes sense to read.
+            If Not String.IsNullOrWhiteSpace(plan.MaintenancePath) Then
+                plan.MaintenanceGeneratedPath = Path.Combine(Path.GetDirectoryName(plan.MaintenancePath),
+                                                             Path.GetFileNameWithoutExtension(plan.MaintenancePath) & ".Generated.vb")
+            End If
+
             If plan.GenerateBrowsePage Then
                 plan.BrowseSource = BuildBrowseSource(plan.BrowsePageName,
                                                       plan.TableName,
@@ -361,12 +382,13 @@ Namespace SDC.Framework
                                                       plan.GenerateMaintenancePage)
             End If
             If plan.GenerateMaintenancePage Then
-                plan.MaintenanceSource = BuildMaintenanceSource(plan.MaintenancePageName,
-                                                                plan.TableName,
-                                                                plan.PrimaryKey,
-                                                                maintenanceFields,
-                                                                requiredFields,
-                                                                lookupFields)
+                plan.MaintenanceGeneratedSource = BuildMaintenanceGeneratedSource(plan.MaintenancePageName,
+                                                                                  plan.TableName,
+                                                                                  plan.PrimaryKey,
+                                                                                  maintenanceFields,
+                                                                                  requiredFields,
+                                                                                  lookupFields)
+                plan.MaintenanceSource = BuildMaintenanceCustomSource(plan.MaintenancePageName)
             End If
 
             Return plan
@@ -1236,6 +1258,38 @@ Namespace SDC.Framework
             Next
         End Sub
 
+        ''' <summary>
+        ''' Writes a file the generator owns outright, overwriting whatever is there.
+        '''
+        ''' No manual-edit check and no skip, deliberately. WriteGeneratedPage protects a file
+        ''' somebody may have worked in; this one carries a header saying every edit to it is lost,
+        ''' and the whole point of splitting the page was that this half never has to be protected.
+        ''' </summary>
+        Private Shared Function WriteAlways(path As String,
+                                             content As String,
+                                             created As List(Of String),
+                                             errors As List(Of String)) As Boolean
+            If String.IsNullOrWhiteSpace(path) Then
+                errors.Add("No path was worked out for the generated half of the maintenance page.")
+                Return False
+            End If
+
+            Try
+                Dim folder = System.IO.Path.GetDirectoryName(path)
+                If Not String.IsNullOrWhiteSpace(folder) AndAlso Not Directory.Exists(folder) Then
+                    Directory.CreateDirectory(folder)
+                End If
+
+                Dim existed = File.Exists(path)
+                File.WriteAllText(path, content, New UTF8Encoding(False))
+                created.Add(If(existed, "REWRITTEN: ", String.Empty) & System.IO.Path.GetFileName(path))
+                Return True
+            Catch ex As Exception
+                errors.Add("Could not write " & System.IO.Path.GetFileName(path) & ": " & ex.Message)
+                Return False
+            End Try
+        End Function
+
         Private Shared Function WriteGeneratedPage(path As String,
                                                content As String,
                                                overwriteExistingPage As Boolean,
@@ -1346,17 +1400,32 @@ Namespace SDC.Framework
         End Function
 
         ''' <summary>
-        ''' Which of this page's fields the database computes for itself.
+        ''' The half of a generated _U page the generator owns: its fields, and everything derived
+        ''' from them.
         '''
-        ''' They are still put on the page, because FirstLast is worth reading on a saved record,
-        ''' but they are never editable and never required. SQL Server refuses any write naming a
-        ''' computed column, and on a new record the value does not exist until after the save - so
-        ''' a required computed field can never be satisfied and would block the save on its own.
+        ''' Rewritten whole by Apply Fields and never read back, which is what makes adding a field
+        ''' to a page somebody has edited safe. The question "was this file changed by hand" stops
+        ''' being asked because the answer stops mattering - the hand-written half is a different
+        ''' file and this one is not consulted.
+        '''
+        ''' Everything the generated code needs is declared here, including the plumbing - record,
+        ''' formBindingSource, originalRowVersion - because this is where it is used. The custom half
+        ''' declares only what its constructor sets.
+        '''
+        ''' The control fields are deliberately not ReadOnly. VB only allows a ReadOnly field to be
+        ''' assigned in a constructor, and the constructor belongs to the custom half; keeping them
+        ''' ReadOnly would have meant the generator owning the one method most likely to be
+        ''' customised. Nothing reassigns them.
         ''' </summary>
-        Private Shared Function BuildMaintenanceSource(pageName As String, tableName As String, primaryKey As String, fields As List(Of String), requiredFields As List(Of String), lookupFields As List(Of LookupFieldSpec)) As String
+        Private Shared Function BuildMaintenanceGeneratedSource(pageName As String, tableName As String, primaryKey As String, fields As List(Of String), requiredFields As List(Of String), lookupFields As List(Of LookupFieldSpec)) As String
             Dim computedColumns = DataAccess.GetComputedColumnNames(tableName)
             Dim computedOnPage = fields.Where(Function(field) computedColumns.Contains(field)).ToList()
             Dim output As New StringBuilder()
+            output.AppendLine("' <auto-generated>")
+            output.AppendLine("' Written by the page generator. Every edit here is lost the next time the fields are")
+            output.AppendLine("' applied. Put your own code in " & pageName & ".vb, which is never rewritten, and use the")
+            output.AppendLine("' hooks at the end of this file to reach into what is generated.")
+            output.AppendLine("' </auto-generated>")
             output.AppendLine("Option Strict On")
             output.AppendLine("Option Explicit On")
             output.AppendLine()
@@ -1367,12 +1436,8 @@ Namespace SDC.Framework
             output.AppendLine("Imports System.Windows.Forms")
             output.AppendLine()
             output.AppendLine("Namespace SDC.Framework")
-            output.AppendLine("    Public Class " & pageName)
-            output.AppendLine("        Inherits FW_Base_U")
+            output.AppendLine("    Partial Public Class " & pageName)
             output.AppendLine()
-            output.AppendLine("        Private ReadOnly recordId As Integer")
-            output.AppendLine("        Private ReadOnly currentUser As UserContext")
-            output.AppendLine("        Private ReadOnly accessProfile As AccessProfile")
             output.AppendLine("        Private ReadOnly tableName As String = """ & EscapeLiteral(tableName) & """")
             output.AppendLine("        Private ReadOnly primaryKey As String = """ & EscapeLiteral(primaryKey) & """")
             If computedOnPage.Count > 0 Then
@@ -1386,17 +1451,14 @@ Namespace SDC.Framework
             output.AppendLine("        Private originalRowVersion As Byte()")
             For Each field In fields
                 If IsLookupField(field, lookupFields) Then
-                    output.AppendLine("        Private ReadOnly " & LookupControlVariable(field) & " As ComboBox")
+                    output.AppendLine("        Private " & LookupControlVariable(field) & " As ComboBox")
                 Else
-                    output.AppendLine("        Private ReadOnly " & ControlVariable(field) & " As TextBox")
+                    output.AppendLine("        Private " & ControlVariable(field) & " As TextBox")
                 End If
             Next
             output.AppendLine()
-            output.AppendLine("        Public Sub New(id As Integer, user As UserContext, Optional profile As AccessProfile = Nothing)")
-            output.AppendLine("            MyBase.New()")
-            output.AppendLine("            recordId = id")
-            output.AppendLine("            currentUser = user")
-            output.AppendLine("            accessProfile = profile")
+            output.AppendLine("        ''' <summary>Builds every generated field. Called by the constructor in " & pageName & ".vb.</summary>")
+            output.AppendLine("        Private Sub BuildGeneratedFields()")
             ' No Text assignment: Base_U builds the caption from the page name and the mode, so a
             ' generated page opens as "Edit Entity X" rather than "EntityX_U". A generated page that
             ' needs its own wording overrides BuildMaintenanceTitle.
@@ -1415,9 +1477,7 @@ Namespace SDC.Framework
                     ' A foreign key goes through AddComboField for the same reason a plain field
                     ' goes through AddField: the helper paints the App Admin blue when required,
                     ' adds the marker, registers the required border and names both controls to the
-                    ' convention. Built by hand, as this used to be, a required lookup got the
-                    ' asterisk but never the blue - and since ShouldSkipBrRequiredStyling decides
-                    ' App Admin ownership by that blue, the field silently lost its precedence.
+                    ' convention.
                     output.AppendLine("            " & LookupControlVariable(field) & " = AddComboField(""" & EscapeLiteral(field) & """, " & y.ToString() & ", " & If(isRequired, "True", "False") & ", 20, 320)")
                 Else
                     output.AppendLine("            " & ControlVariable(field) & " = AddField(""" & EscapeLiteral(field) & """, " & y.ToString() & ", False, " & If(isRequired, "True", "False") & ")")
@@ -1426,20 +1486,8 @@ Namespace SDC.Framework
                 y += 42
             Next
             output.AppendLine("            SetManualTabOrder(" & String.Join(", ", fields.Select(Function(field) FieldControlVariable(field, lookupFields)).Concat({"okButton", "cancelActionButton"})) & ")")
-            output.AppendLine("            BindToForm()")
-            output.AppendLine("            ApplyMode()")
+            output.AppendLine("            OnFieldsBuilt()")
             output.AppendLine("        End Sub")
-            output.AppendLine()
-            output.AppendLine("        Public Overrides ReadOnly Property SavedRecordId As Integer")
-            output.AppendLine("            Get")
-            output.AppendLine("                If record Is Nothing OrElse record.Table Is Nothing OrElse Not record.Table.Columns.Contains(primaryKey) OrElse record.IsNull(primaryKey) Then Return 0")
-            output.AppendLine("                Return Convert.ToInt32(record(primaryKey), Globalization.CultureInfo.InvariantCulture)")
-            output.AppendLine("            End Get")
-            output.AppendLine("        End Property")
-            output.AppendLine()
-            output.AppendLine("        Protected Overrides Function GetPageName() As String")
-            output.AppendLine("            Return NameOf(" & pageName & ")")
-            output.AppendLine("        End Function")
             output.AppendLine()
             output.AppendLine("        Protected Overrides Function GetTableNameOverride() As String")
             output.AppendLine("            Return tableName")
@@ -1480,6 +1528,7 @@ Namespace SDC.Framework
             End If
             output.AppendLine("            If record.Table.Columns.Contains(""RowVersion"") AndAlso Not record.IsNull(""RowVersion"") Then originalRowVersion = CType(DirectCast(record(""RowVersion""), Byte()).Clone(), Byte())")
             output.AppendLine("            CaptureOriginalRowVersion(originalRowVersion)")
+            output.AppendLine("            OnRecordBound()")
             output.AppendLine("        End Sub")
             output.AppendLine()
             output.AppendLine("        ''' <summary>")
@@ -1494,23 +1543,6 @@ Namespace SDC.Framework
             output.AppendLine("                If isComputed Then ShowComputedFieldHint(control)")
             output.AppendLine("            Next")
             output.AppendLine("        End Sub")
-            output.AppendLine()
-            output.AppendLine("        Protected Overrides Function TryBuildRecord() As Boolean")
-            output.AppendLine("            Return True")
-            output.AppendLine("        End Function")
-            output.AppendLine()
-            output.AppendLine("        ''' <summary>Warns before discarding edits. Without this Cancel would discard silently.</summary>")
-            output.AppendLine("        Protected Overrides Function ShouldWarnOnCancel() As Boolean")
-            output.AppendLine("            Return True")
-            output.AppendLine("        End Function")
-            output.AppendLine()
-            output.AppendLine("        ''' <summary>")
-            output.AppendLine("        ''' Field-level permissions choose Can_Create over Can_Update from this. Without it")
-            output.AppendLine("        ''' every new record would be evaluated as an update and Can_Create would never apply.")
-            output.AppendLine("        ''' </summary>")
-            output.AppendLine("        Protected Overrides Function IsCreatingNewRecord() As Boolean")
-            output.AppendLine("            Return recordId <= 0")
-            output.AppendLine("        End Function")
             output.AppendLine()
 
             If lookupFields.Any(Function(item) fields.Any(Function(field) String.Equals(field, item.FieldName, StringComparison.OrdinalIgnoreCase))) Then
@@ -1531,6 +1563,7 @@ Namespace SDC.Framework
                     output.AppendLine("            values(""" & EscapeLiteral(field) & """) = " & ControlVariable(field) & ".Text")
                 End If
             Next
+            output.AppendLine("            OnBeforeSave(values)")
             output.AppendLine("            Dim savedId As Integer = recordId")
             output.AppendLine("            If savedId <= 0 AndAlso record.Table.Columns.Contains(primaryKey) AndAlso Not record.IsNull(primaryKey) Then Integer.TryParse(Convert.ToString(record(primaryKey)), savedId)")
             output.AppendLine("            Dim updatedBy = If(SessionState.IsActive, SessionState.Current.Value.UserID, 0)")
@@ -1568,6 +1601,108 @@ Namespace SDC.Framework
             output.AppendLine()
             output.AppendLine("        Protected Overrides Function ResolveAuditRecordKey() As String")
             output.AppendLine("            Return If(record Is Nothing OrElse record.Table Is Nothing OrElse Not record.Table.Columns.Contains(primaryKey) OrElse record.IsNull(primaryKey), String.Empty, Convert.ToString(record(primaryKey)))")
+            output.AppendLine("        End Function")
+            output.AppendLine()
+            output.AppendLine("        ' Hooks. Implement any of these in " & pageName & ".vb to reach into what is generated")
+            output.AppendLine("        ' above. One nobody implements compiles away to nothing, so a page that uses none of")
+            output.AppendLine("        ' them carries no cost. They are Subs because VB partial methods cannot return a value -")
+            output.AppendLine("        ' to refuse a save, override TryBuildRecord, which FW_Base_U already calls for that.")
+            output.AppendLine()
+            output.AppendLine("        ''' <summary>Every generated control exists and the tab order is set.</summary>")
+            output.AppendLine("        Partial Private Sub OnFieldsBuilt()")
+            output.AppendLine("        End Sub")
+            output.AppendLine()
+            output.AppendLine("        ''' <summary>The record is loaded and every generated control is bound to it.</summary>")
+            output.AppendLine("        Partial Private Sub OnRecordBound()")
+            output.AppendLine("        End Sub")
+            output.AppendLine()
+            output.AppendLine("        ''' <summary>The values are built and nothing is written yet. Add, change or remove entries.</summary>")
+            output.AppendLine("        Partial Private Sub OnBeforeSave(values As Dictionary(Of String, Object))")
+            output.AppendLine("        End Sub")
+            output.AppendLine("    End Class")
+            output.AppendLine("End Namespace")
+            Return output.ToString()
+        End Function
+
+        ''' <summary>
+        ''' The half of a generated _U page nobody else writes to.
+        '''
+        ''' Written once, when the page is first generated, and never overwritten afterwards except
+        ''' by a deliberate Generate. Apply Fields rewrites the other file and does not read this
+        ''' one, so whatever is added here survives a page gaining or losing fields.
+        '''
+        ''' It holds the constructor because that is the method most likely to be customised, and
+        ''' only what the constructor sets. Everything derived from the field list lives in the
+        ''' generated half.
+        ''' </summary>
+        Private Shared Function BuildMaintenanceCustomSource(pageName As String) As String
+            Dim output As New StringBuilder()
+            output.AppendLine("Option Strict On")
+            output.AppendLine("Option Explicit On")
+            output.AppendLine()
+            output.AppendLine("Imports System.Collections.Generic")
+            output.AppendLine("Imports System.ComponentModel")
+            output.AppendLine("Imports System.Data")
+            output.AppendLine("Imports System.Drawing")
+            output.AppendLine("Imports System.Windows.Forms")
+            output.AppendLine()
+            output.AppendLine("Namespace SDC.Framework")
+            output.AppendLine()
+            output.AppendLine("    ''' <summary>")
+            output.AppendLine("    ''' This file is yours. The page generator writes " & pageName & ".Generated.vb and never")
+            output.AppendLine("    ''' reads this one, so anything added here survives the page gaining or losing fields.")
+            output.AppendLine("    '''")
+            output.AppendLine("    ''' To reach into the generated half, implement OnFieldsBuilt, OnRecordBound or")
+            output.AppendLine("    ''' OnBeforeSave - they are declared at the end of that file. To refuse a save, put the")
+            output.AppendLine("    ''' check in TryBuildRecord below.")
+            output.AppendLine("    ''' </summary>")
+            output.AppendLine("    Partial Public Class " & pageName)
+            output.AppendLine("        Inherits FW_Base_U")
+            output.AppendLine()
+            output.AppendLine("        Private ReadOnly recordId As Integer")
+            output.AppendLine("        Private ReadOnly currentUser As UserContext")
+            output.AppendLine("        Private ReadOnly accessProfile As AccessProfile")
+            output.AppendLine()
+            output.AppendLine("        Public Sub New(id As Integer, user As UserContext, Optional profile As AccessProfile = Nothing)")
+            output.AppendLine("            MyBase.New()")
+            output.AppendLine("            recordId = id")
+            output.AppendLine("            currentUser = user")
+            output.AppendLine("            accessProfile = profile")
+            output.AppendLine("            BuildGeneratedFields()")
+            output.AppendLine("            BindToForm()")
+            output.AppendLine("            ApplyMode()")
+            output.AppendLine("        End Sub")
+            output.AppendLine()
+            output.AppendLine("        Public Overrides ReadOnly Property SavedRecordId As Integer")
+            output.AppendLine("            Get")
+            output.AppendLine("                If record Is Nothing OrElse record.Table Is Nothing OrElse Not record.Table.Columns.Contains(primaryKey) OrElse record.IsNull(primaryKey) Then Return 0")
+            output.AppendLine("                Return Convert.ToInt32(record(primaryKey), Globalization.CultureInfo.InvariantCulture)")
+            output.AppendLine("            End Get")
+            output.AppendLine("        End Property")
+            output.AppendLine()
+            output.AppendLine("        Protected Overrides Function GetPageName() As String")
+            output.AppendLine("            Return NameOf(" & pageName & ")")
+            output.AppendLine("        End Function")
+            output.AppendLine()
+            output.AppendLine("        ''' <summary>")
+            output.AppendLine("        ''' Where a save is refused. FW_Base_U calls this before SaveRecord and abandons the")
+            output.AppendLine("        ''' save when it returns False, with the page left open and the edits intact.")
+            output.AppendLine("        ''' </summary>")
+            output.AppendLine("        Protected Overrides Function TryBuildRecord() As Boolean")
+            output.AppendLine("            Return True")
+            output.AppendLine("        End Function")
+            output.AppendLine()
+            output.AppendLine("        ''' <summary>Warns before discarding edits. Without this Cancel would discard silently.</summary>")
+            output.AppendLine("        Protected Overrides Function ShouldWarnOnCancel() As Boolean")
+            output.AppendLine("            Return True")
+            output.AppendLine("        End Function")
+            output.AppendLine()
+            output.AppendLine("        ''' <summary>")
+            output.AppendLine("        ''' Field-level permissions choose Can_Create over Can_Update from this. Without it")
+            output.AppendLine("        ''' every new record would be evaluated as an update and Can_Create would never apply.")
+            output.AppendLine("        ''' </summary>")
+            output.AppendLine("        Protected Overrides Function IsCreatingNewRecord() As Boolean")
+            output.AppendLine("            Return recordId <= 0")
             output.AppendLine("        End Function")
             output.AppendLine("    End Class")
             output.AppendLine("End Namespace")
