@@ -41,6 +41,7 @@ Namespace SDC.Framework
         Private useRegistrationIdCheckBox As CheckBox
         Private browseSqlTextBox As TextBox
         Private browseFieldsTextBox As TextBox
+        Private hotFieldsTextBox As TextBox
         Private maintenanceFieldsTextBox As TextBox
         Private directionsTextBox As ListBox
         Private lookupFieldsTextBox As TextBox
@@ -262,6 +263,7 @@ Namespace SDC.Framework
             AddQuestionRow(fields, "SelectFields", "6. Select Fields", fieldSelectionPanel, 46)
 
             browseFieldsTextBox = AddEntryField(fields, "BrowseFields", True, 34, 780, False, "   " & ChrW(8226) & " _B Fields")
+            hotFieldsTextBox = AddEntryField(fields, "HotFields", True, 34, 780, False, "   " & ChrW(8226) & " Hot Fields")
             maintenanceFieldsTextBox = AddEntryField(fields, "MaintenanceFields", True, 34, 780, False, "   " & ChrW(8226) & " _U Fields")
             lookupFieldsTextBox = AddEntryField(fields, "LookupFields", True, 34, 780, False, "   " & ChrW(8226) & " Lookup Fields")
             adminRequiredFieldsTextBox = AddEntryField(fields, "AdminRequiredFields", True, 34, 780, False, "   " & ChrW(8226) & " Admin Required Fields")
@@ -1323,6 +1325,10 @@ Namespace SDC.Framework
                 useQbeOnlyCheckBox.Checked = generateBrowsePageCheckBox.Checked AndAlso
                                              If(row.Table.Columns.Contains("UseQbeOnly") AndAlso Not row.IsNull("UseQbeOnly"), Convert.ToBoolean(row("UseQbeOnly")), False)
                 browseFieldsTextBox.Text = DbText(row("BrowseFields"))
+                ' Guarded like UseQbeOnly and IconFileName above: a request read before sql/083 has
+                ' been applied has no such column, and a page generator that will not open is a
+                ' worse outcome than a tick list that starts empty.
+                hotFieldsTextBox.Text = If(row.Table.Columns.Contains("HotFields"), DbText(row("HotFields")), String.Empty)
                 maintenanceFieldsTextBox.Text = DbText(row("MaintenanceFields"))
                 browseSqlTextBox.Text = DbText(row("BrowseSql"))
                 lookupSpecs = DbText(row("LookupFields"))
@@ -1705,17 +1711,21 @@ Namespace SDC.Framework
             Dim computedFields = DataAccess.GetComputedColumnNames(tableName)
             ' 314 wider than it was: 224 for the browse grid's Displays column and 150 for the
             ' maintenance grid's, less the 60 the Edit button column gave back. The left panel is
-            ' fixed at 560 and the right takes what remains, so each change in width lands on the
-            ' grid that gained or lost the column.
+            ' fixed and the right takes what remains, so each change in width lands on the grid that
+            ' gained or lost the column.
+            '
+            ' 55 wider again on 2026-09-09 for the browse grid's HF column: the left panel went from
+            ' 560 to 615 and the dialog from 1294 to 1349, the same delta, so the maintenance grid
+            ' keeps the width it had rather than paying for a column it does not carry.
             Using dialog As New Form With {
                 .Text = "Select _B and _U Fields",
                 .StartPosition = FormStartPosition.CenterParent,
-                .ClientSize = New Size(1294, 620),
+                .ClientSize = New Size(1349, 620),
                 .MinimizeBox = False,
                 .MaximizeBox = False
             }
                 Dim layout As New TableLayoutPanel With {.Dock = DockStyle.Fill, .ColumnCount = 2, .RowCount = 2, .Padding = New Padding(10)}
-                layout.ColumnStyles.Add(New ColumnStyle(SizeType.Absolute, 560))
+                layout.ColumnStyles.Add(New ColumnStyle(SizeType.Absolute, 615))
                 layout.ColumnStyles.Add(New ColumnStyle(SizeType.Percent, 100))
                 layout.RowStyles.Add(New RowStyle(SizeType.Percent, 100))
                 layout.RowStyles.Add(New RowStyle(SizeType.Absolute, 92))
@@ -1747,6 +1757,15 @@ Namespace SDC.Framework
                     .MinimumWidth = 130,
                     .AutoSizeMode = DataGridViewAutoSizeColumnMode.Fill
                 })
+                ' Whether the field appears in the Hot Fields panel, which is a different question
+                ' from whether it appears in the grid - the panel exists to show what the grid does
+                ' not. Beside the field name rather than at the end, so the two ticks that decide
+                ' where a field is seen sit either side of the field they decide it for.
+                browseGrid.Columns.Add(New DataGridViewCheckBoxColumn With {
+                    .Name = "HotField",
+                    .HeaderText = "HF",
+                    .Width = 55
+                })
                 browseGrid.Columns.Add(New DataGridViewCheckBoxColumn With {
                     .Name = "OrderBy",
                     .HeaderText = "Order By",
@@ -1776,6 +1795,7 @@ Namespace SDC.Framework
                     .Width = 150
                 })
                 Dim savedBrowseFields = browseFieldsTextBox.Text.Trim()
+                Dim savedHotFields = hotFieldsTextBox.Text.Trim()
                 Dim orderByFields = ParseOrderByFields(browseSqlTextBox.Text)
                 Dim orderByDirections = ParseOrderByDirections(browseSqlTextBox.Text)
 
@@ -1801,10 +1821,14 @@ Namespace SDC.Framework
                     End If
                 Next
 
+                ' Positional, so the HF value sits between the field name and Order By exactly as the
+                ' columns were added. A column inserted above without a value inserted here would
+                ' shift every value after it one cell to the left, silently.
                 For Each field In fields
                     Dim rowIndex = browseGrid.Rows.Add(
                         If(savedBrowseFields = String.Empty, False, ContainsField(savedBrowseFields, field)),
                         field,
+                        If(savedHotFields = String.Empty, False, ContainsField(savedHotFields, field)),
                         orderByFields.Any(Function(orderField) String.Equals(orderField, field, StringComparison.OrdinalIgnoreCase)),
                         If(orderByDirections.ContainsKey(field), orderByDirections(field), "ASC"))
 
@@ -2055,6 +2079,7 @@ Namespace SDC.Framework
 
                 If dialog.ShowDialog(Me) = DialogResult.OK Then
                     browseFieldsTextBox.Text = JoinCheckedGridFields(browseGrid, "Include")
+                    hotFieldsTextBox.Text = JoinCheckedGridFields(browseGrid, "HotField")
                     maintenanceFieldsTextBox.Text = JoinIncludedGridFields(maintenanceGrid)
                     lookupSpecs = JoinLookupFields(maintenanceGrid)
                     lookupFieldsTextBox.Text = LookupFieldNames(lookupSpecs)
@@ -2133,6 +2158,7 @@ Namespace SDC.Framework
 
         Private Sub ClearTableDependentSelections()
             browseFieldsTextBox.Text = String.Empty
+            hotFieldsTextBox.Text = String.Empty
             maintenanceFieldsTextBox.Text = String.Empty
             lookupTargets.Clear()
             lookupSpecs = String.Empty
@@ -2794,6 +2820,7 @@ Namespace SDC.Framework
                     {"UnderlyingTableName", DbSaveValue(underlyingTableNameTextBox.Text)},
                     {"UseRegistrationID", useRegistrationIdCheckBox.Checked},
                     {"BrowseFields", DbSaveValue(browseFieldsTextBox.Text)},
+                    {"HotFields", DbSaveValue(hotFieldsTextBox.Text)},
                     {"MaintenanceFields", DbSaveValue(maintenanceFieldsTextBox.Text)},
                     {"BrowseSql", DbSaveValue(browseSqlTextBox.Text)},
                     {"LookupFields", DbSaveValue(lookupSpecs)},
