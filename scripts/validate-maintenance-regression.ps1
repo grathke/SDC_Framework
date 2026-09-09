@@ -146,9 +146,7 @@ Write-Step "Page conventions"
 # Documented exception: Roles_U is a permission administration console over three grids with
 # immediate per-row writes, not a single-record editor, so Base_U's save/RowVersion/cancel
 # contract does not apply. See FRAMEWORK_NOTES.md, "Documented exceptions".
-# PageSettings_U maintains a page rather than a record: no table of its own, no RowVersion, no CRUD
-# row, so the contract FW_Base_U enforces has nothing to enforce. Documented in FRAMEWORK_NOTES.md.
-$baseUExceptions = @("Roles_U.vb", "PageSettings_U.vb")
+$baseUExceptions = @("Roles_U.vb")
 
 foreach ($page in $maintenancePages) {
     $name = Split-Path $page -Leaf

@@ -236,13 +236,6 @@ Key areas:
   section 1 records that a `_B` page reads its columns at runtime, so a column change needs no
   rebuild, and section 5 that `Last Used` is written automatically and beats the `* Default`, which
   is why a reset that leaves it behind changes nothing anyone can see.
-- `PAGE_MAINTENANCE_SPEC.md` — **proposed, mostly not built.** Maintaining a generated page without
-  starting it over: three actions with different blast radiuses (Save, Update, Generate), a generated
-  `_U` split into a `.Generated.vb` the generator owns and a hand-written half it never reads, and
-  `FW_PageSettings_U` offering only what can change after generation. Read it before changing the
-  generator's file writing or the maintenance baseline hash — section 2 records why a file boundary
-  was chosen over an anchored region or a three-way merge, and section 4 the one rule that lets the
-  Hot Fields ticks live on three surfaces without two of them fighting.
 - `THINFINITY_NOTES.md` — **reference, nothing built.** The VirtualUI SDK surface behind the
   delivery rules below: session detection, `StdDialogs` and the file dialogs, upload and download,
   printing, the `Options` flags, `BrowserInfo`. Read it before adding the SDK to the project or
