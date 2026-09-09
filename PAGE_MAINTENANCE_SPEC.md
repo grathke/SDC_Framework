@@ -154,9 +154,10 @@ leave the application half-moved.
 
 **Still open:**
 
-1. **Naming.** `FW_PageSettings_U` or `FW_PageFields_U`, and is the action called **Update**,
-   **Apply Fields** or **Rebuild Fields**? Update reads well beside Save and Generate but collides
-   with the CRUD Update on every other page.
+1. **What the action is called.** The page is `FW_PageSettings_U`, decided 2026-09-09. The action
+   that rewrites the generated fields is still unnamed: **Update** reads well beside Save and
+   Generate but collides with the CRUD Update on every other page, so **Apply Fields** or **Rebuild
+   Fields** may serve the reader better.
 2. **`_B` pages.** They are already almost entirely data - `Table_SQL` decides their columns - so a
    split may buy them nothing. Worth confirming before doing it to both halves out of symmetry.
 3. **What Update does when the `.Generated.vb` is missing** - a page generated before the split.
