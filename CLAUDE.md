@@ -229,6 +229,12 @@ Key areas:
   Read it before touching the layout row above the browse grid, and before adding anything to
   `FW_Base_B`'s constructor - section 9 records why the widget must be built before the
   `buildDefaultBrowseShell` early return, which the colour picker got wrong.
+- `PAGE_FIELD_PICKER_SPEC.md` — **proposed, not built.** Choosing a browse page's fields after it is
+  generated: one picker on the page writing `FW_Pages`, the Hot Fields list, and lookup display
+  values. Read it before changing `Table_SQL` handling, saved layouts or `UpsertPageRecord` —
+  section 3 records that `Last Used` is written automatically and beats the `* Default`, which is
+  why a changed default order is invisible to anyone who has opened the page, and section 6 why
+  regeneration must be treated as a reset with a stated blast radius.
 - `THINFINITY_NOTES.md` — **reference, nothing built.** The VirtualUI SDK surface behind the
   delivery rules below: session detection, `StdDialogs` and the file dialogs, upload and download,
   printing, the `Options` flags, `BrowserInfo`. Read it before adding the SDK to the project or
