@@ -323,15 +323,27 @@ Namespace SDC.Framework
                     End Using
 
                     ' Batch 3: Field captions
+                    '
+                    ' No IsActive filter, since 2026-09-09. FW_RoleFields.OverrideCaption is the
+                    ' caption whenever it is present, whatever else is true of the row - what a
+                    ' field is called is not a permission, and a role that cannot change a field
+                    ' still has to read its name.
+                    '
+                    ' Filtering it produced exactly the confusion it was found by: the same field
+                    ' captioned Gender for one role and Gender ID for another, because one row was
+                    ' active and the other was not, with the same override written on both.
+                    '
+                    ' Make_Invisible is read here too and does not travel with the caption: that one
+                    ' is a permission, and it keeps whatever the row says.
                     Using cmd As New SqlCommand(
                         "SELECT FieldName, " &
                         "ISNULL(LTRIM(RTRIM(OverrideCaption)), '') AS OverrideCaption, " &
                         "ISNULL(LTRIM(RTRIM(FriendlyFieldName)), '') AS FriendlyFieldName, " &
-                        "ISNULL(Make_Invisible, 0) AS Make_Invisible " &
+                        "ISNULL(Make_Invisible, 0) AS Make_Invisible, " &
+                        "ISNULL(IsActive, 1) AS IsActive " &
                         "FROM dbo.FW_RoleFields " &
                         "WHERE RoleID = @RoleID AND RegistrationID = @RegID " &
-                        "AND UPPER(LTRIM(RTRIM(TableName))) = UPPER(@TableName) " &
-                        "AND ISNULL(IsActive, 1) = 1", conn)
+                        "AND UPPER(LTRIM(RTRIM(TableName))) = UPPER(@TableName)", conn)
                         cmd.Parameters.AddWithValue("@RoleID", roleId)
                         cmd.Parameters.AddWithValue("@RegID", registrationId)
                         cmd.Parameters.AddWithValue("@TableName", tableName.Trim())
@@ -351,7 +363,11 @@ Namespace SDC.Framework
                                     result.FieldCaptions(fieldName) = caption
                                 End If
 
-                                If Convert.ToBoolean(reader("Make_Invisible")) Then
+                                ' Only from a row that is switched on. Make_Invisible hides a field
+                                ' from a role, and a permission on an inactive row is not in force -
+                                ' which is the difference between it and the caption above, where
+                                ' the row's state does not come into it.
+                                If Convert.ToBoolean(reader("IsActive")) AndAlso Convert.ToBoolean(reader("Make_Invisible")) Then
                                     result.InvisibleFields.Add(fieldName)
                                 End If
                             End While
