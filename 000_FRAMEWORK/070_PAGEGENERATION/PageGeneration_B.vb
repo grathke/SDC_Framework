@@ -30,6 +30,21 @@ Namespace SDC.Framework
         ' recreated it, which sql/069 recorded and asked someone to explain. This override was the
         ' explanation.
 
+        ''' <summary>
+        ''' A generation request can be deleted from its own browse page.
+        '''
+        ''' FW_Base_B defaults this to False so that browse pages which never had a delete cannot
+        ''' silently acquire one, and this page overrode create, read and update but not this - so
+        ''' Delete reported that it was not wired, which is what it says when nothing has opted in.
+        '''
+        ''' FW_GeneratedPages carries a DeletedFlag, so the shared soft delete has somewhere to
+        ''' write. Soft, not physical: a request holds every field choice a page was generated from,
+        ''' and losing that is worse than a row sitting flagged in a table nobody reads directly.
+        ''' </summary>
+        Protected Overrides Function UsesStandardSoftDelete() As Boolean
+            Return True
+        End Function
+
         Protected Overrides Sub ApplyPageSpecificLayout()
             Dim browseSplit = FindBrowseSplitContainer(Me)
             If browseSplit Is Nothing Then
