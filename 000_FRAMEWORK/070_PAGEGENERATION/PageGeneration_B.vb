@@ -82,6 +82,10 @@ Namespace SDC.Framework
 
         Protected Overrides Function HandleCustomUpdateAction(recordId As Integer) As Boolean
             Using page As New PageGeneration_U(recordId, currentUser, accessProfile)
+                ' The page asks about manual changes to the generated files while it loads, which is
+                ' before it can be shown. Declining abandons the open, and the user stays here.
+                If page.OpenCancelled Then Return True
+
                 If ShouldRefreshAfterMaintenance(page.ShowDialog(Me)) Then
                     RefreshGridForCustomAction(recordId)
                 End If

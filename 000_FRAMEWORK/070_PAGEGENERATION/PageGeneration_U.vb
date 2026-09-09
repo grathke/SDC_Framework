@@ -98,6 +98,23 @@ Namespace SDC.Framework
         ''' </summary>
         Private manualChangesOverridden As Boolean
 
+        ''' <summary>
+        ''' Set when the user declines to regenerate over their own edits. The page is loaded far
+        ''' enough to ask the question before it is shown, so declining cannot simply close a form
+        ''' that has not opened yet - the caller reads OpenCancelled instead and never shows it.
+        ''' </summary>
+        Private openWasCancelled As Boolean
+
+        ''' <summary>
+        ''' True when the page decided during construction that it should not open. The caller must
+        ''' check this before ShowDialog and dispose the page without showing it.
+        ''' </summary>
+        Public ReadOnly Property OpenCancelled As Boolean
+            Get
+                Return openWasCancelled
+            End Get
+        End Property
+
         Public Sub New(id As Integer, user As UserContext, Optional profile As AccessProfile = Nothing)
             MyBase.New()
             recordId = id
@@ -453,11 +470,6 @@ Namespace SDC.Framework
         End Sub
 
         Private Sub GeneratePagesButton_Click(sender As Object, e As EventArgs)
-            If pageHasManualChanges AndAlso Not manualChangesOverridden Then
-                ShowManualPageChangesWarning()
-                Return
-            End If
-
             If Not generateBrowsePageCheckBox.Checked AndAlso Not generateMaintenancePageCheckBox.Checked Then
                 MessageBox.Show(Me, "SELECT AT LEAST ONE PAGE TARGET TO GENERATE.", "GENERATE PAGES", MessageBoxButtons.OK, MessageBoxIcon.Information)
                 Return
@@ -664,12 +676,12 @@ Namespace SDC.Framework
         End Function
 
         ''' <summary>
-        ''' Asks whether to regenerate over manual changes, then locks the page or unlocks it.
+        ''' Asks whether to regenerate over manual changes, then unlocks the page or abandons it.
         '''
         ''' Three questions, escalating. The first states the situation plainly; the second warns;
         ''' the third says what is actually about to happen and cannot be undone. Every one defaults
-        ''' to No, and answering No at any point leaves the page locked exactly as it was before any
-        ''' of this existed - Close and nothing else.
+        ''' to No, and answering No at any point abandons the open: the page never appears, the
+        ''' user is back on the browse list they started from, and their edits are untouched.
         '''
         ''' Three prompts for one action is deliberate. The files being overwritten are hand-written
         ''' code that exists nowhere else, and the generator cannot tell a deliberate customisation
@@ -732,36 +744,10 @@ Namespace SDC.Framework
                 End If
             End If
 
-            For Each control As Control In GetAllControls(Me)
-                If TypeOf control Is Button Then
-                    control.Enabled = control Is cancelActionButton
-                ElseIf TypeOf control Is TextBox Then
-                    DirectCast(control, TextBox).ReadOnly = True
-                ElseIf TypeOf control Is ComboBox OrElse TypeOf control Is CheckBox Then
-                    control.Enabled = False
-                End If
-            Next
-            cancelActionButton.Enabled = True
-            cancelActionButton.Text = "Close"
-            RefreshPageCaption()
-        End Sub
-
-        Private Shared Iterator Function GetAllControls(parent As Control) As IEnumerable(Of Control)
-            For Each child As Control In parent.Controls
-                Yield child
-                For Each descendant In GetAllControls(child)
-                    Yield descendant
-                Next
-            Next
-        End Function
-
-        Private Sub ShowManualPageChangesWarning()
-            MessageBox.Show(Me,
-                            "THIS _U PAGE CONTAINS MANUAL VS CODE CHANGES THAT ARE NOT IN THE PAGE GENERATION REQUEST." & Environment.NewLine & Environment.NewLine &
-                            "SAVE AND REGENERATION ARE DISABLED TO PROTECT THOSE CHANGES. SELECT CLOSE TO LEAVE THIS PAGE.",
-                            "MANUAL PAGE CHANGES",
-                            MessageBoxButtons.OK,
-                            MessageBoxIcon.Warning)
+            ' Declined. The page used to open read-only with nothing on it but Close, which read
+            ' as the request having opened anyway. Nothing on it could be edited, saved or
+            ' generated, so there was nothing to stay for: abandon the open instead.
+            openWasCancelled = True
         End Sub
 
         Private Shared Function IsGenerationResultPresent(result As PageGenerationResult, marker As String, nameMarker As String) As Boolean
