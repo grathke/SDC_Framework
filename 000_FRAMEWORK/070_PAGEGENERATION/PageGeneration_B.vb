@@ -80,13 +80,52 @@ Namespace SDC.Framework
             Return OpenSelectedRequest()
         End Function
 
+        ''' <summary>
+        ''' Modify maintains the page this request produced, or edits the request when it has not
+        ''' produced one yet.
+        ''' </summary>
+        ''' <remarks>
+        ''' Routing on whether the page exists rather than offering two buttons. A request that has
+        ''' never been generated has no page to maintain, so the request form is the only thing
+        ''' Modify could sensibly open; once it has, changing a caption or a field list is the
+        ''' ordinary act and describing a different page is the rare one.
+        '''
+        ''' FW_PageSettings_U is opened with the page name, not the request id, so the same page can
+        ''' later be reached from anywhere - including from a page nobody generated.
+        '''
+        ''' See PAGE_MAINTENANCE_SPEC.md section 6.
+        ''' </remarks>
         Protected Overrides Function HandleCustomUpdateAction(recordId As Integer) As Boolean
+            Dim browsePageName = ResolveBrowsePageNameForRequest(recordId)
+
+            If Not String.IsNullOrWhiteSpace(browsePageName) AndAlso
+               DataAccess.CheckIfPageRecordExists(0, browsePageName) Then
+
+                Using settings As New FW_PageSettings_U(browsePageName, currentUser, accessProfile)
+                    settings.ShowDialog(Me)
+                End Using
+                RefreshGridForCustomAction(recordId)
+                Return True
+            End If
+
             Using page As New PageGeneration_U(recordId, currentUser, accessProfile)
                 If ShouldRefreshAfterMaintenance(page.ShowDialog(Me)) Then
                     RefreshGridForCustomAction(recordId)
                 End If
             End Using
             Return True
+        End Function
+
+        ''' <summary>The browse page a request names, or empty when it names none.</summary>
+        Private Shared Function ResolveBrowsePageNameForRequest(recordId As Integer) As String
+            If recordId <= 0 Then Return String.Empty
+
+            Dim request = DataAccess.GetPageGenerationById(recordId)
+            If request Is Nothing OrElse Not request.Table.Columns.Contains("BrowsePageName") OrElse request.IsNull("BrowsePageName") Then
+                Return String.Empty
+            End If
+
+            Return Convert.ToString(request("BrowsePageName")).Trim()
         End Function
 
         Private Function OpenSelectedRequest() As Boolean

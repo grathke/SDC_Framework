@@ -608,6 +608,14 @@ Namespace SDC.Framework
             Dim pagePath = PageGenerator.GeneratedPagePath(Environment.CurrentDirectory, pageName)
             If Not File.Exists(pagePath) Then Return False
 
+            ' A split page has nothing to protect here. Its generated half is rewritten on every
+            ' run and is not read back, and the file this would hash - the hand-written half - is
+            ' meant to be edited. Comparing them reported a manual change every single time, since
+            ' the baseline is taken from the generated half and the two are different files.
+            Dim generatedHalf = Path.Combine(Path.GetDirectoryName(pagePath),
+                                             Path.GetFileNameWithoutExtension(pagePath) & ".Generated.vb")
+            If File.Exists(generatedHalf) Then Return False
+
             Dim hasher As SHA256 = SHA256.Create()
             Using hasher
                 Using stream = File.OpenRead(pagePath)

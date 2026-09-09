@@ -188,7 +188,15 @@ foreach ($page in $standardUpdatePages) {
     if ($pageText -match "New\s+SqlCommand|\b(INSERT\s+INTO|UPDATE\s+dbo\.|DELETE\s+FROM)\b") {
         throw "Standard _U page $($page.Name) contains page-local SQL/DML. Use the shared schema/data-access contract."
     }
-    if ($pageText -notmatch "DataBindings\.Add") {
+    # A split page keeps its bindings in the generated half, which is where the fields are. Read
+    # both, so the check still asserts that the page binds and stops asserting where from.
+    $generatedHalf = Join-Path $page.DirectoryName ([System.IO.Path]::GetFileNameWithoutExtension($page.Name) + ".Generated.vb")
+    $bindingText = $pageText
+    if (Test-Path $generatedHalf) {
+        $bindingText = $pageText + (Get-Content -Path $generatedHalf -Raw)
+    }
+
+    if ($bindingText -notmatch "DataBindings\.Add") {
         throw "Standard _U page $($page.Name) has no data bindings. Every bound entry control must map to its database field."
     }
     Write-Host "PASS: $($page.Name) uses shared SQL ownership and data bindings" -ForegroundColor Green

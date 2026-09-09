@@ -100,6 +100,52 @@ Namespace SDC.Framework
         Private Sub New()
         End Sub
 
+        ''' <summary>
+        ''' Rewrites one page's generated fields, and nothing else.
+        '''
+        ''' Apply Fields on FW_PageSettings_U. It writes the maintenance page's .Generated.vb from
+        ''' the request's current field list and stops there: no browse page, no menu or dashboard
+        ''' button, no FW_Pages row, and nothing reset. The hand-written half is not read, not
+        ''' written, and not checked for edits - that is the whole reason the page was split.
+        '''
+        ''' Separate from Generate rather than a flag on it, because the two mean different things
+        ''' to whoever presses them. Generate brings a page into being and starts it over; this
+        ''' changes which fields an existing page has.
+        ''' </summary>
+        Public Shared Function ApplyMaintenanceFields(requestId As Integer, workspaceRoot As String) As PageGenerationResult
+            Dim created As New List(Of String)()
+            Dim skipped As New List(Of String)()
+
+            Dim plan = BuildPlan(requestId, workspaceRoot)
+            If plan.Errors.Count > 0 Then
+                Return New PageGenerationResult(created, skipped, plan.Errors)
+            End If
+
+            If Not plan.GenerateMaintenancePage OrElse String.IsNullOrWhiteSpace(plan.MaintenanceGeneratedPath) Then
+                Return New PageGenerationResult(created, skipped,
+                                                {"This request has no maintenance page to apply fields to."})
+            End If
+
+            Dim errors As New List(Of String)()
+
+            ' The hand-written half has to exist first. Writing only the generated half beside a
+            ' file that is not there leaves a partial class with no constructor and no Inherits,
+            ' which fails to build with an error that says nothing about what happened.
+            If Not File.Exists(plan.MaintenancePath) Then
+                Return New PageGenerationResult(created, skipped,
+                                                {"There is no " & System.IO.Path.GetFileName(plan.MaintenancePath) &
+                                                 " to apply fields to. Generate the page first."})
+            End If
+
+            If WriteAlways(plan.MaintenanceGeneratedPath, plan.MaintenanceGeneratedSource, created, errors) Then
+                If Not SaveMaintenanceBaseline(requestId, plan.MaintenanceGeneratedSource, errors) Then
+                    errors.Add("The generated maintenance source baseline could not be saved.")
+                End If
+            End If
+
+            Return New PageGenerationResult(created, skipped, errors)
+        End Function
+
         Public Shared Function Generate(requestId As Integer,
                         workspaceRoot As String,
                         Optional overwriteExistingPages As Boolean = False) As PageGenerationResult

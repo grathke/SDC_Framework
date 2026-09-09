@@ -444,7 +444,17 @@ Base_U's contract — one record, one concurrency token, one save that must succ
 closes — has nothing to bind to. Its writes are immediate and individually confirmed; do not treat
 them as transactional.
 
-`scripts\validate-maintenance-regression.ps1` records this exception by name. Every other `_U` page
+**`FW_PageSettings_U` does not inherit `FW_Base_U` either.** It maintains a *page* rather than a
+record: no table of its own, no primary key, no RowVersion, no CRUD row to save. What it writes is
+the `FW_Pages` row a running page reads — its caption and its Hot Fields — and, through Apply
+Fields, the generated half of a maintenance page's code. Base_U's contract has nothing to bind to
+for the same reason as `Roles_U`, and for once the page really is a settings screen rather than an
+editor of anything.
+
+It is named `_U` regardless, because it is opened by Modify from a browse page and closes back to
+it, which is the shape a `_U` describes. See `PAGE_MAINTENANCE_SPEC.md`.
+
+`scripts\validate-maintenance-regression.ps1` records both exceptions by name. Every other `_U` page
 must inherit `FW_Base_U`, and the script fails if one does not.
 
 ### Field lifecycle order
