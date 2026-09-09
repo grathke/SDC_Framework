@@ -99,6 +99,19 @@ Namespace SDC.Framework
             button.Top = Math.Max(0, caption.Top + ((caption.Height - button.Height) \ 2))
         End Sub
 
+        ''' <summary>
+        ''' The gap between the Help Desk button's right edge and the window frame.
+        '''
+        ''' Exposed so a row of buttons on a lower line can finish where this button finishes. Those
+        ''' rows do not collide with it - it sits above them - so they want its right edge rather
+        ''' than ReservedWidth, which stops short of the button to keep a neighbour off it.
+        ''' </summary>
+        Public Shared ReadOnly Property TrailingMargin As Integer
+            Get
+                Return EdgeMargin
+            End Get
+        End Property
+
         ''' The width a neighbouring top-right button must leave clear.
         Public Shared ReadOnly Property ReservedWidth As Integer
             Get

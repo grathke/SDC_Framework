@@ -183,13 +183,17 @@ Namespace SDC.Framework
         ''' <summary>
         ''' The page colour picker, which now lives in PageBackgroundColorPicker so a form that
         ''' does not inherit from here can have one too. It was written in this class while browse
-        ''' pages were the only pages offering it; FW_UserAccessDiagnostic_B inherits Form
-        ''' directly, and giving it a picker meant either moving this one out or writing a second.
+        ''' pages were the only pages offering it, and the dashboards inherit Form directly - so
+        ''' giving one a picker meant either moving this one out or writing a second.
         '''
         ''' Every browse page still gets it on the same terms: admin only, in the action row, its
         ''' colour stored against the page in FW_Pages.Background.
         ''' </summary>
         Private backgroundColorPicker As PageBackgroundColorPicker
+
+        ' The page table's computed columns, read once by IsComputedColumn and held for the life of
+        ' the page. Nothing here can change while it is open.
+        Private computedColumnNames As HashSet(Of String)
 
         ''' <summary>
         ''' The Hot Fields strip. Built for every browse page; its button shows only where the
@@ -1634,9 +1638,19 @@ Namespace SDC.Framework
             Dim actionLeft As Integer = contentLeft
             Dim actionGap As Integer = 10
             ' Close anchors the right-hand end of the action row, and every button on that end is
-            ' placed off it, so this one number keeps the whole cluster clear of the Help Desk
-            ' button rather than each button being taught about it separately.
-            Dim actionRight As Integer = topRowRight
+            ' placed off it, so this one number decides where the whole cluster finishes rather than
+            ' each button being taught about it separately.
+            '
+            ' It finishes level with the Help Desk button's right edge, not a gap short of its left
+            ' edge like topRowRight above. That reservation is for controls on the Help Desk button's
+            ' own line, which would collide with it; this row sits below it and cannot. Stopping
+            ' short only made the page look ragged down its right-hand side.
+            '
+            ' The content cap still wins on a wide window, where the page is centred at 1120 and the
+            ' frame is far to the right - there Close stays level with the grid beneath it, which is
+            ' the edge that matters when there is one.
+            Dim actionRight As Integer = Math.Min(contentLeft + contentWidth,
+                                                  Me.ClientSize.Width - HelpDeskLauncher.TrailingMargin)
 
             closeButton.Top = actionTop
             closeButton.Left = actionRight - closeButton.Width
@@ -4390,7 +4404,7 @@ Namespace SDC.Framework
             End If
 
             ConfigureOperatorCellItems(operatorCell, fieldDefinition.FieldKind)
-            operatorCell.Value = GetDefaultOperator(fieldDefinition.FieldKind).ToString()
+            operatorCell.Value = GetDefaultOperator(fieldDefinition).ToString()
         End Sub
 
         Private Sub ConfigureQbeOperatorsForAllRows()
@@ -4415,7 +4429,7 @@ Namespace SDC.Framework
                 End If
 
                 ConfigureOperatorCellItems(operatorCell, fieldDefinition.FieldKind)
-                operatorCell.Value = GetDefaultOperator(fieldDefinition.FieldKind).ToString()
+                operatorCell.Value = GetDefaultOperator(fieldDefinition).ToString()
             Next
         End Sub
 
@@ -4443,9 +4457,53 @@ Namespace SDC.Framework
         ''' Contains is still in the list and still does what it did. It is now the shorthand for
         ''' people who would rather not type wildcards, and produces identical SQL to Equals with a
         ''' value wrapped in them.
+        '''
+        ''' A computed text column is the one exception, added 2026-09-09. FW_Users.FirstLast is
+        ''' assembled by the database from FirstName and LastName, and nobody typing into it knows
+        ''' its exact spelling - whether the separator is a space or a comma, which name comes
+        ''' first, what happens when one of them is null. Equals asks for a string the user has no
+        ''' way to predict, and fails while looking as though it should have worked. Contains asks
+        ''' for what they actually have, which is a piece of it.
+        '''
+        ''' The test is the database's own, sys.columns.is_computed, not a guess from the value or
+        ''' the name. Ordinary text columns are untouched and the paragraphs above still hold for
+        ''' them.
         ''' </summary>
-        Protected Overridable Function GetDefaultOperator(fieldKind As QbeFieldKind) As QbeComparisonOperator
+        Protected Overridable Function GetDefaultOperator(fieldDefinition As QbeFieldDefinition) As QbeComparisonOperator
+            If fieldDefinition IsNot Nothing AndAlso
+               fieldDefinition.FieldKind = QbeFieldKind.TextField AndAlso
+               IsComputedColumn(fieldDefinition.FieldName) Then
+                Return QbeComparisonOperator.Contains
+            End If
+
             Return QbeComparisonOperator.EqualsTo
+        End Function
+
+        ''' <summary>
+        ''' Whether the page's table computes this column for itself.
+        '''
+        ''' Read once per page and held, because QBE asks for every field it shows and the answer
+        ''' cannot change while the page is open. A table that cannot be resolved returns an empty
+        ''' set rather than failing: an unknown column is treated as ordinary, which is the same
+        ''' behaviour this had before computed columns were considered at all.
+        ''' </summary>
+        Private Function IsComputedColumn(fieldName As String) As Boolean
+            If String.IsNullOrWhiteSpace(fieldName) Then Return False
+
+            If computedColumnNames Is Nothing Then
+                computedColumnNames = New HashSet(Of String)(StringComparer.OrdinalIgnoreCase)
+                Try
+                    Dim tableName = ResolveCurrentRoleFieldTableName()
+                    If Not String.IsNullOrWhiteSpace(tableName) Then
+                        computedColumnNames = DataAccess.GetComputedColumnNames(tableName)
+                    End If
+                Catch
+                    ' Left empty. A QBE row defaulting to Equals is a smaller failure than a browse
+                    ' page that will not open because a metadata lookup went wrong.
+                End Try
+            End If
+
+            Return computedColumnNames.Contains(fieldName)
         End Function
 
         Protected Overridable Function GetAllowedOperators(fieldKind As QbeFieldKind) As IEnumerable(Of QbeComparisonOperator)
