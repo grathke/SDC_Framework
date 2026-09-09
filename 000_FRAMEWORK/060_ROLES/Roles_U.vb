@@ -232,7 +232,7 @@ Namespace SDC.Framework
                 ("Can_Read", "Read Only"),
                 ("Can_Update", "Update"),
                 ("Can_Delete", "Delete"),
-                ("Can_ViewAllRecords", "By RegID"),
+                ("Can_ViewAllRecords", "View All"),
                 ("Can_ViewOnlyMyRecords", "View Mine"),
                 ("Can_UseQBE", "Use QBE")
             }
@@ -240,22 +240,17 @@ Namespace SDC.Framework
                     .Name = def.Item1,
                     .DataPropertyName = def.Item1,
                     .HeaderText = def.Item2,
-                    .Width = 70,
+                    .Width = TickColumnWidth,
                     .AutoSizeMode = DataGridViewAutoSizeColumnMode.None
                 }
                 col.DefaultCellStyle.Alignment = DataGridViewContentAlignment.MiddleCenter
                 rightGrid.Columns.Add(col)
             Next
 
-            ' Can_ViewAllRecords was captioned "By RegID", which names a column rather than a
-            ' capability - and RegistrationID is not a thing this page should be putting in front of
-            ' anyone. All it governs is whether an App Admin gets the registration selector, so it
-            ' is hidden rather than dropped: the permission is still read and written, and may yet
-            ' be wanted on screen under a name that says what it does. Its 70px joins the Fill
-            ' caption column.
-            If rightGrid.Columns.Contains("Can_ViewAllRecords") Then
-                rightGrid.Columns("Can_ViewAllRecords").Visible = False
-            End If
+            ' Can_ViewAllRecords was captioned "By RegID" and briefly hidden on that account. The
+            ' caption was the problem, not the permission: it named a column instead of a
+            ' capability, and it reads almost the same as Can_ViewOnlyMyRecords next to it while
+            ' meaning the opposite. "View All" against "View Mine" says which is which.
             rightGrid.Columns.Add(New DataGridViewTextBoxColumn() With {
                 .Name = "OverrideCaption",
                 .DataPropertyName = "OverrideCaption",
@@ -321,19 +316,15 @@ Namespace SDC.Framework
                 .Width = 240,
                 .AutoSizeMode = DataGridViewAutoSizeColumnMode.None
             })
-            ' The two grids are read as one: first column 240 in both, then a middle section that
-            ' totals 420 in both - six ticks at 70 above, six at 60 plus Order at 60 here - so the
-            ' Fill caption column ends up the same width in each and every edge lines up. Changing
-            ' one width means changing another to keep the 420. Hidden columns cost nothing.
             For Each rfDef In New (String, String, Integer, Boolean)() {
                 ("CA_CanChange", "CA Can Change", 110, False),
-                ("Can_Create", "Create", 60, False),
-                ("Can_Read", "Read", 60, False),
-                ("Can_Update", "Update", 60, False),
-                ("IsActive", "Active", 60, False),
-                ("IsRequired", "Required", 60, False),
-                ("IsUnique", "Unique", 60, False),
-                ("Make_Invisible", "Hide", 60, False)
+                ("Can_Create", "Create", TickColumnWidth, False),
+                ("Can_Read", "Read", TickColumnWidth, False),
+                ("Can_Update", "Update", TickColumnWidth, False),
+                ("IsActive", "Active", TickColumnWidth, False),
+                ("IsRequired", "Required", TickColumnWidth, False),
+                ("IsUnique", "Unique", TickColumnWidth, False),
+                ("Make_Invisible", "Hide", TickColumnWidth, False)
             }
                 Dim rfCol As New DataGridViewCheckBoxColumn() With {
                     .Name = rfDef.Item1,
@@ -366,7 +357,7 @@ Namespace SDC.Framework
                 .Name = "OrderBy",
                 .DataPropertyName = "OrderBy",
                 .HeaderText = "Order",
-                .Width = 60,
+                .Width = TickColumnWidth,
                 .AutoSizeMode = DataGridViewAutoSizeColumnMode.None
             })
             roleFieldsGrid.Columns.Add(New DataGridViewTextBoxColumn() With {
@@ -408,6 +399,18 @@ Namespace SDC.Framework
         Private ReadOnly roleDetailSnapshots As New Dictionary(Of Integer, String)()
         Private ReadOnly roleFieldSnapshots As New Dictionary(Of Integer, String)()
         Private roleSettingsSnapshot As String = String.Empty
+
+        ''' <summary>
+        ''' One width for every tick column on the page, and for Order.
+        '''
+        ''' The two grids are read as one, so they are built to the same measurements: a 240 name
+        ''' column, then seven columns of this width. Above they are the seven table permissions;
+        ''' below they are six field permissions and Order, which lands under the seventh. The Fill
+        ''' caption column then comes out the same width in each, and every vertical edge lines up
+        ''' down the page. A hidden column costs nothing, so IsActive and CA_CanChange do not
+        ''' disturb it.
+        ''' </summary>
+        Private Const TickColumnWidth As Integer = 70
 
         Private Const AuditPageName As String = "Roles_U"
         Private Const RoleDetailsTableName As String = "FW_RoleDetails"
