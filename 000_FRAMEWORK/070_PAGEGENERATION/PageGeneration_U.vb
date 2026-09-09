@@ -35,6 +35,7 @@ Namespace SDC.Framework
         Private displayHotFieldsCheckBox As CheckBox
         Private createAsFrameworkPagesCheckBox As CheckBox
         Private underlyingTableNameTextBox As TextBox
+        Private tableAliasTextBox As TextBox
         Private generateBrowsePageCheckBox As CheckBox
         Private useQbeOnlyCheckBox As CheckBox
         Private generateMaintenancePageCheckBox As CheckBox
@@ -260,6 +261,14 @@ Namespace SDC.Framework
             }
             AddHandler selectFieldsButton.Click, AddressOf SelectFieldsButton_Click
             fieldSelectionPanel.Controls.Add(selectFieldsButton)
+            ' What the page is called. Typed rather than derived, and stored on the request, so it
+            ' survives the next generation - the generator used to work the caption out from the
+            ' table name every time and write it over FW_Pages.Table_Alias, so a name chosen by hand
+            ' lasted until somebody generated the page again.
+            '
+            ' Editable, unlike most of the fields on this form. Left empty it derives as before.
+            tableAliasTextBox = AddEntryField(fields, "TableAlias", False, 34, 260, False, "5a. Page Caption")
+
             AddQuestionRow(fields, "SelectFields", "6. Select Fields", fieldSelectionPanel, 46)
 
             browseFieldsTextBox = AddEntryField(fields, "BrowseFields", True, 34, 780, False, "   " & ChrW(8226) & " _B Fields")
@@ -1320,6 +1329,7 @@ Namespace SDC.Framework
                 browsePageNameTextBox.Text = DbText(row("BrowsePageName"))
                 maintenancePageNameTextBox.Text = DbText(row("MaintenancePageName"))
                 underlyingTableNameTextBox.Text = DbText(row("UnderlyingTableName"))
+                tableAliasTextBox.Text = If(row.Table.Columns.Contains("TableAlias"), DbText(row("TableAlias")), String.Empty)
                 useRegistrationIdCheckBox.Checked = Convert.ToBoolean(row("UseRegistrationID"))
                 UpdateRegistrationOptionState()
                 useQbeOnlyCheckBox.Checked = generateBrowsePageCheckBox.Checked AndAlso
@@ -2159,6 +2169,7 @@ Namespace SDC.Framework
         Private Sub ClearTableDependentSelections()
             browseFieldsTextBox.Text = String.Empty
             hotFieldsTextBox.Text = String.Empty
+            tableAliasTextBox.Text = String.Empty
             maintenanceFieldsTextBox.Text = String.Empty
             lookupTargets.Clear()
             lookupSpecs = String.Empty
@@ -2839,6 +2850,7 @@ Namespace SDC.Framework
                     {"UseRegistrationID", useRegistrationIdCheckBox.Checked},
                     {"BrowseFields", DbSaveValue(browseFieldsTextBox.Text)},
                     {"HotFields", DbSaveValue(hotFieldsTextBox.Text)},
+                    {"TableAlias", DbSaveValue(tableAliasTextBox.Text)},
                     {"MaintenanceFields", DbSaveValue(maintenanceFieldsTextBox.Text)},
                     {"BrowseSql", DbSaveValue(browseSqlTextBox.Text)},
                     {"LookupFields", DbSaveValue(lookupSpecs)},

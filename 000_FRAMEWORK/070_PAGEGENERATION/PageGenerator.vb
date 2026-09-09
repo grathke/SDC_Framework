@@ -297,7 +297,12 @@ Namespace SDC.Framework
             plan.IconFileName = If(request.Table.Columns.Contains("IconFileName"), DbText(request("IconFileName")), String.Empty)
             plan.GenerateBrowsePage = ReadGenerationFlag(request, "GenerateBrowsePage", True)
             plan.GenerateMaintenancePage = ReadGenerationFlag(request, "GenerateMaintenancePage", True)
-            plan.TableAlias = DeriveTableAlias(plan.TableName)
+            ' The request's caption where it has one, otherwise derived from the table as before.
+            ' Deriving every time is what made a chosen caption temporary: UpsertPageRecord writes
+            ' Table_Alias on each run, so the derived name was stamped back over anything anybody
+            ' had renamed the page to, and only when they next generated it.
+            Dim requestedAlias = If(request.Table.Columns.Contains("TableAlias"), DbText(request("TableAlias")).Trim(), String.Empty)
+            plan.TableAlias = If(requestedAlias <> String.Empty, requestedAlias, DeriveTableAlias(plan.TableName))
             plan.CreatedBy = If(request.Table.Columns.Contains("CreatedBy") AndAlso Not request.IsNull("CreatedBy"), Convert.ToInt32(request("CreatedBy")), 0)
 
             Dim browseFields = ParseFields(DbText(request("BrowseFields")))

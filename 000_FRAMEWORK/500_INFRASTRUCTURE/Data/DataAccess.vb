@@ -1379,21 +1379,28 @@ Namespace SDC.Framework
             choices.Columns.Add("DB_Table", GetType(String))
             choices.Columns.Add("WindowOrPage", GetType(String))
 
+            ' Every page with a known table, not only those flagged ExposedToUser.
+            '
+            ' That flag gated this one list and nothing else. No code has ever written it, there is
+            ' no screen that sets it, and the only write anywhere is a single INSERT in sql/053 - so
+            ' every row sat at 0 and this list came back empty, which is how it was found. A gate
+            ' with no key is not a permission, it is a page that does not work.
+            '
+            ' The list is what an App Admin picks a table from to explain somebody's access, so a
+            ' page missing from it cannot be diagnosed at all. Listing them all is the useful
+            ' answer, and a newly generated page now appears without anyone setting a flag.
+            '
+            ' The join to FW_RoleSchema stays: a table with no schema row has no field permissions
+            ' to explain, so it would be an empty answer rather than a hidden one.
             Using conn As New SqlConnection(ConnectionString)
                 conn.Open()
                 Using cmd As New SqlCommand(
-                    "DECLARE @ExposureColumn sysname; " &
-                    "SELECT TOP 1 @ExposureColumn = c.name " &
-                    "FROM sys.columns AS c " &
-                    "WHERE c.object_id = OBJECT_ID(N'dbo." & PagesTable & "') " &
-                    "AND c.name = N'ExposedToUser'; " &
-                    "IF @ExposureColumn IS NULL THROW 52107, 'No exposed-user column exists on dbo." & PagesTable & ".', 1; " &
-                    "DECLARE @Sql nvarchar(max) = " &
-                    "N'SELECT MIN(rt.PageID) AS ID, MIN(rs.ID) AS SchemaID, rt.Table_Alias, MIN(rt.DB_Table) AS DB_Table, MIN(rt.WindowOrPage) AS WindowOrPage ' " &
-                    "+ N'FROM dbo." & PagesTable & " rt INNER JOIN dbo.FW_RoleSchema rs ON rs.DB_Table = rt.DB_Table AND ISNULL(rs.IsActive, 1) = 1 ' " &
-                    "+ N'WHERE ISNULL(rt.' + QUOTENAME(@ExposureColumn) + N', 0) = 1 ' " &
-                    "+ N'GROUP BY rt.Table_Alias ORDER BY rt.Table_Alias'; " &
-                    "EXEC sys.sp_executesql @Sql;", conn)
+                    "SELECT MIN(rt.PageID) AS ID, MIN(rs.ID) AS SchemaID, rt.Table_Alias, " &
+                    "MIN(rt.DB_Table) AS DB_Table, MIN(rt.WindowOrPage) AS WindowOrPage " &
+                    "FROM dbo." & PagesTable & " rt " &
+                    "INNER JOIN dbo.FW_RoleSchema rs ON rs.DB_Table = rt.DB_Table AND ISNULL(rs.IsActive, 1) = 1 " &
+                    "WHERE ISNULL(rt.DeletedFlag, 0) = 0 " &
+                    "GROUP BY rt.Table_Alias ORDER BY rt.Table_Alias", conn)
                     cmd.CommandTimeout = 10
                     Using adapter As New SqlDataAdapter(cmd)
                         adapter.Fill(choices)
