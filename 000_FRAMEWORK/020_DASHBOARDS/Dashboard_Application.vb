@@ -251,6 +251,7 @@ Namespace SDC.Framework
             generatedFW_UserAccessDiagnostic_BButton.FlatAppearance.MouseDownBackColor = Color.Transparent
 
 
+
             AddHandler Me.Load, AddressOf Dashboard_Application_Load
             AddHandler Me.Resize, AddressOf Dashboard_Application_Resize
             AddHandler rolesButton.MouseEnter, AddressOf IconButton_MouseEnter
@@ -437,6 +438,7 @@ Namespace SDC.Framework
                 page.ShowDialog(Me)
             End Using
         End Sub
+
 
         Private Sub IconButton_MouseEnter(sender As Object, e As EventArgs)
             Dim button = TryCast(sender, Button)
