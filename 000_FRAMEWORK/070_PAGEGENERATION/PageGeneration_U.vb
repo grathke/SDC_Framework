@@ -2879,11 +2879,85 @@ Namespace SDC.Framework
                     End If
                 End If
                 hasUnsavedChanges = False
+                ApplyPageSettingsWithoutGenerating()
                 Return True
             Catch ex As Exception
                 MessageBox.Show(Me, ex.Message.ToUpperInvariant(), "SAVE PAGE REQUEST", MessageBoxButtons.OK, MessageBoxIcon.Error)
                 Return False
             End Try
+        End Function
+
+        ''' <summary>
+        ''' Writes the parts of a page that are data, so they take effect without generating.
+        ''' </summary>
+        ''' <remarks>
+        ''' A browse page reads its columns, caption and Hot Fields setting from FW_Pages at runtime
+        ''' and never names them in code, so changing them needs a row and not a rebuild. They were
+        ''' only ever written by the generator, which meant regenerating a page - rewriting its
+        ''' source, invalidating its hash - to change a column it reads from the database anyway.
+        '''
+        ''' Updates a page that exists; never creates one. Generating is what brings a page into
+        ''' being, and a row for a page with no file would be a page that cannot open and an entry
+        ''' in lists that name real pages.
+        '''
+        ''' The Hot Fields LIST is deliberately not written here. An App Admin owns it once the page
+        ''' exists, ticking fields on the panel itself, and a save from this form would wipe that
+        ''' with no warning. Generating is the deliberate act that takes it back to the request.
+        ''' </remarks>
+        Private Sub ApplyPageSettingsWithoutGenerating()
+            Dim pageName = browsePageNameTextBox.Text.Trim()
+            If Not generateBrowsePageCheckBox.Checked OrElse pageName = String.Empty Then
+                Return
+            End If
+
+            Dim tableName = underlyingTableNameTextBox.Text.Trim()
+            If tableName = String.Empty Then
+                Return
+            End If
+
+            If Not DataAccess.CheckIfPageRecordExists(0, pageName) Then
+                Return
+            End If
+
+            Dim applied As New List(Of String)()
+
+            Dim aliasValue = tableAliasTextBox.Text.Trim()
+            Dim sqlValue = browseSqlTextBox.Text.Trim()
+            If sqlValue <> String.Empty Then
+                If DataAccess.UpsertPageRecord(0, pageName, tableName, aliasValue, sqlValue, CurrentUserId()) Then
+                    applied.Add("grid columns and their order")
+                    If aliasValue <> String.Empty Then
+                        applied.Add("the page caption")
+                    End If
+                End If
+            End If
+
+            ' Ticking a Hot Field is asking for the panel, the same rule the generator applies.
+            Dim wantsHotFields = displayHotFieldsCheckBox.Checked OrElse hotFieldsTextBox.Text.Trim() <> String.Empty
+            If DataAccess.SetPageUsesHotFields(pageName, wantsHotFields) Then
+                applied.Add(If(wantsHotFields, "Hot Fields on", "Hot Fields off"))
+            End If
+
+            If applied.Count = 0 Then
+                Return
+            End If
+
+            ' Said plainly rather than left to be discovered, because the split is the whole point:
+            ' what a page reads from the database changed just now, and what is compiled into it did
+            ' not. Somebody who does not know which is which should not have to find out by testing.
+            MessageBox.Show(Me,
+                            "SAVED, AND APPLIED TO " & pageName.ToUpperInvariant() & " WITHOUT GENERATING:" &
+                            Environment.NewLine & "  " & String.Join(Environment.NewLine & "  ", applied) &
+                            Environment.NewLine & Environment.NewLine &
+                            "THESE STILL NEED GENERATE: THE _U PAGE'S FIELDS, ITS LOOKUPS, THE MENU OR " &
+                            "DASHBOARD BUTTON, AND THE HOT FIELDS SELECTION.",
+                            "SAVE PAGE REQUEST",
+                            MessageBoxButtons.OK,
+                            MessageBoxIcon.Information)
+        End Sub
+
+        Private Shared Function CurrentUserId() As Integer
+            Return If(SessionState.Current.HasValue, SessionState.Current.Value.UserID, 0)
         End Function
 
         Private Shared Function DbSaveValue(value As String) As Object
