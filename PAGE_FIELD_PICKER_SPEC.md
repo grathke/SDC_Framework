@@ -1,244 +1,179 @@
-# Page Field Picker — choosing a browse page's fields after it is generated
+# Page Fields — what a browse page selects, and what Hot Fields shows
 
-**Status: proposed, not built.** Designed 2026-09-09. Nothing in the application does any of this
-yet. Read it before changing `Table_SQL` handling, the Hot Fields panel, saved layouts, or the page
-generator's `UpsertPageRecord` call.
+**Status: proposed, not built.** Designed 2026-09-09, and rewritten the same day after the first
+version was argued down to a quarter of its size. Read it before changing `Table_SQL` handling, the
+Hot Fields panel, saved layouts, or the page generator's `UpsertPageRecord` call.
 
-Two problems, one answer.
+Two problems.
 
-**A generated page's field list is frozen at generation.** `FW_Pages.Table_SQL` decides which columns
-a `_B` page selects, and the only thing that writes it is the page generator. Adding a column to the
-grid therefore means regenerating the page — rewriting its source, invalidating its hash — to change
-a row in a table. The page reads that row at runtime and never reads the source for it.
+**Adding a column to a browse grid means regenerating the page.** `FW_Pages.Table_SQL` decides what a
+`_B` page selects, and only the generator writes it.
 
-**Hot Fields shows raw ids.** The panel re-reads the record with `SELECT *` and resolves a lookup
-only where the *grid* happens to show that column, by reading the resolved text off the selected row
+**Hot Fields shows raw ids.** The panel re-reads the record with `SELECT *` and resolves a lookup only
+where the *grid* happens to show that column, by reading the resolved text off the selected row
 (`BuildResolvedValuesFromGrid`). A lookup column that is not in the grid displays `2` rather than
 `Female` — and those are exactly the fields the panel exists to reveal.
 
 ---
 
-## 1. One picker, on the page, owned by an App Admin
+## 1. What decided the shape of this
 
-A **Fields…** button on the browse page's layout row, beside the Hot Fields button and the colour
-picker, visible to an App Admin. It lists the underlying table's columns, each with:
+**A `_B` page does not name its columns.** It reads `Table_SQL` at runtime and builds the grid from
+what comes back, which is why every generated `_B` looks the same and why
+`PAGE_GENERATION_SIMPLIFICATION.md` argues one need not be a compiled class at all.
 
-| Column | Meaning |
-|---|---|
-| **Grid** | the field is selected by the page and can appear in the grid |
-| **HF** | the field appears in the Hot Fields panel |
-| **Displays** | for a column with a declared foreign key, which column of the target to show |
+So **changing a column needs only the `FW_Pages` row to change** — no source rewrite, no rebuild, no
+deployment. That single fact removes most of what a first draft of this document proposed.
 
-Saving writes the `FW_Pages` row. No file is written, no source is touched, no rebuild is needed,
-and the page picks the change up the next time it opens.
+**The generation request is the page's definition.** `BrowseFields` and `MaintenanceFields` live on
+`FW_GeneratedPages`; opening a request re-ticks the grids and `OrderSelectionGrid` restores the order
+they were left in. Regeneration does not discard the ticks — it *reads* them. That is why the
+generator can rebuild a page's SQL from scratch safely: it wrote it in the first place, and never has
+to parse it back.
 
-**Why the page rather than the generator.** Three reasons, and the third is decisive:
+An earlier draft had a picker on the page rewriting SQL it had not written, which meant parsing a
+statement that might carry a `CASE`, a `WHERE` or a sort nobody wants destroyed. None of that is
+needed and none of it is here.
 
-1. It is where page-level settings already live. `PageBackgroundColorPicker` is precisely this shape —
-   a widget that attaches to a page and writes one `FW_Pages` column.
-2. You are looking at the grid you are changing.
-3. **`Roles_B`, `FW_AuditTrail_B`, `FW_HD_Admin_B` and the Help Desk pages have no generation request
-   at all.** Anything that lives in the generator can never reach them.
+## 2. Who owns what
 
-The generator **creates** a page. The picker **maintains** it. That split is what stops a later
-regeneration silently reverting the picker's work — see section 6.
-
-## 2. What it stores
-
-| Where | What |
-|---|---|
-| `FW_Pages.Table_SQL` | rewritten from the ticked Grid fields, by the shared builder in section 5 |
-| `FW_Pages.HotFields` | **new column** — the ticked HF fields, as a delimited list |
-| `FW_Pages.LookupSpecs` | **new column** — the display answers, in the format already used by `FW_GeneratedPages.LookupFields` |
-
-The lookup format is not invented here. It already exists:
-
-```
-GenderID -> FW_Gender.GenderID displayed as GenderName filtered by registration
-```
-
-**Cache rule.** If these ride in the `FW_Pages` cache — which is where the pending round-trip work is
-heading — then saving **must** update the cached entry, or a tick appears to do nothing until the
-application restarts. `SavePageBackgroundColor` already carries this obligation; this is the same
-trap, not a new one.
-
-## 3. Who owns what — three layers, and only one is missing
-
-| Layer | Who sets it | Exists today |
+| | Owner | Changed by |
 |---|---|---|
-| Which fields the page selects at all | page, App Admin, via this picker | **no — the gap** |
-| Which are visible, their width and order, for everyone by default | `* Default` saved layout, Company Admin | yes |
-| Which are visible, their width and order, for me | my saved layout | yes |
-| **What I was last looking at** | **`Last Used`, written automatically, per user** | **yes** |
-| Which are hidden from a role entirely | `FW_RoleFields` | yes |
+| Which columns the grid selects, and their order | the generation request | ticking fields, then **Save** |
+| Whether the page has Hot Fields at all | the generation request | the existing `Display Hotfields` checkbox |
+| Which fields Hot Fields shows, **at birth** | the generation request | HF ticks, applied when the page is **generated** |
+| Which fields Hot Fields shows, **thereafter** | **the `_B` page** | an App Admin ticking on the panel |
+| Which columns are visible, their width and order | saved layouts | the columns manager, as today |
+| Which fields a role may see at all | `FW_RoleFields` | Roles, as today |
 
-**`Last Used` is the layer that changes everything, and it is easy to miss.** It is not something a
-user chooses — it is written for them as they use the page, and `GetPreferredTableLayout`
-(`DataAccess.vb:8610`) prefers it over the `* Default`. Checked against `WX_Framework` on 2026-09-09:
-every page anyone has opened has **both** a `* Default` and a `Last Used`, ten rows across five pages.
+**One line for the whole model:** *the request defines the page at birth; the page owns its Hot Fields
+thereafter; a confirmed regeneration takes it back to birth.*
 
-So the population that sees a changed default order is not "users who have not customised the grid".
-It is **users who have never opened the page**.
+## 3. Save writes data. Generate writes files and resets.
 
-**The picker does not own column order.** It sets the order columns arrive in, because that falls out
-of the SQL, but the place to say "this is the order everyone should see" is the Default layout, which
-is already built, already gated and already wins. Adding a second owner of order is how a column
-arrangement starts reverting for reasons nobody can explain.
+**Save** — writes `FW_Pages.Table_SQL` from the ticked browse fields, in their ticked order. No file is
+written, no hash changes, nothing downstream is cleared. The running application picks the columns up
+the next time the page opens. This is the ordinary way to add or remove a grid column.
 
-## 4. Precedence, and why nothing here fights
+**Generate** — everything Save does, plus the source files, plus the reset in section 5.
 
-Saved layouts are applied **last**, so they win. Verified in `TryApplyLayoutSnapshotJson`
-(`Base_B.vb:2837`), which walks the *saved entries* rather than the grid's columns:
+**One consequence to design for rather than discover:** the request's HF ticks are applied on
+**Generate only**. Ticking HF in the request and pressing Save appears to do nothing, because the page
+owns that list once it exists. The request's HF column must say so on screen — *applied when the page
+is generated* — or it reads as a bug.
 
-- **A field the picker adds** is not mentioned in an existing layout, so it is never visited and keeps
-  its default state: it **shows**. An old layout cannot hide a new field.
-- **A field the picker removes** is looked up, not found, and skipped. No error.
-- **A layout matching nothing at all** is rejected before it is applied, by
-  `LayoutJsonHasAnyMatchingGridColumn` (`Base_B.vb:1921`), so a layout from an older shape of the page
-  cannot blank the grid.
+## 4. Hot Fields
 
-Two consequences worth stating before anyone tests this:
+**Selection only.** An HF tick decides whether a field appears in the panel. It does not affect the
+grid, its columns or their order, and it never touches SQL — the panel does its own read of the
+record.
 
-- **A newly added field lands wherever its default index puts it** for a user with a saved layout,
-  because the saved entries carry explicit `DisplayIndex` values and the new column does not. It
-  appears; it may not appear where the picker's order intended.
-- **Test the order on an account that has never opened that page.** Not "never dragged the grid" —
-  `Last Used` is written automatically, so an account that has merely *visited* the page already has a
-  layout that wins. On any other account the order setting will look broken when it is working
-  correctly.
+**The panel stays alphabetical by caption** (`HotFieldsPanel.ShowRecord`), decided 2026-09-09. The
+existing reasoning holds: a table's column order is a history of when columns were added, which is no
+help to somebody looking for one field.
 
-A **"use the page default"** action is worth adding alongside, so a user who has drifted can adopt a
-new default without deleting their layout by hand. Without it, a field you add is least visible to the
-people who use that grid most.
+**Ticking on the page is App Admin only**, and it is a page setting rather than a personal one — one
+list per page, in `FW_Pages`, the same shape as the background colour.
 
-## 5. One SQL builder, one lookup resolver
+**Where a lookup spec exists, the panel shows the value rather than the id.** The specs already exist
+in the format `GenderID -> FW_Gender.GenderID displayed as GenderName filtered by registration`, and
+resolving them by joining keeps the panel at **one round trip per selection**, which is what it costs
+today.
 
-**Both already exist, and both are in the wrong place.**
+**No list means every field**, exactly as now. `Roles_B`, `FW_AuditTrail_B`, `FW_HD_Admin_B` and the
+Help Desk pages have no generation request and no ticks, and must not change behaviour.
 
-`BuildLookupSpecFromRelationship`, `BuildLookupSpecFromTarget` and the registration-scope test are
-`Private Shared` inside `PageGeneration_U`. The picker needs the same answers, so they move to a
-shared owner and the generator calls it. Two implementations of "what does this lookup display" will
-disagree eventually, and the disagreement will present as one page showing a name and another showing
-a number for the same column.
+## 5. Regeneration is a reset, and says so loudly
 
-The browse SQL builder is the same story, and matters more, because `FW_Base_B` depends on invariants
-that generated SQL guarantees today:
+**Decided 2026-09-09: generating a page returns it to the state it would have been in if generated for
+the first time.** Not Save — **Generate**, the deliberate act, behind a dialog that states what it
+destroys.
 
-- the key aliased **`AS PK`**
-- the `RegistrationID` predicate where the table is registration scoped
-- soft-delete columns present, so the deleted view works
-- lookups joined, rather than left as ids
+**Cleared:**
 
-A picker that writes SQL must produce all of those every time. Hand-rolling a second builder inside
-the picker is the way this feature breaks browse pages.
+- every `FW_TableLayouts` row for the page: each user's `Last Used`, the `* Default`, and named layouts
+- `FW_SavedQbe` for the page
+- the Hot Fields list, back to the request's ticks
 
-## 6. Regeneration is a reset, and says so
+**Kept, and not negotiable:**
 
-Regeneration overwrites `Table_SQL` today — `UpsertPageRecord` does `IF EXISTS … UPDATE … Table_SQL =
-@TableSQL` (`DataAccess.vb:1293`). It does **not** touch saved layouts. That combination is worse than
-either extreme: the baseline changes, and the layouts that override it survive, so for anyone holding
-a layout — including everyone covered by the `* Default` — the regenerated page looks unchanged.
+- **`FW_RoleFields` and `FW_RoleDetails`.** Permissions are security configuration. Generating a page
+  to add a column must never grant or revoke access to a field, and must never quietly return a
+  permission an administrator removed.
+- **`FW_AuditTrail`.** It records what happened, which stays true.
+- **A caption that differs from the generated default.** `UpsertPageRecord` overwrites `Table_Alias`
+  today, pre-filled with the table name, which is how a page ends up captioned `USERS` after somebody
+  deliberately named it something better.
 
-**Decided 2026-09-09: regenerating a page returns it to the state it would have been in if generated
-for the first time.** Regeneration is not a routine act; it means the page is being replaced.
+**Why layouts go and the request's ticks do not.** A layout names a display index and a width for a
+column *the page selects*; generation changes what the page selects, so the layout's referent has
+moved. The request's ticks are the input to generation, not a casualty of it.
 
-**Reset — these describe the page's shape, which is what regeneration just changed:**
+**`Last Used` is the row that decides whether the reset means anything.** It is per user, written
+automatically as somebody uses a page, and `GetPreferredTableLayout` (`DataAccess.vb:8610`) prefers it
+over the `* Default`. Checked against `WX_Framework` on 2026-09-09: every page anyone has opened has
+both, ten rows across five pages. Leave `Last Used` behind and a regenerated page looks unchanged to
+everyone who has ever opened it — which is precisely the people who would notice. A reset that skips
+it is not a reset.
 
-- `FW_TableLayouts` for the page: every user's named layout, the `* Default`, **and every `Last Used`
-  row**
-- `FW_SavedQbe` for the page: saved searches naming columns that may no longer be selected
-- `Table_SQL`, `HotFields`, `LookupSpecs`, `UseHotFields`
-
-**`Last Used` is the row that decides whether a reset means anything.** It is per user, written
-automatically, and preferred over the `* Default` — so leaving it behind means a regenerated page
-looks unchanged to everyone who has ever opened it, which is precisely the population that would
-notice. A reset that skips it is not a reset.
-
-**Keep — these are not page shape:**
-
-- **`FW_RoleFields` and `FW_RoleDetails`.** Permissions are security configuration. Regenerating a
-  page to add a column must never grant or revoke access to a field, and must never quietly return a
-  permission an administrator removed. This is not negotiable.
-- The dashboard icon's saved position and chosen picture. That is about the dashboard.
-- `FW_AuditTrail`. It records what happened, which stays true.
-
-**The caption is the awkward one.** `UpsertPageRecord` also overwrites `Table_Alias`, pre-filled with
-the table name — which is how a page ends up captioned `USERS` after somebody deliberately named it
-something better. **Preserve an alias that differs from the generated default** rather than stamping
-over it. Otherwise regeneration keeps undoing caption work, and the caption is the one setting three
-different surfaces read.
-
-**And it must be loud.** Deleting layouts destroys work that may belong to several people, so
-regeneration states its blast radius and requires a yes:
+**The dialog states the count, not a warning in the abstract:**
 
 ```
-Regenerating FW_HD_Issues_B will remove:
-  1 default layout, shared by the registration
+Regenerating FW_HD_Issues_B starts the page over, as if it had never existed.
+
+This will permanently remove:
+  1 default layout, shared by everyone in the registration
   1 personal layout
   0 saved searches
+  the Hot Fields selection, back to what this request specifies
+
 Permissions, field access and audit history are not affected.
+This cannot be undone.
 ```
 
 Those counts are the real shape of this database on 2026-09-09, not an illustration: two layout rows
-per opened page — a `* Default` and one `Last Used` — and `FW_SavedQbe` empty, nobody having saved a
-search yet. Worth knowing when this is built, because the dialog will usually be reporting small
-numbers, and a large one means something unexpected is being thrown away.
+per opened page, and `FW_SavedQbe` empty. A large number means something unexpected is being thrown
+away, which is exactly when somebody should stop and read.
 
-Nobody expects "regenerate" to mean "delete other people's saved layouts". Saying so is what makes
-the reset safe to have.
+## 6. Round trips
 
-## 7. What Hot Fields becomes
+**No extra reads on page load.** `HotFields` is one more column on the `FW_Pages` row that
+`EnsurePageAliasCache` already reads in a single query per session — the same row that gained
+`DB_Table`, `Table_SQL` and `Background` in commit `b1dd9bc`.
 
-**Ticked fields where a list exists; every field where it does not.**
+**Hot Fields stays at one query per selection**, and only while the panel is open. Today
+`SELECT TOP 1 * FROM table WHERE pk = @key`; with a list and specs, the ticked columns with their
+lookups resolved. Resolving by joining rather than one query per lookup is what keeps it at one.
 
-- A page with HF ticks shows exactly those, in the order given, with lookups resolved from the specs.
-- A page with no ticks behaves exactly as it does today: `SELECT *`, every column, exclusions applied
-  (`PK`, `RegistrationID`, `RowVersion`, `DeletedFlag`, `DeletedBy`, `DeletedOn`, the primary key).
+**The cache rule this inherits:** anything writing `HotFields` must update the cached entry, or a tick
+appears to do nothing until the application restarts. `SavePageBackgroundColor` already carries that
+obligation.
 
-That fallback is what makes this additive. `Roles_B`, `FW_AuditTrail_B` and the Help Desk pages have
-no picker input on day one and must not change behaviour.
+## 7. Open questions
 
-**This changes what the feature is.** `BASE_BHF_SPEC.md` promises "every field of the selected
-record". With a curated list that is no longer true, and the trade is deliberate: control and resolved
-lookups, at the cost of a new column staying invisible until somebody ticks it. `BASE_BHF_SPEC.md`
-needs amending in the same change, not afterwards.
+1. **`FW_Pages` rows are global.** `UpsertPageRecord` writes `RegistrationID = NULL` and the rows are
+   shared, so one App Admin's HF selection changes what **every registration** sees. Acceptable, or
+   does the list need to be per registration? **This is the one question that could still change the
+   storage**, and it is unanswered.
+2. **A tick for a field a role cannot see.** `FW_RoleFields` must win, and the panel must not become a
+   way to read a field a role was denied. Stated here because it belongs in the design, not only in
+   the test matrix.
+3. **A `Displays` spec whose foreign key is later dropped** falls back to showing the id. Probably
+   right; should the panel say so, or fail quietly?
 
-## 8. Round trips
+## 8. Before this is called done
 
-**Still one query per selection**, and only while the panel is open.
-
-Today: `SELECT TOP 1 * FROM table WHERE pk = @key`. With a field list and specs: a single `SELECT`
-of the ticked columns with `LEFT JOIN`s for the resolved lookups. Same one round trip, better answer —
-and resolving a lookup by joining is what avoids the obvious wrong turn of one lookup query per field.
-
-The picker's own reads are per open, not per selection, and `HotFields` and `LookupSpecs` ride in the
-`FW_Pages` row that the pending cache fold is already loading.
-
-## 9. Open questions
-
-1. **Does the picker need to reach pages with no `FW_Pages` row yet?** A page creates its row on first
-   open (`Base_B.vb:917`), so in practice the row exists by the time anyone can press the button.
-   Worth confirming rather than assuming.
-2. **Should a non-generated page be allowed a curated HF list?** Section 7 says yes and it comes free,
-   but those pages' SQL is hand-written and the picker must not rewrite it. Likely rule: the picker
-   edits HF and lookups for any page, and `Table_SQL` only for pages that own a generated `Table_SQL`.
-3. **What happens to a `Displays` choice when the foreign key is dropped?** The spec goes stale and the
-   column falls back to its id. Probably right; should it say so on screen?
-4. **Who may use the picker — App Admin only, or Company Admin too?** Shared layouts are Company Admin
-   (see section 3), which argues for consistency.
-
-## 10. Before this is called done
-
-It crosses page generation, shared browse behaviour, saved layouts, QBE and the database, so the
+It crosses page generation, shared browse behaviour, saved layouts and the database, so the
 Application-Wide Change Gate applies. The behaviour matrix must cover:
 
-- a page with picker input, and one without
-- a field added, and a field removed, for: a user with no layout, a user with their own layout, and a
-  registration with a `* Default`
-- a lookup with a spec, a lookup without one, and a spec whose foreign key has since been dropped
-- regeneration with and without saved layouts present, and the confirmation refused
-- a role that cannot see a field the picker selected — `FW_RoleFields` still wins
-- QBE after a field is added and after one is removed, since QBE derives from visible grid columns
+- a page with HF ticks, and one without — the second must behave exactly as today
+- Save with a column added, and with one removed, on a page that has been opened before
+- Generate with layouts present, and with the dialog refused — nothing cleared either way if refused
+- an on-page HF tick, then a Save in the request: the tick must survive
+- an on-page HF tick, then a Generate: the tick must be gone
+- a lookup with a spec, one without, and a spec whose foreign key has been dropped
+- a role denied a ticked field: the role wins
+- QBE after a column is added and after one is removed, since QBE derives from visible grid columns
 
 Manual verification on the real pages, not compilation. Both regression scripts, and the QBE
 guardrail's check that hiding a browse column also removes it from QBE.
