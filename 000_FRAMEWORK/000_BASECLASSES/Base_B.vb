@@ -1165,6 +1165,29 @@ Namespace SDC.Framework
                 Return
             End If
 
+            ' Nothing in the grid at all is a different problem from nothing selected: there is
+            ' nothing to select. Running the page's own Find is what the user would do next anyway,
+            ' and it is the Find button's code rather than a second way of querying - the QBE
+            ' criteria on screen still apply, so this returns what a Find would have returned.
+            If browseGrid IsNot Nothing AndAlso browseGrid.Rows.Count = 0 AndAlso
+               findButton IsNot Nothing AndAlso findButton.Enabled Then
+
+                findButton.PerformClick()
+
+                ' Selected here rather than relying on the grid to do it. A DataGridView usually
+                ' selects its first row when it is bound, but "usually" decides whether the panel
+                ' opens or reports that nothing is selected, which is too much to leave to it.
+                If browseGrid.Rows.Count > 0 AndAlso browseGrid.SelectedRows.Count = 0 Then
+                    browseGrid.Rows(0).Selected = True
+                End If
+
+                ' One that returned nothing falls through to the message below, which is still the
+                ' right answer: there is no record to show.
+                If browseGrid.SelectedRows.Count > 0 Then
+                    Return
+                End If
+            End If
+
             e.Cancel = True
             hotFieldsWantedOnNextSelection = True
 

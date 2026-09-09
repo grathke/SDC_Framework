@@ -55,6 +55,13 @@ Namespace SDC.Framework
         ''' </summary>
         Private shiftedLeftBy As Integer
 
+        ''' <summary>
+        ''' What the host last offered, so the strip can re-measure itself when its rows change.
+        ''' The page positions it while laying out, which happens before there are rows to measure.
+        ''' </summary>
+        Private lastContentTop As Integer
+        Private lastContentHeight As Integer
+
         Public Sub New(hostForm As Form)
             If hostForm Is Nothing Then
                 Throw New ArgumentNullException(NameOf(hostForm))
@@ -360,7 +367,18 @@ Namespace SDC.Framework
             shiftedLeftBy = 0
         End Sub
 
-        ''' <summary>Places the strip against its edge, filling the height the host gives it.</summary>
+        ''' <summary>
+        ''' Places the strip against its edge, no taller than its contents need.
+        ''' </summary>
+        ''' <remarks>
+        ''' Four fields in a strip the height of the page is mostly empty box, so the height asked
+        ''' for is the header plus the rows plus the grid's own column header, and the space the
+        ''' host offered is a ceiling rather than an instruction. Past that the grid scrolls, which
+        ''' it is already set up to do vertically.
+        '''
+        ''' A floor of 120 stays: a strip with no rows still has to show its Close button and its
+        ''' arrows, and a panel collapsed to the header alone would be a control nobody can dismiss.
+        ''' </remarks>
         Public Sub PositionPanel(contentTop As Integer, contentHeight As Integer)
             If Not IsOpen Then
                 Return
@@ -373,7 +391,13 @@ Namespace SDC.Framework
             Dim width = Math.Min(StripWidth - EdgeMargin, Math.Max(120, owner.ClientSize.Width - 40))
             Dim left = If(DockedLeft, EdgeMargin, Math.Max(0, owner.ClientSize.Width - width - EdgeMargin))
 
-            stripPanel.SetBounds(left, contentTop, width, Math.Max(120, contentHeight))
+            ' Kept so the strip can re-measure itself when its rows change. The host positions it
+            ' when the page lays out, which is before there are any rows to measure.
+            lastContentTop = contentTop
+            lastContentHeight = contentHeight
+
+            Dim available = Math.Max(120, contentHeight)
+            stripPanel.SetBounds(left, contentTop, width, Math.Min(available, MeasureWantedHeight()))
 
             ' Close sits in the middle of the panel's width, with an arrow at each end.
             dockLeftButton.SetBounds(4, 3, dockLeftButton.Width, dockLeftButton.Height)
@@ -385,6 +409,25 @@ Namespace SDC.Framework
             fieldsGrid.SetBounds(0, HeaderHeight, stripPanel.ClientSize.Width,
                                  Math.Max(0, stripPanel.ClientSize.Height - HeaderHeight))
         End Sub
+
+        ''' <summary>
+        ''' How tall the strip would like to be: its header, the grid's column header, and one row
+        ''' per field, plus a little so the last row does not sit against the border.
+        '''
+        ''' Measured from the rows actually in the grid rather than from the record, so a filtered
+        ''' list and a full one each get the height they need.
+        ''' </summary>
+        Private Function MeasureWantedHeight() As Integer
+            Const Breathing As Integer = 8
+
+            Dim rowsHeight = 0
+            For Each row As DataGridViewRow In fieldsGrid.Rows
+                rowsHeight += row.Height
+            Next
+
+            Dim columnHeader = If(fieldsGrid.ColumnHeadersVisible, fieldsGrid.ColumnHeadersHeight, 0)
+            Return Math.Max(120, HeaderHeight + columnHeader + rowsHeight + Breathing)
+        End Function
 
         ''' <summary>
         ''' Fills the strip from one record's fields.
@@ -516,6 +559,12 @@ Namespace SDC.Framework
                     row.DefaultCellStyle.ForeColor = Color.Silver
                 End If
             Next
+
+            ' Now that the rows exist, take only the height they need. Four fields in a strip the
+            ' height of the page is mostly empty box.
+            If lastContentHeight > 0 Then
+                PositionPanel(lastContentTop, lastContentHeight)
+            End If
         End Sub
 
         ''' <summary>
