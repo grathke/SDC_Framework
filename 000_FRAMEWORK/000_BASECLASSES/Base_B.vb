@@ -1062,10 +1062,15 @@ Namespace SDC.Framework
                 Return
             End If
 
+            ' Which fields this page shows, and whether the person looking may change that. Both come
+            ' from the cached FW_Pages row and the session, so neither costs a round trip - the one
+            ' query here is still the record itself.
             hotFieldsPanel.ShowRecord(record.Rows(0),
                                       GetRoleFieldCaptionMapForCurrentContext(),
                                       BuildHotFieldExclusions(),
-                                      BuildResolvedValuesFromGrid())
+                                      BuildResolvedValuesFromGrid(),
+                                      DataAccess.GetPageHotFields(Me.GetType().Name),
+                                      IsAppAdminSession())
         End Sub
 
         ''' <summary>

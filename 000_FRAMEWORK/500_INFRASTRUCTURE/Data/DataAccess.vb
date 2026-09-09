@@ -119,6 +119,7 @@ Namespace SDC.Framework
         ''' Unlike the schema cache this helps a page that has never been opened, because it is
         ''' loaded per application rather than per table.
         ''' </summary>
+        Private Shared ReadOnly pageHotFieldListCache As New Dictionary(Of String, String)(StringComparer.OrdinalIgnoreCase)
         Private Shared ReadOnly pageDbTableCache As New Dictionary(Of String, String)(StringComparer.OrdinalIgnoreCase)
         Private Shared ReadOnly pageSqlCache As New Dictionary(Of String, String)(StringComparer.OrdinalIgnoreCase)
         Private Shared ReadOnly pageBackgroundCache As New Dictionary(Of String, Integer?)(StringComparer.OrdinalIgnoreCase)
@@ -161,6 +162,7 @@ Namespace SDC.Framework
             SyncLock metadataCacheLock
                 pageAliasCache.Clear()
                 pageHotFieldsCache.Clear()
+                pageHotFieldListCache.Clear()
                 pageDbTableCache.Clear()
                 pageSqlCache.Clear()
                 pageBackgroundCache.Clear()
@@ -177,6 +179,7 @@ Namespace SDC.Framework
                 pageInitMetadataCache.Clear()
                 pageAliasCache.Clear()
                 pageHotFieldsCache.Clear()
+                pageHotFieldListCache.Clear()
                 pageDbTableCache.Clear()
                 pageSqlCache.Clear()
                 pageBackgroundCache.Clear()
@@ -1161,6 +1164,98 @@ Namespace SDC.Framework
             Return False
         End Function
 
+        ''' <summary>
+        ''' Which fields the Hot Fields panel shows for a page. Empty means every field, which is
+        ''' what the panel did before anyone could choose - so a page nobody has curated, and every
+        ''' page that has no FW_Pages row at all, keeps the behaviour it has today.
+        '''
+        ''' Comes from the row EnsurePageAliasCache already holds, so it costs no round trip.
+        ''' </summary>
+        Public Shared Function GetPageHotFields(windowOrPageName As String) As HashSet(Of String)
+            Dim selected As New HashSet(Of String)(StringComparer.OrdinalIgnoreCase)
+            If String.IsNullOrWhiteSpace(windowOrPageName) Then
+                Return selected
+            End If
+
+            EnsurePageAliasCache()
+
+            Dim stored As String = Nothing
+            SyncLock metadataCacheLock
+                pageHotFieldListCache.TryGetValue(windowOrPageName.Trim(), stored)
+            End SyncLock
+
+            If String.IsNullOrWhiteSpace(stored) Then
+                Return selected
+            End If
+
+            For Each fieldName In stored.Split({","c, ";"c}, StringSplitOptions.RemoveEmptyEntries)
+                Dim trimmed = fieldName.Trim()
+                If trimmed <> String.Empty Then
+                    selected.Add(trimmed)
+                End If
+            Next
+
+            Return selected
+        End Function
+
+        ''' <summary>
+        ''' Stores which fields the Hot Fields panel shows. An empty set clears the column, which
+        ''' returns the page to showing every field rather than showing none - an App Admin who
+        ''' unticks everything gets the full list back instead of an empty panel they cannot use to
+        ''' tick anything again.
+        '''
+        ''' Returns False when the page has no FW_Pages row. Patches the cache on success, because
+        ''' the panel reads from it and a tick that only reached the database would appear to have
+        ''' done nothing until the application restarted.
+        ''' </summary>
+        Public Shared Function SavePageHotFields(windowOrPageName As String,
+                                                  fieldNames As IEnumerable(Of String),
+                                                  updatedBy As Integer) As Boolean
+            If String.IsNullOrWhiteSpace(windowOrPageName) Then Return False
+
+            Dim ordered As New List(Of String)()
+            If fieldNames IsNot Nothing Then
+                For Each fieldName In fieldNames
+                    Dim trimmed = If(fieldName, String.Empty).Trim()
+                    If trimmed <> String.Empty AndAlso Not ordered.Contains(trimmed, StringComparer.OrdinalIgnoreCase) Then
+                        ordered.Add(trimmed)
+                    End If
+                Next
+            End If
+
+            Dim stored = String.Join(",", ordered)
+
+            Try
+                Using conn As New SqlConnection(ConnectionString)
+                    conn.Open()
+                    Using cmd As New SqlCommand(
+                        "UPDATE dbo." & PagesTable & " " &
+                        "SET HotFields = @HotFields, ModifiedBy = @ModifiedBy, ModifiedOn = GETDATE() " &
+                        "WHERE WindowOrPage = @WindowOrPage", conn)
+
+                        cmd.Parameters.Add("@HotFields", SqlDbType.VarChar, -1).Value =
+                            If(stored = String.Empty, CObj(DBNull.Value), CObj(stored))
+                        cmd.Parameters.AddWithValue("@ModifiedBy", updatedBy)
+                        cmd.Parameters.AddWithValue("@WindowOrPage", windowOrPageName.Trim())
+
+                        If cmd.ExecuteNonQuery() <= 0 Then
+                            Return False
+                        End If
+                    End Using
+                End Using
+            Catch
+                Return False
+            End Try
+
+            SyncLock metadataCacheLock
+                If pageAliasCacheLoaded Then
+                    pageHotFieldListCache(windowOrPageName.Trim()) = stored
+                End If
+            End SyncLock
+
+            Return True
+        End Function
+
         Private Shared Sub EnsurePageAliasCache()
             SyncLock metadataCacheLock
                 If pageAliasCacheLoaded Then Return
@@ -1169,6 +1264,7 @@ Namespace SDC.Framework
             Dim loaded As New Dictionary(Of String, String)(StringComparer.OrdinalIgnoreCase)
             Dim loadedHotFields As New Dictionary(Of String, Boolean)(StringComparer.OrdinalIgnoreCase)
             Dim loadedDbTable As New Dictionary(Of String, String)(StringComparer.OrdinalIgnoreCase)
+            Dim loadedHotFieldList As New Dictionary(Of String, String)(StringComparer.OrdinalIgnoreCase)
             Dim loadedSql As New Dictionary(Of String, String)(StringComparer.OrdinalIgnoreCase)
             Dim loadedBackground As New Dictionary(Of String, Integer?)(StringComparer.OrdinalIgnoreCase)
 
@@ -1183,7 +1279,7 @@ Namespace SDC.Framework
                     Using cmd As New SqlCommand(
                         "SELECT WindowOrPage, ISNULL(LTRIM(RTRIM(Table_Alias)), '') AS Table_Alias, " &
                         "ISNULL(UseHotFields, 0) AS UseHotFields, " &
-                        "DB_Table, Table_SQL, Background " &
+                        "DB_Table, Table_SQL, Background, HotFields " &
                         "FROM dbo." & PagesTable & " ORDER BY PageID", conn)
 
                         Using reader = cmd.ExecuteReader()
@@ -1199,6 +1295,7 @@ Namespace SDC.Framework
 
                                     loadedDbTable(pageName) = SafeString(reader("DB_Table"))
                                     loadedSql(pageName) = SafeString(reader("Table_SQL"))
+                                    loadedHotFieldList(pageName) = SafeString(reader("HotFields"))
 
                                     Dim background = reader("Background")
                                     If background Is Nothing OrElse background Is DBNull.Value Then
@@ -1226,6 +1323,11 @@ Namespace SDC.Framework
                 pageHotFieldsCache.Clear()
                 For Each pair In loadedHotFields
                     pageHotFieldsCache(pair.Key) = pair.Value
+                Next
+
+                pageHotFieldListCache.Clear()
+                For Each pair In loadedHotFieldList
+                    pageHotFieldListCache(pair.Key) = pair.Value
                 Next
 
                 pageDbTableCache.Clear()

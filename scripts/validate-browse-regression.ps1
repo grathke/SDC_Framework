@@ -94,7 +94,9 @@ if (Select-String -Path ".\000_FRAMEWORK\000_BASECLASSES\Base_B.vb" -Pattern 'As
     throw "Base_B must not seed page-specific QBE fields; QBE fields must come from the active page grid. AssignedManagerID was the original offender, from the since-removed FW_Entity."
 }
 Write-Host "PASS: Base browse does not seed page-specific QBE fields" -ForegroundColor Green
-Assert-Pattern -Path ".\000_FRAMEWORK\040_USERS\Users_AppAdmin_B.vb" -Pattern "Inherits FW_Base_B" -Description "Users browse inherits shared deleted-view guard"
+# Was Users_AppAdmin_B until 2026-09-08, when the FW_Users pages were removed. The check follows the
+# contract rather than the page: a standard browse page inherits the shared guard.
+Assert-Pattern -Path ".\000_FRAMEWORK\050_REGISTRATION\Registration_B.vb" -Pattern "Inherits FW_Base_B" -Description "A standard browse page inherits the shared deleted-view guard"
 Assert-Pattern -Path ".\000_FRAMEWORK\060_ROLES\Roles_B.vb" -Pattern "DeletedViewGuard.TableSupportsDeletedView(ResolveCurrentRoleFieldTableName()) AndAlso DeletedViewGuard.ResultHasDeletedFlagColumn(rolesGrid)" -Description "Roles browse uses shared deleted-view guard"
 if (Select-String -Path ".\000_FRAMEWORK\080_HELPDESK\HD_Issues_B.vb" -Pattern "Overrides Function GetActiveBaseSql" -SimpleMatch -Quiet) {
     throw "FW_HD_Issues_B must use FW_Base_B SQL loading; remove the page-local GetActiveBaseSql override."
@@ -114,15 +116,15 @@ Assert-Pattern -Path ".\000_FRAMEWORK\500_INFRASTRUCTURE\Data\DataAccess.vb" -Pa
 Assert-Pattern -Path ".\000_FRAMEWORK\060_ROLES\Roles_B.vb" -Pattern "ResolveCurrentRoleFieldTableName()," -Description "Roles custom query passes source table for hydration"
 
 Write-Step "Action icon access propagation"
-Assert-Pattern -Path ".\000_FRAMEWORK\020_DASHBOARDS\Dashboard_Application.vb" -Pattern "New Users_AppAdmin_B(accessProfile)" -Description "Application action icon passes access profile to Users browse"
-Assert-Pattern -Path ".\000_FRAMEWORK\020_DASHBOARDS\Dashboard_Company.vb" -Pattern "New Users_AppAdmin_B(accessProfile)" -Description "Company action icon passes access profile to Users browse"
+Assert-Pattern -Path ".\000_FRAMEWORK\020_DASHBOARDS\Dashboard_Application.vb" -Pattern "New FW_UserAccessDiagnostic_B(currentUser, accessProfile)" -Description "Application action icon passes user and access profile to the page it opens"
+Assert-Pattern -Path ".\000_FRAMEWORK\020_DASHBOARDS\Dashboard_Company.vb" -Pattern "New FW_UserAccessDiagnostic_B(currentUser, accessProfile)" -Description "Company action icon passes user and access profile to the page it opens"
 # The Admin tile opened Users_AppAdmin_B until 2026-09-06 and now opens a dashboard, chosen by role
 # at click time. The check follows the destination rather than being dropped: what it is really
 # asserting is the Action Icon Guardrail - a tile passes the live user and profile to whatever it
 # opens, and never constructs it bare.
 Assert-Pattern -Path ".\100_PROJECTS\SDC\MenuFormInitializer.vb" -Pattern "New Dashboard_Application(user, profile)" -Description "Main menu Admin tile passes access context to the application dashboard"
 Assert-Pattern -Path ".\100_PROJECTS\SDC\MenuFormInitializer.vb" -Pattern "New Dashboard_Company(user, profile)" -Description "Main menu Admin tile passes access context to the company dashboard"
-Assert-Pattern -Path ".\000_FRAMEWORK\040_USERS\Users_AppAdmin_B.vb" -Pattern "Optional profile As AccessProfile = Nothing" -Description "Users browse accepts action icon access profile"
+Assert-Pattern -Path ".\000_FRAMEWORK\090_DIAGNOSTICS\UserAccessDiagnostic_B.vb" -Pattern "Optional profile As AccessProfile = Nothing" -Description "A page opened by an action icon accepts the access profile"
 
 Write-Step "Shared concurrency contract"
 Assert-Pattern -Path ".\000_FRAMEWORK\500_INFRASTRUCTURE\Data\Models.vb" -Pattern "Public Enum SaveResult" -Description "Shared save result contract exists"
@@ -204,8 +206,8 @@ Assert-Pattern -Path ".\000_FRAMEWORK\000_BASECLASSES\Base_U.vb" -Pattern "CopyO
 Assert-Pattern -Path ".\000_FRAMEWORK\000_BASECLASSES\Base_B.vb" -Pattern "TableHasRowVersion" -Description "Base browse page checks RowVersion schema"
 Assert-Pattern -Path ".\000_FRAMEWORK\500_INFRASTRUCTURE\Data\DataAccess.vb" -Pattern "WHERE UserID = @UserID AND RowVersion = @OriginalRowVersion" -Description "User update uses optimistic concurrency"
 Assert-Pattern -Path ".\000_FRAMEWORK\050_REGISTRATION\Registration_U.vb" -Pattern "ConfirmConcurrencyOverwrite" -Description "Registration handles concurrency conflicts"
-Assert-Pattern -Path ".\000_FRAMEWORK\040_USERS\Users_AppAdmin_U.vb" -Pattern "ConfirmConcurrencyOverwrite" -Description "Users handles concurrency conflicts"
-Assert-Pattern -Path ".\000_FRAMEWORK\040_USERS\Users_AppAdmin_U.vb" -Pattern "CaptureOriginalRowVersion(UserData.RowVersion)" -Description "Users captures its original RowVersion through Base_U"
+# Users_AppAdmin_U carried these two checks until 2026-09-08. Registration_U asserts the same
+# contract below and is the surviving standard _U page; nothing is lost by dropping the pair.
 Assert-Pattern -Path ".\000_FRAMEWORK\050_REGISTRATION\Registration_U.vb" -Pattern "CaptureOriginalRowVersion(currentRecord.RowVersion)" -Description "Registration captures its original RowVersion through Base_U"
 Assert-Pattern -Path ".\000_FRAMEWORK\060_ROLES\Roles_U.vb" -Pattern "DataAccess.UpdateRoleField" -Description "Roles_U remains the documented custom immediate-write page"
 Assert-Pattern -Path ".\000_FRAMEWORK\080_HELPDESK\HelpDeskDataAccess.vb" -Pattern "Public Property UpdatedBy As Integer?" -Description "Help Desk nullable update actor maps to a nullable model property"
@@ -248,7 +250,10 @@ Assert-Block -Path ".\000_FRAMEWORK\000_BASECLASSES\Base_B.vb" -Block @"
             If Not UsesStandardSoftDelete() Then Return False
 "@ -Description "Restore answers to the same opt-in as delete"
 Assert-NotPattern -Path ".\000_FRAMEWORK\050_REGISTRATION\Registration_B.vb" -Pattern "UsesStandardSoftDelete" -Description "Registration did not silently gain a delete"
-Assert-NotPattern -Path ".\999_GENERATED PAGES\UsersY_B.vb" -Pattern "SoftDeleteGeneratedPageRecord" -Description "A generated browse page does not copy the delete logic"
+# The generated page this asserted against went with the FW_Users pages on 2026-09-08, and
+# 999_GENERATED PAGES is empty. The template is what actually decides it, so the check moves there
+# and now covers every page generated in future rather than the one that happened to exist.
+Assert-NotPattern -Path ".\000_FRAMEWORK\070_PAGEGENERATION\PageGenerator.vb" -Pattern "SoftDeleteGeneratedPageRecord" -Description "The generated browse template does not copy the delete logic"
 
 Write-Step "Main menu message workspace"
 Assert-Pattern -Path ".\000_FRAMEWORK\010_MAINMENU\MainMenu.vb" -Pattern "SizeType.Percent, 34.0F" -Description "Messages region is widened"
@@ -264,7 +269,7 @@ Assert-Pattern -Path ".\000_FRAMEWORK\085_MESSAGING\MessagingDataAccess.vb" -Pat
 Assert-Pattern -Path ".\000_FRAMEWORK\085_MESSAGING\MessageComposeForm.vb" -Pattern "SelectionMode.MultiExtended" -Description "Compose supports multi-select recipients"
 
 Write-Step "Manual verification checklist"
-Write-Host "Run these UI checks in Users_AppAdmin_B, Roles_B:" -ForegroundColor Yellow
+Write-Host "Run these UI checks in Registration_B, Roles_B:" -ForegroundColor Yellow
 Write-Host "  1) Custom SQL without DeletedFlag: Show Deleted should be disabled when grid lacks DeletedFlag." -ForegroundColor Yellow
 Write-Host "  2) Delete a row where soft-delete is supported: row should disappear from normal view." -ForegroundColor Yellow
 Write-Host "  3) Show Deleted: only deleted rows should appear." -ForegroundColor Yellow

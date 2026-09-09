@@ -128,6 +128,20 @@ Namespace SDC.Framework
             ' space is the Value column's problem, not a reason to scroll sideways.
             fieldsGrid.ScrollBars = ScrollBars.Vertical
 
+            ' Which fields this page shows, ticked by an App Admin while looking at a real record -
+            ' which is the one place the question "is this field worth showing" is easy to answer.
+            ' Hidden from everybody else, who simply see the shorter list that results.
+            '
+            ' Not ReadOnly like the rest of the grid: this is the one cell anyone can change.
+            fieldsGrid.Columns.Add(New DataGridViewCheckBoxColumn() With {
+                .Name = "HotFieldSelected",
+                .HeaderText = String.Empty,
+                .Width = 26,
+                .AutoSizeMode = DataGridViewAutoSizeColumnMode.None,
+                .SortMode = DataGridViewColumnSortMode.NotSortable,
+                .ReadOnly = False,
+                .Visible = False
+            })
             fieldsGrid.Columns.Add(New DataGridViewTextBoxColumn() With {
                 .Name = "HotFieldNumber",
                 .HeaderText = "#",
@@ -151,6 +165,7 @@ Namespace SDC.Framework
             fieldsGrid.Columns("HotFieldValue").DefaultCellStyle.WrapMode = DataGridViewTriState.True
 
             AddHandler fieldsGrid.CellFormatting, AddressOf FieldsGrid_CellFormatting
+            AddHandler fieldsGrid.CellContentClick, AddressOf FieldsGrid_CellContentClick
 
             stripPanel.Controls.Add(fieldsGrid)
             stripPanel.Controls.Add(dockLeftButton)
@@ -393,15 +408,39 @@ Namespace SDC.Framework
                               captions As IDictionary(Of String, String),
                               hiddenFields As ICollection(Of String),
                               resolvedValues As IDictionary(Of String, String))
+            ShowRecord(record, captions, hiddenFields, resolvedValues, Nothing, False)
+        End Sub
+
+        ''' <summary>
+        ''' Fills the strip for one record.
+        ''' </summary>
+        ''' <param name="selectedFields">
+        ''' The fields this page shows. Empty means every field - the behaviour before anyone could
+        ''' choose, and what every uncurated page still does.
+        ''' </param>
+        ''' <param name="allowSelection">
+        ''' An App Admin sees every field with a tick beside it, unticked ones dimmed, so the choice
+        ''' and its effect are visible at once. Everybody else sees the ticked fields and no ticks.
+        ''' </param>
+        Public Sub ShowRecord(record As DataRow,
+                              captions As IDictionary(Of String, String),
+                              hiddenFields As ICollection(Of String),
+                              resolvedValues As IDictionary(Of String, String),
+                              selectedFields As ICollection(Of String),
+                              allowSelection As Boolean)
             fieldsGrid.Rows.Clear()
+            fieldsGrid.Columns("HotFieldSelected").Visible = allowSelection
 
             If Not IsOpen OrElse record Is Nothing Then
                 Return
             End If
 
+            Dim curated = selectedFields IsNot Nothing AndAlso selectedFields.Count > 0
+
             ' Collected first, then sorted, then added - the grid is filled once rather than being
-            ' asked to re-order itself afterwards.
-            Dim shown As New List(Of KeyValuePair(Of String, String))()
+            ' asked to re-order itself afterwards. Field name travels with the caption because the
+            ' caption is what is sorted and displayed, and the field name is what gets saved.
+            Dim shown As New List(Of Tuple(Of String, String, String, Boolean))()
 
             For Each column As DataColumn In record.Table.Columns
                 Dim fieldName = column.ColumnName
@@ -433,17 +472,100 @@ Namespace SDC.Framework
                               Convert.ToString(rawValue, CultureInfo.CurrentCulture))
                 End If
 
-                shown.Add(New KeyValuePair(Of String, String)(caption, text))
+                Dim isSelected = Not curated OrElse selectedFields.Contains(fieldName)
+
+                ' A field this page does not show is dropped for everyone except the person who
+                ' decides which fields it shows.
+                If Not isSelected AndAlso Not allowSelection Then
+                    Continue For
+                End If
+
+                shown.Add(Tuple.Create(caption, text, fieldName, isSelected))
             Next
 
             ' Sorted by the caption the reader sees, not by the column order the table happens to
             ' have. On a wide table that order is a history of when columns were added, which is of
             ' no use to somebody looking for one field. Alphabetical means it can be found.
-            shown.Sort(Function(left, right) String.Compare(left.Key, right.Key, StringComparison.CurrentCultureIgnoreCase))
+            shown.Sort(Function(left, right) String.Compare(left.Item1, right.Item1, StringComparison.CurrentCultureIgnoreCase))
 
             For Each field In shown
-                fieldsGrid.Rows.Add(String.Empty, field.Key, field.Value)
+                Dim rowIndex = fieldsGrid.Rows.Add(field.Item4, String.Empty, field.Item1, field.Item2)
+                Dim row = fieldsGrid.Rows(rowIndex)
+
+                ' The field name, for the tick handler. Not a column, because it is not the reader's
+                ' business and the strip has no width to spare for it.
+                row.Tag = field.Item3
+
+                ' Dimmed rather than hidden, so an App Admin sees the selection and its effect at
+                ' the same time and does not need a preview of somebody else's view.
+                If allowSelection AndAlso Not field.Item4 Then
+                    row.DefaultCellStyle.ForeColor = Color.Silver
+                End If
             Next
+        End Sub
+
+        ''' <summary>
+        ''' A tick changes which fields this page shows, for everyone, and saves at once.
+        ''' </summary>
+        ''' <remarks>
+        ''' CellContentClick rather than an edit mode: the rest of the grid is read-only, and one
+        ''' cell that commits on click is simpler than a grid that enters and leaves editing.
+        '''
+        ''' Unticking the last field clears the stored list, which means every field again rather
+        ''' than none - otherwise an App Admin could empty the panel and have nothing left to tick.
+        ''' </remarks>
+        Private Sub FieldsGrid_CellContentClick(sender As Object, e As DataGridViewCellEventArgs)
+            If e.RowIndex < 0 OrElse e.ColumnIndex < 0 Then
+                Return
+            End If
+
+            If Not String.Equals(fieldsGrid.Columns(e.ColumnIndex).Name, "HotFieldSelected", StringComparison.Ordinal) Then
+                Return
+            End If
+
+            If Not fieldsGrid.Columns("HotFieldSelected").Visible Then
+                Return
+            End If
+
+            ' Not merely hidden. The column is invisible to anyone else, and this refuses them too.
+            If Not SessionState.IsApplicationAdmin Then
+                Return
+            End If
+
+            Dim row = fieldsGrid.Rows(e.RowIndex)
+            Dim fieldName = Convert.ToString(row.Tag)
+            If String.IsNullOrWhiteSpace(fieldName) Then
+                Return
+            End If
+
+            Dim nowSelected = Not Convert.ToBoolean(row.Cells("HotFieldSelected").Value)
+            row.Cells("HotFieldSelected").Value = nowSelected
+            row.DefaultCellStyle.ForeColor = If(nowSelected, fieldsGrid.DefaultCellStyle.ForeColor, Color.Silver)
+
+            Dim selected As New List(Of String)()
+            For Each gridRow As DataGridViewRow In fieldsGrid.Rows
+                If Convert.ToBoolean(gridRow.Cells("HotFieldSelected").Value) Then
+                    Dim name = Convert.ToString(gridRow.Tag)
+                    If Not String.IsNullOrWhiteSpace(name) Then
+                        selected.Add(name)
+                    End If
+                End If
+            Next
+
+            ' Every field ticked is the same answer as none ticked - show everything - and storing
+            ' it as nothing keeps a page that gains a column later showing that column too.
+            If selected.Count = fieldsGrid.Rows.Count Then
+                selected.Clear()
+            End If
+
+            Dim updatedBy = If(SessionState.Current.HasValue, SessionState.Current.Value.UserID, 0)
+            If Not DataAccess.SavePageHotFields(owner.GetType().Name, selected, updatedBy) Then
+                MessageBox.Show(owner,
+                                "The Hot Fields selection could not be saved for this page.",
+                                "Hot Fields",
+                                MessageBoxButtons.OK,
+                                MessageBoxIcon.Warning)
+            End If
         End Sub
 
         ''' <summary>Clears the strip, for when nothing is selected.</summary>
@@ -459,7 +581,10 @@ Namespace SDC.Framework
         ''' screen. Roles_B numbers its order column the same way and for the same reason.
         ''' </remarks>
         Private Sub FieldsGrid_CellFormatting(sender As Object, e As DataGridViewCellFormattingEventArgs)
-            If e.RowIndex < 0 OrElse e.ColumnIndex <> 0 Then
+            ' By name, not by index. The tick column took index 0 on 2026-09-09 and an index test
+            ' would have started numbering the checkboxes instead of the rows.
+            If e.RowIndex < 0 OrElse e.ColumnIndex < 0 OrElse
+               Not String.Equals(fieldsGrid.Columns(e.ColumnIndex).Name, "HotFieldNumber", StringComparison.Ordinal) Then
                 Return
             End If
 
