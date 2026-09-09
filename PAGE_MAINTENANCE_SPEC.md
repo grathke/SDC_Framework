@@ -70,6 +70,8 @@ edited, so you get neither the change nor the error.
 
 `FW_PageSettings_U`: one page, offering only what can change after generation.
 
+**Opened by Modify on `FW_PageGeneration_B`**, which passes the page name. See section 6.
+
 **On it:**
 
 - which page is being maintained
@@ -120,16 +122,44 @@ The split is what buys it Update.
 longer be "manually edited" in the sense the generator means, so that report disappears for it - and
 should say so rather than silently stopping.
 
-## 6. Open questions
+## 6. Decided, and still open
+
+**Reached from `FW_PageGeneration_B`, by Modify.** Decided 2026-09-09. The browse page's Modify
+button opens the settings page directly, passing the **page name** rather than the request id - so
+the same page can later be opened from anywhere else, including from a page that has no generation
+request at all, which is most of the framework's own pages. It is also how everything around it is
+keyed: `FW_Pages`, the caption chain, the Hot Fields list and the saved layouts all key on
+`WindowOrPage`, and a request id would need translating at every use.
+
+**Modify routes by whether the page exists.** A request that has been generated opens the settings
+page; one that has not opens the request form, because there is nothing yet to maintain. No second
+button, and nothing to explain.
+
+**The menu caller, the icon and the page name stay off it.** Decided 2026-09-09, each for its own
+reason, and the reasons are worth keeping because they are what makes the page safe to use:
+
+- **The icon already has an owner.** An App Admin right-clicks a tile or dashboard icon and chooses
+  a picture; it is stored in `FW_DashboardLayouts.IconFileName` and applied on the next load. It is
+  already changeable without regenerating - putting it here too would be a second way to set one
+  value.
+- **The menu caller is not an update, it is a move.** It means adding a button on one surface and
+  removing it from another, and the generator never removes: it only reports that a page already has
+  a button elsewhere. That is not a theory - moving `UserX` to the ribbon on 2026-09-09 needed the
+  dashboard icon taken off by hand. Offering the choice here would quietly leave a second way in.
+- **The page name is a rename**, which is the eight-table procedure in `CLAUDE.md` plus the class,
+  the file and the tile. That belongs to the request and a deliberate regeneration.
+
+So everything on the settings page is either data or the generated field list, and nothing on it can
+leave the application half-moved.
+
+**Still open:**
 
 1. **Naming.** `FW_PageSettings_U` or `FW_PageFields_U`, and is the action called **Update**,
    **Apply Fields** or **Rebuild Fields**? Update reads well beside Save and Generate but collides
    with the CRUD Update on every other page.
-2. **Where the page is reached from** - an App Admin dashboard icon, or a button on the browse page
-   it maintains, which would carry the page identity with it and save choosing one from a list.
-3. **`_B` pages.** They are already almost entirely data - `Table_SQL` decides their columns - so a
+2. **`_B` pages.** They are already almost entirely data - `Table_SQL` decides their columns - so a
    split may buy them nothing. Worth confirming before doing it to both halves out of symmetry.
-4. **What Update does when the `.Generated.vb` is missing** - a page generated before the split.
+3. **What Update does when the `.Generated.vb` is missing** - a page generated before the split.
    Probably: create it, and say the page has been split.
 
 ## 7. Before this is called done
