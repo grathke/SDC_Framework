@@ -1,9 +1,10 @@
 # Thinfinity VirtualUI — the delivery surface
 
-**Reference, nothing built.** No VirtualUI code is in the application as at 2026-09-08. `Program.vb`
+**Reference, nothing built.** No VirtualUI code is in the application as at 2026-09-09. `Program.vb`
 does not call the SDK, the project references only `Microsoft.Data.SqlClient`, and
 `AttachViaThinfinity_Click` still reports that the feature is not configured. This document is what
-was learned before writing any of it.
+was learned before writing any of it — including a day spent standing the server up locally, in
+section 11.2, which changed nothing in the application.
 
 `CLAUDE.md` carries the two delivery rules that apply to every change — prefer click over hover, and
 treat files, printing and the clipboard as server-side. This is the detail behind them: the API that
@@ -233,7 +234,7 @@ between the application and JavaScript in the page. Nothing here needs that yet.
 3. The missing-DLL guards — **identical**. Section 2 stands: `Start()` returns `False` and every
    method no-ops rather than throwing.
 
-## 11.1 The application must be built 32-bit
+## 11.1 The x64 SDK library is missing from the install
 
 This one is not in any documentation and would be invisible if hit, so it is worth the space.
 
@@ -254,9 +255,9 @@ every call politely does nothing. `Active` returns `False`, the application runs
 nothing anywhere reports a problem. It would look exactly like an integration that had not been
 wired up yet.
 
-**This is not a wrong or partial install.** The x64 setup of 3.6.1.106 is what is here — the product
-sits in `C:\Program Files\`, and its server components in `bin64` are 64-bit. Read from the PE
-headers and export tables, not inferred from folder names:
+The x64 setup of 3.6.1.106 is what is here — the product sits in `C:\Program Files\`, and its
+server components in `bin64` are 64-bit. Read from the PE headers and export tables, not inferred
+from folder names:
 
 | Library | Arch | Exports |
 |---|---|---|
@@ -265,9 +266,25 @@ headers and export tables, not inferred from folder names:
 | `bin64\Thinfinity.VuiExLib.dll` | x64 | the same scraper set |
 
 The 64-bit libraries are not a 64-bit build of the SDK. They are a **different surface** — the
-scraper engine behind publishing an application that was never modified. Which is the useful half of
-the finding: the SDK is 32-bit only in 3.6.1, and the 64-bit half of the product is precisely the
-one that needs no SDK.
+scraper engine behind publishing an application that was never modified.
+
+**The file is expected to be there, and simply is not shipped — established 2026-09-09.** Three
+independent facts say so, and they agree:
+
+1. Their own installer writes both target directories into the registry, under
+   `HKLM\SOFTWARE\Cybele Software\Setups\Thinfinity\VirtualUI\Dev`:
+   `TargetDir_x86 = …\bin32` and `TargetDir_x64 = …\bin64`. `GetDLLDir()` in the wrapper picks
+   between them on `IntPtr.Size` and appends `\Thinfinity.VirtualUI.DLL`. The x64 path is
+   registered; the file at the end of it was never installed.
+2. Cybele support, asked directly, replied: "Depending on the platform of your application (32-bit
+   or 64-bit), it will look for the corresponding DLL: the 32-bit version in the bin32 folder or the
+   64-bit version in the bin64 folder." That is the mechanism above, described as working.
+3. **A repair install does not produce it.** A repair replaces missing files; this one rewrote a
+   single type library (`ibin\XpsToPdf.tlb`) and left `bin64` unchanged. So the file is absent from
+   the package, not deleted from the disk.
+
+So this is not "the SDK is 32-bit only". It is an incomplete install of a product that expects the
+file to be present — which is a defect they can fix, rather than a constraint to design around.
 
 `SDC.Framework.vbproj` sets no `PlatformTarget`, builds AnyCPU and runs 64-bit here.
 
@@ -283,10 +300,9 @@ no reason to warn about it.
 and binds every dependency along with it, and none of that is worth paying for a delivery mechanism.
 That rules out the `PlatformTarget` fix and leaves two routes, neither yet tested:
 
-1. **Ask Cybele for a 64-bit SDK library.** The precise question is whether a 64-bit
-   `Thinfinity.VirtualUI.DLL` exists for the .NET SDK, given that `bin64` ships `VUILib` and
-   `VuiExLib` but neither exports `DllGetInstance`. If one exists, nothing else in this document
-   changes.
+1. **Get the 64-bit SDK library from Cybele.** No longer a question of whether one exists — their
+   support says the loader looks in `bin64` for it, and their installer registers that path. The ask
+   is for the file their package omits. If it arrives, nothing else in this document changes.
 2. **Publish through VirtualUI Server without the SDK.** VirtualUI 3.x publishes applications with
    no code modification, and the 64-bit `injectlib` in `bin64` is what makes that possible for a
    64-bit process. This needs **no change to the application at all** — no wrapper, no `Start()`, no
@@ -297,6 +313,97 @@ no `StdDialogs`, which is what section 5 relies on to make the ordinary file dia
 `UploadFile`/`DownloadFile`, no `PrintPdf`, no `BrowserInfo`. Some of that may be replaceable by
 settings on the server's application profile — that is the thing to find out, because attachments
 and printing are the two places this application actually touches the boundary.
+
+## 11.2 Running it on the development machine — 2026-09-09
+
+The developer install is not a bare SDK. It carries the whole server: `Thinfinity.VirtualUI.Server`,
+`Broker`, `Gateway`, `SvcMgr`, `WAG`, a web root of 222 files, and a licence. So the app can be seen
+in a browser here, without a server elsewhere — which is the point of doing it on this machine.
+
+**Two ports, and they are not interchangeable.** The Manager's General tab shows one binding, 6580.
+The configuration also holds `[IIS.BindingsDev] Binding0=…6080`, and 6080 is what the VB.NET
+tutorial tells you to open: it is the *Development Server*, where a project run from the IDE appears
+inside the Development Lab with a Virtual Path panel and a live jsRO inspector. 6580 is where a
+registered application profile is served. Reaching for the wrong one looks like a dead server.
+
+Where things live, none of it obvious:
+
+| What | Where |
+|---|---|
+| Server configuration | `C:\ProgramData\Cybele Software\Thinfinity\VirtualUI\DB\Thinfinity.VirtualUI.Server.ini` |
+| Application profiles | `profiles.bin`, beside it — **not** in the `.ini`, which has no applications section at all |
+| Server log | `C:\Users\Public\Documents\Cybele Software\Thinfinity\VirtualUI\Thinfinity.VirtualUI.Server.log` |
+| The Manager GUI | `bin64\Thinfinity.VirtualUI.Server.exe /broker` — the same executable as the server |
+| The listener | `bin64\Thinfinity.VirtualUI.Server.exe /start`, started by `ThinfinityVUISvcMgr` **into the interactive session as the logged-on user**, not as LocalSystem |
+
+### The URL reservation, and why `+` is not `*`
+
+The server would not start. Its log said only:
+
+```
+Thinfinity.VirtualUI.Server.exe  Binding port:6580 with error:5
+```
+
+Error 5 is access denied. The port was free — a plain `TcpListener` bound it without complaint — so
+the refusal came from `http.sys`, which the server uses and which requires a URL reservation for a
+process that is not elevated. The installer creates none.
+
+The trap is which reservation. `http.sys` treats the two wildcards as **different** URLs:
+
+- `+` — the strong wildcard, matches any host name
+- `*` — the weak wildcard, used only when nothing else matches
+
+VirtualUI's binding is `*` (Host Name `*`, IP `*` on the General tab), so it asks for
+`http://*:6580/`. Reserving `http://+:6580/` changes nothing and looks like the fix failing:
+
+```
+netsh http add urlacl url=http://*:6580/ user="<machine>\<user>"
+netsh http add urlacl url=http://*:6080/ user="<machine>\<user>"
+```
+
+After that the server binds on its own at boot. **This will be needed again on the real server** —
+unless it runs elevated or as LocalSystem, where the reservation is unnecessary. Remove one with
+`netsh http delete urlacl url=http://*:6580/`.
+
+### Where it stopped
+
+Listening, and answering **503 to every request**, including static files. The web layer is provably
+healthy — `netsh http show servicestate` shows the queue with one process attached and eight
+registered URLs (`/`, `/__SERVER__/`, `/__BROWSER__/`, `/__CHANNEL__/`, `/__TUNNEL__/`,
+`/__PROTO__/`, `/__MESSAGING__/`, `/__WVPN__/`) — and the 503 is VirtualUI's own answer, not the
+`http.sys` stock page, since the web root ships no `503.html`.
+
+The unexplained part: Broker, Gateway and TLS Tunnel are ticked as enabled services, and after a
+clean boot no process for any of them exists. `SvcMgr` runs as LocalSystem and starts only the
+server. Starting a broker by hand did not clear the 503.
+
+Parked there, with Cybele. Four findings, in the order they will care about:
+
+1. `bin64\Thinfinity.VirtualUI.dll` absent, and a repair does not produce it — section 11.1
+2. no `http.sys` reservation created for the server's own `*` binding
+3. `ThinfinityVUISvcMgr` starts none of its enabled services
+4. 503 on every path after a clean boot with a saved, default application profile
+
+### Publishing an application, when it works
+
+Server Manager → **Applications** → **Add**, which opens the Application Profiles Editor:
+
+- **Virtual Path** becomes the URL segment; **Default application** makes it answer at `/`
+- **Home Page** blank gives VirtualUI's own view; it is for a custom page wrapping the app
+- **Program file name** and **Start in** — set both. This application writes `startup.log` to its
+  working directory, which is how a launch is confirmed
+- **Resolution: Fit to browser window** is the auto setting, the one the main-menu sizing question
+  was parked on
+- **Credentials → Use server's account** runs it as the account the server runs as
+
+**The database credentials have to reach that process.** `DataAccess.BuildConnectionString` reads
+`SDC_DB_*` from the environment and `run-local.ps1` sets them per-process, so a VirtualUI-launched
+exe sees none of them and `Program.vb` exits with "Database Configuration Required" before the login
+screen. Set them at **user scope** for the account the server runs as — one place, inherited by
+every launch path: F5, `dotnet run`, the exe, VirtualUI, and each project of a multi-project
+solution. Machine scope also works and puts the password in the registry for every account on the
+box; a launcher script works too, but VirtualUI attaches to the window of the process it starts, so
+an intermediate script is a risk that user-scope variables avoid entirely.
 
 ## 12. Where the documentation actually is
 

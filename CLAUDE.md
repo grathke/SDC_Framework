@@ -240,7 +240,8 @@ Key areas:
   delivery rules below: session detection, `StdDialogs` and the file dialogs, upload and download,
   printing, the `Options` flags, `BrowserInfo`. Read it before adding the SDK to the project or
   changing the Help Desk attachment path — section 2 records why the SDK can be added before it is
-  installed, and section 5 why a second attachment picker may not be needed at all.
+  installed, section 5 why a second attachment picker may not be needed at all, and section 11.2 the
+  `http.sys` URL reservation the server cannot bind its own port without.
 - `.github/new-page-request-template.md` and `.github/new-page-request-manual.md` — the page
   request template and how to interpret a filled-in one.
 
