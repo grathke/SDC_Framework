@@ -227,6 +227,20 @@ Namespace SDC.Framework
             ' found no recognised place rather than failing quietly. It used to anchor on an
             ' AddMenuTestTile call that happened to sit last in this method, which meant deleting a
             ' demonstration tile would have broken page generation.
+            menu.UpsertActionTile(
+                actionKey:="generated-userx_b",
+                caption:="UserX",
+                onClick:=Sub(sender, e)
+                             Using frm As New UserX_B(user, profile)
+                                 frm.ShowDialog(menu)
+                             End Using
+                         End Sub,
+                iconFileName:="Color_OK.png",
+                fallbackIcon:=SystemIcons.Application.ToBitmap(),
+                isVisible:=True,
+                isEnabled:=True)
+            menu.SetActionPage("generated-userx_b", "UserX_B")
+
             ' PAGEGEN RIBBON ANCHOR
         End Sub
 
