@@ -38,6 +38,7 @@ Namespace SDC.Framework
         Private ReadOnly applyFieldsButton As Button
         Private ReadOnly saveButton As Button
         Private ReadOnly closeButton As Button
+        Private ReadOnly maintenanceHeading As Label
         Private ReadOnly resultLabel As Label
 
         Public Sub New(pageName As String, user As UserContext, Optional profile As AccessProfile = Nothing)
@@ -53,6 +54,18 @@ Namespace SDC.Framework
             MinimizeBox = False
             ClientSize = New Size(620, 560)
             BackColor = Color.White
+
+            ' Which half each part of this screen touches, said on the screen. The caption and Hot
+            ' Fields belong to the browse page and take effect on its next open; Apply Fields
+            ' rewrites the maintenance page's code and needs a build. One title naming the browse
+            ' page, over a button that rewrites the other one, is a screen that has to be explained.
+            Dim browseHeading As New Label() With {
+                .Text = "BROWSE PAGE - " & pageName.ToUpperInvariant() & "   (applies on next open, no rebuild)",
+                .AutoSize = True,
+                .Location = New Point(20, 0),
+                .Font = New Font("Segoe UI", 9.0F, FontStyle.Bold),
+                .ForeColor = Color.FromArgb(24, 45, 78)
+            }
 
             Dim captionLabel As New Label() With {
                 .Text = "PAGE CAPTION:",
@@ -113,36 +126,43 @@ Namespace SDC.Framework
                 .AutoSizeMode = DataGridViewAutoSizeColumnMode.Fill
             })
 
+            maintenanceHeading = New Label() With {
+                .AutoSize = True,
+                .Location = New Point(20, 428),
+                .Font = New Font("Segoe UI", 9.0F, FontStyle.Bold),
+                .ForeColor = Color.FromArgb(24, 45, 78)
+            }
+
             applyFieldsButton = New Button() With {
                 .Text = "APPLY FIELDS",
-                .Location = New Point(20, 432),
+                .Location = New Point(20, 452),
                 .Size = New Size(130, 30)
             }
             AddHandler applyFieldsButton.Click, AddressOf ApplyFieldsButton_Click
 
             saveButton = New Button() With {
                 .Text = "SAVE",
-                .Location = New Point(370, 432),
+                .Location = New Point(370, 452),
                 .Size = New Size(100, 30)
             }
             AddHandler saveButton.Click, AddressOf SaveButton_Click
 
             closeButton = New Button() With {
                 .Text = "CLOSE",
-                .Location = New Point(480, 432),
+                .Location = New Point(480, 452),
                 .Size = New Size(100, 30),
                 .DialogResult = DialogResult.Cancel
             }
 
             resultLabel = New Label() With {
                 .AutoSize = False,
-                .Location = New Point(20, 472),
-                .Size = New Size(560, 66),
+                .Location = New Point(20, 492),
+                .Size = New Size(560, 50),
                 .ForeColor = Color.FromArgb(52, 60, 70)
             }
 
-            Controls.AddRange({captionLabel, captionTextBox, hotFieldsLabel, hotFieldsCheckBox,
-                               hotFieldsGrid, applyFieldsButton, saveButton, closeButton, resultLabel})
+            Controls.AddRange({browseHeading, captionLabel, captionTextBox, hotFieldsLabel, hotFieldsCheckBox,
+                               hotFieldsGrid, maintenanceHeading, applyFieldsButton, saveButton, closeButton, resultLabel})
 
             LoadSettings()
         End Sub
@@ -172,6 +192,12 @@ Namespace SDC.Framework
             ' Apply Fields needs a request to read the field list from. A hand-written page has none,
             ' and saying so is better than a button that fails when pressed.
             applyFieldsButton.Enabled = requestId > 0
+
+            Dim maintenancePageName = ResolveMaintenancePageName()
+            maintenanceHeading.Text = If(maintenancePageName = String.Empty,
+                                         "MAINTENANCE PAGE - none for this page",
+                                         "MAINTENANCE PAGE - " & maintenancePageName.ToUpperInvariant() & "   (rewrites its fields, needs a rebuild)")
+
             If requestId <= 0 Then
                 Report("Caption and Hot Fields can be changed here. Apply Fields is unavailable: this page has no generation request.")
             Else
@@ -244,6 +270,22 @@ Namespace SDC.Framework
             Report("APPLIED: " & String.Join(", ", result.CreatedFiles) & "." & Environment.NewLine &
                    "Your own half of the page was not touched. Rebuild to see the change.")
         End Sub
+
+        ''' <summary>
+        ''' The maintenance page this browse page pairs with, from the request. Empty where there is
+        ''' no request or the request generates no _U - a browse-only page has nothing to apply
+        ''' fields to, and the heading says so rather than naming a page that does not exist.
+        ''' </summary>
+        Private Function ResolveMaintenancePageName() As String
+            If requestId <= 0 Then Return String.Empty
+
+            Dim request = DataAccess.GetPageGenerationById(requestId)
+            If request Is Nothing OrElse Not request.Table.Columns.Contains("MaintenancePageName") OrElse request.IsNull("MaintenancePageName") Then
+                Return String.Empty
+            End If
+
+            Return Convert.ToString(request("MaintenancePageName")).Trim()
+        End Function
 
         Private Sub Report(message As String)
             resultLabel.Text = message.ToUpperInvariant()
