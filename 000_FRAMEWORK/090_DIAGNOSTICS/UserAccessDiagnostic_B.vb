@@ -1,728 +1,876 @@
 Option Strict On
 Option Explicit On
 
-Imports System
 Imports System.Collections.Generic
 Imports System.Data
 Imports System.Drawing
 Imports System.Linq
 Imports System.Text
+Imports System.Text.RegularExpressions
 Imports System.Windows.Forms
 
 Namespace SDC.Framework
     Public Class FW_UserAccessDiagnostic_B
-        Inherits Form
+        Inherits FW_Base_B
 
         Private ReadOnly currentUser As UserContext
         Private ReadOnly accessProfile As AccessProfile
-        ''' <summary>
-        ''' The registration everything on this page is asked about. Not ReadOnly since 2026-09-08:
-        ''' an App Admin picks it from the combo below, and every lookup here reads this field, so
-        ''' changing it is what re-points the page at another registration.
-        '''
-        ''' Seeded from the session, which is what a Company Admin keeps for the whole visit.
-        ''' </summary>
-        Private registrationId As Integer
-        Private ReadOnly pageCaption As String
-        Private ReadOnly backgroundColorPicker As PageBackgroundColorPicker
         Private ReadOnly registrationLabel As Label
         Private ReadOnly registrationComboBox As ComboBox
-        Private isLoadingRegistrations As Boolean = False
-        Private ReadOnly closeButton As Button
-        Private ReadOnly emailComboBox As ComboBox
-        Private ReadOnly findUserButton As Button
-        Private ReadOnly userLabel As Label
+        Private ReadOnly tableLabel As Label
         Private ReadOnly tableComboBox As ComboBox
+        Private ReadOnly roleLabel As Label
         Private ReadOnly roleComboBox As ComboBox
-        Private ReadOnly explainButton As Button
-        Private ReadOnly applyAccessChangesButton As Button
-        Private ReadOnly comparisonGrid As DataGridView
-        Private ReadOnly comparisonFootnote As Label
-        Private ReadOnly resultTextBox As TextBox
-        Private ReadOnly beforePermissions As New Dictionary(Of String, Boolean)(StringComparer.OrdinalIgnoreCase)
+        Private ReadOnly checkAccessButton As Button
+        Private ReadOnly applyChangesButton As Button
+        Private ReadOnly analysisResultLabel As Label
+        Private ReadOnly diagnosticResultTextBox As TextBox
+        Private ReadOnly permissionsGrid As DataGridView
+        Private selectedRegistrationId As Integer
         Private selectedUserId As Integer
         Private loadingRoles As Boolean
-        Private beforeWasConfigured As Boolean
-        Private beforeRoleWasAssigned As Boolean
+        Private loadingRegistrations As Boolean
+        Private diagnosticPageReady As Boolean
+        Private diagnosticLayoutInProgress As Boolean
 
         Public Sub New(user As UserContext, Optional profile As AccessProfile = Nothing)
+            MyBase.New(user, profile, "FW_USERS")
             currentUser = user
             accessProfile = profile
-            registrationId = If(SessionState.Current.HasValue, SessionState.Current.Value.RegistrationID, 0)
-
-
-            ' The same name the button that opened this page carries, from the same chain: the
-            ' role's override where a table was genuinely renamed, otherwise FW_Pages.Table_Alias.
-            ' Written here rather than fixed, so a page and the icon that opens it cannot end up
-            ' called two different things - which is what happened when this read "User Access
-            ' Explanation" and its button read "User Access Diag.".
-            pageCaption = PageTitleHelper.ResolveCaptionForPage(registrationId,
-                                                                "FW_UserAccessDiagnostic_B",
-                                                                "User Access Diagnostic")
-
-            Me.Text = pageCaption.ToUpperInvariant()
-            Me.StartPosition = FormStartPosition.CenterParent
-            Me.FormBorderStyle = FormBorderStyle.FixedDialog
-            Me.MaximizeBox = False
-            Me.MinimizeBox = False
-            Me.ClientSize = New Size(820, 900)
-            Me.MinimumSize = New Size(700, 700)
-            Me.BackColor = Color.White
-
-            ' An App Admin chooses the registration; anybody else is told which one they are in.
-            ' Same rule as Roles_B, and the same shared helper fills the combo, so "Make a
-            ' Selection" and the registration names mean the same thing on both pages.
-            Dim canChooseRegistration = SessionState.IsApplicationAdmin
+            selectedRegistrationId = GetSessionRegistrationId()
+            ClientSize = New Size(ClientSize.Width, 980)
 
             registrationLabel = New Label() With {
-                .Text = If(canChooseRegistration, "REGISTRATION:", "REGISTRATION: " & GetRegistrationDisplayName()),
+                .Text = "Registration:",
                 .AutoSize = True,
-                .Location = New Point(24, 22),
+                .Location = New Point(20, 78),
                 .ForeColor = Color.DimGray
             }
-
-            ' Hidden rather than absent for anyone else. The page still works from the session's
-            ' registration, and a hidden combo is not what stops them reaching another one - every
-            ' lookup here is scoped by registrationId, which they cannot change.
             registrationComboBox = New ComboBox() With {
-                .Location = New Point(140, 18),
-                .Size = New Size(260, 26),
                 .DropDownStyle = ComboBoxStyle.DropDownList,
-                .DropDownWidth = 320,
-                .Visible = canChooseRegistration,
-                .Enabled = canChooseRegistration
+                .Location = New Point(110, 74),
+                .Size = New Size(275, 26),
+                .DropDownWidth = 280
             }
-            closeButton = New Button() With {
-                .Text = "CLOSE",
-                .Location = New Point(696, 18),
-                .Size = New Size(100, 30),
-                .Anchor = AnchorStyles.Top Or AnchorStyles.Right
-            }
-            Dim emailLabel = New Label() With {
-                .Text = "USER EMAIL:",
+            tableLabel = New Label() With {
+                .Text = "Table / Menu:",
                 .AutoSize = True,
-                .Location = New Point(24, 62),
-                .ForeColor = Color.DimGray
-            }
-            emailComboBox = New ComboBox() With {
-                .DropDownStyle = ComboBoxStyle.DropDown,
-                .Location = New Point(110, 58),
-                .Size = New Size(330, 24),
-                .AutoCompleteMode = AutoCompleteMode.SuggestAppend,
-                .AutoCompleteSource = AutoCompleteSource.CustomSource,
-                .DropDownWidth = 420
-            }
-            findUserButton = New Button() With {
-                .Text = "FIND USER",
-                .Location = New Point(450, 56),
-                .Size = New Size(100, 28)
-            }
-            userLabel = New Label() With {
-                .AutoSize = True,
-                .Location = New Point(570, 62),
-                .ForeColor = Color.DarkGreen
-            }
-            Dim tableLabel = New Label() With {
-                .Text = "TABLE / MENU:",
-                .AutoSize = True,
-                .Location = New Point(24, 112),
+                .Location = New Point(350, 78),
                 .ForeColor = Color.DimGray
             }
             tableComboBox = New ComboBox() With {
                 .DropDownStyle = ComboBoxStyle.DropDownList,
-                .Location = New Point(120, 108),
-                .Size = New Size(300, 26),
-                .DropDownWidth = 380
+                .Location = New Point(435, 74),
+                .Size = New Size(260, 26),
+                .DropDownWidth = 360
             }
-            Dim roleLabel = New Label() With {
-                .Text = "ROLE:",
+            roleLabel = New Label() With {
+                .Text = "Role:",
                 .AutoSize = True,
-                .Location = New Point(450, 112),
                 .ForeColor = Color.DimGray
             }
             roleComboBox = New ComboBox() With {
                 .DropDownStyle = ComboBoxStyle.DropDownList,
-                .Location = New Point(495, 108),
-                .Size = New Size(285, 26),
+                .Size = New Size(260, 26),
                 .DropDownWidth = 360
             }
-            explainButton = New Button() With {
-                .Text = "EXPLAIN ACCESS",
-                .Location = New Point(24, 155),
-                .Size = New Size(772, 30),
-                .Anchor = AnchorStyles.Top Or AnchorStyles.Left Or AnchorStyles.Right
+            checkAccessButton = New Button() With {
+                .Text = "Check Access",
+                .Size = New Size(120, 30)
             }
-            applyAccessChangesButton = New Button() With {
-                .Text = "APPLY ACCESS CHANGES",
-                .Location = New Point(24, 415),
-                .Size = New Size(772, 30),
-                .Anchor = AnchorStyles.Top Or AnchorStyles.Left Or AnchorStyles.Right,
-                .Visible = False
+            applyChangesButton = New Button() With {
+                .Text = "Apply Changes",
+                .Size = New Size(120, 30)
             }
-            comparisonGrid = New DataGridView() With {
-                .Location = New Point(24, 415),
-                .Size = New Size(772, 190),
-                .Anchor = AnchorStyles.Top Or AnchorStyles.Left Or AnchorStyles.Right,
-                .AllowUserToAddRows = False,
-                .AllowUserToDeleteRows = False,
-                .ReadOnly = True,
-                .RowHeadersVisible = False,
-                .AutoGenerateColumns = False,
-                .Visible = False
-            }
-            ApplyLightBlueHeaderStyle(comparisonGrid)
-            comparisonGrid.Columns.Add(New DataGridViewTextBoxColumn() With {.Name = "Permission", .HeaderText = "PERMISSION", .AutoSizeMode = DataGridViewAutoSizeColumnMode.Fill})
-            comparisonGrid.Columns.Add(New DataGridViewTextBoxColumn() With {.Name = "Before", .HeaderText = "BEFORE", .Width = 120})
-            comparisonGrid.Columns.Add(New DataGridViewTextBoxColumn() With {.Name = "After", .HeaderText = "AFTER", .Width = 120})
-            comparisonFootnote = New Label() With {
-                .Text = "*NA = NOT AVAILABLE BEFORE CONFIGURATION",
+            analysisResultLabel = New Label() With {
+                .Text = "Analysis Result",
                 .AutoSize = True,
-                .Location = New Point(24, 615),
-                .Visible = False
+                .ForeColor = Color.DimGray
             }
-            resultTextBox = New TextBox() With {
-                .Location = New Point(24, 195),
-                .Size = New Size(772, 210),
-                .Anchor = AnchorStyles.Top Or AnchorStyles.Left Or AnchorStyles.Right,
-                .Font = New Font("Consolas", 10.0F, FontStyle.Regular),
+            diagnosticResultTextBox = New TextBox() With {
                 .Multiline = True,
                 .ReadOnly = True,
                 .ScrollBars = ScrollBars.Vertical,
-                .BackColor = Color.White
+                .BackColor = Color.White,
+                .Height = 90
             }
-
-            AddHandler Me.Load, AddressOf ExplanationPage_Load
-            AddHandler closeButton.Click, AddressOf CloseButton_Click
-            AddHandler findUserButton.Click, AddressOf FindUserButton_Click
-            AddHandler emailComboBox.KeyDown, AddressOf EmailComboBox_KeyDown
-            AddHandler explainButton.Click, AddressOf ExplainButton_Click
-            AddHandler applyAccessChangesButton.Click, AddressOf ApplyAccessChangesButton_Click
-            AddHandler tableComboBox.SelectedIndexChanged, AddressOf TableComboBox_SelectedIndexChanged
-            AddHandler roleComboBox.SelectedIndexChanged, AddressOf RoleComboBox_SelectedIndexChanged
-
+            permissionsGrid = New DataGridView() With {
+                .AllowUserToAddRows = False,
+                .AllowUserToDeleteRows = False,
+                .AllowUserToResizeRows = False,
+                .ReadOnly = False,
+                .MultiSelect = False,
+                .RowHeadersVisible = False,
+                .AutoGenerateColumns = False,
+                .AllowUserToOrderColumns = False,
+                .BackgroundColor = Color.White
+            }
+            ApplyLightBlueHeaderStyle(permissionsGrid)
+            permissionsGrid.Columns.Add(New DataGridViewTextBoxColumn() With {
+                .Name = "Permission",
+                .HeaderText = "Permission",
+                .DataPropertyName = "Permission",
+                .ReadOnly = True,
+                .AutoSizeMode = DataGridViewAutoSizeColumnMode.Fill
+            })
+            permissionsGrid.Columns.Add(New DataGridViewCheckBoxColumn() With {
+                .Name = "Allowed",
+                .HeaderText = "Allowed",
+                .Width = 80
+            })
             AddHandler registrationComboBox.SelectedIndexChanged, AddressOf RegistrationComboBox_SelectedIndexChanged
+            AddHandler Me.Load, AddressOf DiagnosticPage_Load
+            AddHandler Me.Shown, AddressOf DiagnosticPage_Shown
+            AddHandler checkAccessButton.Click, AddressOf CheckAccessButton_Click
+            AddHandler applyChangesButton.Click, AddressOf ApplyChangesButton_Click
+            AddHandler permissionsGrid.CurrentCellDirtyStateChanged, AddressOf PermissionsGrid_CurrentCellDirtyStateChanged
 
-            Me.Controls.Add(registrationLabel)
-            Me.Controls.Add(registrationComboBox)
-            Me.Controls.Add(closeButton)
-            Me.Controls.Add(emailLabel)
-            Me.Controls.Add(emailComboBox)
-            Me.Controls.Add(findUserButton)
-            Me.Controls.Add(userLabel)
-            Me.Controls.Add(tableLabel)
-            Me.Controls.Add(tableComboBox)
-            Me.Controls.Add(roleLabel)
-            Me.Controls.Add(roleComboBox)
-            Me.Controls.Add(explainButton)
-            Me.Controls.Add(comparisonGrid)
-            Me.Controls.Add(comparisonFootnote)
-            Me.Controls.Add(applyAccessChangesButton)
-            Me.Controls.Add(resultTextBox)
-
-            ' The same picker every browse page carries, from PageBackgroundColorPicker rather than
-            ' a second one written here. Left of CLOSE, matched to its height so the two read as one
-            ' row. Admin only, and the colour it stores is restored for everyone.
-            backgroundColorPicker = New PageBackgroundColorPicker(Me, Me.GetType().Name)
-            backgroundColorPicker.Attach()
-            backgroundColorPicker.Button.Size = New Size(94, closeButton.Height)
-            backgroundColorPicker.Button.Location = New Point(closeButton.Left - 94 - 8, closeButton.Top)
-            backgroundColorPicker.Button.Anchor = AnchorStyles.Top Or AnchorStyles.Right
+            Controls.Add(registrationLabel)
+            Controls.Add(registrationComboBox)
+            Controls.Add(tableLabel)
+            Controls.Add(tableComboBox)
+            Controls.Add(roleLabel)
+            Controls.Add(roleComboBox)
+            Controls.Add(checkAccessButton)
+            Controls.Add(applyChangesButton)
+            Controls.Add(analysisResultLabel)
+            Controls.Add(diagnosticResultTextBox)
+            Controls.Add(permissionsGrid)
+            registrationLabel.BringToFront()
+            registrationComboBox.BringToFront()
+            tableLabel.BringToFront()
+            tableComboBox.BringToFront()
         End Sub
 
-        Private Sub ExplanationPage_Load(sender As Object, e As EventArgs)
-            ' The button is admin only; the colour it set is applied for every user, because how a
-            ' page looks is not a permission. Both run here rather than in the constructor, so the
-            ' tint lands on controls that already exist.
-            backgroundColorPicker.UpdateVisibility()
-            backgroundColorPicker.ApplyStored()
-
-            ' The session's registration is already selected on the way in, so an App Admin who only
-            ' wants the one they are in does not have to choose it first.
-            LoadRegistrations()
-
-            LoadTableChoices()
-            If Not LoadRoles() Then
-                Return
-            End If
-            LoadEmailSuggestions()
-            explainButton.Enabled = False
-            ShowResult("ENTER OR SELECT A USER EMAIL, THEN SELECT A TABLE AND ROLE.")
-        End Sub
-
-        ''' <summary>
-        ''' Fills the registration combo for an App Admin, with the session's registration selected.
-        '''
-        ''' Nothing to do for anybody else: the combo is hidden, registrationId already holds the
-        ''' session's registration, and populating it would be a round trip for a list nobody sees.
-        ''' </summary>
-        Private Sub LoadRegistrations()
-            If Not registrationComboBox.Visible Then
-                Return
-            End If
-
-            isLoadingRegistrations = True
-            Try
-                RegistrationComboHelper.Populate(registrationComboBox, registrationId, True)
-            Catch ex As Exception
-                ShowResult("REGISTRATION LIST COULD NOT BE LOADED" & Environment.NewLine & ex.Message)
-            Finally
-                isLoadingRegistrations = False
-            End Try
-        End Sub
-
-        ''' <summary>
-        ''' Re-points the page at another registration.
-        '''
-        ''' Everything on screen describes a user in the registration that was selected when it was
-        ''' loaded, so all of it is cleared rather than left to be read as belonging to the new one.
-        ''' The email list is the only part reloaded here: which user, table and role follow from a
-        ''' choice that has not been made yet.
-        '''
-        ''' "Make a Selection" leaves the page empty and says so. It is a real answer - an App Admin
-        ''' who has not chosen yet should not be looking at the last registration's users.
-        ''' </summary>
-        Private Sub RegistrationComboBox_SelectedIndexChanged(sender As Object, e As EventArgs)
-            If isLoadingRegistrations Then
-                Return
-            End If
-
-            ' Not merely hidden: a page that reads its registration from a control an unauthorised
-            ' user cannot see is still reading it from a control. This is the boundary.
-            If Not SessionState.IsApplicationAdmin Then
-                Return
-            End If
-
-            Dim selectedRegistrationId As Integer = 0
-            RegistrationComboHelper.TryGetSelectedId(registrationComboBox, selectedRegistrationId)
-            If selectedRegistrationId = registrationId Then
-                Return
-            End If
-
-            registrationId = selectedRegistrationId
-
-            selectedUserId = 0
-            userLabel.Text = String.Empty
-            emailComboBox.Items.Clear()
-            emailComboBox.Text = String.Empty
-            emailComboBox.AutoCompleteCustomSource = New AutoCompleteStringCollection()
-            roleComboBox.DataSource = Nothing
-            explainButton.Enabled = False
-            HideCorrectionControls()
-
-            If registrationId <= 0 Then
-                ShowResult("SELECT A REGISTRATION TO LIST ITS USERS.")
-                Return
-            End If
-
-            LoadEmailSuggestions()
-            ShowResult("REGISTRATION CHANGED TO " & GetRegistrationDisplayName() & Environment.NewLine &
-                       "ENTER OR SELECT A USER EMAIL, THEN SELECT A TABLE AND ROLE.")
-        End Sub
-
-        Private Function GetRegistrationDisplayName() As String
-            Dim registration = DataAccess.GetRegistrationById(registrationId)
-            If registration Is Nothing OrElse String.IsNullOrWhiteSpace(registration.RegName) Then
-                Return registrationId.ToString()
-            End If
-
-            Return registration.RegName.Trim().ToUpperInvariant()
+        Protected Overrides Function OnlyUseQbe() As Boolean
+            Return True
         End Function
 
-        Private Sub LoadEmailSuggestions()
-            Try
-                Dim users = DataAccess.GetAccessDiagnosticUsersWithEmail(registrationId)
-                Dim suggestions As New AutoCompleteStringCollection()
-                For Each row As DataRow In users.Rows
-                    Dim email = Convert.ToString(row("Email")).Trim()
-                    If email <> String.Empty Then
-                        suggestions.Add(email)
-                    End If
-                Next
-                emailComboBox.AutoCompleteCustomSource = suggestions
-                emailComboBox.Items.Clear()
-                For Each suggestion As String In suggestions
-                    emailComboBox.Items.Add(suggestion)
-                Next
-            Catch ex As Exception
-                ShowResult("EMAIL LIST COULD NOT BE LOADED" & Environment.NewLine & ex.Message)
-            End Try
+        Protected Overrides Sub NotifyBrowseSelectionChanged()
+            Dim userId = GetSelectedRecordIdForCustomAction()
+            selectedUserId = If(userId.HasValue, userId.Value, 0)
+            LoadSelectedUserRoles()
         End Sub
 
-        Private Sub EmailComboBox_KeyDown(sender As Object, e As KeyEventArgs)
-            If e.KeyCode = Keys.Enter Then
-                e.SuppressKeyPress = True
-                FindUserButton_Click(sender, EventArgs.Empty)
-            End If
-        End Sub
-
-        Private Sub FindUserButton_Click(sender As Object, e As EventArgs)
-            ShowResult("EMAIL LOOKUP STARTED" & Environment.NewLine &
-                       "SEARCHING FW_USERS FOR THE SELECTED EMAIL.")
-
-            If registrationId <= 0 Then
-                ShowResult("No active registration is available in the current session.")
-                Return
-            End If
-
-            Try
-                Dim user = DataAccess.GetAccessDiagnosticUserByEmail(emailComboBox.Text, registrationId)
-                If user Is Nothing Then
-                    selectedUserId = 0
-                    userLabel.Text = "USER NOT FOUND"
-                    roleComboBox.DataSource = Nothing
-                    explainButton.Enabled = False
-                    HideCorrectionControls()
-                    ShowResult("EMAIL LOOKUP FAILED" & Environment.NewLine &
-                               "No active user was found for that email address in Registration " & registrationId.ToString() & ".")
-                    Return
-                End If
-
-                selectedUserId = Convert.ToInt32(user("UserID"))
-                userLabel.Text = Convert.ToString(user("FirstLast")).ToUpperInvariant()
-                If Not LoadRoles() Then
-                    Return
-                End If
-                HideCorrectionControls()
-                explainButton.Enabled = tableComboBox.SelectedIndex > 0 AndAlso roleComboBox.SelectedIndex > 0
-                ShowResult("EMAIL LOOKUP SUCCESSFUL" & Environment.NewLine &
-                           "User: " & userLabel.Text & Environment.NewLine &
-                           "Select a table and role, then choose Explain Access.")
-            Catch ex As Exception
-                selectedUserId = 0
-                userLabel.Text = "LOOKUP ERROR"
-                roleComboBox.DataSource = Nothing
-                explainButton.Enabled = False
-                HideCorrectionControls()
-                ShowResult("EMAIL LOOKUP FAILED" & Environment.NewLine & ex.Message)
-            End Try
-        End Sub
-
-        Private Function LoadRoles() As Boolean
+        Private Sub LoadSelectedUserRoles()
             loadingRoles = True
             Try
-                Dim roles = DataAccess.GetAccessDiagnosticRegistrationRoles(selectedUserId, registrationId)
-                Dim roleList = roles.Clone()
-                roleList.Columns.Add("RoleDisplayName", GetType(String))
+                roleComboBox.DataSource = Nothing
+                If selectedUserId <= 0 OrElse selectedRegistrationId <= 0 Then
+                    Return
+                End If
 
-                Dim placeholder = roleList.NewRow()
-                placeholder("RoleID") = 0
-                placeholder("RoleName") = ""
-                placeholder("DisplayOrder") = 0
-                placeholder("IsAssigned") = 0
-                placeholder("RoleDisplayName") = "MAKE A SELECTION"
-                roleList.Rows.Add(placeholder)
-
-                For Each row As DataRow In roles.Rows
-                    Dim displayRow = roleList.NewRow()
-                    displayRow("RoleID") = row("RoleID")
-                    displayRow("RoleName") = row("RoleName")
-                    displayRow("DisplayOrder") = row("DisplayOrder")
-                    displayRow("IsAssigned") = row("IsAssigned")
-                    displayRow("RoleDisplayName") = Convert.ToString(row("RoleName")).ToUpperInvariant() &
-                        If(Convert.ToInt32(row("IsAssigned")) = 1, " (ASSIGNED)", " (AVAILABLE)")
-                    roleList.Rows.Add(displayRow)
+                Dim roles = DataAccess.GetAccessDiagnosticRegistrationRoles(selectedUserId, selectedRegistrationId)
+                If Not roles.Columns.Contains("RoleDisplayName") Then
+                    roles.Columns.Add("RoleDisplayName", GetType(String))
+                End If
+                For Each roleRow As DataRow In roles.Rows
+                    Dim roleName = Convert.ToString(roleRow("RoleName"))
+                    Dim isAssigned = Convert.ToInt32(roleRow("IsAssigned")) = 1
+                    roleRow("RoleDisplayName") = roleName & If(isAssigned, " (Assigned)", " (Available)")
                 Next
 
-                roleComboBox.DataSource = roleList
                 roleComboBox.DisplayMember = "RoleDisplayName"
                 roleComboBox.ValueMember = "RoleID"
-                roleComboBox.SelectedIndex = 0
-                Return True
-            Catch ex As Exception
-                roleComboBox.DataSource = Nothing
-                ShowResult("ROLES LOOKUP FAILED" & Environment.NewLine & ex.Message)
-                Return False
+                roleComboBox.DataSource = roles
+                Dim assignedRows = roles.AsEnumerable().Where(Function(row) Convert.ToInt32(row("IsAssigned")) = 1).ToList()
+                roleComboBox.SelectedIndex = If(assignedRows.Count = 1, roles.Rows.IndexOf(assignedRows(0)), -1)
             Finally
                 loadingRoles = False
             End Try
+        End Sub
+
+        Protected Overrides Function GetVisibleQbeRowCount() As Integer
+            Return 3
         End Function
 
-        Private Sub LoadTableChoices()
-            Dim tables = DataAccess.GetExposedPageChoices()
-            For Each tableRow As DataRow In tables.Rows
-                tableRow("Table_Alias") = Convert.ToString(tableRow("Table_Alias")).ToUpperInvariant()
-            Next
-            Dim placeholder = tables.NewRow()
+        Protected Overrides Function TryBuildFiltersFromQbe(ByRef filters As Dictionary(Of String, String),
+                                                             ByRef validationMessage As String) As Boolean
+            Return MyBase.TryBuildFiltersFromQbe(filters, validationMessage)
+        End Function
+
+        Protected Overrides Function BuildBrowseListingTitle(registrationId As Integer, tableName As String) As String
+            Return "User Access Diagnostic"
+        End Function
+
+        Protected Overrides Function GetActiveBaseSql() As String
+            Dim activeSql = MyBase.GetActiveBaseSql()
+            If String.IsNullOrWhiteSpace(activeSql) Then
+                Return activeSql
+            End If
+
+            Dim registrationId As Integer = 0
+            If Not RegistrationComboHelper.TryGetSelectedId(registrationComboBox, registrationId) Then
+                registrationId = selectedRegistrationId
+            End If
+            If registrationId <= 0 Then
+                Return activeSql
+            End If
+
+            Dim registrationValue = registrationId.ToString(Globalization.CultureInfo.InvariantCulture)
+            Dim explicitPredicatePattern = "((?:[A-Za-z_][A-Za-z0-9_]*\.)?\[?RegistrationID\]?)\s*=\s*(?:@RegistrationID|\?|\d+)"
+            If Regex.IsMatch(activeSql, explicitPredicatePattern, RegexOptions.IgnoreCase) Then
+                Return Regex.Replace(activeSql,
+                                     explicitPredicatePattern,
+                                     "$1 = " & registrationValue,
+                                     RegexOptions.IgnoreCase)
+            End If
+
+            Dim orderMatch = Regex.Match(activeSql, "\s+ORDER\s+BY\s+", RegexOptions.IgnoreCase)
+            Dim predicate = "[RegistrationID] = " & registrationValue
+            If orderMatch.Success Then
+                Dim beforeOrder = activeSql.Substring(0, orderMatch.Index)
+                Dim conjunction = If(Regex.IsMatch(beforeOrder, "\bWHERE\b", RegexOptions.IgnoreCase), " AND ", " WHERE ")
+                Return beforeOrder & conjunction & predicate & activeSql.Substring(orderMatch.Index)
+            End If
+
+            Dim separator = If(Regex.IsMatch(activeSql, "\bWHERE\b", RegexOptions.IgnoreCase), " AND ", " WHERE ")
+            Return activeSql & separator & predicate
+        End Function
+
+        Protected Overrides Function TryGetActiveRegistrationId(ByRef registrationId As Integer) As Boolean
+            If RegistrationComboHelper.TryGetSelectedId(registrationComboBox, registrationId) Then
+                selectedRegistrationId = registrationId
+                Return True
+            End If
+
+            registrationId = selectedRegistrationId
+            Return registrationId > 0
+        End Function
+
+        Private Sub DiagnosticPage_Load(sender As Object, e As EventArgs)
+            Dim canChooseRegistration = accessProfile IsNot Nothing AndAlso
+                                         accessProfile.Can("FW_USERS", AccessCapability.ViewAllRecords)
+            loadingRegistrations = True
+            Try
+                RegistrationComboHelper.Populate(registrationComboBox, selectedRegistrationId, True)
+                RegistrationComboHelper.UpdateLabelForSelection(registrationLabel, registrationComboBox)
+                LoadExposedTableChoices()
+            Finally
+                loadingRegistrations = False
+                diagnosticPageReady = True
+            End Try
+
+            registrationLabel.Visible = canChooseRegistration
+            registrationComboBox.Visible = canChooseRegistration
+            tableLabel.Visible = True
+            tableComboBox.Visible = True
+        End Sub
+
+        Private Sub RegistrationComboBox_SelectedIndexChanged(sender As Object, e As EventArgs)
+            If loadingRegistrations Then
+                Return
+            End If
+
+            ClearBrowseGridForPendingQuery()
+            RegistrationComboHelper.UpdateLabelForSelection(registrationLabel, registrationComboBox)
+
+            Dim registrationId As Integer
+            If RegistrationComboHelper.TryGetSelectedId(registrationComboBox, registrationId) Then
+                selectedRegistrationId = registrationId
+                LoadExposedTableChoices()
+                LoadSelectedUserRoles()
+            Else
+                selectedRegistrationId = 0
+            End If
+        End Sub
+
+        Private Sub LoadExposedTableChoices()
+            Dim choices As DataTable
+            Try
+                choices = DataAccess.GetExposedPageChoices()
+            Catch ex As Exception
+                choices = New DataTable("ExposedPages")
+                choices.Columns.Add("ID", GetType(Integer))
+                choices.Columns.Add("Table_Alias", GetType(String))
+                choices.Columns.Add("DB_Table", GetType(String))
+                choices.Columns.Add("WindowOrPage", GetType(String))
+                MessageBox.Show(Me,
+                                "The exposed table list could not be loaded." & Environment.NewLine & ex.Message,
+                                "Diagnostic Table List",
+                                MessageBoxButtons.OK,
+                                MessageBoxIcon.Warning)
+            End Try
+
+            Dim placeholder = choices.NewRow()
             placeholder("ID") = 0
-            placeholder("SchemaID") = 0
-            placeholder("Table_Alias") = "MAKE A SELECTION"
+            placeholder("Table_Alias") = "Make a Selection"
             placeholder("DB_Table") = String.Empty
             placeholder("WindowOrPage") = String.Empty
-            tables.Rows.InsertAt(placeholder, 0)
+            choices.Rows.InsertAt(placeholder, 0)
 
-            tableComboBox.DataSource = tables
+            tableComboBox.DataSource = Nothing
             tableComboBox.DisplayMember = "Table_Alias"
             tableComboBox.ValueMember = "ID"
+            tableComboBox.DataSource = choices
             tableComboBox.SelectedIndex = 0
         End Sub
 
-        Private Sub TableComboBox_SelectedIndexChanged(sender As Object, e As EventArgs)
-            If loadingRoles Then Return
-            HideCorrectionControls()
-            comparisonGrid.Rows.Clear()
-            explainButton.Enabled = selectedUserId > 0 AndAlso tableComboBox.SelectedIndex > 0 AndAlso roleComboBox.SelectedIndex > 0
+        Private Sub DiagnosticPage_Shown(sender As Object, e As EventArgs)
+            LoadExposedTableChoices()
+            TrimWindowToContent()
         End Sub
 
-        Private Sub RoleComboBox_SelectedIndexChanged(sender As Object, e As EventArgs)
-            If loadingRoles Then Return
-            HideCorrectionControls()
-            comparisonGrid.Rows.Clear()
-            explainButton.Enabled = selectedUserId > 0 AndAlso tableComboBox.SelectedIndex > 0 AndAlso roleComboBox.SelectedIndex > 0
+        ''' <summary>
+        ''' Takes the window down to where its last control ends.
+        '''
+        ''' Once, from Shown, after the layout has settled - not from ApplyPageSpecificLayout, which
+        ''' is the layout pass itself and would be re-entered by the resize this causes. The page is
+        ''' a fixed height built from constants above, so there is nothing to recompute afterwards.
+        ''' </summary>
+        Private Sub TrimWindowToContent()
+            If applyChangesButton Is Nothing Then Return
+
+            Dim requiredHeight = applyChangesButton.Bottom + 16
+            If requiredHeight > 0 AndAlso Me.ClientSize.Height <> requiredHeight Then
+                Me.ClientSize = New Size(Me.ClientSize.Width, requiredHeight)
+            End If
         End Sub
 
-        Private Sub ExplainButton_Click(sender As Object, e As EventArgs)
-            comparisonGrid.Rows.Clear()
-            comparisonGrid.Visible = False
-            Dim selectedTable = TryCast(tableComboBox.SelectedItem, DataRowView)
-            Dim selectedRole = TryCast(roleComboBox.SelectedItem, DataRowView)
-            If selectedUserId <= 0 OrElse selectedTable Is Nothing OrElse selectedRole Is Nothing Then
-                ShowResult("Find a user and select both a table and a role first.")
+        ''' <summary>
+        ''' Result rows the browse grid is built to show. Everything below moves with it, and the
+        ''' window is trimmed to its content on Shown, so the page grows by exactly this much.
+        ''' </summary>
+        Private Const BrowseRowsShown As Integer = 4
+
+        ''' <summary>
+        ''' Lines the analysis box is built to show before it scrolls.
+        '''
+        ''' What it holds is now the header and the roles evaluated - five lines and a blank, then
+        ''' ANALYSIS COMPLETED - since the seven permission sentences moved into the grid above. It
+        ''' was left at twelve lines' worth when they went, which is half again more than anything
+        ''' put in it.
+        '''
+        ''' Counted in lines and multiplied by the font's own height rather than set in pixels, so
+        ''' the box holds this many lines whatever the DPI, and so changing it is a decision about
+        ''' content rather than arithmetic. The window height follows from where this box ends.
+        ''' </summary>
+        Private Const DiagnosticResultLines As Integer = 8
+
+        Protected Overrides Sub ApplyPageSpecificLayout()
+            If diagnosticLayoutInProgress OrElse IsDisposed OrElse Disposing Then
                 Return
             End If
 
+            diagnosticLayoutInProgress = True
             Try
-                Dim dbTable = Convert.ToString(selectedTable("DB_Table"))
-                Dim tableAlias = Convert.ToString(selectedTable("Table_Alias"))
-                Dim schemaId = Convert.ToInt32(selectedTable("SchemaID"))
-                Dim roleId = Convert.ToInt32(selectedRole("RoleID"))
-                Dim roleName = Convert.ToString(selectedRole("RoleName"))
-                Dim assigned = Convert.ToInt32(selectedRole("IsAssigned")) = 1
-                Dim assignRole = Not assigned
-                Dim analysisRegistration = DataAccess.GetRegistrationById(registrationId)
-                Dim analysisRegistrationName = If(analysisRegistration Is Nothing OrElse String.IsNullOrWhiteSpace(analysisRegistration.RegName),
-                                                  registrationId.ToString(), analysisRegistration.RegName.Trim()).ToUpperInvariant()
-                Dim hasRoleDetail = DataAccess.GetAccessDiagnosticRoleDetails(roleId, registrationId).AsEnumerable().Any(
-                    Function(row) String.Equals(Convert.ToString(row("DB_Table")), dbTable, StringComparison.OrdinalIgnoreCase))
-                Dim capabilities As New Dictionary(Of String, Boolean)(StringComparer.OrdinalIgnoreCase)
-                For Each permission In New String() {"Can_Read", "Can_Create", "Can_Update", "Can_Delete", "Can_UseQBE", "Can_ViewAllRecords", "Can_ViewOnlyMyRecords"}
-                    capabilities(permission) = GetNewRoleTableDefault(permission)
-                Next
+            If registrationComboBox Is Nothing OrElse
+               registrationLabel Is Nothing OrElse
+                    tableComboBox Is Nothing Then
+                Return
+            End If
 
-                Dim roleDetails = DataAccess.GetAccessDiagnosticRoleDetails(roleId, registrationId)
-                Dim roleDetail = roleDetails.AsEnumerable().FirstOrDefault(
-                    Function(row) String.Equals(Convert.ToString(row("DB_Table")), dbTable, StringComparison.OrdinalIgnoreCase))
-                If roleDetail IsNot Nothing Then
-                    For Each permission In capabilities.Keys.ToList()
-                        capabilities(permission) = Convert.ToBoolean(roleDetail(permission))
-                    Next
-                End If
+            Dim qbeButton = FindButtonStartingWithText(Me, "QBE")
+            Dim closeButton = FindButtonByText(Me, "Close")
 
-                Dim result As New StringBuilder()
-                result.AppendLine(pageCaption.ToUpperInvariant())
-                result.AppendLine("User: " & userLabel.Text)
-                result.AppendLine("Registration: " & analysisRegistrationName)
-                result.AppendLine("Table / menu: " & tableAlias)
-                result.AppendLine("Role: " & roleName & If(assigned, " (assigned)", " (not assigned)"))
-                result.AppendLine("Table configuration: " & If(hasRoleDetail, "Present", "Missing"))
-                result.AppendLine()
-                result.AppendLine("USER ROLES")
-                Dim userRoles = DataAccess.GetAccessDiagnosticRegistrationRoles(selectedUserId, registrationId)
-                Dim roleNameWidth = userRoles.AsEnumerable().Select(Function(row) Convert.ToString(row("RoleName")).Length).DefaultIfEmpty(0).Max()
-                For Each userRole As DataRow In userRoles.Rows
-                    Dim displayRoleName = Convert.ToString(userRole("RoleName")).ToUpperInvariant()
-                    result.AppendLine(displayRoleName.PadRight(roleNameWidth) &
-                                      If(Convert.ToInt32(userRole("IsAssigned")) = 1, " (ASSIGNED)", " (AVAILABLE)"))
-                Next
-                result.AppendLine()
-                If Not assigned Then
-                    result.AppendLine("THIS ROLE IS AVAILABLE FOR THE REGISTRATION BUT IS NOT ASSIGNED TO THIS USER.")
-                    result.AppendLine("SELECT THE APPLY ACCESS CHANGES BUTTON TO ADDRESS THIS ISSUE.")
-                    result.AppendLine()
-                ElseIf Not hasRoleDetail Then
-                    result.AppendLine("THIS ROLE IS ASSIGNED TO THIS ORGANIZATION BUT IS NOT CONFIGURED FOR THIS TABLE.")
-                    result.AppendLine("SELECT THE APPLY ACCESS CHANGES BUTTON TO ADDRESS THIS ISSUE.")
-                    result.AppendLine()
-                End If
+            ' Anchored to whichever action button is actually present. This used to hang off the Enum
+            ' button and did nothing at all when that button was absent - a lookup by caption fails
+            ' silently, so the combo would simply have stayed where it was built with nothing to say
+            ' why. The Enum button has since been removed entirely.
+            Dim rightAnchor As Control = If(closeButton, qbeButton)
+            If rightAnchor IsNot Nothing Then
+                registrationComboBox.Left = rightAnchor.Left + rightAnchor.Width - registrationComboBox.Width
+                registrationComboBox.Top = 42
+                registrationLabel.Left = Math.Max(8, registrationComboBox.Left - registrationLabel.PreferredWidth - 8)
+                registrationLabel.Top = registrationComboBox.Top + 5
+            End If
 
-                beforePermissions.Clear()
-                beforeWasConfigured = hasRoleDetail
-                beforeRoleWasAssigned = assigned
-                For Each permission In capabilities
-                    beforePermissions(permission.Key) = permission.Value
-                Next
-                result.AppendLine()
-                result.AppendLine("ANALYSIS COMPLETED")
-                If Not assigned OrElse Not hasRoleDetail Then
-                    comparisonGrid.Visible = False
-                    Dim registration = DataAccess.GetRegistrationById(registrationId)
-                    Dim registrationName = If(registration Is Nothing OrElse String.IsNullOrWhiteSpace(registration.RegName),
-                                              registrationId.ToString(), registration.RegName.Trim()).ToUpperInvariant()
-                    applyAccessChangesButton.Visible = True
-                Else
-                    comparisonGrid.Visible = False
-                    applyAccessChangesButton.Visible = False
-                End If
-                ShowResult(result.ToString())
-                If assigned AndAlso hasRoleDetail Then
-                    MessageBox.Show(Me,
-                                    "NO ACCESS ISSUES FOUND." & Environment.NewLine &
-                                    "THE SELECTED USER HAS ACCESS TO THE SELECTED TABLE." & Environment.NewLine &
-                                    Environment.NewLine &
-                                    "PERHAPS THERE IS NO MENU ITEM FOR THIS TABLE.",
-                                    "ACCESS CHECK COMPLETE",
-                                    MessageBoxButtons.OK,
-                                    MessageBoxIcon.Information)
-                End If
-            Catch ex As Exception
-                ShowResult("The access explanation could not be completed." & Environment.NewLine & ex.Message)
+            Dim browseSplit = FindBrowseSplitContainer(Me)
+            If browseSplit Is Nothing Then
+                Return
+            End If
+
+            Dim compactTop = Not registrationComboBox.Visible
+            If compactTop AndAlso browseSplit.Tag Is Nothing Then
+                MoveDiagnosticActionRow(-70)
+                browseSplit.Top = Math.Max(92, browseSplit.Top - 70)
+                browseSplit.Tag = "DiagnosticBrowseCompacted"
+            End If
+
+            ' The action row belongs to FW_Base_B, which lays out Close, the colour picker and QBE
+            ' on one line, each placed off its neighbour. This page used to move two of those three
+            ' to y=78 and leave the picker where the base class had put it, which is how Color ended
+            ' up on a different line from the Close button it is supposed to sit beside. Nothing is
+            ' moved now; the browse area is placed under whatever the row turns out to be.
+            Dim actionRowBottom = 78
+            If closeButton IsNot Nothing Then actionRowBottom = Math.Max(actionRowBottom, closeButton.Bottom)
+            If qbeButton IsNot Nothing Then actionRowBottom = Math.Max(actionRowBottom, qbeButton.Bottom)
+
+            browseSplit.Top = actionRowBottom + 12
+
+            ' Provisional, so the QBE panel has room to size itself. Replaced below by the only two
+            ' things that decide how tall this area should be: the QBE panel, and the rows we want
+            ' under it.
+            browseSplit.Height = 205
+            Dim qbePanelHeight = ApplyDiagnosticQbeLayout(browseSplit)
+
+            ' Its former 410 left most of the results grid empty - a QBE search for a user returns
+            ' one row, or a handful - while the permissions and the analysis sat below the fold.
+            '
+            ' Built from qbePanelHeight, not from SplitterDistance. The splitter is derived from
+            ' browseSplit.Height, so setting the height back from it feeds each pass its own output:
+            ' the QBE panel grew every time and the results grid was squeezed to nothing. The panel
+            ' height comes from the QBE grid's rows and settles on the first pass.
+            Dim resultsGrid = FindResultsGrid(browseSplit.Panel2)
+            If qbePanelHeight > 0 AndAlso resultsGrid IsNot Nothing Then
+                Dim rowsHeight = resultsGrid.ColumnHeadersHeight +
+                                 (resultsGrid.RowTemplate.Height * BrowseRowsShown) + 8
+                browseSplit.Height = qbePanelHeight + browseSplit.SplitterWidth + rowsHeight
+                browseSplit.SplitterDistance = qbePanelHeight
+            End If
+
+            tableLabel.Left = browseSplit.Left
+            tableLabel.Top = browseSplit.Bottom + 18
+            tableComboBox.Left = tableLabel.Left
+            tableComboBox.Top = tableLabel.Bottom + 2
+            tableComboBox.Width = 260
+            roleLabel.Left = tableComboBox.Right + 12
+            roleLabel.Top = tableLabel.Top + 5
+            roleComboBox.Left = roleLabel.Right + 8
+            roleComboBox.Top = tableComboBox.Top
+            checkAccessButton.Left = roleComboBox.Right + 12
+            checkAccessButton.Top = tableComboBox.Top - 2
+
+            ' The analysis comes before the grid, because that is the order the page is used in:
+            ' find the user, ask, read what it says, then change what is wrong. It used to sit under
+            ' the grid, so the answer to the question you just asked was below the thing you would
+            ' change in response to it.
+            analysisResultLabel.Left = browseSplit.Left
+            analysisResultLabel.Top = tableComboBox.Bottom + 8
+            diagnosticResultTextBox.Left = browseSplit.Left
+            diagnosticResultTextBox.Top = analysisResultLabel.Bottom + 4
+            diagnosticResultTextBox.Width = browseSplit.Width
+
+            ' Sized for what it now holds. The seven permission sentences moved into the grid
+            ' above, and what is left is the header and the role list - a dozen lines at most, with
+            ' a scrollbar for the rest. It briefly filled the page, which only made the empty space
+            ' bigger.
+            diagnosticResultTextBox.Height = (diagnosticResultTextBox.Font.Height * DiagnosticResultLines) + 10
+
+            permissionsGrid.Left = browseSplit.Left
+            permissionsGrid.Top = diagnosticResultTextBox.Bottom + 12
+            permissionsGrid.Width = browseSplit.Width
+            permissionsGrid.Height = 180
+            permissionsGrid.Anchor = AnchorStyles.Top Or AnchorStyles.Left Or AnchorStyles.Right
+
+            ' Apply Changes commits what is ticked in the grid, so it stays with the grid rather
+            ' than with Check Access, which acts on the selectors above.
+            applyChangesButton.Top = permissionsGrid.Bottom + 8
+            applyChangesButton.Left = permissionsGrid.Right - applyChangesButton.Width
+
+            ' The window height is NOT set here. Assigning ClientSize inside this method resizes
+            ' the form, which re-enters FW_Base_B's layout pass; that pass lays the QBE panel out
+            ' again and then finds this method guarded, so ApplyDiagnosticQbeLayout never runs on it
+            ' and the panel is left at the base class's full height. It looked exactly like the
+            ' compacting had stopped working. TrimWindowToContent does it once, from Shown.
+            diagnosticResultTextBox.Anchor = AnchorStyles.Top Or AnchorStyles.Left Or AnchorStyles.Right
+            checkAccessButton.BringToFront()
+            applyChangesButton.BringToFront()
+            registrationComboBox.BringToFront()
+            registrationLabel.BringToFront()
+            tableComboBox.BringToFront()
+            tableLabel.BringToFront()
+            tableComboBox.BringToFront()
+            tableLabel.BringToFront()
+            analysisResultLabel.BringToFront()
+            diagnosticResultTextBox.BringToFront()
+            permissionsGrid.BringToFront()
+            Finally
+                diagnosticLayoutInProgress = False
             End Try
         End Sub
 
-        Private Shared Sub AppendPermissionExplanation(result As StringBuilder, permissionName As String, allowed As Boolean)
-            result.AppendLine(permissionName & ": " & If(allowed, "Allowed", "Denied"))
-        End Sub
-
-        Private Shared Function GetNewRoleTableDefault(permissionName As String) As Boolean
-            Select Case permissionName
-                Case "Can_Create", "Can_Update", "Can_Delete", "Can_UseQBE"
-                    Return True
-                Case Else
-                    Return False
-            End Select
-        End Function
-
-        Private Sub PromptForAccessChanges(roleId As Integer, roleName As String, dbTable As String, schemaId As Integer,
-                                           assignRole As Boolean, hasRoleDetail As Boolean, registrationName As String)
-            Dim changes As New List(Of String)()
-            If Not hasRoleDetail Then
-                changes.Add((changes.Count + 1).ToString() & ". ADD " & dbTable.ToUpperInvariant() & " TO THE " & roleName.ToUpperInvariant() & " ROLE.")
-            End If
-            If assignRole Then
-                changes.Add((changes.Count + 1).ToString() & ". ASSIGN THE " & roleName.ToUpperInvariant() & " ROLE TO " & userLabel.Text.ToUpperInvariant() & ".")
-            End If
-
-            Dim confirmationText = "THE FOLLOWING CHANGES WILL BE MADE:" & Environment.NewLine &
-                                   Environment.NewLine & String.Join(Environment.NewLine & Environment.NewLine, changes) &
-                                   Environment.NewLine & "REGISTRATION: " & registrationName & "." &
-                                   Environment.NewLine & Environment.NewLine &
-                                   "DO YOU WANT TO APPLY THESE CHANGES?"
-            If MessageBox.Show(Me,
-                               confirmationText,
-                               "CONFIRM ACCESS CHANGES",
-                               MessageBoxButtons.YesNo,
-                               MessageBoxIcon.Question) = DialogResult.Yes Then
-                ApplyAccessChanges(roleId, dbTable, schemaId, assignRole)
-            End If
-        End Sub
-
-        Private Sub ApplyAccessChangesButton_Click(sender As Object, e As EventArgs)
-            Dim selectedTable = TryCast(tableComboBox.SelectedItem, DataRowView)
-            Dim selectedRole = TryCast(roleComboBox.SelectedItem, DataRowView)
-            If selectedUserId <= 0 OrElse selectedTable Is Nothing OrElse selectedRole Is Nothing Then
-                ShowResult("FIND A USER AND SELECT A TABLE AND ROLE FIRST.")
+        Private Sub CheckAccessButton_Click(sender As Object, e As EventArgs)
+            ShowDiagnosticResult("Checking access...")
+            Dim userId = GetSelectedRecordIdForCustomAction()
+            If Not userId.HasValue Then
+                ShowDiagnosticResult("Select a user record in the grid first.")
                 Return
             End If
 
-            Dim roleId = Convert.ToInt32(selectedRole("RoleID"))
-            Dim roleName = Convert.ToString(selectedRole("RoleName"))
+            Dim registrationId = GetSelectedRegistrationId()
+            Dim selectedTable = TryCast(tableComboBox.SelectedItem, DataRowView)
+            Dim missingSelections As New List(Of String)()
+            If registrationId <= 0 Then missingSelections.Add("registration")
+            If selectedTable Is Nothing OrElse Convert.ToInt32(selectedTable("ID")) <= 0 Then missingSelections.Add("table or menu item")
+            Dim selectedRole = TryCast(roleComboBox.SelectedItem, DataRowView)
+            If selectedRole Is Nothing OrElse Convert.ToInt32(If(selectedRole.Row.Table.Columns.Contains("RoleID"), selectedRole("RoleID"), 0)) <= 0 Then
+                missingSelections.Add("role")
+            End If
+            If missingSelections.Count > 0 Then
+                ShowDiagnosticResult("Select a " & String.Join(", ", missingSelections) & " first.")
+                Return
+            End If
+
             Dim dbTable = Convert.ToString(selectedTable("DB_Table"))
-            Dim schemaId = Convert.ToInt32(selectedTable("SchemaID"))
-            Dim isAssigned = Convert.ToInt32(selectedRole("IsAssigned")) = 1
-            Dim hasRoleDetail = DataAccess.GetAccessDiagnosticRoleDetails(roleId, registrationId).AsEnumerable().Any(
-                Function(row) String.Equals(Convert.ToString(row("DB_Table")), dbTable, StringComparison.OrdinalIgnoreCase))
-            Dim registration = DataAccess.GetRegistrationById(registrationId)
-            Dim registrationName = If(registration Is Nothing OrElse String.IsNullOrWhiteSpace(registration.RegName),
-                                      registrationId.ToString(), registration.RegName.Trim()).ToUpperInvariant()
-            PromptForAccessChanges(roleId, roleName, dbTable, schemaId, Not isAssigned, hasRoleDetail, registrationName)
+            Dim tableAlias = Convert.ToString(selectedTable("Table_Alias"))
+            Try
+                Dim selectedRoleId = Convert.ToInt32(selectedRole("RoleID"))
+                Dim selectedRoleName = Convert.ToString(selectedRole("RoleName"))
+                Dim selectedRoleAssigned = IsSelectedRoleAssigned(selectedRole)
+                LoadPermissionsGrid(selectedRoleId, registrationId, dbTable)
+                Dim diagnosticRows = DataAccess.GetAccessDiagnostic(userId.Value, registrationId, dbTable)
+            Dim roleNames As New List(Of String)()
+            Dim capabilities As New Dictionary(Of String, Boolean)(StringComparer.OrdinalIgnoreCase)
+            For Each capability In New String() {"Can_Create", "Can_Read", "Can_Update", "Can_Delete", "Can_UseQBE", "Can_ViewAllRecords", "Can_ViewOnlyMyRecords"}
+                capabilities(capability) = False
+            Next
+
+            For Each diagnosticRow As DataRow In diagnosticRows.Rows
+                If selectedRoleAssigned AndAlso
+                   Not diagnosticRow.IsNull("RoleID") AndAlso
+                   Convert.ToInt32(diagnosticRow("RoleID")) <> selectedRoleId Then
+                    Continue For
+                End If
+
+                If Not diagnosticRow.IsNull("RoleName") Then
+                    Dim roleName = Convert.ToString(diagnosticRow("RoleName"))
+                    If Not roleNames.Contains(roleName) Then
+                        roleNames.Add(roleName)
+                    End If
+                End If
+
+                For Each capability In capabilities.Keys.ToList()
+                    If Convert.ToBoolean(diagnosticRow(capability)) Then
+                        capabilities(capability) = True
+                    End If
+                Next
+            Next
+
+            Dim result As New StringBuilder()
+            result.AppendLine("User Access Diagnostic")
+            result.AppendLine("Table: " & tableAlias)
+            result.AppendLine("Registration ID: " & registrationId.ToString())
+            result.AppendLine("Selected Role Permissions: " & selectedRoleName & If(selectedRoleAssigned, " (Assigned)", " (Available - not assigned yet)"))
+            result.AppendLine("Assigned Role Evaluated: " & If(roleNames.Count = 0, "None", String.Join(", ", roleNames)))
+            result.AppendLine()
+
+            If Not selectedRoleAssigned Then
+                result.AppendLine("The selected role is not assigned to this user for this registration.")
+                result.AppendLine("The permissions grid can be edited and applied to create RoleDetails and assign the role.")
+                result.AppendLine("Analysis is only run against a role assigned to the selected user.")
+                result.AppendLine()
+                result.AppendLine("ANALYSIS COMPLETED")
+                ShowDiagnosticResult(result.ToString())
+                Return
+            End If
+
+            If roleNames.Count = 0 Then
+                result.AppendLine("No active role is assigned for this user and registration.")
+                result.AppendLine("Permissions cannot be evaluated until a role is assigned.")
+                result.AppendLine()
+                result.AppendLine("ANALYSIS COMPLETED")
+                ShowDiagnosticResult(result.ToString())
+                Return
+            End If
+
+            ' The seven permissions used to be written out here as well, each as a sentence naming
+            ' its column. The grid above says the same thing in a form that can be changed, so the
+            ' text was a copy of it that could only be read - and the two sat one above the other
+            ' saying it twice.
+            result.AppendLine()
+            result.AppendLine("ANALYSIS COMPLETED")
+
+                ShowDiagnosticResult(result.ToString())
+            Catch ex As Exception
+                ShowDiagnosticResult("Access check failed or timed out." & Environment.NewLine & ex.Message)
+            End Try
         End Sub
 
-        Private Sub ApplyAccessChanges(roleId As Integer, dbTable As String, schemaId As Integer, assignRole As Boolean)
+        Private Sub ApplyChangesButton_Click(sender As Object, e As EventArgs)
+            Dim userId = GetSelectedRecordIdForCustomAction()
+            Dim registrationId = GetSelectedRegistrationId()
             Dim selectedTable = TryCast(tableComboBox.SelectedItem, DataRowView)
             Dim selectedRole = TryCast(roleComboBox.SelectedItem, DataRowView)
-            If selectedUserId <= 0 OrElse selectedTable Is Nothing OrElse selectedRole Is Nothing Then
-                ShowResult("Find a user and select both a table and a role first.")
+            Dim missing As New List(Of String)()
+            If registrationId <= 0 Then missing.Add("REGISTRATION")
+            If Not userId.HasValue Then missing.Add("USER")
+            If selectedTable Is Nothing OrElse Convert.ToInt32(selectedTable("ID")) <= 0 Then missing.Add("TABLE OR MENU")
+            If selectedRole Is Nothing OrElse Not selectedRole.Row.Table.Columns.Contains("RoleID") OrElse Convert.ToInt32(selectedRole("RoleID")) <= 0 Then missing.Add("ROLE")
+            If missing.Count > 0 Then
+                MessageBox.Show(Environment.NewLine & String.Join(Environment.NewLine, missing),
+                                "THE FOLLOWING IS REQUIRED",
+                                MessageBoxButtons.OK,
+                                MessageBoxIcon.Warning)
                 Return
             End If
 
             Dim requested As New Dictionary(Of String, Boolean)(StringComparer.OrdinalIgnoreCase)
-            Dim existingDetails = DataAccess.GetAccessDiagnosticRoleDetails(roleId, registrationId)
-            Dim existingDetail = existingDetails.AsEnumerable().FirstOrDefault(
-                Function(row) String.Equals(Convert.ToString(row("DB_Table")), dbTable, StringComparison.OrdinalIgnoreCase))
-            For Each permission In New String() {"Can_Create", "Can_Read", "Can_Update", "Can_Delete", "Can_UseQBE", "Can_ViewAllRecords", "Can_ViewOnlyMyRecords"}
-                requested(permission) = If(existingDetail Is Nothing, GetNewRoleTableDefault(permission), Convert.ToBoolean(existingDetail(permission)))
+            permissionsGrid.EndEdit()
+            For Each gridRow As DataGridViewRow In permissionsGrid.Rows
+                Dim permissionName = Convert.ToString(gridRow.Tag)
+                requested(permissionName) = Convert.ToBoolean(If(gridRow.Cells("Allowed").Value, False))
             Next
 
+            Dim confirmation = MessageBox.Show("APPLY THE SELECTED PERMISSION CHANGES?", "CONFIRM PERMISSION CHANGES", MessageBoxButtons.YesNo, MessageBoxIcon.Question)
+            If confirmation <> DialogResult.Yes Then Return
+
             Try
-                Dim trace = DataAccess.ApplyAccessDiagnosticChanges(selectedUserId, registrationId, roleId, schemaId, dbTable,
-                                                                     requested, If(SessionState.Current.HasValue, SessionState.Current.Value.UserID, 0), assignRole)
-                If trace.Rows.Count = 0 Then Throw New InvalidOperationException("The access transaction returned no completion trace.")
-                LoadRoles()
-                roleComboBox.SelectedValue = roleId
-                explainButton.Enabled = tableComboBox.SelectedIndex > 0 AndAlso roleComboBox.SelectedIndex > 0
-                Dim afterDetails = DataAccess.GetAccessDiagnosticRoleDetails(roleId, registrationId)
-                Dim afterDetail = afterDetails.AsEnumerable().FirstOrDefault(
-                    Function(row) String.Equals(Convert.ToString(row("DB_Table")), dbTable, StringComparison.OrdinalIgnoreCase))
-                If afterDetail Is Nothing Then Throw New InvalidOperationException("The table assignment could not be verified.")
-                LoadPermissionComparison(beforePermissions, GetPermissionValues(afterDetail), beforeWasConfigured, beforeRoleWasAssigned, True, True)
-                comparisonGrid.Visible = True
-                comparisonFootnote.Visible = True
-                applyAccessChangesButton.Visible = False
-                MessageBox.Show(
-                    Me,
-                    "TABLE ADDED SUCCESSFULLY" & Environment.NewLine &
-                    "CHECK THE EXPLANATION AREA FOR THE UPDATED ACCESS.",
-                    "TABLE ASSIGNMENT COMPLETE",
-                    MessageBoxButtons.OK,
-                    MessageBoxIcon.Information)
+                Dim schemaId = DataAccess.GetRoleSchemaIdByTable(Convert.ToString(selectedTable("DB_Table")))
+                If schemaId <= 0 Then Throw New InvalidOperationException("The selected table has no active RoleSchema record.")
+                Dim trace = DataAccess.ApplyAccessDiagnosticChanges(userId.Value,
+                                                                     registrationId,
+                                                                     Convert.ToInt32(selectedRole("RoleID")),
+                                                                     schemaId,
+                                                                     Convert.ToString(selectedTable("DB_Table")),
+                                                                     requested,
+                                                                     If(SessionState.Current.HasValue, SessionState.Current.Value.UserID, 0),
+                                                                     Not IsSelectedRoleAssigned(selectedRole))
+                If trace.Rows.Count = 0 Then
+                    Throw New InvalidOperationException("The transaction returned no completion trace.")
+                End If
+
+                Dim traceRow = trace.Rows(0)
+                Dim traceMessage =
+                    "PERMISSION CHANGE TRACE" & Environment.NewLine &
+                    "OPERATION: " & Convert.ToString(traceRow("Operation")) & Environment.NewLine &
+                    "ROWS AFFECTED: " & Convert.ToString(traceRow("RowsAffected")) & Environment.NewLine &
+                    "USERID: " & Convert.ToString(traceRow("UserID")) & Environment.NewLine &
+                    "REGISTRATIONID: " & Convert.ToString(traceRow("RegistrationID")) & Environment.NewLine &
+                    "ROLEID: " & Convert.ToString(traceRow("RoleID")) & Environment.NewLine &
+                    "SCHEMAID: " & Convert.ToString(traceRow("SchemaID")) & Environment.NewLine &
+                    "DB_TABLE: " & Convert.ToString(traceRow("DB_Table")) & Environment.NewLine &
+                    "COMMITTED: " & Convert.ToString(traceRow("Committed"))
+                DataAccess.InvalidateRoleMetadataCache()
+                CheckAccessButton_Click(sender, e)
+                ShowDiagnosticResult(diagnosticResultTextBox.Text & Environment.NewLine & Environment.NewLine & traceMessage)
             Catch ex As Exception
-                ShowResult("TABLE ASSIGNMENT FAILED" & Environment.NewLine & ex.Message.ToUpperInvariant())
+                ShowDiagnosticResult("PERMISSION CHANGES FAILED." & Environment.NewLine & ex.Message.ToUpperInvariant())
             End Try
         End Sub
 
-        Private Sub LoadPermissionComparison(beforeValues As IDictionary(Of String, Boolean),
-                              afterValues As IDictionary(Of String, Boolean),
-                              beforeConfigured As Boolean,
-                              beforeRoleAssigned As Boolean,
-                              afterRoleAssigned As Boolean,
-                              afterTableConfigured As Boolean)
-            comparisonGrid.Rows.Clear()
-            comparisonGrid.Rows.Add("ROLE ASSIGNMENT",
-                                    If(beforeRoleAssigned, "ASSIGNED", "NOT ASSIGNED"),
-                                    If(afterValues Is Nothing, String.Empty, If(afterRoleAssigned, "ASSIGNED", "NOT ASSIGNED")))
-            comparisonGrid.Rows.Add("TABLE CONFIGURATION",
-                                    If(beforeConfigured, "PRESENT", "MISSING"),
-                                    If(afterValues Is Nothing, String.Empty, If(afterTableConfigured, "PRESENT", "MISSING")))
-            For Each permission In New (String, String)() {
-                ("Can_Read", "Read records"),
-                ("Can_Create", "Create records"),
-                ("Can_Update", "Modify records"),
-                ("Can_Delete", "Delete records"),
-                ("Can_UseQBE", "Use QBE"),
-                ("Can_ViewAllRecords", "View all records"),
-                ("Can_ViewOnlyMyRecords", "View only my records")
-            }
-                Dim beforeText = If(Not beforeConfigured, "NA",
-                                    If(beforeValues Is Nothing OrElse Not beforeValues.ContainsKey(permission.Item1), String.Empty, If(beforeValues(permission.Item1), "Yes", "No")))
-                Dim afterText = If(afterValues Is Nothing OrElse Not afterValues.ContainsKey(permission.Item1), String.Empty, If(afterValues(permission.Item1), "Yes", "No"))
-                comparisonGrid.Rows.Add(permission.Item2.ToUpperInvariant(), beforeText.ToUpperInvariant(), afterText.ToUpperInvariant())
-            Next
-            comparisonGrid.Height = comparisonGrid.ColumnHeadersHeight +
-                                    (comparisonGrid.RowTemplate.Height * comparisonGrid.Rows.Count) + 2
-        End Sub
-
-        Private Shared Function GetPermissionValues(row As DataRow) As Dictionary(Of String, Boolean)
-            Dim values As New Dictionary(Of String, Boolean)(StringComparer.OrdinalIgnoreCase)
-            For Each permission In New String() {"Can_Read", "Can_Create", "Can_Update", "Can_Delete", "Can_UseQBE", "Can_ViewAllRecords", "Can_ViewOnlyMyRecords"}
-                values(permission) = Convert.ToBoolean(row(permission))
-            Next
-            Return values
+        Private Function IsSelectedRoleAssigned(selectedRole As DataRowView) As Boolean
+            Return selectedRole IsNot Nothing AndAlso
+                   selectedRole.Row.Table.Columns.Contains("IsAssigned") AndAlso
+                   Convert.ToInt32(selectedRole("IsAssigned")) = 1
         End Function
 
-        Private Sub ShowResult(message As String)
-            resultTextBox.Text = If(message, String.Empty).ToUpperInvariant()
-            resultTextBox.SelectionStart = 0
-            resultTextBox.SelectionLength = 0
+        Private Sub PermissionsGrid_CurrentCellDirtyStateChanged(sender As Object, e As EventArgs)
+            If permissionsGrid.IsCurrentCellDirty Then
+                permissionsGrid.CommitEdit(DataGridViewDataErrorContexts.Commit)
+            End If
         End Sub
 
-        Private Sub CloseButton_Click(sender As Object, e As EventArgs)
-            Me.Close()
+        Private Sub LoadPermissionsGrid(roleId As Integer, registrationId As Integer, dbTable As String)
+            permissionsGrid.Rows.Clear()
+            Dim details = DataAccess.GetAccessDiagnosticRoleDetails(roleId, registrationId)
+            Dim detail As DataRow = Nothing
+            For Each row As DataRow In details.Rows
+                If String.Equals(Convert.ToString(row("DB_Table")), dbTable, StringComparison.OrdinalIgnoreCase) Then
+                    detail = row
+                    Exit For
+                End If
+            Next
+
+            For Each permission In New (String, String)() {
+                ("Can_Create", "Can Create"),
+                ("Can_Read", "Can Read"),
+                ("Can_Update", "Can Modify"),
+                ("Can_Delete", "Can Delete"),
+                ("Can_UseQBE", "Can Use QBE"),
+                ("Can_ViewAllRecords", "Can View All Records"),
+                ("Can_ViewOnlyMyRecords", "Can View Only My Records")
+            }
+                Dim currentValue = detail IsNot Nothing AndAlso Convert.ToBoolean(detail(permission.Item1))
+                Dim rowIndex = permissionsGrid.Rows.Add(permission.Item2, currentValue)
+                permissionsGrid.Rows(rowIndex).Tag = permission.Item1
+            Next
         End Sub
 
-        Private Sub HideCorrectionControls()
-            comparisonGrid.Visible = False
-            comparisonFootnote.Visible = False
-            comparisonGrid.Rows.Clear()
-            applyAccessChangesButton.Visible = False
+        Private Function GetSelectedRegistrationId() As Integer
+            Dim registrationId As Integer = 0
+            If RegistrationComboHelper.TryGetSelectedId(registrationComboBox, registrationId) Then
+                selectedRegistrationId = registrationId
+            End If
+            Return selectedRegistrationId
+        End Function
+
+        Private Sub ShowDiagnosticResult(message As String)
+            diagnosticResultTextBox.Text = message
+            diagnosticResultTextBox.Visible = True
         End Sub
+
+        ''' <summary>
+        ''' Sizes the QBE panel to its rows, and returns the height it decided on - zero when there
+        ''' was nothing to size.
+        '''
+        ''' The return value is computed from the QBE grid's own header and row heights and nothing
+        ''' else. That is what makes it safe for the caller to set browseSplit.Height from it:
+        ''' SplitterDistance is not, because this method derives it from browseSplit.Height, so
+        ''' setting the height back from the splitter feeds each layout pass its own output.
+        ''' </summary>
+        Private Function ApplyDiagnosticQbeLayout(browseSplit As SplitContainer) As Integer
+            If browseSplit Is Nothing OrElse browseSplit.Panel1Collapsed Then
+                Return 0
+            End If
+
+            browseSplit.BackColor = Color.White
+            browseSplit.Panel1.BackColor = Color.White
+
+            Dim qbeGrid = FindQbeGrid(browseSplit.Panel1)
+            If qbeGrid Is Nothing Then
+                Return 0
+            End If
+
+            Dim qbePanel = TryCast(qbeGrid.Parent, Panel)
+            If qbePanel IsNot Nothing Then
+                qbePanel.BackColor = Color.White
+            End If
+
+            MoveQbeControlsUp(qbePanel, qbeGrid)
+
+            Dim visibleRows = GetVisibleQbeRowCount()
+            Dim gridHeight = qbeGrid.ColumnHeadersHeight + (qbeGrid.RowTemplate.Height * visibleRows) + 2
+            qbeGrid.Height = gridHeight
+
+            Dim panelHeight = Math.Max(120, qbeGrid.Bottom + 6)
+            If qbePanel IsNot Nothing Then
+                qbePanel.Height = panelHeight
+            End If
+
+            browseSplit.Panel1MinSize = panelHeight
+            browseSplit.SplitterDistance = Math.Min(panelHeight, browseSplit.Height - browseSplit.Panel2MinSize)
+            Return panelHeight
+        End Function
+
+        Private Sub MoveQbeControlsUp(qbePanel As Panel, qbeGrid As DataGridView)
+            If qbePanel Is Nothing OrElse qbeGrid Is Nothing Then
+                Return
+            End If
+
+            Dim activeFilterLabel = qbePanel.Controls.OfType(Of Label)().FirstOrDefault(Function(label) label.Text.StartsWith("Active Filter", StringComparison.OrdinalIgnoreCase))
+            If activeFilterLabel IsNot Nothing Then
+                activeFilterLabel.Top = 2
+            End If
+
+            Dim moveUp = Math.Max(0, Math.Min(qbeGrid.Top \ 2, qbeGrid.Top - 22))
+            If moveUp <= 0 Then
+                Return
+            End If
+
+            For Each control In GetQbeControlsToMove(qbePanel, qbeGrid)
+                control.Top = Math.Max(0, control.Top - moveUp)
+            Next
+        End Sub
+
+        Private Function GetQbeControlsToMove(qbePanel As Panel, qbeGrid As DataGridView) As IEnumerable(Of Control)
+            Dim controls As New List(Of Control) From {qbeGrid}
+
+            Dim imagePanel = qbePanel.Controls.OfType(Of Panel)().FirstOrDefault()
+            If imagePanel IsNot Nothing Then
+                controls.Add(imagePanel)
+            End If
+
+            For Each buttonText In New String() {"Find", "Clear", "Save", "Retrieve"}
+                Dim button = FindButtonByText(qbePanel, buttonText)
+                If button IsNot Nothing Then
+                    controls.Add(button)
+                End If
+            Next
+
+            Return controls
+        End Function
+
+        ''' <summary>
+        ''' The results grid. Panel2 holds it and nothing else that is a grid, so the first one
+        ''' found is it - unlike Panel1, where the QBE grid has to be told apart by its columns.
+        ''' </summary>
+        Private Shared Function FindResultsGrid(parent As Control) As DataGridView
+            For Each child As Control In parent.Controls
+                Dim grid = TryCast(child, DataGridView)
+                If grid IsNot Nothing Then
+                    Return grid
+                End If
+
+                Dim nested = FindResultsGrid(child)
+                If nested IsNot Nothing Then
+                    Return nested
+                End If
+            Next
+
+            Return Nothing
+        End Function
+
+        Private Shared Function FindQbeGrid(parent As Control) As DataGridView
+            For Each child As Control In parent.Controls
+                Dim grid = TryCast(child, DataGridView)
+                If grid IsNot Nothing AndAlso grid.Columns.Contains("FriendlyName") AndAlso grid.Columns.Contains("Operator") Then
+                    Return grid
+                End If
+
+                Dim nested = FindQbeGrid(child)
+                If nested IsNot Nothing Then
+                    Return nested
+                End If
+            Next
+
+            Return Nothing
+        End Function
+
+        Private Sub MoveDiagnosticActionRow(offset As Integer)
+            Dim qbeButton = FindButtonStartingWithText(Me, "QBE")
+            If qbeButton Is Nothing OrElse qbeButton.Tag IsNot Nothing Then
+                Return
+            End If
+
+            qbeButton.Top += offset
+            qbeButton.Tag = "DiagnosticActionRowMoved"
+
+            For Each actionCaption In New String() {"Close", "Enum", "Show Deleted", "Find"}
+                Dim button = FindButtonByText(Me, actionCaption)
+                If button IsNot Nothing Then
+                    button.Top += offset
+                End If
+            Next
+        End Sub
+
+        Private Shared Function FindButtonByText(parent As Control, text As String) As Button
+            For Each child As Control In parent.Controls
+                Dim button = TryCast(child, Button)
+                If button IsNot Nothing AndAlso String.Equals(button.Text, text, StringComparison.OrdinalIgnoreCase) Then
+                    Return button
+                End If
+
+                Dim nested = FindButtonByText(child, text)
+                If nested IsNot Nothing Then
+                    Return nested
+                End If
+            Next
+
+            Return Nothing
+        End Function
+
+        Private Shared Function FindButtonStartingWithText(parent As Control, text As String) As Button
+            For Each child As Control In parent.Controls
+                Dim button = TryCast(child, Button)
+                If button IsNot Nothing AndAlso button.Text.StartsWith(text, StringComparison.OrdinalIgnoreCase) Then
+                    Return button
+                End If
+
+                Dim nested = FindButtonStartingWithText(child, text)
+                If nested IsNot Nothing Then
+                    Return nested
+                End If
+            Next
+
+            Return Nothing
+        End Function
+
+        Private Shared Function FindBrowseSplitContainer(parent As Control) As SplitContainer
+            For Each child As Control In parent.Controls
+                Dim split = TryCast(child, SplitContainer)
+                If split IsNot Nothing Then
+                    Return split
+                End If
+
+                Dim nested = FindBrowseSplitContainer(child)
+                If nested IsNot Nothing Then
+                    Return nested
+                End If
+            Next
+
+            Return Nothing
+        End Function
+
     End Class
 End Namespace

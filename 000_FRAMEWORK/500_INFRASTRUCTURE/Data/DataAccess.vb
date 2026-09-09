@@ -3927,6 +3927,35 @@ Namespace SDC.Framework
             Return table
         End Function
 
+        ''' <summary>
+        ''' Every role that reaches one table for one user, and what each of them grants.
+        '''
+        ''' Restored on 2026-09-09 with FW_UserAccessDiagnostic_B, which is its only caller. Both
+        ''' were removed six days after the procedure behind them broke on a renamed table - the
+        ''' page was unreachable from any menu, so nothing was exercising it and nothing complained.
+        ''' Unreachable turned out to be the wrong test: the page could set an individual permission,
+        ''' which the page kept in its place could not.
+        ''' </summary>
+        Public Shared Function GetAccessDiagnostic(userId As Integer,
+                                                    registrationId As Integer,
+                                                    dbTable As String) As DataTable
+            Dim table As New DataTable("AccessDiagnostic")
+            Using conn As New SqlConnection(ConnectionString)
+                conn.Open()
+                Using cmd As New SqlCommand("dbo.usp_FW_AccessDiagnostic", conn)
+                    cmd.CommandType = CommandType.StoredProcedure
+                    cmd.CommandTimeout = 10
+                    cmd.Parameters.AddWithValue("@UserID", userId)
+                    cmd.Parameters.AddWithValue("@RegistrationID", registrationId)
+                    cmd.Parameters.AddWithValue("@DB_Table", If(dbTable, String.Empty))
+                    Using da As New SqlDataAdapter(cmd)
+                        da.Fill(table)
+                    End Using
+                End Using
+            End Using
+            Return table
+        End Function
+
         Public Shared Function ApplyAccessDiagnosticChanges(userId As Integer,
                                                        registrationId As Integer,
                                                        roleId As Integer,

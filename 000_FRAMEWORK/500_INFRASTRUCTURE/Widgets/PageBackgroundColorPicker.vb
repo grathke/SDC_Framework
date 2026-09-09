@@ -11,8 +11,8 @@ Namespace SDC.Framework
     ''' The page colour picker, as a widget any form can attach.
     '''
     ''' It began inside FW_Base_B, which was the right place while only browse pages offered it.
-    ''' A page that inherits Form directly - FW_UserAccessDiagnostic_B, and the dashboards - could
-    ''' not have it at all, and the only way to give one a colour picker was to write a second one.
+    ''' A page that inherits Form directly - the dashboards, and any one-off screen - could not have
+    ''' it at all, and the only way to give one a colour picker was to write a second one.
     ''' Two pickers would mean two palettes, two defaults and two ideas of which controls a tint
     ''' reaches, so the shape that was already shared moved out here instead.
     '''
