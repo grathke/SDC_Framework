@@ -2079,7 +2079,7 @@ Namespace SDC.Framework
 
                 If dialog.ShowDialog(Me) = DialogResult.OK Then
                     browseFieldsTextBox.Text = JoinCheckedGridFields(browseGrid, "Include")
-                    hotFieldsTextBox.Text = JoinCheckedGridFields(browseGrid, "HotField")
+                    hotFieldsTextBox.Text = JoinCheckedGridFields(browseGrid, "HotField", requireInclude:=False)
                     maintenanceFieldsTextBox.Text = JoinIncludedGridFields(maintenanceGrid)
                     lookupSpecs = JoinLookupFields(maintenanceGrid)
                     lookupFieldsTextBox.Text = LookupFieldNames(lookupSpecs)
@@ -2313,10 +2313,28 @@ Namespace SDC.Framework
             Return String.Join(", ", list.CheckedItems.Cast(Of Object)().Select(Function(item) item.ToString()))
         End Function
 
-        Private Shared Function JoinCheckedGridFields(grid As DataGridView, columnName As String) As String
+        ''' <summary>
+        ''' The fields with the named column ticked.
+        ''' </summary>
+        ''' <param name="requireInclude">
+        ''' Whether the field must also be in the page. True for Order By and Admin Required, which
+        ''' describe a column the page already selects - you cannot sort by what is not there.
+        '''
+        ''' False for Hot Fields, which is the one answer that means the opposite: the panel exists
+        ''' to show what the grid does not, so requiring Include collected nothing at all for a field
+        ''' ticked HF and not _B. That is what it did on 2026-09-09, silently, because a helper was
+        ''' reused without noticing the precondition it carried.
+        ''' </param>
+        Private Shared Function JoinCheckedGridFields(grid As DataGridView,
+                                                       columnName As String,
+                                                       Optional requireInclude As Boolean = True) As String
             Dim selectedFields As New List(Of String)()
             For Each row As DataGridViewRow In grid.Rows
-                If Convert.ToBoolean(row.Cells("Include").Value) AndAlso Convert.ToBoolean(row.Cells(columnName).Value) Then
+                If requireInclude AndAlso Not Convert.ToBoolean(row.Cells("Include").Value) Then
+                    Continue For
+                End If
+
+                If Convert.ToBoolean(row.Cells(columnName).Value) Then
                     selectedFields.Add(Convert.ToString(row.Cells("FieldName").Value))
                 End If
             Next
