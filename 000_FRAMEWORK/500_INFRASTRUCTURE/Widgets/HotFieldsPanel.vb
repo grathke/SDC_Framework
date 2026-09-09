@@ -472,11 +472,25 @@ Namespace SDC.Framework
                               Convert.ToString(rawValue, CultureInfo.CurrentCulture))
                 End If
 
-                Dim isSelected = Not curated OrElse selectedFields.Contains(fieldName)
+                ' A tick means the page was told to show this field, and nothing else does. On a page
+                ' nobody has curated every box is empty, so an App Admin starts by choosing what to
+                ' show rather than by removing what they do not want.
+                '
+                ' That matters more than it reads. Ticked-by-default meant unticking one field
+                ' recorded every other field as an explicit choice - and a column added to the table
+                ' afterwards would never appear, because it was not in a list written before it
+                ' existed. Nothing on screen would have said why.
+                Dim isSelected = curated AndAlso selectedFields.Contains(fieldName)
+
+                ' Nothing ticked means nothing shown. An App Admin decides what this panel is for,
+                ' and until they have decided there is nothing to put in front of anybody - rather
+                ' than everything, which would make the first untick the moment a page silently
+                ' stopped showing a column nobody had chosen to hide.
+                Dim isVisibleToViewer = isSelected
 
                 ' A field this page does not show is dropped for everyone except the person who
                 ' decides which fields it shows.
-                If Not isSelected AndAlso Not allowSelection Then
+                If Not isVisibleToViewer AndAlso Not allowSelection Then
                     Continue For
                 End If
 
@@ -552,12 +566,10 @@ Namespace SDC.Framework
                 End If
             Next
 
-            ' Every field ticked is the same answer as none ticked - show everything - and storing
-            ' it as nothing keeps a page that gains a column later showing that column too.
-            If selected.Count = fieldsGrid.Rows.Count Then
-                selected.Clear()
-            End If
-
+            ' Stored exactly as ticked, including every field. Collapsing "all ticked" to "no list"
+            ' made sense while an empty list meant show everything; now that it means show nothing,
+            ' the same collapse would empty the panel for every other role - which is the opposite
+            ' of what ticking them all says.
             Dim updatedBy = If(SessionState.Current.HasValue, SessionState.Current.Value.UserID, 0)
             If Not DataAccess.SavePageHotFields(owner.GetType().Name, selected, updatedBy) Then
                 MessageBox.Show(owner,

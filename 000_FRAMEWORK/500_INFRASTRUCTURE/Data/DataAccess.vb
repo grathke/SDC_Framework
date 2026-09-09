@@ -1165,9 +1165,15 @@ Namespace SDC.Framework
         End Function
 
         ''' <summary>
-        ''' Which fields the Hot Fields panel shows for a page. Empty means every field, which is
-        ''' what the panel did before anyone could choose - so a page nobody has curated, and every
-        ''' page that has no FW_Pages row at all, keeps the behaviour it has today.
+        ''' Which fields the Hot Fields panel shows for a page.
+        '''
+        ''' Empty means **nothing** is shown, not everything. An App Admin decides what this panel is
+        ''' for, and until they have ticked something there is nothing to put in front of anybody.
+        ''' They still see every field themselves, unticked, which is how they choose.
+        '''
+        ''' It read the other way round until 2026-09-09. Showing everything by default meant the
+        ''' first untick froze every remaining field into an explicit list, so a column added to the
+        ''' table afterwards would never appear and nothing would say why.
         '''
         ''' Comes from the row EnsurePageAliasCache already holds, so it costs no round trip.
         ''' </summary>
