@@ -1,10 +1,14 @@
 # Thinfinity VirtualUI — the delivery surface
 
-**Reference, nothing built.** No VirtualUI code is in the application as at 2026-09-09. `Program.vb`
-does not call the SDK, the project references only `Microsoft.Data.SqlClient`, and
-`AttachViaThinfinity_Click` still reports that the feature is not configured. This document is what
-was learned before writing any of it — including a day spent standing the server up locally, in
-section 11.2, which changed nothing in the application.
+**The SDK is in, as of 2026-09-10.** `Thinfinity.VirtualUI.vb` sits in
+`000_FRAMEWORK\500_INFRASTRUCTURE\Thinfinity\` and `Program.Main` starts a session before anything
+is drawn. Everything else here is still reference: `AttachViaThinfinity_Click` reports the feature
+is not configured, nothing reads `Active`, and no file dialog has been moved to `StdDialogs`.
+
+What works, measured rather than assumed: the library loads, the session registers, and the
+development server starts on 6080. What does not is anything to do with **seeing a page** — both
+VirtualUI servers refuse every request, which section 11.3 records and which is a fault inside
+their product.
 
 `CLAUDE.md` carries the two delivery rules that apply to every change — prefer click over hover, and
 treat files, printing and the clipboard as server-side. This is the detail behind them: the API that
@@ -234,7 +238,7 @@ between the application and JavaScript in the page. Nothing here needs that yet.
 3. The missing-DLL guards — **identical**. Section 2 stands: `Start()` returns `False` and every
    method no-ops rather than throwing.
 
-## 11.1 The x64 SDK library is missing from the install
+## 11.1 The x64 SDK library, and the eight days it was missing
 
 This one is not in any documentation and would be invisible if hit, so it is worth the space.
 
@@ -268,8 +272,24 @@ from folder names:
 The 64-bit libraries are not a 64-bit build of the SDK. They are a **different surface** — the
 scraper engine behind publishing an application that was never modified.
 
-**The file is expected to be there, and simply is not shipped — established 2026-09-09.** Three
-independent facts say so, and they agree:
+**It was absent from the installer, and Cybele supplied it on 2026-09-10.** The file now in `bin64`
+is 14,257,920 bytes, dated 19 December 2025 like the rest of the product, and was copied in by hand.
+A full reinstall of the x64 MSI that same morning did **not** replace it, so it is still not in the
+package - it simply is not delivered.
+
+**It is the real thing.** Read from the PE header and export table rather than trusted:
+
+```
+Arch   : x64 (PE32+)
+Exports: DllGetInstance, DllCreateObject, DllCreateJSObject, DllAutoRun, DllRegisterServer, …
+```
+
+and loading it exactly as the wrapper does - registry `TargetDir_x64`, `LoadLibrary`,
+`GetProcAddress("DllGetInstance")` - succeeds in a 64-bit process. **So the application stays
+AnyCPU.** Everything below about building 32-bit is the reasoning as it stood before the file
+arrived, kept because the shape of the problem is worth remembering, not because a choice remains.
+
+Three facts established that it was missing rather than mislocated, and they still hold:
 
 1. Their own installer writes both target directories into the registry, under
    `HKLM\SOFTWARE\Cybele Software\Setups\Thinfinity\VirtualUI\Dev`:
@@ -279,12 +299,13 @@ independent facts say so, and they agree:
 2. Cybele support, asked directly, replied: "Depending on the platform of your application (32-bit
    or 64-bit), it will look for the corresponding DLL: the 32-bit version in the bin32 folder or the
    64-bit version in the bin64 folder." That is the mechanism above, described as working.
-3. **A repair install does not produce it.** A repair replaces missing files; this one rewrote a
-   single type library (`ibin\XpsToPdf.tlb`) and left `bin64` unchanged. So the file is absent from
-   the package, not deleted from the disk.
+3. **Neither a repair nor a reinstall produces it.** The repair rewrote a single type library
+   (`ibin\XpsToPdf.tlb`) and left `bin64` untouched; the reinstall on 2026-09-10 left the
+   hand-copied file with its own copy timestamp. The file is absent from the package, not deleted
+   from the disk.
 
-So this is not "the SDK is 32-bit only". It is an incomplete install of a product that expects the
-file to be present — which is a defect they can fix, rather than a constraint to design around.
+So this was never "the SDK is 32-bit only". It was a product that expects a file its installer does
+not deliver.
 
 `SDC.Framework.vbproj` sets no `PlatformTarget`, builds AnyCPU and runs 64-bit here.
 
@@ -404,6 +425,64 @@ every launch path: F5, `dotnet run`, the exe, VirtualUI, and each project of a m
 solution. Machine scope also works and puts the password in the registry for every account on the
 box; a launcher script works too, but VirtualUI attaches to the window of the process it starts, so
 an intermediate script is a risk that user-scope variables avoid entirely.
+
+## 11.3 The SDK works and the server does not — 2026-09-10
+
+Everything on this side of the boundary works, and was measured rather than assumed:
+
+| Step | Result |
+|---|---|
+| `LoadLibrary` on `bin64\Thinfinity.VirtualUI.DLL` in a 64-bit process | succeeds |
+| `GetProcAddress("DllGetInstance")` | resolves |
+| `New VirtualUI()` and `Start(5000)` from `Program.Main` | runs, returns `False` |
+| `DevServer.Enabled` / `DevServer.Port` | `True` / `6080` |
+| A second `Server.exe /dev` process | started by `Start()`, binds 6080 |
+| The application afterwards | opens on the desktop as normal |
+
+`Start()` returning `False` means no browser attached within the timeout, which is expected when
+nobody is waiting. `Active` is `False` for the same reason.
+
+### Why no page can be seen
+
+**Both VirtualUI servers register their URLs with `http.sys` and then never service them.** The 503
+is not VirtualUI's page - it comes back with `Server: Microsoft-HTTPAPI/2.0`, which is the Windows
+kernel HTTP driver answering because nothing collected the request. `netsh http show servicestate`
+shows the fault clearly, and shows that the registration side is healthy:
+
+```
+Request queue ff00000b10000009   State: Active   processes attached: 1
+    8 registered URLs, including HTTP://*:6580/          State: Active
+Request queue ff00000c1000005b   State: Active   processes attached: 1
+    8 registered URLs, including HTTP://*:6080/          State: Active
+```
+
+Attached, active, registered - and silent. This is true of `Server.exe /start` on 6580 and
+`Server.exe /dev` on 6080 alike, the second of which their own SDK started.
+
+What has been ruled out, so it is not retried:
+
+- **IIS.** Not installed at all - no `W3SVC`, `WAS` or `IISADMIN`. `http.sys` is a kernel component
+  that IIS also happens to use; VirtualUI uses it directly, which is why its config section is
+  called `[IIS.Bindings]` and why its URLs appear in `netsh http`. Nothing on 80 or 8080.
+- **The URL reservations from 11.2.** They are what lets the server bind at all, and the Windows
+  event log records each registration succeeding with `Status: 0x0`.
+- **A missing application profile.** `profiles.bin` survived the reinstall and holds the entry,
+  marked as the default application.
+- **A stale install.** Full reinstall of `Thinfinity_VirtualUI_Legacy_v3.6_Setup_x64.msi` on
+  2026-09-10, reported successful by the installer.
+- **The licence, as far as can be checked from outside.** Re-applied through the Manager. Worth
+  noting anyway: `[license]` holds `serial` and `email` but has no `product=` line, which it did
+  have before the credentials were first applied on 2026-09-09, and re-applying did not bring it
+  back. A server that has started but does not believe it may serve would behave exactly like this.
+- **Their own logging.** `[Logger] Active=true` and `[Broker] LogEnabled=true` produce nothing
+  beyond `Starting....` and `Server started. Listening`, even for a request that 503s. The original
+  config is kept at `Thinfinity.VirtualUI.Server.ini.backup-before-logging`.
+
+Also still true from 11.2: `ThinfinityVUISvcMgr` runs as LocalSystem and starts none of its enabled
+services - no Broker, Gateway or TLS Tunnel process exists at any point.
+
+**Parked with Cybele.** Nothing here is blocked on the application, and nothing further can be
+learned from outside their process.
 
 ## 12. Where the documentation actually is
 
