@@ -3,6 +3,7 @@ Option Explicit On
 
 Imports System
 Imports System.IO
+Imports System.Linq
 Imports System.Threading
 Imports System.Windows.Forms
 
@@ -48,10 +49,69 @@ Namespace SDC.Framework
             Log("UnhandledException: " & e.ExceptionObject.ToString())
         End Sub
 
+        ''' <summary>
+        ''' How long Start() waits for a browser before giving up and letting the application open
+        ''' on the desktop. The SDK's own default is 60000.
+        ''' </summary>
+        Private Const VirtualUIStartTimeoutMs As Integer = 5000
+
+        ''' <summary>
+        ''' Held for the life of the process. THINFINITY_NOTES.md section 3: constructing VirtualUI
+        ''' also constructs the shared static instance the event handlers attach to, so it is
+        ''' constructed once and kept - not left to be collected and disposed mid-session.
+        ''' </summary>
+        Private virtualUI As Cybele.Thinfinity.VirtualUI
+
+        ''' <summary>
+        ''' Starts the VirtualUI session, before anything is drawn.
+        '''
+        ''' Section 3 of the notes is explicit that this comes first - ahead of EnableVisualStyles
+        ''' and before any window exists - because the SDK has to be in place before the first
+        ''' handle is created.
+        '''
+        ''' Skipped for --generate-request, which is the page generator's command-line path: it
+        ''' draws nothing, exits immediately, and has no browser to wait for.
+        '''
+        ''' Nothing here can stop the application starting. Section 2 records that the wrapper
+        ''' no-ops when its DLL cannot be loaded - Start() returns False and every later call does
+        ''' nothing - so a machine without VirtualUI runs on the desktop exactly as before. The
+        ''' Catch is for the case the notes do not cover, and it is deliberately silent beyond the
+        ''' log: a delivery mechanism that fails must not take the application down with it.
+        ''' </summary>
+        Private Sub StartVirtualUI(args As String())
+            If args IsNot Nothing AndAlso
+               args.Any(Function(arg) String.Equals(arg, "--generate-request", StringComparison.OrdinalIgnoreCase)) Then
+                Return
+            End If
+
+            Try
+                virtualUI = New Cybele.Thinfinity.VirtualUI()
+                virtualUI.DevMode = True
+
+                ' Five seconds, not the default sixty. Start() blocks until a browser attaches or
+                ' the timeout expires, and on a developer machine nobody is usually waiting at the
+                ' other end - measured on 2026-09-10, the first run sat for sixty-nine seconds
+                ' showing nothing at all before the login screen appeared.
+                '
+                ' A browser that is already open attaches in well under five. One that is not
+                ' costs five seconds and then the application opens on the desktop, which is what
+                ' a developer wanted in that case anyway.
+                Dim started = virtualUI.Start(VirtualUIStartTimeoutMs)
+                Log("VirtualUI Start() returned " & started.ToString() &
+                    "; Active=" & virtualUI.Active.ToString() &
+                    "; DevServer.Enabled=" & virtualUI.DevServer.Enabled.ToString() &
+                    "; DevServer.Port=" & virtualUI.DevServer.Port.ToString())
+            Catch ex As Exception
+                Log("VirtualUI did not start: " & ex.Message)
+            End Try
+        End Sub
+
         <STAThread>
         Public Sub Main()
             Try
                 Log("Main start")
+
+                StartVirtualUI(Environment.GetCommandLineArgs())
 
                 Application.SetHighDpiMode(HighDpiMode.SystemAware)
                 Application.EnableVisualStyles()
