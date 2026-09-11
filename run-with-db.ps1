@@ -44,7 +44,10 @@ Write-Host "  TrustServerCertificate: $($env:SDC_DB_TRUST_SERVER_CERT)"
 
 $appArgs = @()
 if ($Preview) { $appArgs += '--preview' }
-if ($NoTF)    { $appArgs += '--no-tf' }
+# --tf-dev, not merely the absence of --no-tf: dev mode is for a run started from here, where
+# nobody is waiting in a browser yet. An application launched by VirtualUI Server must not set it,
+# and that process gets neither switch.
+if ($NoTF)    { $appArgs += '--no-tf' } else { $appArgs += '--tf-dev' }
 
 if ($appArgs.Count -gt 0) {
     Write-Host "  App arguments: $($appArgs -join ' ')"

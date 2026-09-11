@@ -88,9 +88,17 @@ Namespace SDC.Framework
                 Return
             End If
 
+            ' Dev mode only when we launched the process ourselves. It tells the SDK to stand up
+            ' its own development server and wait for a browser on 6080 - which is what "run TF"
+            ' wants, and exactly wrong when VirtualUI Server launched the application for a
+            ' session that is already waiting at 6580. With it forced on, Start() never returned,
+            ' no development server appeared, and the browser sat on "Initializing..." while the
+            ' process stayed in Main with the login screen never built.
+            Dim devMode = args.Any(Function(arg) String.Equals(arg, "--tf-dev", StringComparison.OrdinalIgnoreCase))
+
             Try
                 virtualUI = New Cybele.Thinfinity.VirtualUI()
-                virtualUI.DevMode = True
+                virtualUI.DevMode = devMode
 
                 ' Five seconds, not the default sixty. Start() blocks until a browser attaches or
                 ' the timeout expires, and on a developer machine nobody is usually waiting at the
@@ -101,7 +109,8 @@ Namespace SDC.Framework
                 ' costs five seconds and then the application opens on the desktop, which is what
                 ' a developer wanted in that case anyway.
                 Dim started = virtualUI.Start(VirtualUIStartTimeoutMs)
-                Log("VirtualUI Start() returned " & started.ToString() &
+                Log("VirtualUI DevMode=" & devMode.ToString() &
+                    "; Start() returned " & started.ToString() &
                     "; Active=" & virtualUI.Active.ToString() &
                     "; DevServer.Enabled=" & virtualUI.DevServer.Enabled.ToString() &
                     "; DevServer.Port=" & virtualUI.DevServer.Port.ToString())
