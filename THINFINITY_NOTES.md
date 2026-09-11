@@ -617,9 +617,12 @@ pointer for the duration.
 
 ### Closing, and what does not detect it
 
-Closing the browser ends the process - but not at once. **Measured: three and a half minutes**
-between the browser closing and `OnClose` arriving, which is VirtualUI's disconnect grace and a
-server setting rather than anything the application can hurry.
+Closing the browser ends the process - but not at once.
+**Measured twice: 156 seconds, and about three and a half minutes**
+between the browser closing and `OnClose` arriving - so a fixed grace of roughly two to three
+minutes, not something variable. It is VirtualUI's own disconnect timeout; it appears in neither
+the server `.ini` nor anywhere the application can reach, so the profile editor is the only place
+left that might expose it.
 
 `Active` does **not** help. It stayed `True` for that entire period with no browser attached, so a
 poll on it never counts down. A watch built on it was removed the same day: a safety net that

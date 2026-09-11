@@ -24,6 +24,13 @@ Namespace SDC.Framework
         Private ReadOnly previewTextBox As TextBox
         Private ReadOnly messageToolTip As ToolTip
         Private ReadOnly folderLabel As Label
+
+        ''' The unread key, shown only on the Inbox. Read mail is white everywhere, and Sent, Trash
+        ''' and Archive have nothing yellow to explain - a legend for a colour that is not on screen
+        ''' is just furniture. Held as fields so the folder switch can hide them; the flow panel
+        ''' closes the gap by itself, because it skips invisible children.
+        Private ReadOnly unreadSwatch As Label
+        Private ReadOnly unreadLegend As Label
         Private currentFolder As String = "Inbox"
         Private currentUser As UserContext
 
@@ -48,14 +55,14 @@ Namespace SDC.Framework
             ' tooltip: hover is the gesture that degrades under VirtualUI, where mouse-move events
             ' are coalesced and a tooltip arrives late or not at all, so the explanation of a
             ' colour should not be something the user has to find by hovering.
-            Dim unreadSwatch = New Label With {
+            unreadSwatch = New Label With {
                 .Text = String.Empty,
                 .Size = New Size(14, 14),
                 .BackColor = Color.LightYellow,
                 .BorderStyle = BorderStyle.FixedSingle,
                 .Margin = New Padding(18, 9, 4, 0)
             }
-            Dim unreadLegend = New Label With {
+            unreadLegend = New Label With {
                 .Text = "unread",
                 .AutoSize = True,
                 .ForeColor = Color.FromArgb(110, 118, 128),
@@ -188,6 +195,10 @@ Namespace SDC.Framework
                 tabButton.ForeColor = If(isActive, activeTextColor, inactiveTextColor)
                 tabButton.Font = New Font(tabButton.Font, If(isActive, FontStyle.Bold, FontStyle.Regular))
             Next
+
+            Dim onInbox = String.Equals(currentFolder, "Inbox", StringComparison.OrdinalIgnoreCase)
+            unreadSwatch.Visible = onInbox
+            unreadLegend.Visible = onInbox
 
             folderLabel.Text = currentFolder & " Messages"
             moveButton.Text = If(String.Equals(currentFolder, "Trash", StringComparison.OrdinalIgnoreCase) OrElse String.Equals(currentFolder, "Archive", StringComparison.OrdinalIgnoreCase), "Restore", "Archive")
