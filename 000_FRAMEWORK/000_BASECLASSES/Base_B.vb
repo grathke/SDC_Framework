@@ -757,11 +757,22 @@ Namespace SDC.Framework
         End Sub
 
         Private Sub ApplyCrudAccess()
-            Dim showAdminQueryControls = IsRegistrationAwareSession()
-            sqlLabel.Visible = showAdminQueryControls AndAlso Not OnlyUseQbe()
-            sqlTextBox.Visible = showAdminQueryControls AndAlso Not OnlyUseQbe()
+            ' The SQL row is hidden from everyone as of 2026-09-10, App Admin included. It was for
+            ' testing and verification while the browse framework was being built, and it had
+            ' stopped earning the band it occupied - on a narrow window it collided with QBE and
+            ' Close, and nobody edits a page's SQL there.
+            '
+            ' Hidden rather than deleted, because sqlTextBox is not a display of the SQL - it is
+            ' where the SQL lives. GetActiveBaseSql returns its Text and ten call sites read that,
+            ' so removing the control would take the page's query with it. It is still filled at
+            ' load and still read on every refresh; it just is not on screen.
+            '
+            ' Apply SQL genuinely was only a refresh - it cleared the QBE filters and re-ran the
+            ' grid, and persisted nothing.
+            sqlLabel.Visible = False
+            sqlTextBox.Visible = False
+            applySqlButton.Visible = False
             UpdateRegistrationSelectorVisibility(IsAppAdminSession())
-            applySqlButton.Visible = showAdminQueryControls AndAlso Not OnlyUseQbe()
             ' Admin only, like the Tab Order manager on _U pages.
             If backgroundColorPicker IsNot Nothing Then
                 backgroundColorPicker.UpdateVisibility()
@@ -1634,7 +1645,11 @@ Namespace SDC.Framework
             sqlTextBox.Left = sqlBaseLeft
             sqlTextBox.Width = Math.Max(200, sqlRight - sqlBaseLeft)
 
-            Dim actionTop As Integer = If(adminQueryControlsVisible, 112, 42)
+            ' One row position for everybody now the SQL band is hidden. An App Admin used to be
+            ' pushed down to 112 to clear it; that is 70px of white space for a row nobody sees.
+            ' 42 and 92 are the geometry ordinary users have always had, so this is an arrangement
+            ' already proven rather than a new one.
+            Dim actionTop As Integer = 42
             Dim actionLeft As Integer = contentLeft
             Dim actionGap As Integer = 10
             ' Close anchors the right-hand end of the action row, and every button on that end is
@@ -1698,7 +1713,7 @@ Namespace SDC.Framework
 
 
             qbeSplitContainer.Left = contentLeft
-            qbeSplitContainer.Top = If(adminQueryControlsVisible, 162, 92)
+            qbeSplitContainer.Top = 92
             qbeSplitContainer.Width = contentWidth
             qbeSplitContainer.Height = Math.Max(180, Me.ClientSize.Height - qbeSplitContainer.Top - margin)
 
