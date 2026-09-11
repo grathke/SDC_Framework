@@ -498,3 +498,48 @@ Recorded because a good deal of time went into finding out:
   laid out one page per member under `virtualui-3.6-symbols/dotnet/thinfinity/virtualui/`.
 - The old `files.cybelesoft.com` PDF guides now redirect to a support landing page, and the
   third-party mirrors of them block automated access.
+
+## 11.4 It was the URL reservations all along — 2026-09-11
+
+**Fixed.** `http://localhost:6580/` returns 200 and serves VirtualUI's page. Nothing was wrong with
+Cybele's software, and nothing was wrong with the licence, the profile, the install or the broker.
+
+The cause is the fix from 11.2 turned inside out. Four reservations existed:
+
+```
+http://+:6580/   NUCBOX_EVO-T1\Glenn
+http://*:6580/   NUCBOX_EVO-T1\Glenn
+http://+:6080/   NUCBOX_EVO-T1\Glenn
+http://*:6080/   \Everyone          delegate=yes
+```
+
+With those in place `http.sys` accepted connections on 6580 and 6080 and answered **503 to every
+request without delivering it to the registered queue**. Delete all four and both ports deliver.
+Add back a single `http://*:6580/` for the account the server runs as, and it both binds and
+serves. The same for 6080.
+
+**What proved it was not VirtualUI.** A plain .NET `HttpListener` - Microsoft's own code, nothing
+of Cybele's involved - was registered on `http://*:6580/` with zero Thinfinity processes running
+after a reboot. Requests to it came back 503 and the listener never received them, while another
+`http.sys` application on port 8029 answered 200. `httperr` logged each one as
+`503 - N/A`, so the refusal was the kernel's, not any user-mode server's.
+
+Probing five ports at once is what located it: 6580 and 6080 refused delivery, 6581, 7580 and 9099
+all delivered. A fault that follows two specific port numbers and nothing else points at
+configuration attached to those numbers, which is what the reservations are.
+
+**The rule to keep.** One reservation per port, the weak wildcard, granted to the account the
+server runs as:
+
+```
+netsh http add urlacl url=http://*:6580/ user="<machine>\<user>"
+netsh http add urlacl url=http://*:6080/ user="<machine>\<user>"
+```
+
+Do not add the `+` form as well - VirtualUI binds `*`, and the strong wildcard is a different URL
+that it never asks for. Do not grant to `Everyone`, and do not set `delegate=yes`. Which of the
+three extras did the damage was not isolated, because the working set is the minimum set and there
+is no reason to reintroduce any of them.
+
+This also retires findings 2, 3 and 4 of 11.2 as things to raise with Cybele. Finding 1 stands and
+is theirs: `bin64\Thinfinity.VirtualUI.dll` is still absent from the installer.
