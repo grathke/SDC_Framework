@@ -77,18 +77,31 @@ Namespace SDC.Framework
             zipCoderButton.Visible = Not SmartyAddressLookupController.IsSessionLookupEnabled()
         End Sub
 
+        ''' <summary>
+        ''' Opens the lookup, seeded with whatever the page already has, and writes the chosen
+        ''' place back into the three boxes.
+        '''
+        ''' The single owner of the lookup for every page that hosts the button, which is what the
+        ''' TODO here asked for before FW_ZipCodes was connected on 2026-09-11. Do not add a
+        ''' page-local click handler: the controller holds the three text boxes precisely so this
+        ''' can be done once.
+        '''
+        ''' Only the fields the search actually returns are written. Cancel writes nothing.
+        ''' </summary>
         Private Sub ZipCoderButton_Click(sender As Object, e As EventArgs)
-            ' TODO: no zip-code data source exists yet. When one is added, this handler is the
-            ' single owner of the lookup for every page that hosts the button. Do not add a
-            ' page-local click handler.
-            Dim zipText = If(zipTextBox Is Nothing, String.Empty, zipTextBox.Text.Trim())
-            Dim message = If(String.IsNullOrEmpty(zipText),
-                             "Zip Coder is not connected to a zip-code source yet." & Environment.NewLine &
-                             "Enter a Zip code first.",
-                             "Zip Coder is not connected to a zip-code source yet." & Environment.NewLine &
-                             "Zip entered: " & zipText)
+            Dim cityText = If(cityTextBox Is Nothing, String.Empty, cityTextBox.Text)
+            Dim stateText = If(stateTextBox Is Nothing, String.Empty, stateTextBox.Text)
+            Dim zipText = If(zipTextBox Is Nothing, String.Empty, zipTextBox.Text)
 
-            MessageBox.Show(message, ButtonCaption, MessageBoxButtons.OK, MessageBoxIcon.Information)
+            Using lookup As New ZipCodeLookupDialog(cityText, stateText, zipText)
+                If lookup.ShowDialog(zipCoderButton.FindForm()) <> DialogResult.OK Then
+                    Return
+                End If
+
+                If cityTextBox IsNot Nothing Then cityTextBox.Text = lookup.SelectedCity
+                If stateTextBox IsNot Nothing Then stateTextBox.Text = lookup.SelectedState
+                If zipTextBox IsNot Nothing Then zipTextBox.Text = lookup.SelectedZip
+            End Using
         End Sub
     End Class
 End Namespace

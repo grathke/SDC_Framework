@@ -272,12 +272,18 @@ Namespace SDC.Framework
             Dim savedBy = If(SessionState.IsActive AndAlso SessionState.Current.HasValue,
                              SessionState.Current.Value.UserID, 0)
 
+            ' A missing FW_Pages row is no longer a failure and is no longer announced:
+            ' SavePageBackgroundColor creates one. Whether a row had to be written is a fact about
+            ' a table the user cannot reach, and the dialog that used to report it explained a
+            ' problem they could do nothing about - on a dialog, a one-off screen, anything never
+            ' generated, which is every form that has ever hit this.
+            '
+            ' The check stays because False is still reachable - a page with no name - and a
+            ' colour that silently does not persist is worth a word.
             If Not DataAccess.SavePageBackgroundColor(pageName, currentColour.ToArgb(), savedBy) Then
                 MessageBox.Show(owner,
                                 "THE COLOUR WAS APPLIED BUT NOT SAVED." & Environment.NewLine & Environment.NewLine &
-                                "THIS PAGE HAS NO FW_Pages ROW TO STORE IT AGAINST." & Environment.NewLine &
-                                Environment.NewLine &
-                                "PAGE: " & pageName,
+                                "THIS FORM DOES NOT IDENTIFY ITSELF, SO THERE IS NOWHERE TO STORE IT.",
                                 "PAGE COLOUR NOT SAVED",
                                 MessageBoxButtons.OK,
                                 MessageBoxIcon.Warning)

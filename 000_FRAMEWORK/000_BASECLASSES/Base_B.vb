@@ -189,6 +189,17 @@ Namespace SDC.Framework
         ''' Every browse page still gets it on the same terms: admin only, in the action row, its
         ''' colour stored against the page in FW_Pages.Background.
         ''' </summary>
+        ''' <summary>
+        ''' The band above the action row: the page caption on the left, the registration selector
+        ''' and the Help Desk button on the right.
+        '''
+        ''' 48 leaves the caption - Segoe UI 14 bold, about 25 tall - centred with room either
+        ''' side, and clears the Help Desk button, which sits at 10 and is 28 tall. The action row
+        ''' begins where the band ends, so the two cannot overlap however the caption is sized.
+        ''' </summary>
+        Private Const HeaderBandHeight As Integer = 48
+        Private Const HeaderBandCenterY As Integer = HeaderBandHeight \ 2
+
         Private backgroundColorPicker As PageBackgroundColorPicker
 
         ' The page table's computed columns, read once by IsComputedColumn and held for the life of
@@ -1617,7 +1628,15 @@ Namespace SDC.Framework
             Dim adminQueryControlsVisible = IsAppAdminSession()
 
             titleLabel.Left = contentLeft
-            Dim headerCenterY As Integer = Math.Max(0, sqlTextBox.Top \ 2)
+            ' The header band, and the caption centred in it. It used to be derived from
+            ' sqlTextBox.Top - half of 78, so 39 - which was fine while that row existed and wrong
+            ' the moment it was hidden: the caption ran from 27 to 52 and the action row started
+            ' at 42, so the buttons sat on top of the title.
+            '
+            ' A constant now, because nothing above the action row varies any more. It also lines
+            ' the caption up with the Help Desk button, which places itself at TopMargin 10 with a
+            ' height of 28 and so centres on 24.
+            Dim headerCenterY As Integer = HeaderBandCenterY
             titleLabel.Top = Math.Max(0, headerCenterY - (titleLabel.Height \ 2))
             HelpDeskLauncher.AlignToCaption(Me, titleLabel)
 
@@ -1649,7 +1668,7 @@ Namespace SDC.Framework
             ' pushed down to 112 to clear it; that is 70px of white space for a row nobody sees.
             ' 42 and 92 are the geometry ordinary users have always had, so this is an arrangement
             ' already proven rather than a new one.
-            Dim actionTop As Integer = 42
+            Dim actionTop As Integer = HeaderBandHeight
             Dim actionLeft As Integer = contentLeft
             Dim actionGap As Integer = 10
             ' Close anchors the right-hand end of the action row, and every button on that end is
@@ -1713,7 +1732,7 @@ Namespace SDC.Framework
 
 
             qbeSplitContainer.Left = contentLeft
-            qbeSplitContainer.Top = 92
+            qbeSplitContainer.Top = HeaderBandHeight + 50
             qbeSplitContainer.Width = contentWidth
             qbeSplitContainer.Height = Math.Max(180, Me.ClientSize.Height - qbeSplitContainer.Top - margin)
 

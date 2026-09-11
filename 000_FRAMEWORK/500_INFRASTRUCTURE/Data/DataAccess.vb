@@ -1041,32 +1041,63 @@ Namespace SDC.Framework
         Public Shared Function SavePageBackgroundColor(windowOrPageName As String, argb As Integer, updatedBy As Integer) As Boolean
             If String.IsNullOrWhiteSpace(windowOrPageName) Then Return False
 
+            Dim pageKey = windowOrPageName.Trim()
+
             Using conn As New SqlConnection(ConnectionString)
                 conn.Open()
+
+                ' Creates the row when there is not one. This used to be a bare UPDATE, so a form
+                ' with no FW_Pages row could apply a colour and not keep it, and said so in a
+                ' dialog that told the user about a table they cannot reach. Every such page hit
+                ' it - a dialog, a one-off screen, anything never generated - and the answer was
+                ' always the same row, typed by hand.
+                '
+                ' Only the name and the colour are written. DB_Table and Table_SQL stay null
+                ' because a colour says nothing about them, and a page that later wants a real row
+                ' will fill them in through UpsertPageRecord as it always has.
+                '
+                ' One round trip either way, and it reports which happened so the cache can be
+                ' patched on an update and dropped on an insert.
                 Using cmd As New SqlCommand(
-                    "UPDATE dbo." & PagesTable & " " &
-                    "SET Background = @Background, ModifiedBy = @ModifiedBy, ModifiedOn = GETDATE() " &
-                    "WHERE WindowOrPage = @WindowOrPage", conn)
+                    "DECLARE @Inserted bit = 0; " &
+                    "IF NOT EXISTS (SELECT 1 FROM dbo." & PagesTable & " WHERE WindowOrPage = @WindowOrPage) " &
+                    "BEGIN " &
+                    "  INSERT INTO dbo." & PagesTable & " " &
+                    "    (RegistrationID, WindowOrPage, Background, DeletedFlag, UseHotFields, CreatedBy, CreatedOn) " &
+                    "  VALUES (NULL, @WindowOrPage, @Background, 0, 0, @ModifiedBy, GETDATE()); " &
+                    "  SET @Inserted = 1; " &
+                    "END " &
+                    "ELSE " &
+                    "  UPDATE dbo." & PagesTable & " " &
+                    "  SET Background = @Background, ModifiedBy = @ModifiedBy, ModifiedOn = GETDATE() " &
+                    "  WHERE WindowOrPage = @WindowOrPage; " &
+                    "SELECT @Inserted", conn)
 
                     cmd.Parameters.AddWithValue("@Background", argb)
                     cmd.Parameters.AddWithValue("@ModifiedBy", updatedBy)
-                    cmd.Parameters.AddWithValue("@WindowOrPage", windowOrPageName.Trim())
+                    cmd.Parameters.AddWithValue("@WindowOrPage", pageKey)
 
-                    Dim saved = cmd.ExecuteNonQuery() > 0
+                    Dim result = cmd.ExecuteScalar()
+                    Dim inserted = result IsNot Nothing AndAlso
+                                   Not IsDBNull(result) AndAlso
+                                   Convert.ToBoolean(result, CultureInfo.InvariantCulture)
 
-                    ' The colour is read from the cache now, so a save that does not reach the cache
-                    ' is a colour that appears not to have saved until the application restarts.
-                    ' Only on success, and only for a page already cached: writing an entry for a
-                    ' page with no row would answer a later question the database would not.
-                    If saved Then
+                    ' The colour is read from the cache, so a save that does not reach the cache is
+                    ' a colour that appears not to have saved until the application restarts. A new
+                    ' row is not in the cache at all, so that one is dropped and reloaded rather
+                    ' than patched - patching it would answer a later question the cache has never
+                    ' been told the rest of the answer to.
+                    If inserted Then
+                        InvalidatePageCache()
+                    Else
                         SyncLock metadataCacheLock
-                            If pageAliasCacheLoaded AndAlso pageBackgroundCache.ContainsKey(windowOrPageName.Trim()) Then
-                                pageBackgroundCache(windowOrPageName.Trim()) = argb
+                            If pageAliasCacheLoaded AndAlso pageBackgroundCache.ContainsKey(pageKey) Then
+                                pageBackgroundCache(pageKey) = argb
                             End If
                         End SyncLock
                     End If
 
-                    Return saved
+                    Return True
                 End Using
             End Using
         End Function
@@ -5595,6 +5626,87 @@ Namespace SDC.Framework
                 Next
             End Using
         End Sub
+
+        ''' <summary>
+        ''' The most rows a zip search will return before it refuses and asks for a narrower one.
+        ''' An empty search matches 41,725 distinct places; a state on its own matches thousands.
+        ''' </summary>
+        Public Const ZipCodeSearchLimit As Integer = 500
+
+        ''' <summary>
+        ''' Places matching any combination of city, state and zip - the manual alternative to
+        ''' Smarty, behind the Zip Coder button.
+        '''
+        ''' **A city matches its aliases as well as its name.** FW_ZipCodes carries one row per
+        ''' alias, so "NYC" and "Manhattan" are rows of their own against New York zips. That is
+        ''' not noise to be filtered out: searching "NYC" finds 111 rows and **not one of them is
+        ''' PrimaryRecord = 'P'**, so collapsing the table to its primary rows - which looks like
+        ''' the obvious way to deal with 80,305 rows over 41,696 zips - would return nothing at all
+        ''' for every alias anybody is likely to type.
+        '''
+        ''' DISTINCT does the collapsing instead, and only where it is honest: those 111 NYC rows
+        ''' are 111 different Manhattan zips, not one zip repeated.
+        '''
+        ''' **A blank box drops its condition** rather than matching blank. Matching is exact and
+        ''' case-insensitive, which is the behaviour the equivalent query in the other application
+        ''' has always had - "New" finds nothing, "New York" and "NYC" both find Manhattan.
+        '''
+        ''' The WHERE is assembled from whichever boxes are filled; the values stay parameters.
+        ''' </summary>
+        Public Shared Function SearchZipCodes(city As String,
+                                              state As String,
+                                              zipCode As String,
+                                              ByRef limitReached As Boolean) As DataTable
+            Dim table As New DataTable("ZipCodeSearch")
+            limitReached = False
+
+            Dim conditions As New List(Of String)()
+            Dim cityText = If(city, String.Empty).Trim()
+            Dim stateText = If(state, String.Empty).Trim()
+            Dim zipText = If(zipCode, String.Empty).Trim()
+
+            If cityText <> String.Empty Then
+                conditions.Add("(UPPER(City) = UPPER(@City) OR UPPER(CityAliasName) = UPPER(@City))")
+            End If
+            If stateText <> String.Empty Then
+                conditions.Add("UPPER(State) = UPPER(@State)")
+            End If
+            If zipText <> String.Empty Then
+                conditions.Add("ZipCode = @ZipCode")
+            End If
+
+            Dim whereClause = If(conditions.Count = 0, String.Empty, " WHERE " & String.Join(" AND ", conditions))
+
+            ' One more than the limit, so a full page can be told from an overflowing one without
+            ' a second COUNT query.
+            Using conn As New SqlConnection(ConnectionString)
+                conn.Open()
+                Using cmd As New SqlCommand(
+                    "SELECT DISTINCT TOP " & (ZipCodeSearchLimit + 1).ToString(CultureInfo.InvariantCulture) & " " &
+                    "ZipCode, ISNULL(NULLIF(LTRIM(RTRIM(CityMixedCase)), ''), City) AS City, State " &
+                    "FROM dbo.FW_ZipCodes" & whereClause & " " &
+                    "ORDER BY State, City, ZipCode", conn)
+
+                    If cityText <> String.Empty Then cmd.Parameters.Add("@City", SqlDbType.NVarChar, 70).Value = cityText
+                    If stateText <> String.Empty Then cmd.Parameters.Add("@State", SqlDbType.NVarChar, 4).Value = stateText
+                    If zipText <> String.Empty Then cmd.Parameters.Add("@ZipCode", SqlDbType.NVarChar, 10).Value = zipText
+                    cmd.CommandTimeout = 30
+
+                    Using da As New SqlDataAdapter(cmd)
+                        da.Fill(table)
+                    End Using
+                End Using
+            End Using
+
+            If table.Rows.Count > ZipCodeSearchLimit Then
+                limitReached = True
+                While table.Rows.Count > ZipCodeSearchLimit
+                    table.Rows.RemoveAt(table.Rows.Count - 1)
+                End While
+            End If
+
+            Return table
+        End Function
 
         Public Shared Function GetRoleSchemaTable() As DataTable
             Dim table As New DataTable("FW_RoleSchema")
