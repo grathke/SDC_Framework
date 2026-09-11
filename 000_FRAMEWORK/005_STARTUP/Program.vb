@@ -70,7 +70,9 @@ Namespace SDC.Framework
         ''' handle is created.
         '''
         ''' Skipped for --generate-request, which is the page generator's command-line path: it
-        ''' draws nothing, exits immediately, and has no browser to wait for.
+        ''' draws nothing, exits immediately, and has no browser to wait for. Skipped too for
+        ''' --no-tf, which is the ordinary development run: starting VirtualUI costs a few seconds
+        ''' and a second server process, and most of the time nobody wants a browser.
         '''
         ''' Nothing here can stop the application starting. Section 2 records that the wrapper
         ''' no-ops when its DLL cannot be loaded - Start() returns False and every later call does
@@ -79,8 +81,10 @@ Namespace SDC.Framework
         ''' log: a delivery mechanism that fails must not take the application down with it.
         ''' </summary>
         Private Sub StartVirtualUI(args As String())
-            If args IsNot Nothing AndAlso
-               args.Any(Function(arg) String.Equals(arg, "--generate-request", StringComparison.OrdinalIgnoreCase)) Then
+            If args Is Nothing Then Return
+            If args.Any(Function(arg) String.Equals(arg, "--generate-request", StringComparison.OrdinalIgnoreCase) OrElse
+                                      String.Equals(arg, "--no-tf", StringComparison.OrdinalIgnoreCase)) Then
+                Log("VirtualUI skipped by command line")
                 Return
             End If
 

@@ -20,6 +20,12 @@ param(
     ,
     [Parameter(Mandatory = $false)]
     [switch]$Preview
+
+    ,
+    # Skip Thinfinity VirtualUI. Starting it costs a few seconds and a second server process, and
+    # an ordinary development run has no browser waiting at the other end.
+    [Parameter(Mandatory = $false)]
+    [switch]$NoTF
 )
 
 $env:SDC_DB_SERVER = $Server
@@ -36,8 +42,13 @@ Write-Host "  Database: $($env:SDC_DB_NAME)"
 Write-Host "  Encrypt: $($env:SDC_DB_ENCRYPT)"
 Write-Host "  TrustServerCertificate: $($env:SDC_DB_TRUST_SERVER_CERT)"
 
-if ($Preview) {
-    & dotnet run --project ".\SDC.Framework.vbproj" -- --preview
+$appArgs = @()
+if ($Preview) { $appArgs += '--preview' }
+if ($NoTF)    { $appArgs += '--no-tf' }
+
+if ($appArgs.Count -gt 0) {
+    Write-Host "  App arguments: $($appArgs -join ' ')"
+    & dotnet run --project ".\SDC.Framework.vbproj" -- @appArgs
 }
 else {
     & dotnet run --project ".\SDC.Framework.vbproj"
