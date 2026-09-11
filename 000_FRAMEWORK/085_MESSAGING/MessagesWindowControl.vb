@@ -44,9 +44,27 @@ Namespace SDC.Framework
             sentButton = CreateTab("Sent", AddressOf Sent_Click, 58)
             archiveButton = CreateTab("Archive", AddressOf Archive_Click, 70)
             trashButton = CreateTab("Trash", AddressOf Trash_Click, 58)
-            tabs.Controls.AddRange({inboxButton, sentButton, archiveButton, trashButton})
+            ' What the yellow rows mean, on the strip directly above them. A legend rather than a
+            ' tooltip: hover is the gesture that degrades under VirtualUI, where mouse-move events
+            ' are coalesced and a tooltip arrives late or not at all, so the explanation of a
+            ' colour should not be something the user has to find by hovering.
+            Dim unreadSwatch = New Label With {
+                .Text = String.Empty,
+                .Size = New Size(14, 14),
+                .BackColor = Color.LightYellow,
+                .BorderStyle = BorderStyle.FixedSingle,
+                .Margin = New Padding(18, 9, 4, 0)
+            }
+            Dim unreadLegend = New Label With {
+                .Text = "unread",
+                .AutoSize = True,
+                .ForeColor = Color.FromArgb(110, 118, 128),
+                .Margin = New Padding(0, 8, 0, 0)
+            }
 
-            messageGrid = New DataGridView With {.Dock = DockStyle.Fill, .ReadOnly = True, .AllowUserToAddRows = False, .AllowUserToDeleteRows = False, .RowHeadersVisible = False, .SelectionMode = DataGridViewSelectionMode.FullRowSelect, .AutoSizeColumnsMode = DataGridViewAutoSizeColumnsMode.Fill}
+            tabs.Controls.AddRange({inboxButton, sentButton, archiveButton, trashButton, unreadSwatch, unreadLegend})
+
+            messageGrid = New DataGridView With {.Dock = DockStyle.Fill, .ReadOnly = True, .AllowUserToAddRows = False, .AllowUserToDeleteRows = False, .RowHeadersVisible = False, .SelectionMode = DataGridViewSelectionMode.FullRowSelect, .MultiSelect = False, .AutoSizeColumnsMode = DataGridViewAutoSizeColumnsMode.Fill}
             messageGrid.Columns.Add("RecipientID", "RecipientID")
             messageGrid.Columns("RecipientID").Visible = False
             messageGrid.Columns.Add("MessageID", "MessageID")
@@ -59,7 +77,14 @@ Namespace SDC.Framework
             messageGrid.Columns("IsRead").Visible = False
             ApplyLightBlueHeaderStyle(messageGrid)
             AddHandler messageGrid.SelectionChanged, AddressOf MessageGrid_SelectionChanged
+            AddHandler messageGrid.CellClick, AddressOf MessageGrid_CellClick
             AddHandler messageGrid.CellDoubleClick, AddressOf MessageGrid_CellDoubleClick
+
+            ' Clearing the selection during a load does not survive what happens next: a focused
+            ' DataGridView with no current cell sets one at once, and that selects its row. So the
+            ' newest message still arrived highlighted with its body in the preview, which reads
+            ' as opened. Posting the clear puts it after focus and layout have settled.
+            AddHandler Me.VisibleChanged, AddressOf Messages_VisibleChanged
 
             messageToolTip = New ToolTip With {
                 .AutoPopDelay = 15000,
@@ -202,7 +227,17 @@ Namespace SDC.Framework
                                                         row.IsRead)
                     ApplyReadStyle(messageGrid.Rows(rowIndex), row.IsRead)
                 Next
-                inboxButton.Text = "Inbox (" & MessagingDataAccess.CountUnread(session.RegistrationID, currentUser.UserId).ToString() & ")"
+
+                ' Nothing selected until the user selects something. CurrentCell first and then
+                ' the selection: clearing the selection alone leaves the current cell set, and the
+                ' grid re-selects that cell's row the moment it can - so the newest message still
+                ' arrived highlighted, with its body in the preview, looking read before it was.
+                messageGrid.CurrentCell = Nothing
+                messageGrid.ClearSelection()
+                ' From the database rather than from the rows, because a reload is a check for
+                ' new mail and the grid may be showing Sent or Trash, which say nothing about the
+                ' inbox.
+                PublishUnreadCount(MessagingDataAccess.CountUnread(session.RegistrationID, currentUser.UserId))
                 UpdateTabVisuals()
                 moveButton.Enabled = True
                 deleteButton.Text = If(String.Equals(currentFolder, "Trash", StringComparison.OrdinalIgnoreCase), "Delete Forever", "Delete")
@@ -228,8 +263,35 @@ Namespace SDC.Framework
             MarkSelectedMessageRead()
         End Sub
 
+        ''' <summary>
+        ''' Shows the message. It does not mark it read - selection is not reading.
+        '''
+        ''' A DataGridView changes selection on its own more than once: when the first row is
+        ''' added, and again whenever the grid takes focus and re-selects its current cell. Both
+        ''' looked exactly like a click, so a new message was marked read by the Inbox merely
+        ''' appearing, and the menu's asterisk went out before anyone had seen it. Reading is a
+        ''' click, a double-click or View, and those say so.
+        ''' </summary>
         Private Sub MessageGrid_SelectionChanged(sender As Object, e As EventArgs)
             LoadSelectedPreview()
+        End Sub
+
+        ''' <summary>
+        ''' Leaves the list with nothing chosen each time the region is shown, so the first thing
+        ''' highlighted is the message the user picked.
+        ''' </summary>
+        Private Sub Messages_VisibleChanged(sender As Object, e As EventArgs)
+            If Not Me.Visible OrElse Not Me.IsHandleCreated Then Return
+
+            Me.BeginInvoke(Sub()
+                               messageGrid.ClearSelection()
+                               messageGrid.CurrentCell = Nothing
+                               previewTextBox.Clear()
+                           End Sub)
+        End Sub
+
+        Private Sub MessageGrid_CellClick(sender As Object, e As DataGridViewCellEventArgs)
+            If e.RowIndex < 0 Then Return
             MarkSelectedMessageRead()
         End Sub
 
@@ -266,8 +328,53 @@ Namespace SDC.Framework
 
             Dim session = SessionState.Current.Value
             MessagingDataAccess.MarkRecipientRead(recipientId, session.RegistrationID, currentUser.UserId)
-            RefreshMessages()
+            MarkRowRead(recipientId)
         End Sub
+
+        ''' <summary>
+        ''' Applies a read to the row on screen instead of reloading the folder.
+        '''
+        ''' Reading a message is not a check for new mail. It used to call RefreshMessages, which
+        ''' cost two more queries, cleared the grid under the user - losing the selection and the
+        ''' preview of the message they had just opened - and picked up new arrivals only as a side
+        ''' effect. The timer, the Refresh button and returning to the menu all look for new mail;
+        ''' this does not need to.
+        '''
+        ''' Everything that changed is already known: this row is read, and there is one less
+        ''' unread. Only reachable from the Inbox - MarkSelectedMessageRead returns on any other
+        ''' folder - so the rows on screen are the inbox and counting them is the same answer
+        ''' CountUnread would give.
+        ''' </summary>
+        Private Sub MarkRowRead(recipientId As Integer)
+            For Each row As DataGridViewRow In messageGrid.Rows
+                If Convert.ToInt32(row.Cells("RecipientID").Value) = recipientId Then
+                    row.Cells("IsRead").Value = True
+                    ApplyReadStyle(row, True)
+                    Exit For
+                End If
+            Next
+
+            PublishUnreadCount(UnreadRowsOnScreen())
+        End Sub
+
+        ''' <summary>
+        ''' The tab caption and the menu's marker, from one number, so the two can never disagree
+        ''' about whether there is unread mail.
+        ''' </summary>
+        Private Sub PublishUnreadCount(unread As Integer)
+            inboxButton.Text = "Inbox (" & unread.ToString() & ")"
+
+            Dim menu = TryCast(Me.FindForm(), FW_MainMenu)
+            If menu IsNot Nothing Then menu.SetNewMessageIndicator(unread > 0)
+        End Sub
+
+        Private Function UnreadRowsOnScreen() As Integer
+            Dim unread = 0
+            For Each row As DataGridViewRow In messageGrid.Rows
+                If Not Convert.ToBoolean(row.Cells("IsRead").Value) Then unread += 1
+            Next
+            Return unread
+        End Function
 
         Private Sub LoadSelectedPreview()
             If messageGrid.SelectedRows.Count = 0 OrElse currentUser Is Nothing OrElse Not SessionState.Current.HasValue Then

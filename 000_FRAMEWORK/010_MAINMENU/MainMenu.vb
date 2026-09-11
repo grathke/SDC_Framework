@@ -83,20 +83,22 @@ Namespace SDC.Framework
         ''' pixels *above* that edge; +8 was tried and overshot, so this is half that move.
         Private Const MessageMarkerDrop As Integer = 1
 
+        ''' <summary>
+        ''' The shortest gap between two checks, which only bites on Activated. Coming back to the
+        ''' menu should refresh the marker at once, but the menu is activated by every alt-tab and
+        ''' every closed dialog, and without a floor a user clicking about would fire a query per
+        ''' click.
+        ''' </summary>
+        Private Const MessageCheckMinGapMs As Integer = 15 * 1000
+
         ''' One timer for the session, not one per open page. Owned here because this form is the
         ''' one alive from sign-in to sign-out.
         Private messageCheckTimer As Timer
 
-        ''' <summary>
-        ''' TEMPORARY TEST SCAFFOLD - REMOVE.
-        '''
-        ''' Shows the red asterisk ten seconds after the menu opens, whether or not there is a
-        ''' message, so the marker can be judged on screen before the real thing is producing it.
-        ''' Delete this field, MessageMarkerTestDelayMs and StartMessageMarkerTest, and the one
-        ''' call in StartMessageChecks.
-        ''' </summary>
-        Private Const MessageMarkerTestDelayMs As Integer = 10 * 1000
-        Private messageMarkerTestTimer As Timer
+        ''' When the last check actually ran, for MessageCheckMinGapMs. Never written by a skipped
+        ''' check, so a run of skips does not push the next real one further away.
+        Private lastMessageCheckUtc As DateTime = DateTime.MinValue
+
         Private ReadOnly titleLabel As Label
         Private ReadOnly ribbonPanel As Panel
         Private ReadOnly leftActionsFlow As FlowLayoutPanel
@@ -729,6 +731,10 @@ Namespace SDC.Framework
             If messageCheckTimer Is Nothing Then
                 messageCheckTimer = New Timer() With {.Interval = MessageCheckIntervalMs}
                 AddHandler messageCheckTimer.Tick, AddressOf MessageCheckTimer_Tick
+
+                ' Wired once, with the timer, and left wired: the check inside answers whether
+                ' messaging is permitted, so a role change needs no rewiring here.
+                AddHandler Me.Activated, AddressOf MainMenu_Activated
             End If
 
             messageCheckTimer.Stop()
@@ -736,32 +742,43 @@ Namespace SDC.Framework
 
             ' Once immediately, so a message waiting at sign-in is not hidden for five minutes.
             CheckForNewMessages()
-
-            StartMessageMarkerTest()
         End Sub
 
         ''' <summary>
-        ''' TEMPORARY TEST SCAFFOLD - REMOVE. See MessageMarkerTestDelayMs.
+        ''' Ticks are cheap to skip and expensive to take, so the tick asks whether taking one
+        ''' could change anything a user can see.
         '''
-        ''' Fires once, ten seconds in, and forces the marker on so its size, colour and
-        ''' position can be judged without waiting for a real message. It runs after the genuine
-        ''' check, so if that has already found unread messages this changes nothing.
+        ''' The asterisk lives on this form and nowhere else - a page open over the menu shows no
+        ''' new-mail clue and was never meant to - so while a page is open the check has no
+        ''' audience. Skipping it is not only the saved query: the query runs on the UI thread, and
+        ''' an unreachable database blocks SqlConnection.Open for the connect timeout, which would
+        ''' otherwise land as a ten-second freeze in the middle of someone editing a record.
+        ''' Activated picks it straight back up when the page closes.
         ''' </summary>
-        Private Sub StartMessageMarkerTest()
-            If messageMarkerTestTimer IsNot Nothing Then Return
-
-            messageMarkerTestTimer = New Timer() With {.Interval = MessageMarkerTestDelayMs}
-            AddHandler messageMarkerTestTimer.Tick,
-                Sub(sender As Object, e As EventArgs)
-                    messageMarkerTestTimer.Stop()
-                    SetNewMessageIndicator(True)
-                End Sub
-            messageMarkerTestTimer.Start()
-        End Sub
-
         Private Sub MessageCheckTimer_Tick(sender As Object, e As EventArgs)
+            If Not MenuIsFrontmost() Then Return
             CheckForNewMessages()
         End Sub
+
+        ''' <summary>
+        ''' Returning to the menu is the moment the marker becomes visible again, so it is checked
+        ''' then rather than leaving the user to wait out the rest of the interval looking at a
+        ''' marker that was accurate when they left.
+        ''' </summary>
+        Private Sub MainMenu_Activated(sender As Object, e As EventArgs)
+            If messageCheckTimer Is Nothing OrElse Not messageCheckTimer.Enabled Then Return
+            If (DateTime.UtcNow - lastMessageCheckUtc).TotalMilliseconds < MessageCheckMinGapMs Then Return
+            CheckForNewMessages()
+        End Sub
+
+        ''' <summary>
+        ''' True when this form is the active one. A modal page makes the page the active form, and
+        ''' the whole application losing focus makes ActiveForm nothing - both are cases where the
+        ''' marker cannot be seen, and both are answered by the same test.
+        ''' </summary>
+        Private Function MenuIsFrontmost() As Boolean
+            Return Form.ActiveForm Is Me
+        End Function
 
         ''' <summary>
         ''' One query, then two consequences: the marker beside the registration name always, and
@@ -778,6 +795,16 @@ Namespace SDC.Framework
             Try
                 If Not SessionState.Current.HasValue Then Return
                 Dim session = SessionState.Current.Value
+
+                lastMessageCheckUtc = DateTime.UtcNow
+
+                ' The interval measures from the last check, not from the last tick. Coming back
+                ' from a page checks, so without this the timer could fire seconds later and ask
+                ' again - and every return to the menu would leave a shorter gap behind it.
+                If messageCheckTimer IsNot Nothing AndAlso messageCheckTimer.Enabled Then
+                    messageCheckTimer.Stop()
+                    messageCheckTimer.Start()
+                End If
 
                 Dim unread = MessagingDataAccess.CountUnread(session.RegistrationID, currentUser.UserId)
                 SetNewMessageIndicator(unread > 0)
@@ -1045,13 +1072,8 @@ Namespace SDC.Framework
         ''' <summary>
         ''' Shows or hides the unread marker beside the registration name.
         '''
-        ''' The only switch. Nothing calls it yet, deliberately - what decides "there is a new
-        ''' message" is still open - so the marker is wired, positioned and sized, and inert. When
-        ''' the rule is settled, whatever polls MessagingDataAccess.CountUnread calls this and
-        ''' nothing else has to change.
-        ''' </summary>
-        ''' <summary>
-        ''' Shows or hides the unread marker beside the registration name.
+        ''' The only switch, and public because two things decide it: this form's own check, and
+        ''' MessagesWindowControl.RefreshMessages, which has the count in hand already.
         '''
         ''' The permission is checked here rather than only at the call sites, so nothing can put
         ''' the marker on screen for a role that may not read messages - not a caller that forgets,
