@@ -123,8 +123,18 @@ Namespace SDC.Framework
                 ' False when nothing attached, and the application then falls back to running on
                 ' the desktop: invisible there would mean no interface at all.
                 If started Then
-                    virtualUI.Options = virtualUI.Options Or CUInt(Cybele.Thinfinity.Options.OPT_APPINVISIBLE)
-                    StartSessionWatch()
+                    ' APPINVISIBLE so the window exists in the tab and not on the desktop.
+                    '
+                    ' NOHTML_DRAG because VirtualUI otherwise treats a drag in the browser as an
+                    ' HTML5 drag - which is how a file gets dragged from the desktop into the
+                    ' application, and which swallows the mouse-down, move and up a drag *inside*
+                    ' the application needs. Rearranging ribbon tiles did nothing in a browser for
+                    ' that reason, and grid column reordering is the same gesture. Nothing here
+                    ' accepts a dropped file - the Help Desk uses a file dialog - so the trade is
+                    ' one-sided.
+                    virtualUI.Options = virtualUI.Options Or
+                                        CUInt(Cybele.Thinfinity.Options.OPT_APPINVISIBLE) Or
+                                        CUInt(Cybele.Thinfinity.Options.OPT_NOHTML_DRAG)
                 End If
 
                 Log("VirtualUI DevMode=" & devMode.ToString() &
@@ -138,54 +148,16 @@ Namespace SDC.Framework
         End Sub
 
         ''' <summary>
-        ''' Watches for the browser going away, and ends the process when it does.
-        '''
-        ''' OnClose is not enough. Closing a tab leaves the session disconnected rather than
-        ''' closed - which is deliberate in dev mode, where a reload is expected to pick the same
-        ''' session back up - so the event never fires and the process is left running with no
-        ''' window anyone can close. Active is the property that actually tracks whether a browser
-        ''' is attached.
-        '''
-        ''' The grace period is the whole design. A reload drops Active for a moment, and exiting
-        ''' on the first false reading would make refreshing the page kill the application.
-        ''' SessionGraceSeconds of continuous absence means the browser is gone rather than busy.
-        ''' </summary>
-        Private Const SessionPollMs As Integer = 5000
-        Private Const SessionGraceSeconds As Integer = 30
-        Private sessionWatch As System.Threading.Timer
-        Private sessionAbsentSeconds As Integer
-
-        Private Sub StartSessionWatch()
-            sessionAbsentSeconds = 0
-            sessionWatch = New System.Threading.Timer(AddressOf SessionWatchTick, Nothing, SessionPollMs, SessionPollMs)
-        End Sub
-
-        Private Sub SessionWatchTick(state As Object)
-            Try
-                If virtualUI Is Nothing Then Return
-
-                If virtualUI.Active Then
-                    If sessionAbsentSeconds > 0 Then Log("VirtualUI browser reattached")
-                    sessionAbsentSeconds = 0
-                    Return
-                End If
-
-                sessionAbsentSeconds += SessionPollMs \ 1000
-                If sessionAbsentSeconds < SessionGraceSeconds Then
-                    Log("VirtualUI browser absent for " & sessionAbsentSeconds.ToString() & "s")
-                    Return
-                End If
-
-                Log("VirtualUI browser gone for " & sessionAbsentSeconds.ToString() & "s - exiting")
-                sessionWatch.Change(System.Threading.Timeout.Infinite, System.Threading.Timeout.Infinite)
-                VirtualUISessionClosed(Nothing, Nothing)
-            Catch ex As Exception
-                Log("Session watch failed: " & ex.Message)
-            End Try
-        End Sub
-
-        ''' <summary>
         ''' Ends the process when the browser session ends.
+        '''
+        ''' OnClose is the only signal that works. Active was polled here as well, on the theory
+        ''' that a closed tab might leave the session merely disconnected - but measured on
+        ''' 2026-09-11, Active stayed True for the whole three and a half minutes between the
+        ''' browser closing and OnClose arriving, so the poll never counted and never would. A
+        ''' safety net that cannot fire is worse than none: it reads like cover that is not there.
+        '''
+        ''' The delay before OnClose is VirtualUI's own disconnect grace, and is a server setting
+        ''' rather than anything this can hurry along.
         '''
         ''' Application.Exit first, so forms close through their own Closing handlers and anything
         ''' with cleanup gets to run. The timer behind it is not defensive decoration: Exit will

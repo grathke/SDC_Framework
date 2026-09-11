@@ -3,6 +3,7 @@ Option Explicit On
 
 Imports System.Collections.Generic
 Imports System.Drawing
+Imports System.Drawing.Imaging
 Imports System.Linq
 Imports System.Windows.Forms
 
@@ -115,6 +116,26 @@ Namespace SDC.Framework
         Private dragged As Control
         Private dragStart As Point
         Private dragging As Boolean
+
+        ''' <summary>
+        ''' A faded copy of the tile, following the pointer for as long as the drag lasts.
+        '''
+        ''' The row itself cannot follow a cursor - a FlowLayoutPanel owns its children's positions,
+        ''' so the tile only ever jumps between slots - and on the desktop that reads as snappy. In
+        ''' a browser it does not: VirtualUI coalesces mouse-move, so the slot changes arrive in
+        ''' clumps and the tile appears to sit still and then teleport. The ghost is the continuous
+        ''' half of the feedback, and the reflowing row remains the part that says where it will
+        ''' land.
+        '''
+        ''' A child of the form rather than a layered window of its own, because moving a child
+        ''' control is one repaint inside a window VirtualUI is already streaming, where a floating
+        ''' top-level window would be a second surface to composite on every move.
+        ''' </summary>
+        Private dragGhost As PictureBox
+
+        ''' Where in the tile it was picked up, so the ghost sits under the pointer the way the
+        ''' tile did rather than snapping its corner to the cursor.
+        Private dragGrabOffset As Size
 
         ''' Whether the drop-span bar is currently drawn. Held rather than read back off the panel,
         ''' because the bar is painted and there is nothing on the panel to read.
@@ -463,7 +484,91 @@ Namespace SDC.Framework
             dragged.Capture = True
 
             dragStart = panel.PointToClient(Control.MousePosition)
+
+            Dim insideTile = dragged.PointToClient(Control.MousePosition)
+            dragGrabOffset = New Size(insideTile.X, insideTile.Y)
+
             dragging = False
+        End Sub
+
+        ''' <summary>
+        ''' Builds the ghost from what the tile actually looks like, rather than from its icon.
+        '''
+        ''' DrawToBitmap gives the caption, the image and the current colours in one go, so the
+        ''' thing being dragged looks like the thing that was picked up - including a two-line
+        ''' caption or a tile whose picture an administrator has changed.
+        '''
+        ''' The fade is baked into the bitmap. A child control cannot be semi-transparent in
+        ''' WinForms, so the pixels are blended towards the ribbon's own background once, here,
+        ''' instead of every paint.
+        ''' </summary>
+        Private Sub ShowDragGhost()
+            HideDragGhost()
+
+            Dim host = panel.FindForm()
+            If host Is Nothing OrElse dragged Is Nothing Then Return
+            If dragged.Width <= 0 OrElse dragged.Height <= 0 Then Return
+
+            Dim snapshot As New Bitmap(dragged.Width, dragged.Height)
+            dragged.DrawToBitmap(snapshot, New Rectangle(0, 0, dragged.Width, dragged.Height))
+
+            dragGhost = New PictureBox() With {
+                .Image = Fade(snapshot, panel.BackColor),
+                .Size = dragged.Size,
+                .BorderStyle = BorderStyle.FixedSingle,
+                .BackColor = panel.BackColor,
+                .Enabled = False
+            }
+
+            snapshot.Dispose()
+
+            host.Controls.Add(dragGhost)
+            dragGhost.BringToFront()
+        End Sub
+
+        ''' <summary>
+        ''' Blends every pixel towards a background colour, which is how a faded child control is
+        ''' done without transparency: draw the colour, then the image at partial alpha over it.
+        ''' </summary>
+        Private Shared Function Fade(source As Bitmap, towards As Color) As Bitmap
+            Dim faded As New Bitmap(source.Width, source.Height)
+
+            Using canvas = Graphics.FromImage(faded)
+                canvas.Clear(towards)
+
+                Dim matrix As New ColorMatrix() With {.Matrix33 = 0.55F}
+                Using attributes As New ImageAttributes()
+                    attributes.SetColorMatrix(matrix)
+                    canvas.DrawImage(source,
+                                     New Rectangle(0, 0, source.Width, source.Height),
+                                     0, 0, source.Width, source.Height,
+                                     GraphicsUnit.Pixel,
+                                     attributes)
+                End Using
+            End Using
+
+            Return faded
+        End Function
+
+        Private Sub MoveDragGhost()
+            If dragGhost Is Nothing Then Return
+
+            Dim host = dragGhost.Parent
+            If host Is Nothing Then Return
+
+            Dim pointer = host.PointToClient(Control.MousePosition)
+            dragGhost.Location = New Point(pointer.X - dragGrabOffset.Width, pointer.Y - dragGrabOffset.Height)
+        End Sub
+
+        Private Sub HideDragGhost()
+            If dragGhost Is Nothing Then Return
+
+            Dim old = dragGhost
+            dragGhost = Nothing
+
+            If old.Parent IsNot Nothing Then old.Parent.Controls.Remove(old)
+            If old.Image IsNot Nothing Then old.Image.Dispose()
+            old.Dispose()
         End Sub
 
         ''' <summary>
@@ -492,7 +597,10 @@ Namespace SDC.Framework
                 If tile IsNot Nothing Then tile.SuppressNextClick = True
 
                 ShowDragBounds(True)
+                ShowDragGhost()
             End If
+
+            MoveDragGhost()
 
             Dim index = panel.Controls.GetChildIndex(dragged)
             Dim target = IndexUnderPointer(current.X)
@@ -548,6 +656,7 @@ Namespace SDC.Framework
             ' Unconditionally, not only on the drag path: a press that never became one never showed
             ' the bar, and ShowDragBounds is a no-op when it is already down.
             ShowDragBounds(False)
+            HideDragGhost()
 
             If Not dragging Then
                 ' Never passed the threshold, so this was a click. The tile's own Click handler
