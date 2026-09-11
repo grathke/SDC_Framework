@@ -1640,8 +1640,20 @@ Namespace SDC.Framework
 
             Dim name = tableName.Trim()
             
-            ' Strip FW_ or AS_ prefix (case-insensitive in VB.NET)
-            If name.ToUpper().StartsWith("FW_") Then
+            ' Strip FW_Perm_, FW_ or AS_ prefix (case-insensitive in VB.NET).
+            '
+            ' FW_Perm_ first, because the longer prefix has to win: three characters off
+            ' FW_Perm_Dashboard leaves "Perm Dashboard", which is what an administrator saw in the
+            ' Roles table list until 2026-09-10. The prefix marks a table that exists only to carry
+            ' a permission - see CLAUDE.md - and it is for developers, not for the person ticking
+            ' the box.
+            '
+            ' This matters more than a one-off correction to the row would: the schema sync
+            ' rewrites Table_Alias from this function every time it runs, so an alias fixed by hand
+            ' is undone on the next sync.
+            If name.ToUpper().StartsWith("FW_PERM_") Then
+                name = name.Substring(8)
+            ElseIf name.ToUpper().StartsWith("FW_") Then
                 name = name.Substring(3)
             ElseIf name.ToUpper().StartsWith("AS_") Then
                 name = name.Substring(3)
@@ -5589,8 +5601,16 @@ Namespace SDC.Framework
 
             Using conn As New SqlConnection(ConnectionString)
                 conn.Open()
+                ' Ordered by the alias, which is the column Roles_U actually shows. It was ordered
+                ' by DB_Table, so the list sorted on a value nobody could see: FW_Perm_Dashboard
+                ' displays as "Dashboard" and sorted under P, and every FW_ table sorted as though
+                ' the prefix were part of its name.
+                '
+                ' Falls back to DB_Table where the alias is blank, so a row with no alias still
+                ' lands somewhere predictable rather than at the top.
                 Using cmd As New SqlCommand(
-                    "SELECT ID, DB_Table, Table_Alias FROM dbo.FW_RoleSchema WHERE IsActive = 1 ORDER BY DB_Table", conn)
+                    "SELECT ID, DB_Table, Table_Alias FROM dbo.FW_RoleSchema WHERE IsActive = 1 " &
+                    "ORDER BY ISNULL(NULLIF(LTRIM(RTRIM(Table_Alias)), ''), DB_Table), DB_Table", conn)
                     
                     Using da As New SqlDataAdapter(cmd)
                         da.Fill(table)
@@ -6401,9 +6421,23 @@ Namespace SDC.Framework
             Next
         End Sub
 
+        ''' <summary>
+        ''' Adds a table to a role, with its field rows.
+        '''
+        ''' readOnlyGate is for a table whose only purpose is to be permitted or not - it grants
+        ''' Read and nothing else. Everything else keeps the long-standing defaults, which are
+        ''' Create, Update, Delete and QBE on and **Read off**. That combination is odd but it is
+        ''' not being changed here: it is what every existing row was created with, and a table
+        ''' added today should match the ones added yesterday.
+        '''
+        ''' For a gate table those defaults are actively wrong. Adding it would grant everything
+        ''' except the one permission that decides whether the feature appears at all, so an
+        ''' administrator who had just enabled a table would find nothing had happened.
+        ''' </summary>
         Public Shared Function AddRoleTableWithFields(roleId As Integer, registrationId As Integer, 
                                                       roleSchemaId As Integer, dbTable As String, 
-                                                      tableAlias As String, tableCaption As String) As Integer
+                                                      tableAlias As String, tableCaption As String,
+                                                      Optional readOnlyGate As Boolean = False) As Integer
             Using conn As New SqlConnection(ConnectionString)
                 conn.Open()
                 Using trans = conn.BeginTransaction()
@@ -6415,8 +6449,14 @@ Namespace SDC.Framework
                             "VALUES (@RoleID, @RegistrationID, @RoleSchemaID, @DBTable, @TableAlias, " &
                             "COALESCE((SELECT TOP 1 NULLIF(LTRIM(RTRIM(OverrideCaption)), '') FROM dbo.FW_RoleDetails " &
                             "WHERE RegistrationID = @RegistrationID AND SchemaID = @RoleSchemaID AND DB_Table = @DBTable AND RoleID <> @RoleID " &
-                            "ORDER BY RoleID), @TableCaption), 1, 0, 1, 1, 1, 1, @CreatedBy, GETDATE()); " &
+                            "ORDER BY RoleID), @TableCaption), @CanCreate, @CanRead, @CanUpdate, @CanDelete, @CanUseQbe, 1, @CreatedBy, GETDATE()); " &
                             "SELECT CAST(SCOPE_IDENTITY() as int)", conn, trans)
+
+                            cmd.Parameters.AddWithValue("@CanCreate", If(readOnlyGate, 0, 1))
+                            cmd.Parameters.AddWithValue("@CanRead", If(readOnlyGate, 1, 0))
+                            cmd.Parameters.AddWithValue("@CanUpdate", If(readOnlyGate, 0, 1))
+                            cmd.Parameters.AddWithValue("@CanDelete", If(readOnlyGate, 0, 1))
+                            cmd.Parameters.AddWithValue("@CanUseQbe", If(readOnlyGate, 0, 1))
                             
                             cmd.Parameters.AddWithValue("@RoleID", roleId)
                             cmd.Parameters.AddWithValue("@RegistrationID", registrationId)

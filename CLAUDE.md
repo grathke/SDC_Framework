@@ -250,6 +250,18 @@ Key areas:
 - Database tables that belong to the framework are prefixed `FW_`, for example `dbo.FW_Users`.
 - Pages that belong to the framework are prefixed `FW_`, for example `FW_Registration_B`.
 - Application-specific tables and pages built on top of the framework do **not** take the prefix.
+- **A table that exists only to carry a permission takes `FW_Perm_`**, holds no data and has no
+  `_B`/`_U` pair — `FW_Perm_Dashboard` gates the Dashboard tile. It is a real table, not a name
+  invented at a call site: the sweep required when removing a page reports every `FW_RoleDetails`
+  row whose `OBJECT_ID('dbo.' + DB_Table)` is null, and a permission keyed to nothing would sit in
+  that report forever until somebody learned to ignore it. `TableMessaging` was that mistake — it
+  read `"MESSAGING"`, which matched no table and no `FW_RoleSchema` row, so the permission it
+  resolved against could never be granted by anyone.
+  - give it the primary key the convention asks for and no other column
+  - add its `FW_RoleSchema` row, or `Roles_U` will not offer it
+  - set `Table_Alias` to what an administrator should read — "Dashboard", not the table name
+  - the prefix is a warning as much as a label: an empty table with no marker looks like one whose
+    data has gone missing, and reads as a candidate for deletion
 - `_B` = browse page: a grid listing rows, from which a record is selected to view, edit or delete.
 - `_U` = maintenance page: create, update, read and delete of a single record.
 - `_B` and `_U` pages are normally created as a pair against the same underlying table.

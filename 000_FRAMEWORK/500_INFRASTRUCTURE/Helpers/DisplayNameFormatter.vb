@@ -21,7 +21,8 @@ Namespace SDC.Framework
         ''' them at a call site.
         ''' </summary>
         Private ReadOnly Acronyms As New HashSet(Of String)(StringComparer.OrdinalIgnoreCase) From {
-            "ID", "PK", "SSN", "DOB", "QBE", "SQL", "HD", "US", "UI", "URL", "PIN", "FAX"
+            "ID", "PK", "SSN", "DOB", "QBE", "SQL", "HD", "US", "UI", "URL", "PIN", "FAX",
+            "SDC", "WX"
         }
 
         ''' <summary>
@@ -56,7 +57,14 @@ Namespace SDC.Framework
 
             Dim text = name.Trim()
 
-            If stripFrameworkPrefix AndAlso text.StartsWith("FW_", StringComparison.OrdinalIgnoreCase) Then
+            ' FW_Perm_ before FW_, because the longer prefix has to win: stripping three
+            ' characters from FW_Perm_Dashboard leaves "Perm Dashboard", which shows an
+            ' administrator a naming convention instead of a feature. The prefix marks a table
+            ' that exists only to carry a permission - see CLAUDE.md - and it is for developers,
+            ' not for the person ticking the box.
+            If stripFrameworkPrefix AndAlso text.StartsWith("FW_Perm_", StringComparison.OrdinalIgnoreCase) Then
+                text = text.Substring(8)
+            ElseIf stripFrameworkPrefix AndAlso text.StartsWith("FW_", StringComparison.OrdinalIgnoreCase) Then
                 text = text.Substring(3)
             End If
 

@@ -227,9 +227,13 @@ Namespace SDC.Framework
                 .AutoSizeMode = DataGridViewAutoSizeColumnMode.None,
                 .ReadOnly = True
             })
+            ' Can_Read is captioned "Read", not "Read Only" as it was until 2026-09-10. "Read
+            ' Only" described a mode rather than the column: it grants read access, and a role can
+            ' hold it alongside Create, Update and Delete, so the caption promised an exclusivity
+            ' that nothing enforces. The field grid below has always called it "Read".
             For Each def In New (String, String)() {
                 ("Can_Create", "Create"),
-                ("Can_Read", "Read Only"),
+                ("Can_Read", "Read"),
                 ("Can_Update", "Update"),
                 ("Can_Delete", "Delete"),
                 ("Can_ViewAllRecords", "View All"),
@@ -262,6 +266,7 @@ Namespace SDC.Framework
             AddHandler rightGrid.CurrentCellDirtyStateChanged, AddressOf RightGrid_CurrentCellDirtyStateChanged
             AddHandler rightGrid.CellValueChanged, AddressOf RightGrid_CellValueChanged
             AddHandler rightGrid.SelectionChanged, AddressOf RightGrid_SelectionChanged
+            AddHandler rightGrid.DataBindingComplete, AddressOf RightGrid_DataBindingComplete
             Me.Controls.Add(rightGrid)
 
             ' OK Button
@@ -561,6 +566,58 @@ Namespace SDC.Framework
             Return String.Empty
         End Function
 
+        ''' <summary>
+        ''' A table whose permission exists only to switch a feature on, where Read is the whole
+        ''' question and nothing else means anything.
+        '''
+        ''' Two kinds qualify. **FW_Perm_ by prefix**, because that prefix means precisely this -
+        ''' a table with no data that exists to be permitted or not - so every one of them is a
+        ''' gate by definition and none has to be listed.
+        '''
+        ''' **FW_Messages by name**, deliberately not by prefix: it is a real table with real rows,
+        ''' and Create or Delete on it could one day mean "may compose" or "may delete a message".
+        ''' Naming it is a decision reversed by deleting a line.
+        ''' </summary>
+        Private Shared Function IsReadOnlyGateTable(dbTable As String) As Boolean
+            If String.IsNullOrWhiteSpace(dbTable) Then Return False
+
+            Dim name = dbTable.Trim()
+            If name.StartsWith("FW_Perm_", StringComparison.OrdinalIgnoreCase) Then Return True
+
+            Return String.Equals(name, "FW_Messages", StringComparison.OrdinalIgnoreCase)
+        End Function
+
+        ''' <summary>
+        ''' Greys out the permissions that mean nothing on a gate table, so the only tick that has
+        ''' an effect is the only tick that can be made.
+        '''
+        ''' On binding rather than on paint: the cells are read-only for good, not styled per
+        ''' redraw, so an edit cannot start in the first place. The Read column is deliberately
+        ''' left alone.
+        ''' </summary>
+        Private Sub RightGrid_DataBindingComplete(sender As Object, e As DataGridViewBindingCompleteEventArgs)
+            If rightGrid Is Nothing OrElse Not rightGrid.Columns.Contains("Can_Read") Then Return
+
+            Dim locked = New String() {"Can_Create", "Can_Update", "Can_Delete",
+                                       "Can_ViewAllRecords", "Can_ViewOnlyMyRecords", "Can_UseQBE"}
+
+            For Each row As DataGridViewRow In rightGrid.Rows
+                If row.IsNewRow Then Continue For
+
+                Dim boundRow = TryCast(row.DataBoundItem, DataRowView)
+                If boundRow Is Nothing OrElse Not boundRow.Row.Table.Columns.Contains("DB_Table") Then Continue For
+                If Not IsReadOnlyGateTable(Convert.ToString(boundRow("DB_Table"))) Then Continue For
+
+                For Each columnName In locked
+                    If Not rightGrid.Columns.Contains(columnName) Then Continue For
+                    Dim cell = row.Cells(columnName)
+                    cell.ReadOnly = True
+                    cell.Style.BackColor = Color.FromArgb(238, 240, 242)
+                    cell.Style.ForeColor = Color.FromArgb(170, 176, 183)
+                Next
+            Next
+        End Sub
+
         Private Sub LoadRightGrid()
             Try
                 Dim table = DataAccess.GetRoleDetailsForRole(_roleId, _registrationId)
@@ -622,7 +679,8 @@ Namespace SDC.Framework
                                                                   roleSchemaId,
                                                                   dbTable,
                                                                   tableAlias,
-                                                                  tableAlias)
+                                                                  tableAlias,
+                                                                  IsReadOnlyGateTable(dbTable))
                     If newId <= 0 Then
                         MessageBox.Show("Failed to add table permission.", "Error")
                         Return
