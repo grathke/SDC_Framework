@@ -306,7 +306,20 @@ Namespace SDC.Framework
             Me.StartPosition = FormStartPosition.CenterScreen
             Me.FormBorderStyle = FormBorderStyle.Sizable
             Me.MaximizeBox = True
-            Me.MinimizeBox = True
+
+            ' No minimise box in a browser. Minimising puts the window somewhere the session has no
+            ' taskbar to bring it back from, so the button is a way to lose the application inside
+            ' its own tab. Windows will not hide one box on its own - a form with a maximise box
+            ' and no minimise box draws the minimise button greyed rather than absent - so the
+            ' maximise box goes with it, and maximising stays available by double-clicking the
+            ' caption or dragging the window to the top of the session.
+            If Program.InBrowserSession Then
+                Me.MinimizeBox = False
+                Me.MaximizeBox = False
+            Else
+                Me.MinimizeBox = True
+                Me.MaximizeBox = True
+            End If
 
             ' No grip in the corner. The default is Auto, which draws one whenever a form is shown
             ' as a dialog - and the menu is, through LoginForm's ShowDialog - so the shell carried a
@@ -326,6 +339,20 @@ Namespace SDC.Framework
             ' than a 768-high laptop's browser viewport, and that wants measuring rather than
             ' guessing before anything here moves.
             Me.ClientSize = New Size(MinimumWindowWidth - WindowBorderWidth, 800 - TitleBandHeight - RibbonTrim)
+
+            ' In a browser the shell is one size and the browser does the scaling. VirtualUI's "fit
+            ' to browser window" grows the whole canvas with the tab, which enlarges the menu
+            ' without re-laying it out - where resizing the window instead leaves the pinned tiles
+            ' anchored to a right edge that has moved, and the ribbon opens up a gap across the
+            ' middle.
+            '
+            ' MaximumSize rather than only hiding the maximise box, because the box is not the only
+            ' way to maximise: double-clicking the caption or dragging the window to the top of the
+            ' session does it too. With minimum and maximum equal there is no size to argue about.
+            If Program.InBrowserSession Then
+                Me.MaximumSize = Me.Size
+            End If
+
             Me.BackColor = Color.White
 
             ' The application's name, from the assembly rather than typed here, so a second

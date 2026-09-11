@@ -63,6 +63,27 @@ Namespace SDC.Framework
         Private virtualUI As Cybele.Thinfinity.VirtualUI
 
         ''' <summary>
+        ''' True when this process is being watched through a browser rather than run on a desktop.
+        '''
+        ''' Set once, from Start()'s own answer, rather than read from Active on demand: Active was
+        ''' measured on 2026-09-11 still reporting True three and a half minutes after the browser
+        ''' had gone, so it says "this process belongs to a session" rather than "somebody is
+        ''' looking". For deciding what a window should offer, the first question is the right one -
+        ''' the answer must not change halfway through a session.
+        '''
+        ''' Exposed because window furniture is decided by the windows themselves. The main menu
+        ''' hides its minimise box on this: minimising inside a browser tab puts the application
+        ''' somewhere there is no taskbar to get it back from.
+        ''' </summary>
+        Friend ReadOnly Property InBrowserSession As Boolean
+            Get
+                Return virtualUISessionAttached
+            End Get
+        End Property
+
+        Private virtualUISessionAttached As Boolean
+
+        ''' <summary>
         ''' Starts the VirtualUI session, before anything is drawn.
         '''
         ''' Section 3 of the notes is explicit that this comes first - ahead of EnableVisualStyles
@@ -122,6 +143,8 @@ Namespace SDC.Framework
                 ' setting. It is applied after Start() rather than before because Start() returns
                 ' False when nothing attached, and the application then falls back to running on
                 ' the desktop: invisible there would mean no interface at all.
+                virtualUISessionAttached = started
+
                 If started Then
                     ' APPINVISIBLE so the window exists in the tab and not on the desktop.
                     '
