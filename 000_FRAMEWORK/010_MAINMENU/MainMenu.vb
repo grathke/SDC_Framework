@@ -12,8 +12,21 @@ Namespace SDC.Framework
     Public Class FW_MainMenu
         Inherits Form
 
+        ''' <summary>
+        ''' The panels of the menu body.
+        '''
+        ''' RegionLeft is named for where it is; the rest are still named for what they hold. That
+        ''' is deliberate and temporary. A region's occupant changes - RegionLeft shows Messages to
+        ''' a role that may read them and Overview to one that may not - so a content name stops
+        ''' being true the moment a region can swap. Position does not change.
+        '''
+        ''' The others keep their content names until the layout is settled: the right-hand cell
+        ''' holds two regions side by side rather than one, and whether they end up left/right or
+        ''' top/bottom decides what they should be called. Renaming them twice is worse than
+        ''' leaving them for now.
+        ''' </summary>
         Public Enum MenuRegion
-            Messages
+            RegionLeft
             GeneralDashboard
             AcmeDashboard
             UsersAndLists
@@ -57,10 +70,39 @@ Namespace SDC.Framework
 
         Private ReadOnly currentUser As UserContext
         Private activeAccessProfile As AccessProfile
+
+        ''' <summary>
+        ''' How often to look for new messages. **Temporary** - it belongs on the registration and
+        ''' user-adjustable from there, because the right number depends on the site: a support
+        ''' desk wants a minute, a two-person office does not want the traffic. Five minutes is a
+        ''' placeholder chosen to be cheap rather than right.
+        ''' </summary>
+        Private Const MessageCheckIntervalMs As Integer = 5 * 60 * 1000
+
+        ''' How far below the registration name's top edge the asterisk sits. It used to be six
+        ''' pixels *above* that edge; +8 was tried and overshot, so this is half that move.
+        Private Const MessageMarkerDrop As Integer = 1
+
+        ''' One timer for the session, not one per open page. Owned here because this form is the
+        ''' one alive from sign-in to sign-out.
+        Private messageCheckTimer As Timer
+
+        ''' <summary>
+        ''' TEMPORARY TEST SCAFFOLD - REMOVE.
+        '''
+        ''' Shows the red asterisk ten seconds after the menu opens, whether or not there is a
+        ''' message, so the marker can be judged on screen before the real thing is producing it.
+        ''' Delete this field, MessageMarkerTestDelayMs and StartMessageMarkerTest, and the one
+        ''' call in StartMessageChecks.
+        ''' </summary>
+        Private Const MessageMarkerTestDelayMs As Integer = 10 * 1000
+        Private messageMarkerTestTimer As Timer
+        Private ReadOnly titleLabel As Label
         Private ReadOnly ribbonPanel As Panel
         Private ReadOnly leftActionsFlow As FlowLayoutPanel
         Private ReadOnly rightPinnedActionsPanel As FlowLayoutPanel
         Private ReadOnly headingLabel As Label
+        Private ReadOnly newMessageMarker As Label
         Private ReadOnly welcomeLabel As Label
         Private ReadOnly userBadgeLabel As Label
         Private ReadOnly eodLabel As Label
@@ -93,7 +135,25 @@ Namespace SDC.Framework
         '''
         ''' </summary>
         Private Const TileWidth As Integer = 96
-        Private Const TileHeight As Integer = 96
+
+        ''' <summary>
+        ''' A tile is as tall as what is in it: a 42-pixel icon at the top, two lines of 9.5pt
+        ''' caption at the bottom - a line measures 17 - and a gap between them. 86, where it was
+        ''' 96.
+        '''
+        ''' Two lines, because the captions are written that way: "Application" and "Settings" on
+        ''' separate lines, by an explicit newline in the text.
+        '''
+        ''' The gap is what the last six pixels buy, and they are not slack. The caption is pinned
+        ''' to the bottom, so a second line grows upward into the icon: at 80 the one-line tiles
+        ''' looked right and every two-line one had its first line against the graphic.
+        '''
+        ''' The icon is untouched. NormalizeActionIcon draws every graphic into a 42x42 bitmap at
+        ''' its own aspect ratio, and that is unchanged: this shortens the button, not the picture.
+        ''' Width is unchanged too, because MovableTileCapacityAtMinimumWidth is arithmetic on
+        ''' TileWidth and the generator asks it how many tiles fit.
+        ''' </summary>
+        Private Const TileHeight As Integer = 86
         Private Const TileMargin As Integer = 4
         Private Const TilePitch As Integer = TileWidth + TileMargin
 
@@ -137,6 +197,65 @@ Namespace SDC.Framework
         ''' then ribbonPanel's 8px margin at each side, then its FixedSingle border of one pixel a
         ''' side. Named rather than folded into one number so a change to any of them is findable.
         Private Const WindowBorderWidth As Integer = 16
+
+        ''' <summary>
+        ''' The band above the ribbon that carries the application's name.
+        '''
+        ''' Everything below it moves down by this much and the window loses the same, so the
+        ''' ribbon keeps its height and its tiles exactly as they were - only their position on the
+        ''' page changes. One number, so the band and the shift cannot disagree.
+        ''' </summary>
+        Private Const TitleBandHeight As Integer = 44
+
+        ''' <summary>
+        ''' The ribbon, and what the page does with the space it gave back.
+        '''
+        ''' The panel inset above the tiles, the tile flow, and 6 below - 104 where it was 140.
+        '''
+        ''' LayoutShift is what everything below the ribbon moves by: down for the title band, up
+        ''' for the shorter ribbon. The window loses both, so the dashboard area below keeps exactly
+        ''' the height it had.
+        ''' </summary>
+        Private Const RibbonFlowHeight As Integer = TileHeight + 6
+        ''' <summary>
+        ''' The tiles start here. It was 30, clearing a "Main" tab label at the top left that was
+        ''' removed on 2026-09-10 - the ribbon has one tab and never named the others, so the label
+        ''' titled nothing. With it gone the row moves up to the panel's own inset.
+        ''' </summary>
+        Private Const RibbonTopInset As Integer = 6
+        Private Const RibbonHeight As Integer = RibbonTopInset + RibbonFlowHeight + 6
+        Private Const RibbonTrim As Integer = 140 - RibbonHeight
+        Private Const LayoutShift As Integer = TitleBandHeight - RibbonTrim
+
+        ''' <summary>
+        ''' What the title band says: the application's name, taken from the assembly.
+        '''
+        ''' Read rather than typed, so a second application built on this framework shows its own
+        ''' name without editing the shell - the same boundary MenuFormInitializer draws for the
+        ''' tiles.
+        '''
+        ''' Separators become spaces and each word is title cased, which is DisplayNameFormatter's
+        ''' job and not repeated here: an acronym that title casing would flatten belongs in its
+        ''' list rather than in a special case at this call site. A dot is turned into the same
+        ''' separator first, because an assembly name is dotted and a dot reads as a file extension
+        ''' in a heading.
+        '''
+        ''' An acronym that title casing would flatten - SDC into Sdc - is handled by adding it to
+        ''' DisplayNameFormatter's list, which is what CLAUDE.md asks for and what makes it come out
+        ''' right everywhere else it appears too. A rule here about how many letters a first word
+        ''' has would be a second formatter in all but name, and would still be wrong for the first
+        ''' product whose initials run to four.
+        ''' </summary>
+        Private Shared Function ResolveApplicationTitle() As String
+            Dim name = Application.ProductName
+            If String.IsNullOrWhiteSpace(name) Then
+                name = System.Reflection.Assembly.GetExecutingAssembly().GetName().Name
+            End If
+            If String.IsNullOrWhiteSpace(name) Then Return "Main Menu"
+
+            Dim normalized = name.Trim().Replace("."c, "_"c)
+            Return DisplayNameFormatter.ToDisplayName(normalized, stripFrameworkPrefix:=False)
+        End Function
         Private Const RibbonPanelMargin As Integer = 16
         Private Const RibbonPanelBorder As Integer = 2
 
@@ -204,32 +323,38 @@ Namespace SDC.Framework
             ' The height still has 40px of play. It is left alone deliberately: 760 is already taller
             ' than a 768-high laptop's browser viewport, and that wants measuring rather than
             ' guessing before anything here moves.
-            Me.ClientSize = New Size(MinimumWindowWidth - WindowBorderWidth, 800)
+            Me.ClientSize = New Size(MinimumWindowWidth - WindowBorderWidth, 800 - TitleBandHeight - RibbonTrim)
             Me.BackColor = Color.White
 
+            ' The application's name, from the assembly rather than typed here, so a second
+            ' application built on this framework carries its own without editing the shell.
+            titleLabel = New Label() With {
+                .AutoSize = False,
+                .Location = New Point(8, 6),
+                .Size = New Size(Me.ClientSize.Width - 16, TitleBandHeight - 10),
+                .Anchor = AnchorStyles.Top Or AnchorStyles.Left Or AnchorStyles.Right,
+                .Text = ResolveApplicationTitle(),
+                .TextAlign = ContentAlignment.MiddleCenter,
+                .Font = New Font("Segoe UI", 18.0F, FontStyle.Regular),
+                .ForeColor = Color.FromArgb(52, 60, 70),
+                .BackColor = Color.White
+            }
+            Me.Controls.Add(titleLabel)
+
             ribbonPanel = New Panel() With {
-                .Location = New Point(8, 8),
-                .Size = New Size(Me.ClientSize.Width - 16, 140),
+                .Location = New Point(8, 8 + TitleBandHeight),
+                .Size = New Size(Me.ClientSize.Width - 16, RibbonHeight),
                 .Anchor = AnchorStyles.Top Or AnchorStyles.Left Or AnchorStyles.Right,
                 .BackColor = Color.White,
                 .BorderStyle = BorderStyle.FixedSingle
-            }
-
-            Dim mainTabLabel As New Label() With {
-                .Text = "Main",
-                .Location = New Point(6, 4),
-                .Size = New Size(52, 26),
-                .BackColor = Color.White,
-                .TextAlign = ContentAlignment.MiddleLeft,
-                .Font = New Font("Segoe UI", 10.5F, FontStyle.Regular)
             }
 
             ' Not anchored Right. Its width is set by LayoutRibbonPanels on every resize, to end
             ' exactly where the pinned row begins; a Right anchor would stretch it between those
             ' calculations and the row would jitter as it resized.
             leftActionsFlow = New FlowLayoutPanel() With {
-                .Location = New Point(PanelInset, 32),
-                .Size = New Size(760, 102),
+                .Location = New Point(PanelInset, RibbonTopInset),
+                .Size = New Size(760, RibbonFlowHeight),
                 .Anchor = AnchorStyles.Top Or AnchorStyles.Left,
                 .WrapContents = False,
                 .FlowDirection = FlowDirection.LeftToRight,
@@ -244,8 +369,8 @@ Namespace SDC.Framework
             ' LayoutRibbonPanels does place it against the right-hand edge - PanelInset from it, the
             ' same inset the flow panel has on the left, so the ribbon is evenly inset at both ends.
             rightPinnedActionsPanel = New FlowLayoutPanel() With {
-                .Location = New Point(ribbonPanel.Width - PinnedPanelWidth - PanelInset - 4, 32),
-                .Size = New Size(PinnedPanelWidth, 102),
+                .Location = New Point(ribbonPanel.Width - PinnedPanelWidth - PanelInset - 4, RibbonTopInset),
+                .Size = New Size(PinnedPanelWidth, RibbonFlowHeight),
                 .Anchor = AnchorStyles.Top Or AnchorStyles.Left,
                 .WrapContents = False,
                 .FlowDirection = FlowDirection.LeftToRight,
@@ -280,15 +405,39 @@ Namespace SDC.Framework
 
             headingLabel = New Label() With {
                 .AutoSize = True,
-                .Location = New Point(48, 158),
+                .Location = New Point(48, 158 + LayoutShift),
                 .Text = registrationNameForHeader & " (" & registrationIdForHeader.ToString() & ")",
                 .Font = New Font("Segoe UI", 20.0F, FontStyle.Bold),
                 .ForeColor = Color.FromArgb(24, 45, 78)
             }
 
+            ' Left of the registration name, and big enough to be seen without being looked for -
+            ' 26pt against the name's 20. Red is unused elsewhere on this part of the page, so it
+            ' means one thing here.
+            '
+            ' Hidden until something sets it. What that something is has not been decided: the
+            ' candidates are a FW_RoleDetails permission on the messages table, the registration's
+            ' AllowMessaging flag, or which application is running - and until one is chosen there
+            ' is nothing to poll and nothing to turn it on. SetNewMessageIndicator is the whole
+            ' switch, so wiring it up later touches one call site.
+            ' Horizontal position unchanged - x = 18, where it has always been. Only the vertical
+            ' moves: an asterisk is drawn in the upper part of its em box, being a superscript
+            ' glyph by design, so sitting it level with the registration name's top put the mark
+            ' up by the letter's cap height rather than beside its middle.
+            '
+            ' MessageMarkerDrop is the one number to change if it still looks off.
+            newMessageMarker = New Label() With {
+                .AutoSize = True,
+                .Location = New Point(18, headingLabel.Top + MessageMarkerDrop),
+                .Text = "*",
+                .Font = New Font("Segoe UI", 26.0F, FontStyle.Bold),
+                .ForeColor = Color.FromArgb(196, 43, 43),
+                .Visible = False
+            }
+
             welcomeLabel = New Label() With {
                 .AutoSize = False,
-                .Location = New Point(52, 198),
+                .Location = New Point(52, 198 + LayoutShift),
                 .Size = New Size(540, 28),
                 .Font = New Font("Segoe UI", 12.0F, FontStyle.Regular),
                 .Text = "Welcome " & welcomeName & " (" & welcomeUserId.ToString() & ")"
@@ -296,7 +445,7 @@ Namespace SDC.Framework
 
             userBadgeLabel = New Label() With {
                 .AutoSize = False,
-                .Location = New Point(Me.ClientSize.Width - 320, 182),
+                .Location = New Point(Me.ClientSize.Width - 320, 182 + LayoutShift),
                 .Size = New Size(180, 34),
                 .Anchor = AnchorStyles.Top Or AnchorStyles.Right,
                 .Text = currentUser.Email,
@@ -308,7 +457,7 @@ Namespace SDC.Framework
 
             eodLabel = New Label() With {
                 .AutoSize = False,
-                .Location = New Point(Me.ClientSize.Width - 132, 184),
+                .Location = New Point(Me.ClientSize.Width - 132, 184 + LayoutShift),
                 .Size = New Size(120, 20),
                 .Anchor = AnchorStyles.Top Or AnchorStyles.Right,
                 .Text = "EOD: 10:51 AM",
@@ -319,7 +468,7 @@ Namespace SDC.Framework
 
             rfrLabel = New Label() With {
                 .AutoSize = False,
-                .Location = New Point(Me.ClientSize.Width - 132, 206),
+                .Location = New Point(Me.ClientSize.Width - 132, 206 + LayoutShift),
                 .Size = New Size(120, 20),
                 .Anchor = AnchorStyles.Top Or AnchorStyles.Right,
                 .Text = "RFR: 1 min",
@@ -329,8 +478,8 @@ Namespace SDC.Framework
             }
 
             contentLayout = New TableLayoutPanel() With {
-                .Location = New Point(24, 236),
-                .Size = New Size(Me.ClientSize.Width - 48, Me.ClientSize.Height - 260),
+                .Location = New Point(24, 236 + LayoutShift),
+                .Size = New Size(Me.ClientSize.Width - 48, Me.ClientSize.Height - 260 - LayoutShift),
                 .Anchor = AnchorStyles.Top Or AnchorStyles.Left Or AnchorStyles.Right Or AnchorStyles.Bottom,
                 .ColumnCount = 3,
                 .RowCount = 2,
@@ -346,14 +495,14 @@ Namespace SDC.Framework
             contentLayout.RowStyles.Add(New RowStyle(SizeType.Percent, 53.0F))
 
             regionShells = New Dictionary(Of MenuRegion, RegionShell)()
-            regionShells(MenuRegion.Messages) = CreateRegionShell("Messages")
+            regionShells(MenuRegion.RegionLeft) = CreateRegionShell("Messages")
             regionShells(MenuRegion.GeneralDashboard) = CreateRegionShell("General Dashboard")
             regionShells(MenuRegion.AcmeDashboard) = CreateRegionShell("Acme Dashboard")
             regionShells(MenuRegion.UsersAndLists) = CreateRegionShell("Users & Lists")
             regionShells(MenuRegion.Chart) = CreateRegionShell("Evolution of Acme Products", True)
 
-            contentLayout.Controls.Add(regionShells(MenuRegion.Messages).RootPanel, 0, 0)
-            contentLayout.SetRowSpan(regionShells(MenuRegion.Messages).RootPanel, 2)
+            contentLayout.Controls.Add(regionShells(MenuRegion.RegionLeft).RootPanel, 0, 0)
+            contentLayout.SetRowSpan(regionShells(MenuRegion.RegionLeft).RootPanel, 2)
             contentLayout.Controls.Add(regionShells(MenuRegion.GeneralDashboard).RootPanel, 1, 0)
 
             Dim rightTopLayout As New TableLayoutPanel() With {
@@ -380,7 +529,23 @@ Namespace SDC.Framework
             actionTilesByKey = New Dictionary(Of String, ActionTile)(StringComparer.OrdinalIgnoreCase)
             AddActionTile("close", "Close", AddressOf CloseMenu_Click, LoadMenuIcon("close.png", SystemIcons.Error.ToBitmap()))
             AddActionTile("dashboard", "Dashboard", AddressOf Dashboard_Click, LoadMenuIcon("dashboard.png", SystemIcons.Application.ToBitmap()))
+
+            ' Messages sits here and nowhere else. It is a fixed position, not a movable tile the
+            ' user arranges - when messaging is not permitted the tile is absent and the flow
+            ' closes up behind it, which is the whole signal that messaging is off.
+            '
+            ' A selector, not a toggle: a toggle only has a meaning while there are exactly two
+            ' occupants, and this region is expected to gain more. Pressed while messages are
+            ' already showing it re-reads the folder instead.
+            AddActionTile("region-messages", "Messages", AddressOf ShowMessagesRegion_Click, LoadMenuIcon("Color_Information.png", SystemIcons.Information.ToBitmap()))
             AddActionTile("application-settings", "Application" & Environment.NewLine & "Settings", AddressOf ApplicationSettings_Click, LoadMenuIcon("gear.png", SystemIcons.Shield.ToBitmap()))
+
+            ' Overview is the default occupant of that region, and this tile is how it is reached
+            ' while something else is showing. Every region always has an occupant, so the Messages
+            ' tile always has something to come back to and the cell is never a blank third of the
+            ' page - and this is what sits there when messaging is switched off.
+            AddActionTile("region-overview", "Overview", AddressOf ShowOverviewRegion_Click, LoadMenuIcon("Color_Search.png", SystemIcons.Application.ToBitmap()))
+
             ' The "users" tile was removed on 2026-09-06. It was captioned Users and opened Roles_B,
             ' which is a mislabelled tile rather than a missing feature: Roles_B is reached from the
             ' App Admin and Company dashboards, so nothing became unreachable. Found while wiring
@@ -393,12 +558,12 @@ Namespace SDC.Framework
 
             AddHandler ribbonPanel.Resize, AddressOf RibbonPanel_Resize
 
-            ribbonPanel.Controls.Add(mainTabLabel)
             ribbonPanel.Controls.Add(leftActionsFlow)
             ribbonPanel.Controls.Add(rightPinnedActionsPanel)
 
             Me.Controls.Add(ribbonPanel)
             Me.Controls.Add(headingLabel)
+            Me.Controls.Add(newMessageMarker)
             Me.Controls.Add(welcomeLabel)
             Me.Controls.Add(userBadgeLabel)
             Me.Controls.Add(eodLabel)
@@ -476,6 +641,18 @@ Namespace SDC.Framework
             Return roles.OrderBy(Function(r) r.DisplayOrder).ThenBy(Function(r) r.RoleName).ToList()
         End Function
 
+        ''' <summary>
+        ''' What is in a region now, or Nothing. Lets a caller ask before replacing, which is how
+        ''' the ribbon's region selectors avoid rebuilding what is already on screen.
+        ''' </summary>
+        Public Function GetRegionContent(region As MenuRegion) As Control
+            Dim shell = GetRegionShell(region)
+            If shell Is Nothing OrElse shell.ContentHost Is Nothing Then Return Nothing
+            If shell.ContentHost.Controls.Count = 0 Then Return Nothing
+
+            Return shell.ContentHost.Controls(0)
+        End Function
+
         Public Sub LoadRegionControl(region As MenuRegion, content As Control)
             If content Is Nothing Then
                 Return
@@ -529,6 +706,88 @@ Namespace SDC.Framework
 
         Public Sub SetAccessProfile(profile As AccessProfile)
             activeAccessProfile = profile
+            StartMessageChecks()
+        End Sub
+
+        ''' <summary>
+        ''' Starts, restarts or stops the new-message check according to the current role.
+        '''
+        ''' Called whenever the profile changes, which is also when the answer can change - a role
+        ''' switch can grant or remove messaging. A role that may not read FW_Messages is not
+        ''' polled at all: there is nothing to find and no reason to spend the query.
+        ''' </summary>
+        Private Sub StartMessageChecks()
+            Dim canUseMessaging = activeAccessProfile IsNot Nothing AndAlso
+                                  activeAccessProfile.Can("FW_Messages", AccessCapability.Read)
+
+            If Not canUseMessaging Then
+                If messageCheckTimer IsNot Nothing Then messageCheckTimer.Stop()
+                SetNewMessageIndicator(False)
+                Return
+            End If
+
+            If messageCheckTimer Is Nothing Then
+                messageCheckTimer = New Timer() With {.Interval = MessageCheckIntervalMs}
+                AddHandler messageCheckTimer.Tick, AddressOf MessageCheckTimer_Tick
+            End If
+
+            messageCheckTimer.Stop()
+            messageCheckTimer.Start()
+
+            ' Once immediately, so a message waiting at sign-in is not hidden for five minutes.
+            CheckForNewMessages()
+
+            StartMessageMarkerTest()
+        End Sub
+
+        ''' <summary>
+        ''' TEMPORARY TEST SCAFFOLD - REMOVE. See MessageMarkerTestDelayMs.
+        '''
+        ''' Fires once, ten seconds in, and forces the marker on so its size, colour and
+        ''' position can be judged without waiting for a real message. It runs after the genuine
+        ''' check, so if that has already found unread messages this changes nothing.
+        ''' </summary>
+        Private Sub StartMessageMarkerTest()
+            If messageMarkerTestTimer IsNot Nothing Then Return
+
+            messageMarkerTestTimer = New Timer() With {.Interval = MessageMarkerTestDelayMs}
+            AddHandler messageMarkerTestTimer.Tick,
+                Sub(sender As Object, e As EventArgs)
+                    messageMarkerTestTimer.Stop()
+                    SetNewMessageIndicator(True)
+                End Sub
+            messageMarkerTestTimer.Start()
+        End Sub
+
+        Private Sub MessageCheckTimer_Tick(sender As Object, e As EventArgs)
+            CheckForNewMessages()
+        End Sub
+
+        ''' <summary>
+        ''' One query, then two consequences: the marker beside the registration name always, and
+        ''' a reload of the list when the user is looking at it.
+        '''
+        ''' The reload is what puts a newly arrived message into the Inbox grid and rewrites the
+        ''' tab caption to the new count - RefreshMessages does both, and does the count whichever
+        ''' folder is showing, so "Inbox (3)" is right even while the user is reading Sent.
+        '''
+        ''' Failures are swallowed. A background check that cannot reach the database must not
+        ''' interrupt somebody mid-sentence; the marker simply does not change until the next tick.
+        ''' </summary>
+        Private Sub CheckForNewMessages()
+            Try
+                If Not SessionState.Current.HasValue Then Return
+                Dim session = SessionState.Current.Value
+
+                Dim unread = MessagingDataAccess.CountUnread(session.RegistrationID, currentUser.UserId)
+                SetNewMessageIndicator(unread > 0)
+
+                Dim showing = TryCast(GetRegionContent(MenuRegion.RegionLeft), MessagesWindowControl)
+                If showing IsNot Nothing Then
+                    showing.ReloadCurrentFolder()
+                End If
+            Catch
+            End Try
         End Sub
 
         ''' <summary>
@@ -783,6 +1042,30 @@ Namespace SDC.Framework
             tile.Button.Text = If(caption, String.Empty)
         End Sub
 
+        ''' <summary>
+        ''' Shows or hides the unread marker beside the registration name.
+        '''
+        ''' The only switch. Nothing calls it yet, deliberately - what decides "there is a new
+        ''' message" is still open - so the marker is wired, positioned and sized, and inert. When
+        ''' the rule is settled, whatever polls MessagingDataAccess.CountUnread calls this and
+        ''' nothing else has to change.
+        ''' </summary>
+        ''' <summary>
+        ''' Shows or hides the unread marker beside the registration name.
+        '''
+        ''' The permission is checked here rather than only at the call sites, so nothing can put
+        ''' the marker on screen for a role that may not read messages - not a caller that forgets,
+        ''' and not the test scaffold. One guard, in the place that does the showing.
+        ''' </summary>
+        Public Sub SetNewMessageIndicator(hasUnread As Boolean)
+            If newMessageMarker Is Nothing Then Return
+
+            Dim canUseMessaging = activeAccessProfile IsNot Nothing AndAlso
+                                  activeAccessProfile.Can("FW_Messages", AccessCapability.Read)
+
+            newMessageMarker.Visible = hasUnread AndAlso canUseMessaging
+        End Sub
+
         Public Sub SetRegionHeader(region As MenuRegion, headerText As String)
             Dim shell = GetRegionShell(region)
             shell.HeaderLabel.Text = headerText
@@ -881,12 +1164,19 @@ Namespace SDC.Framework
             }
         End Function
 
+        ''' <summary>
+        ''' Icon to the top of the tile, caption to the bottom.
+        '''
+        ''' Both were TopCenter, which only looked right while the tile was tall enough for the
+        ''' slack to hide it - at 80 the caption ran into the graphic. Pinned to opposite ends they
+        ''' cannot collide at any height that fits them both.
+        ''' </summary>
         Private Sub AddActionTile(key As String, caption As String, onClick As EventHandler, tileImage As Image)
             Dim tileButton As New RibbonActionButton() With {
                 .Name = "ACTION_" & key,
                 .Text = caption,
                 .Size = New Size(TileWidth, TileHeight),
-                .TextAlign = ContentAlignment.TopCenter,
+                .TextAlign = ContentAlignment.BottomCenter,
                 .ImageAlign = ContentAlignment.TopCenter,
                 .TextImageRelation = TextImageRelation.ImageAboveText,
                 .UseVisualStyleBackColor = False,
@@ -1113,7 +1403,7 @@ Namespace SDC.Framework
         End Function
 
         Private Sub LoadSamplePlaceholders()
-            LoadRegionControl(MenuRegion.Messages, New MessagesWindowControl())
+            LoadRegionControl(MenuRegion.RegionLeft, New MessagesWindowControl())
             LoadRegionControl(MenuRegion.GeneralDashboard, New GeneralDashboardWindowControl())
             LoadRegionControl(MenuRegion.AcmeDashboard, New AcmeDashboardWindowControl())
             LoadRegionControl(MenuRegion.UsersAndLists, New UsersListsWindowControl())
@@ -1282,6 +1572,39 @@ Namespace SDC.Framework
         ''' region-loading action, so it needs its own decisions about which region and what
         ''' content; a dialog stubbed in here now would be the wrong shape to grow from.
         ''' </summary>
+        ''' <summary>
+        ''' The two region selectors. Each loads its own control into the left-hand region and
+        ''' names the region after it, so the header always says what is being looked at.
+        '''
+        ''' LoadRegionControl replaces whatever is in the cell, so there is no stacking of hidden
+        ''' panels and no state to keep about which was there before.
+        ''' </summary>
+        Private Sub ShowMessagesRegion_Click(sender As Object, e As EventArgs)
+            ' Already showing: reload in place rather than build a second control. Rebuilding
+            ' flashed the region and lost the selected row, for a click that had asked for
+            ' nothing. Re-reading the folder is what someone pressing Messages while looking at
+            ' messages actually wants.
+            Dim showing = TryCast(GetRegionContent(MenuRegion.RegionLeft), MessagesWindowControl)
+            If showing IsNot Nothing Then
+                showing.ReloadCurrentFolder()
+                Return
+            End If
+
+            SetRegionHeader(MenuRegion.RegionLeft, "Messages")
+            LoadRegionControl(MenuRegion.RegionLeft, New MessagesWindowControl())
+        End Sub
+
+        Private Sub ShowOverviewRegion_Click(sender As Object, e As EventArgs)
+            ' Nothing to reload - it shows no data - so the click simply does nothing when it is
+            ' already up, rather than rebuilding it for no reason.
+            If TypeOf GetRegionContent(MenuRegion.RegionLeft) Is OverviewWindowControl Then
+                Return
+            End If
+
+            SetRegionHeader(MenuRegion.RegionLeft, "Overview")
+            LoadRegionControl(MenuRegion.RegionLeft, New OverviewWindowControl())
+        End Sub
+
         Private Sub Dashboard_Click(sender As Object, e As EventArgs)
             MessageBox.Show(Me,
                             "The Dashboard is not wired up yet. It will display an internal page in the panels below.",

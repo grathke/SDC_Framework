@@ -169,6 +169,18 @@ Namespace SDC.Framework
             deleteButton.Text = If(String.Equals(currentFolder, "Trash", StringComparison.OrdinalIgnoreCase), "Delete Forever", "Delete")
         End Sub
 
+        ''' <summary>
+        ''' Re-reads the current folder, keeping the control and the folder the user is on.
+        '''
+        ''' Called by the ribbon's Messages tile when the region is already showing messages: the
+        ''' click used to build a second control and reload it from nothing, which flashed the
+        ''' region and threw away the selection. A click that would otherwise do nothing is worth
+        ''' more as "check for new mail".
+        ''' </summary>
+        Public Sub ReloadCurrentFolder()
+            RefreshMessages()
+        End Sub
+
         Private Sub RefreshMessages()
             messageGrid.Rows.Clear()
             previewTextBox.Clear()

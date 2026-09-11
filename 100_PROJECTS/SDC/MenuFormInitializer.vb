@@ -10,7 +10,24 @@ Namespace SDC.Framework
     Public Module MenuFormInitializer
         Private Const TableApplicationSettingsDashboard As String = "APPLICATION SETTINGS DASHBOARD"
         Private Const TableRoles As String = "ROLES"
-        Private Const TableMessaging As String = "MESSAGING"
+        ''' <summary>
+        ''' The real table, not a label. This was "MESSAGING", which matches no row in
+        ''' FW_RoleSchema and no object in the database - so the permission it resolved against
+        ''' could never be granted, and it would have shown up as an orphan in the
+        ''' OBJECT_ID('dbo.' + DB_Table) IS NULL sweep that CLAUDE.md requires after a removal.
+        '''
+        ''' FW_Messages is schema row 22 and can be given permissions in Roles today.
+        ''' </summary>
+        Private Const TableMessaging As String = "FW_Messages"
+
+        ''' <summary>
+        ''' A permission with no data behind it, in the FW_Perm_ family CLAUDE.md describes: the
+        ''' Dashboard tile has no table of its own, so one exists purely to be granted or withheld.
+        '''
+        ''' A real table rather than an invented name, so it resolves in the
+        ''' OBJECT_ID('dbo.' + DB_Table) IS NULL sweep like every other permission.
+        ''' </summary>
+        Private Const TableDashboard As String = "FW_Perm_Dashboard"
         Private Const TableFrameworkDashboard As String = "FRAMEWORK DASHBOARD"
         Private Const TableRegistrationDashboard As String = "REGISTRATION DASHBOARD"
 
@@ -47,7 +64,12 @@ Namespace SDC.Framework
         ''' lead a ribbon is the application's decision, and the form serves whichever application
         ''' configures it.
         ''' </summary>
-        Private ReadOnly AnchoredMenuKeys As String() = {"close", "dashboard", "application-settings"}
+        ''' The order here is the order on screen, and region-messages sits between dashboard and
+        ''' application-settings deliberately: it has one home, it is not a tile a user arranges,
+        ''' and an anchor is what says so - it cannot be dragged and it carries the "Fixed
+        ''' position" tooltip. Added without an anchor it went to the end of the row, behind the
+        ''' generated tiles, because an unranked tile sorts last.
+        Private ReadOnly AnchoredMenuKeys As String() = {"close", "dashboard", "region-messages", "application-settings", "region-overview"}
 
         Private cachedAccessRoleId As Integer = 0
         Private cachedAccessRegistrationId As Integer = 0
@@ -166,7 +188,24 @@ Namespace SDC.Framework
             menu.ConfigureActionVisibility("application-settings", canAccessApplicationSettings, canAccessApplicationSettings)
             menu.SetActionCaption("application-settings", applicationSettingsCaption)
             ConfigureApplicationSettingsTile(menu, applicationSettingsCaption, canAccessApplicationSettings)
-            menu.ConfigureActionVisibility("dashboard", True, True)
+            ' Gated the same way as Messages, on a table that holds no data and exists only to be
+            ' permitted - FW_Perm_Dashboard. Until 2026-09-10 this was unconditionally True, so
+            ' every role saw the tile whether or not the dashboard meant anything to them.
+            Dim canUseDashboard = profile IsNot Nothing AndAlso
+                                  profile.Can(TableDashboard, AccessCapability.Read)
+            menu.ConfigureActionVisibility("dashboard", canUseDashboard, canUseDashboard)
+
+            ' Messaging is on when the role can read FW_Messages, and off otherwise - one rule, in
+            ' the place every other table permission is already decided. The tile's absence is the
+            ' whole signal: no button, no messages, and the flow closes up behind it because a
+            ' FlowLayoutPanel does not lay out an invisible control.
+            '
+            ' Read rather than any of the writing capabilities: being able to see the region is
+            ' what this governs. Sending and deleting are the region's own business, and it
+            ' already applies the same profile to itself through IAccessControlledControl.
+            Dim canUseMessaging = profile IsNot Nothing AndAlso
+                                  profile.Can(TableMessaging, AccessCapability.Read)
+            menu.ConfigureActionVisibility("region-messages", canUseMessaging, canUseMessaging)
 
             ' Signing in as somebody else is an administrator's action, so only an App Admin is
             ' offered it. Company Admin is deliberately excluded, unlike Application Settings above:
@@ -321,7 +360,19 @@ Namespace SDC.Framework
                 Return
             End If
 
-            LoadRegionAlways(menu, profile, FW_MainMenu.MenuRegion.Messages, TableMessaging, Function() New MessagesWindowControl(), "Messages")
+            ' The permission decides the occupant, not just the tile. Gating the ribbon button
+            ' alone left the region itself showing messages to a role that cannot read them - the
+            ' button was gone and the messages were still there, which is worse than either.
+            '
+            ' This is the fallback the region rule already promised: every region always has an
+            ' occupant, and a role that may not have Messages gets Overview instead. It needs no
+            ' registration setting - that setting decides which of the two opens for somebody
+            ' allowed both, and cannot grant what permission has refused.
+            If profile.Can(TableMessaging, AccessCapability.Read) Then
+                LoadRegionAlways(menu, profile, FW_MainMenu.MenuRegion.RegionLeft, TableMessaging, Function() New MessagesWindowControl(), "Messages")
+            Else
+                LoadRegionAlways(menu, profile, FW_MainMenu.MenuRegion.RegionLeft, TableMessaging, Function() New OverviewWindowControl(), "Overview")
+            End If
             LoadRegionAlways(menu, profile, FW_MainMenu.MenuRegion.GeneralDashboard, TableFrameworkDashboard, Function() New GeneralDashboardWindowControl(), "General Dashboard")
             LoadRegionAlways(menu, profile, FW_MainMenu.MenuRegion.AcmeDashboard, TableRegistrationDashboard, Function() New AcmeDashboardWindowControl(), "Acme Dashboard")
             LoadRegionAlways(menu, profile, FW_MainMenu.MenuRegion.UsersAndLists, TableRoles, Function() New UsersListsWindowControl(), "Users & Lists")
