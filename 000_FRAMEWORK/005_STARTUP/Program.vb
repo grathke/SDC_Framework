@@ -100,6 +100,12 @@ Namespace SDC.Framework
                 virtualUI = New Cybele.Thinfinity.VirtualUI()
                 virtualUI.DevMode = devMode
 
+                ' The session ending has to end the process. Nobody closes this application from
+                ' the desktop any more - OPT_APPINVISIBLE means there is no window to close - so a
+                ' browser closed on a session that keeps running leaves an invisible process
+                ' holding a database connection and, in dev mode, the development server's port.
+                AddHandler virtualUI.OnClose, AddressOf VirtualUISessionClosed
+
                 ' Five seconds, not the default sixty. Start() blocks until a browser attaches or
                 ' the timeout expires, and on a developer machine nobody is usually waiting at the
                 ' other end - measured on 2026-09-10, the first run sat for sixty-nine seconds
@@ -109,6 +115,18 @@ Namespace SDC.Framework
                 ' costs five seconds and then the application opens on the desktop, which is what
                 ' a developer wanted in that case anyway.
                 Dim started = virtualUI.Start(VirtualUIStartTimeoutMs)
+
+                ' Hide the desktop window, but only once a browser is actually holding the
+                ' session. OPT_APPINVISIBLE is what stops the application appearing twice - once
+                ' on the desktop and once in the tab - and in a browser it is the only sensible
+                ' setting. It is applied after Start() rather than before because Start() returns
+                ' False when nothing attached, and the application then falls back to running on
+                ' the desktop: invisible there would mean no interface at all.
+                If started Then
+                    virtualUI.Options = virtualUI.Options Or CUInt(Cybele.Thinfinity.Options.OPT_APPINVISIBLE)
+                    StartSessionWatch()
+                End If
+
                 Log("VirtualUI DevMode=" & devMode.ToString() &
                     "; Start() returned " & started.ToString() &
                     "; Active=" & virtualUI.Active.ToString() &
@@ -117,6 +135,84 @@ Namespace SDC.Framework
             Catch ex As Exception
                 Log("VirtualUI did not start: " & ex.Message)
             End Try
+        End Sub
+
+        ''' <summary>
+        ''' Watches for the browser going away, and ends the process when it does.
+        '''
+        ''' OnClose is not enough. Closing a tab leaves the session disconnected rather than
+        ''' closed - which is deliberate in dev mode, where a reload is expected to pick the same
+        ''' session back up - so the event never fires and the process is left running with no
+        ''' window anyone can close. Active is the property that actually tracks whether a browser
+        ''' is attached.
+        '''
+        ''' The grace period is the whole design. A reload drops Active for a moment, and exiting
+        ''' on the first false reading would make refreshing the page kill the application.
+        ''' SessionGraceSeconds of continuous absence means the browser is gone rather than busy.
+        ''' </summary>
+        Private Const SessionPollMs As Integer = 5000
+        Private Const SessionGraceSeconds As Integer = 30
+        Private sessionWatch As System.Threading.Timer
+        Private sessionAbsentSeconds As Integer
+
+        Private Sub StartSessionWatch()
+            sessionAbsentSeconds = 0
+            sessionWatch = New System.Threading.Timer(AddressOf SessionWatchTick, Nothing, SessionPollMs, SessionPollMs)
+        End Sub
+
+        Private Sub SessionWatchTick(state As Object)
+            Try
+                If virtualUI Is Nothing Then Return
+
+                If virtualUI.Active Then
+                    If sessionAbsentSeconds > 0 Then Log("VirtualUI browser reattached")
+                    sessionAbsentSeconds = 0
+                    Return
+                End If
+
+                sessionAbsentSeconds += SessionPollMs \ 1000
+                If sessionAbsentSeconds < SessionGraceSeconds Then
+                    Log("VirtualUI browser absent for " & sessionAbsentSeconds.ToString() & "s")
+                    Return
+                End If
+
+                Log("VirtualUI browser gone for " & sessionAbsentSeconds.ToString() & "s - exiting")
+                sessionWatch.Change(System.Threading.Timeout.Infinite, System.Threading.Timeout.Infinite)
+                VirtualUISessionClosed(Nothing, Nothing)
+            Catch ex As Exception
+                Log("Session watch failed: " & ex.Message)
+            End Try
+        End Sub
+
+        ''' <summary>
+        ''' Ends the process when the browser session ends.
+        '''
+        ''' Application.Exit first, so forms close through their own Closing handlers and anything
+        ''' with cleanup gets to run. The timer behind it is not defensive decoration: Exit will
+        ''' not return while a modal dialog is on screen, and in a session whose browser has gone
+        ''' there is nobody to dismiss one. Three seconds, then the process goes regardless.
+        ''' </summary>
+        Private Sub VirtualUISessionClosed(sender As Object, e As Cybele.Thinfinity.CloseArgs)
+            Log("VirtualUI session closed - exiting")
+
+            Dim killer As New System.Threading.Timer(Sub()
+                                                         Log("VirtualUI session closed - forcing exit")
+                                                         Environment.Exit(0)
+                                                     End Sub, Nothing, 3000, System.Threading.Timeout.Infinite)
+
+            Try
+                Dim form = If(Application.OpenForms.Count > 0, Application.OpenForms(0), Nothing)
+                If form IsNot Nothing AndAlso form.IsHandleCreated Then
+                    form.BeginInvoke(New Action(Sub() Application.Exit()))
+                Else
+                    Application.Exit()
+                End If
+            Catch ex As Exception
+                Log("VirtualUI session close handler failed: " & ex.Message)
+                Environment.Exit(0)
+            End Try
+
+            GC.KeepAlive(killer)
         End Sub
 
         <STAThread>
