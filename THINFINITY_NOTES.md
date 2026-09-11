@@ -272,10 +272,21 @@ from folder names:
 The 64-bit libraries are not a 64-bit build of the SDK. They are a **different surface** — the
 scraper engine behind publishing an application that was never modified.
 
-**It was absent from the installer, and Cybele supplied it on 2026-09-10.** The file now in `bin64`
-is 14,257,920 bytes, dated 19 December 2025 like the rest of the product, and was copied in by hand.
-A full reinstall of the x64 MSI that same morning did **not** replace it, so it is still not in the
-package - it simply is not delivered.
+**Corrected 2026-09-11: it arrives with the Server environment.** This section first recorded the
+file as absent from the installer and supplied by hand. That was wrong, and the correction matters
+because the original reading was on its way to Cybele as a defect report.
+
+The file is 14,257,920 bytes and dated 19 December 2025 like the rest of the product. Its
+**creation** time on disk is 2026-09-10 08:20:50 - the same second as
+`Thinfinity.VirtualUI.Settings.dll` beside it, and both differ from every other library in `bin64`,
+which carries 19 December. Two files appearing together to the second is an installer writing them,
+not somebody copying one in. What happened that morning was installing **both** environments,
+Developer and Server, where only the Developer one had been installed before.
+
+So the rule is: **a Developer-only install does not put the x64 SDK library in `bin64`; installing
+the Server environment as well does.** Whether that is intended or an omission in the Developer
+package is Cybele's to say, and not worth asking - installing both is the answer either way, and
+the Server environment is what serves the application in a browser.
 
 **It is the real thing.** Read from the PE header and export table rather than trusted:
 
@@ -543,3 +554,96 @@ is no reason to reintroduce any of them.
 
 This also retires findings 2, 3 and 4 of 11.2 as things to raise with Cybele. Finding 1 stands and
 is theirs: `bin64\Thinfinity.VirtualUI.dll` is still absent from the installer.
+
+## 11.5 Running it, day to day — 2026-09-11
+
+Everything below was measured on this machine after 11.4 fixed the reservations.
+
+### Two ports, two purposes
+
+| | 6580, the published profile | 6080, the development server |
+|---|---|---|
+| started by | `ThinfinityVUISvcMgr`, always up | `Start()` in the application itself |
+| reached at | `http://localhost:6580/` then the **SDC Framework** tile | `http://localhost:6080/` |
+| what launches the exe | the server, from the profile | the run script |
+| profile settings - resolution, on-close | **applied** | **ignored** |
+| use it for | how the application looks and scales | how the application behaves |
+
+The split is worth keeping straight, because a sizing question answered on 6080 is answered
+wrongly: dev mode shows the window at actual size with the page letterboxed around it, whatever
+the profile says. `run TF` is for exercising behaviour, the tile on 6580 for judging appearance.
+
+`run TF` also flashes "can't reach this page" on the way up: the SDK opens the browser before its
+own development server has bound 6080, and the page recovers on retry. Cosmetic, dev-mode only.
+
+### What the application does with the SDK
+
+All of it in `Program.StartVirtualUI`, and all of it conditional on there being a session:
+
+- **`DevMode` only for a run we started** - `run-with-db.ps1` passes `--tf-dev`; the process the
+  server launches gets neither switch. Forced on, `Start()` never returned in a server-launched
+  session: dev mode stands up its own server and waits for a browser on 6080 while the session
+  that launched it waits at 6580, so the browser sat on "Initializing..." with the login screen
+  never built.
+- **`OPT_APPINVISIBLE`, after `Start()` succeeds** - otherwise the application appears twice, once
+  in the tab and once on the desktop. After, not before: `Start()` returns False when nothing
+  attached and the application then falls back to the desktop, where invisible means no interface.
+- **`OPT_NOHTML_DRAG`** - see below.
+- **`OnClose` ends the process** - `Application.Exit`, then a forced exit three seconds later,
+  because Exit will not return while a modal dialog is up and a dead session has nobody to dismiss
+  one.
+
+### Dragging
+
+VirtualUI treats a drag in the browser as an HTML5 drag, which is how a file is dragged from the
+user's machine into the application - and it swallows the mouse-down, move and up that a drag
+*inside* the application needs. Ribbon tiles did nothing at all in a browser until
+`OPT_NOHTML_DRAG` turned that off. Grid column reordering is the same gesture and the same fix.
+
+What it costs: `OnDragFile` no longer fires, so a file cannot be dragged in from the desktop.
+Nothing accepts a dropped file, and **file transfer here is a picker and a click, not a drag** -
+decided 2026-09-11, on the same reasoning as click-over-hover. `Options` is a runtime property, so
+a page that ever wants a drop target can clear the flag and restore it; build that as a scope that
+cannot leak rather than a pair of calls, because a page that exits oddly would otherwise leave the
+whole application unable to rearrange tiles, and nobody would connect the two.
+
+A drag inside a **server-side** dialog works, since that dialog is part of the streamed window.
+Whether Thinfinity's own HTML file dialog is affected is untested.
+
+Dragging also needed to look like dragging. A `FlowLayoutPanel` owns its children's positions, so
+a tile only jumps between slots - snappy on a desktop, but coalesced mouse-moves make it sit still
+and then teleport. `RibbonTileArrangementController` now draws a faded copy of the tile under the
+pointer for the duration.
+
+### Closing, and what does not detect it
+
+Closing the browser ends the process - but not at once. **Measured: three and a half minutes**
+between the browser closing and `OnClose` arriving, which is VirtualUI's disconnect grace and a
+server setting rather than anything the application can hurry.
+
+`Active` does **not** help. It stayed `True` for that entire period with no browser attached, so a
+poll on it never counts down. A watch built on it was removed the same day: a safety net that
+cannot fire reads like cover that is not there. `Program.InBrowserSession` is therefore set once
+from `Start()`'s answer - it means "this process belongs to a session", not "somebody is looking".
+
+Exiting normally - Cancel at the login screen - leaves the tab showing VirtualUI's own
+"application closed" page. That is the server's behaviour; the profile can redirect instead.
+
+### Sizing
+
+**The shell is one size in a browser, and the browser scales it.** With *Resolution: Fit to browser
+window* on the profile, resizing the tab enlarges the whole canvas in proportion and nothing
+re-lays out. Letting the window resize instead leaves the pinned tiles anchored to a right edge
+that has moved, and a gap opens across the middle of the ribbon.
+
+So in a session the main menu hides both window boxes and pins `MaximumSize` to its opening size.
+Both boxes, because Windows will not hide one alone - a form with a maximise box and no minimise
+box draws minimise greyed rather than absent. `MaximumSize` as well as the box, because
+double-clicking the caption or dragging the window to the top of the session also maximises.
+Minimising is the one to be rid of: inside a tab there is no taskbar to bring the window back
+from.
+
+Pages are a different question and were left alone. A browse grid genuinely wants more width, so
+`_B` and `_U` are better resizable than scaled.
+
+On the desktop none of this applies: sizable, both boxes, no maximum.
