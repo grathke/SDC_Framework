@@ -5,6 +5,7 @@ Imports System
 Imports System.Collections.Generic
 Imports System.Data
 Imports System.Drawing
+Imports System.Globalization
 Imports System.Windows.Forms
 
 Namespace SDC.Framework
@@ -22,6 +23,14 @@ Namespace SDC.Framework
         Private subjectTextBox As TextBox
         Private descriptionTextBox As TextBox
         Private conversationHistoryPanel As FlowLayoutPanel
+
+        ''' The files already on this issue, one link each. Flows left to right and wraps, so a
+        ''' issue with one attachment costs one line and one with six costs two.
+        Private attachmentsPanel As FlowLayoutPanel
+
+        ''' What GetAttachments last returned, kept so the conversation entries can draw their own
+        ''' links without asking the database again for every entry.
+        Private attachments As New List(Of HelpDeskAttachmentSummary)()
         Private responseTextBox As TextBox
         Private statusValueLabel As Label
         Private categoryLabel As Label
@@ -43,8 +52,10 @@ Namespace SDC.Framework
         Private copyForClaudeButton As Button
         Private statusRequiredBorder As Panel
         Private attachmentButton As Button
-        Private thinfinityButton As Button
-        Private pendingAttachment As HelpDeskAttachmentUpload
+        ''' Files chosen but not yet saved. A list because a user attaches a screenshot *and* a
+        ''' log, and the previous single field meant the second choice silently discarded the
+        ''' first.
+        Private ReadOnly pendingAttachments As New List(Of HelpDeskAttachmentUpload)()
 
         Private Const ConversationSeparator As String = "----------------------------------------"
 
@@ -105,6 +116,7 @@ Namespace SDC.Framework
             BindText(subjectTextBox, issue, "Subject", issue.Subject)
             BindText(descriptionTextBox, issue, "Description", issue.Description)
             RenderConversationHistory(issue.ConversationText)
+            LoadAttachments()
             UpdateHelpDeskRequiredState()
         End Sub
 
@@ -178,9 +190,10 @@ Namespace SDC.Framework
 
         Protected Overrides Function SaveRecord() As Boolean
             Try
-                If Not HelpDeskDataAccess.SaveIssue(issue, responseTextBox.Text, pendingAttachment) Then Return False
-                pendingAttachment = Nothing
+                If Not HelpDeskDataAccess.SaveIssue(issue, responseTextBox.Text, pendingAttachments) Then Return False
+                pendingAttachments.Clear()
                 responseTextBox.Clear()
+                LoadAttachments()
                 Return True
             Catch ex As Exception
                 MessageBox.Show(Me, "The issue could not be saved: " & ex.Message, "Save Failed", MessageBoxButtons.OK, MessageBoxIcon.Error)
@@ -230,6 +243,19 @@ Namespace SDC.Framework
                 .Padding = New Padding(6),
                 .TabStop = False
             }
+            attachmentsPanel = New FlowLayoutPanel() With {
+                .Name = "Panel_Attachments",
+                .Location = New Point(150, 600),
+                .Size = New Size(700, 30),
+                .FlowDirection = FlowDirection.LeftToRight,
+                .WrapContents = True,
+                .AutoScroll = False,
+                .BackColor = Color.Transparent,
+                .Padding = New Padding(0),
+                .TabStop = False
+            }
+            Me.Controls.Add(attachmentsPanel)
+
             statusLabel = AddLabel("Status *", 20, 100, "Status")
             conversationHistoryLabel = AddLabel("Conversation History", 20, 380)
 
@@ -254,11 +280,12 @@ Namespace SDC.Framework
             copyForClaudeButton = New Button() With {.Name = "Button_CopyReport", .Text = "Copy Report", .Location = New Point(470, 525), .Size = New Size(130, 34)}
             AddHandler copyForClaudeButton.Click, AddressOf CopyForClaudeButton_Click
             Me.Controls.Add(copyForClaudeButton)
+            ' One button. There were two - one for the desktop dialog and one saying Thinfinity
+            ' was not configured - which made the user choose between two implementations of a
+            ' single action, only one of which is ever correct. The environment decides now.
             attachmentButton = New Button() With {.Name = "Button_AttachFile", .Text = "Attach File", .Location = New Point(150, 525), .Size = New Size(130, 34)}
-            thinfinityButton = New Button() With {.Name = "Button_AttachViaThinfinity", .Text = "Attach via Thinfinity", .Location = New Point(290, 525), .Size = New Size(170, 34)}
             AddHandler attachmentButton.Click, AddressOf AttachFile_Click
-            AddHandler thinfinityButton.Click, AddressOf AttachViaThinfinity_Click
-            Me.Controls.AddRange({attachmentButton, thinfinityButton})
+            Me.Controls.Add(attachmentButton)
             LayoutControls()
             BindDirtyHandlers()
         End Sub
@@ -286,7 +313,6 @@ Namespace SDC.Framework
             responseTextBox.Visible = responseRequired
             SetFieldRequired(responseTextBox, responseRequired)
             attachmentButton.Enabled = Not responseRequired OrElse hasResponse
-            thinfinityButton.Enabled = Not responseRequired OrElse hasResponse
         End Sub
 
         Private Sub HelpDeskIssue_Resize(sender As Object, e As EventArgs)
@@ -340,12 +366,20 @@ Namespace SDC.Framework
             Dim conversationTop = stackTop
             conversationHistoryPanel.Top = conversationTop
             conversationHistoryLabel.Top = conversationTop + 4
-            conversationHistoryPanel.Height = Math.Max(120, attachmentTop - conversationHistoryPanel.Top - 15)
+            ' The attachment strip sits between the conversation and the buttons, and only takes
+            ' room when there is something in it - an issue with no files should not leave a gap.
+            Dim attachmentsHeight = If(attachmentsPanel.Controls.Count > 0, 30, 0)
+            attachmentsPanel.Left = inputLeft
+            attachmentsPanel.Width = inputWidth
+            attachmentsPanel.Height = attachmentsHeight
+            attachmentsPanel.Top = attachmentTop - attachmentsHeight - 8
+            attachmentsPanel.Visible = attachmentsHeight > 0
+
+            conversationHistoryPanel.Height = Math.Max(120, attachmentsPanel.Top - conversationHistoryPanel.Top - 15)
 
             attachmentButton.Top = attachmentTop
-            thinfinityButton.Top = attachmentTop
             copyForClaudeButton.Top = attachmentTop
-            copyForClaudeButton.Left = thinfinityButton.Right + 10
+            copyForClaudeButton.Left = attachmentButton.Right + 10
 
             ' The framework re-seats the borders it owns. Status is the page's own, and tracks the
             ' label the user sees rather than the hidden combo it belongs to.
@@ -361,6 +395,149 @@ Namespace SDC.Framework
             End If
         End Sub
 
+        ''' <summary>
+        ''' Draws one link per attachment already saved against this issue.
+        '''
+        ''' Names and sizes only - GetAttachments leaves the bytes in the database, and a file is
+        ''' read when somebody clicks it rather than when the page opens. An issue with six
+        ''' screenshots would otherwise pull six files across the wire to draw six labels.
+        ''' </summary>
+        Private Sub LoadAttachments()
+            If attachmentsPanel Is Nothing Then Return
+
+            attachmentsPanel.SuspendLayout()
+            attachmentsPanel.Controls.Clear()
+
+            Try
+                attachments = If(issue IsNot Nothing AndAlso issue.IssueID > 0,
+                                 HelpDeskDataAccess.GetAttachments(issue.IssueID, ResolveRegistrationId()),
+                                 New List(Of HelpDeskAttachmentSummary)())
+
+                If issue IsNot Nothing AndAlso issue.IssueID > 0 Then
+                    For Each file In attachments
+                        Dim link As New LinkLabel() With {
+                            .Text = file.FileName & "  [" & StampOf(file.CreatedOn) & "]",
+                            .AutoSize = True,
+                            .Margin = New Padding(0, 6, 16, 0),
+                            .Tag = file.AttachmentID
+                        }
+                        AddHandler link.LinkClicked, AddressOf Attachment_LinkClicked
+                        attachmentsPanel.Controls.Add(link)
+                    Next
+                End If
+            Catch ex As Exception
+                ' A page that cannot list its attachments is still a usable page. Say so once, in
+                ' the strip itself, rather than with a dialog the user cannot act on.
+                attachmentsPanel.Controls.Add(New Label() With {
+                    .Text = "Attachments unavailable: " & ex.Message,
+                    .AutoSize = True,
+                    .ForeColor = Color.FromArgb(150, 60, 60),
+                    .Margin = New Padding(0, 6, 16, 0)
+                })
+            Finally
+                attachmentsPanel.ResumeLayout()
+            End Try
+
+            ' Redrawn because the entries carry the links now, and they were built before the
+            ' attachments were known.
+            If issue IsNot Nothing Then RenderConversationHistory(issue.ConversationText)
+
+            LayoutControls()
+        End Sub
+
+        ''' <summary>
+        ''' Which attachments belong to the entry starting at a given stamp.
+        '''
+        ''' The pairing is by time, because nothing in the database says which entry a file came
+        ''' with - FW_HD_IssueAttachments.ConversationEntryID points at a table that does not exist
+        ''' yet. Both stamps come from the same save, minute precision, one from .NET and one from
+        ''' SQL, so the rule is "the latest entry at or before the file" rather than equality: a
+        ''' save that straddles a minute boundary would otherwise pair with nothing.
+        '''
+        ''' It can be wrong when two saves land in the same minute. That is cosmetic - the link
+        ''' appears under the neighbouring message and still downloads the right file - and it
+        ''' stops being a guess when the conversation table arrives.
+        ''' </summary>
+        Private Function AttachmentsForEntry(entryStamps As List(Of DateTime), entryIndex As Integer) As List(Of HelpDeskAttachmentSummary)
+            Dim owned As New List(Of HelpDeskAttachmentSummary)()
+            Dim stamp = entryStamps(entryIndex)
+            If stamp = DateTime.MinValue Then Return owned
+
+            For Each file In attachments
+                If file.CreatedOn = DateTime.MinValue Then Continue For
+
+                ' The entry this file belongs to: the latest one that had already been written when
+                ' the file was. Entries with no readable stamp cannot win.
+                Dim bestIndex = -1
+                Dim best = DateTime.MinValue
+                For candidate = 0 To entryStamps.Count - 1
+                    Dim candidateStamp = entryStamps(candidate)
+                    If candidateStamp = DateTime.MinValue Then Continue For
+                    If candidateStamp > file.CreatedOn.AddMinutes(1) Then Continue For
+                    If bestIndex = -1 OrElse candidateStamp > best Then
+                        bestIndex = candidate
+                        best = candidateStamp
+                    End If
+                Next
+
+                If bestIndex = entryIndex Then owned.Add(file)
+            Next
+
+            Return owned
+        End Function
+
+        ''' <summary>
+        ''' The "[yyyy-MM-dd HH:mm UTC]" that FormatConversationEntry writes at the head of an
+        ''' entry, or MinValue if this entry does not carry one - older entries, or text a user
+        ''' pasted in.
+        ''' </summary>
+        Private Shared Function StampFromEntry(entryText As String) As DateTime
+            Dim opened = If(entryText, String.Empty).IndexOf("["c)
+            If opened < 0 Then Return DateTime.MinValue
+
+            Dim closed = entryText.IndexOf("]"c, opened + 1)
+            If closed < 0 Then Return DateTime.MinValue
+
+            Dim inner = entryText.Substring(opened + 1, closed - opened - 1).Replace(" UTC", String.Empty).Trim()
+
+            Dim parsed As DateTime
+            If DateTime.TryParseExact(inner, "yyyy-MM-dd HH:mm", CultureInfo.InvariantCulture, DateTimeStyles.None, parsed) Then
+                Return parsed
+            End If
+
+            Return DateTime.MinValue
+        End Function
+
+        ''' <summary>
+        ''' The same stamp the conversation entries carry, deliberately.
+        '''
+        ''' An attachment's CreatedOn is SYSUTCDATETIME() written in the transaction that wrote the
+        ''' entry, and FormatConversationEntry stamps entries "yyyy-MM-dd HH:mm UTC". Matching the
+        ''' format is what lets the eye pair a file with the message it arrived with, until the
+        ''' conversation table makes the relationship real.
+        ''' </summary>
+        Private Shared Function StampOf(createdOn As DateTime) As String
+            If createdOn = DateTime.MinValue Then Return "no date"
+            Return createdOn.ToString("yyyy-MM-dd HH:mm", CultureInfo.InvariantCulture) & " UTC"
+        End Function
+
+        Private Sub Attachment_LinkClicked(sender As Object, e As LinkLabelLinkClickedEventArgs)
+            Dim link = TryCast(sender, LinkLabel)
+            If link Is Nothing OrElse link.Tag Is Nothing Then Return
+
+            Try
+                Dim file = HelpDeskDataAccess.GetAttachmentData(CInt(link.Tag), ResolveRegistrationId())
+                If file Is Nothing Then
+                    MessageBox.Show(Me, "That attachment is no longer available.", "Attachment", MessageBoxButtons.OK, MessageBoxIcon.Information)
+                    Return
+                End If
+
+                HelpDeskAttachmentPickers.DeliveryForCurrentSession().Deliver(Me, file)
+            Catch ex As Exception
+                MessageBox.Show(Me, "The attachment could not be opened: " & ex.Message, "Attachment", MessageBoxButtons.OK, MessageBoxIcon.Error)
+            End Try
+        End Sub
+
         Private Sub RenderConversationHistory(conversationText As String)
             If conversationHistoryPanel Is Nothing Then Return
 
@@ -369,6 +546,11 @@ Namespace SDC.Framework
 
             Dim entries = If(conversationText, String.Empty).Split(New String() {ConversationSeparator}, StringSplitOptions.RemoveEmptyEntries)
             Dim entryWidth = Math.Max(100, conversationHistoryPanel.ClientSize.Width - SystemInformation.VerticalScrollBarWidth - 12)
+
+            Dim entryStamps As New List(Of DateTime)()
+            For Each rawEntry In entries
+                entryStamps.Add(StampFromEntry(rawEntry))
+            Next
 
             For entryIndex = 0 To entries.Length - 1
                 Dim entryText = entries(entryIndex).Trim()
@@ -391,8 +573,23 @@ Namespace SDC.Framework
                     .Size = New Size(textWidth, Math.Max(Font.Height, textSize.Height)),
                     .AutoSize = False
                 }
-                entryPanel.Height = entryLabel.Height + entryPanel.Padding.Vertical
                 entryPanel.Controls.Add(entryLabel)
+
+                ' The files that arrived with this message, under its text.
+                Dim nextTop = entryLabel.Bottom + 6
+                For Each file In AttachmentsForEntry(entryStamps, entryIndex)
+                    Dim link As New LinkLabel() With {
+                        .Text = file.FileName,
+                        .AutoSize = True,
+                        .Location = New Point(entryPanel.Padding.Left, nextTop),
+                        .Tag = file.AttachmentID
+                    }
+                    AddHandler link.LinkClicked, AddressOf Attachment_LinkClicked
+                    entryPanel.Controls.Add(link)
+                    nextTop = link.Bottom + 2
+                Next
+
+                entryPanel.Height = (nextTop - entryLabel.Top) + entryPanel.Padding.Vertical
                 conversationHistoryPanel.Controls.Add(entryPanel)
 
                 If entryIndex < entries.Length - 1 Then
@@ -616,12 +813,16 @@ Namespace SDC.Framework
         End Sub
 
         Private Sub AttachFile_Click(sender As Object, e As EventArgs)
-            pendingAttachment = New WindowsHelpDeskAttachmentPicker().Pick(Me)
-            If pendingAttachment IsNot Nothing Then MessageBox.Show(Me, "Attached: " & pendingAttachment.FileName, "Attachment", MessageBoxButtons.OK, MessageBoxIcon.Information)
-        End Sub
+            Dim chosen = HelpDeskAttachmentPickers.ForCurrentSession().Pick(Me)
+            If chosen Is Nothing Then Return
 
-        Private Sub AttachViaThinfinity_Click(sender As Object, e As EventArgs)
-            MessageBox.Show(Me, "Thinfinity attachment is not configured in this application yet.", "Attachment", MessageBoxButtons.OK, MessageBoxIcon.Information)
+            pendingAttachments.Add(chosen)
+
+            Dim waiting = If(pendingAttachments.Count = 1,
+                             "1 file will be attached when you save.",
+                             pendingAttachments.Count.ToString() & " files will be attached when you save.")
+            MessageBox.Show(Me, "Attached: " & chosen.FileName & Environment.NewLine & Environment.NewLine & waiting,
+                            "Attachment", MessageBoxButtons.OK, MessageBoxIcon.Information)
         End Sub
 
         Private Function ResolveRegistrationId() As Integer

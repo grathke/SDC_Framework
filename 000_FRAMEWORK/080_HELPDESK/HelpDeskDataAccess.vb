@@ -198,6 +198,63 @@ Namespace SDC.Framework
             End Using
         End Function
 
+        ''' <summary>
+        ''' What is attached to an issue, without the bytes.
+        '''
+        ''' FileData is deliberately not selected: a list of six attachments would otherwise pull
+        ''' six files out of the database to draw six labels. The bytes are fetched by
+        ''' GetAttachmentData when somebody actually asks for one.
+        ''' </summary>
+        Public Shared Function GetAttachments(issueId As Integer, registrationId As Integer) As List(Of HelpDeskAttachmentSummary)
+            Dim result As New List(Of HelpDeskAttachmentSummary)()
+            If issueId <= 0 Then Return result
+
+            Using conn As New SqlConnection(ConnectionString())
+                conn.Open()
+                Using cmd As New SqlCommand("SELECT AttachmentID, FileName, ContentType, FileSize, CreatedOn FROM dbo.FW_HD_IssueAttachments WHERE IssueID = @IssueID AND RegistrationID = @RegistrationID ORDER BY CreatedOn, AttachmentID", conn)
+                    cmd.Parameters.AddWithValue("@IssueID", issueId)
+                    cmd.Parameters.AddWithValue("@RegistrationID", registrationId)
+                    Using reader = cmd.ExecuteReader()
+                        While reader.Read()
+                            result.Add(New HelpDeskAttachmentSummary With {
+                                .AttachmentID = Convert.ToInt32(reader("AttachmentID"), CultureInfo.InvariantCulture),
+                                .FileName = Convert.ToString(reader("FileName")),
+                                .ContentType = If(reader("ContentType") Is DBNull.Value, String.Empty, Convert.ToString(reader("ContentType"))),
+                                .FileSize = If(reader("FileSize") Is DBNull.Value, 0L, Convert.ToInt64(reader("FileSize"), CultureInfo.InvariantCulture)),
+                                .CreatedOn = If(reader("CreatedOn") Is DBNull.Value, DateTime.MinValue, Convert.ToDateTime(reader("CreatedOn"), CultureInfo.InvariantCulture))
+                            })
+                        End While
+                    End Using
+                End Using
+            End Using
+
+            Return result
+        End Function
+
+        ''' <summary>
+        ''' One attachment, bytes and all, scoped by registration so an id from elsewhere cannot
+        ''' read another tenant's file.
+        ''' </summary>
+        Public Shared Function GetAttachmentData(attachmentId As Integer, registrationId As Integer) As HelpDeskAttachmentUpload
+            Using conn As New SqlConnection(ConnectionString())
+                conn.Open()
+                Using cmd As New SqlCommand("SELECT FileName, ContentType, FileSize, FileData FROM dbo.FW_HD_IssueAttachments WHERE AttachmentID = @AttachmentID AND RegistrationID = @RegistrationID", conn)
+                    cmd.Parameters.AddWithValue("@AttachmentID", attachmentId)
+                    cmd.Parameters.AddWithValue("@RegistrationID", registrationId)
+                    Using reader = cmd.ExecuteReader()
+                        If Not reader.Read() Then Return Nothing
+
+                        Return New HelpDeskAttachmentUpload With {
+                            .FileName = Convert.ToString(reader("FileName")),
+                            .ContentType = If(reader("ContentType") Is DBNull.Value, String.Empty, Convert.ToString(reader("ContentType"))),
+                            .FileSize = If(reader("FileSize") Is DBNull.Value, 0L, Convert.ToInt64(reader("FileSize"), CultureInfo.InvariantCulture)),
+                            .FileData = If(reader("FileData") Is DBNull.Value, New Byte() {}, CType(reader("FileData"), Byte()))
+                        }
+                    End Using
+                End Using
+            End Using
+        End Function
+
         Public Shared Sub DeleteIssue(issueId As Integer, registrationId As Integer, deletedBy As Integer)
             Using conn As New SqlConnection(ConnectionString())
                 conn.Open()
@@ -210,7 +267,24 @@ Namespace SDC.Framework
             End Using
         End Sub
 
+        ''' <summary>
+        ''' Kept so a caller with a single attachment reads as it always did.
+        ''' </summary>
         Public Shared Function SaveIssue(record As IssueRecord, responseText As String, attachment As HelpDeskAttachmentUpload) As Boolean
+            Dim one As New List(Of HelpDeskAttachmentUpload)()
+            If attachment IsNot Nothing Then one.Add(attachment)
+            Return SaveIssue(record, responseText, one)
+        End Function
+
+        ''' <summary>
+        ''' A save writes every file chosen since the last one, not merely the newest.
+        '''
+        ''' This took a list on 2026-09-12 because it took a single attachment before: picking a
+        ''' second file replaced the first in the page's hands, and the first was never written.
+        ''' Nothing reported it - one row appeared where two were expected, and the page drew what
+        ''' the database held, correctly.
+        ''' </summary>
+        Public Shared Function SaveIssue(record As IssueRecord, responseText As String, attachments As IEnumerable(Of HelpDeskAttachmentUpload)) As Boolean
             If record Is Nothing Then Throw New ArgumentNullException(NameOf(record))
             Using conn As New SqlConnection(ConnectionString())
                 conn.Open()
@@ -243,7 +317,9 @@ Namespace SDC.Framework
                             End Using
                         End If
 
-                        If attachment IsNot Nothing Then
+                        For Each attachment In If(attachments, Enumerable.Empty(Of HelpDeskAttachmentUpload)())
+                            If attachment Is Nothing Then Continue For
+
                             Using cmd As New SqlCommand("INSERT INTO dbo.FW_HD_IssueAttachments (IssueID, ConversationEntryID, RegistrationID, FileName, ContentType, FileSize, FileData, CreatedBy, CreatedOn, UpdatedBy, UpdatedOn) VALUES (@IssueID, NULL, @RegistrationID, @FileName, @ContentType, @FileSize, @FileData, @UserID, SYSUTCDATETIME(), @UserID, SYSUTCDATETIME())", conn, trans)
                                 cmd.Parameters.AddWithValue("@IssueID", record.IssueID)
                                 cmd.Parameters.AddWithValue("@RegistrationID", record.RegistrationID)
@@ -254,7 +330,7 @@ Namespace SDC.Framework
                                 cmd.Parameters.AddWithValue("@UserID", CurrentUserId())
                                 cmd.ExecuteNonQuery()
                             End Using
-                        End If
+                        Next
 
                         trans.Commit()
                         Return True
