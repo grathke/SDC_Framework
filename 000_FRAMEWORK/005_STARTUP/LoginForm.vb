@@ -18,6 +18,10 @@ Namespace SDC.Framework
         Private ReadOnly passwordTextBox As TextBox
         Private ReadOnly loginButton As Button
         Private ReadOnly cancelActionButton As Button
+
+        ''' The white panel the fields sit on. Everything goes on this rather than the form, so the
+        ''' gradient behind it stays visible.
+        Private ReadOnly card As Panel
         Private ReadOnly statusLabel As Label
         Private ReadOnly btnSLitaker As Button
         Private ReadOnly btnGRathke As Button
@@ -32,96 +36,97 @@ Namespace SDC.Framework
             Me.FormBorderStyle = FormBorderStyle.FixedDialog
             Me.MaximizeBox = False
             Me.MinimizeBox = False
-            Me.ClientSize = New Size(420, 230)
-            Me.BackColor = Color.White
+
+            ' Larger than the card it holds, because the card sits on a backdrop rather than
+            ' filling the window. The first screen of the product used to be a grey box with system
+            ' buttons; this is the shell's own title band and accent, so login, role selection and
+            ' the menu read as one application.
+            ' A little larger than the card, so the shell drawn behind shows as a frame around it
+            ' rather than a full-size backdrop. Tried at the menu's own size on 2026-09-12 and it
+            ' was too much window for a login box.
+            Me.ClientSize = New Size(560, 420)
+
+            card = ShellChrome.BuildCard(Me, New Size(440, 300), "Sign in to continue")
 
             btnSLitaker = New Button() With {
                 .Name = "BTN_SLitaker",
                 .Text = "S Litaker",
-                .Location = New Point(20, 6),
-                .Size = New Size(115, 24),
+                .Location = New Point(16, 240),
+                .Size = New Size(130, 26),
                 .Visible = False
             }
 
             btnGRathke = New Button() With {
                 .Name = "BTN_GRathke",
                 .Text = "G Rathke",
-                .Location = New Point(145, 6),
-                .Size = New Size(115, 24),
+                .Location = New Point(154, 240),
+                .Size = New Size(130, 26),
                 .Visible = False
             }
 
             btnASawyer = New Button() With {
                 .Name = "BTN_ASawyer",
                 .Text = "A Sawyer",
-                .Location = New Point(270, 6),
-                .Size = New Size(115, 24),
+                .Location = New Point(292, 240),
+                .Size = New Size(130, 26),
                 .Visible = False
             }
 
             emailLabel = New Label() With {
                 .Text = "Email",
                 .AutoSize = True,
-                .Location = New Point(30, 54),
-                .ForeColor = Color.FromArgb(60, 60, 60)
+                .Location = New Point(40, 103),
+                .ForeColor = ShellChrome.BodyInk
             }
 
             emailTextBox = New TextBox() With {
-                .Location = New Point(130, 49),
-                .Size = New Size(250, 26),
+                .Location = New Point(130, 99),
+                .Size = New Size(270, 26),
                 .BorderStyle = BorderStyle.FixedSingle
             }
 
             passwordLabel = New Label() With {
                 .Text = "Password",
                 .AutoSize = True,
-                .Location = New Point(30, 99),
-                .ForeColor = Color.FromArgb(60, 60, 60)
+                .Location = New Point(40, 145),
+                .ForeColor = ShellChrome.BodyInk
             }
 
             passwordTextBox = New TextBox() With {
-                .Location = New Point(130, 94),
-                .Size = New Size(250, 26),
+                .Location = New Point(130, 141),
+                .Size = New Size(270, 26),
                 .BorderStyle = BorderStyle.FixedSingle,
                 .UseSystemPasswordChar = True
             }
 
             loginButton = New Button() With {
                 .Text = "Login",
-                .Location = New Point(130, 144),
-                .Size = New Size(110, 36),
-                .FlatStyle = FlatStyle.Flat,
-                .BackColor = Color.White,
-                .ForeColor = Color.FromArgb(45, 45, 45)
+                .Location = New Point(130, 190),
+                .Size = New Size(130, 38)
             }
-            loginButton.FlatAppearance.BorderColor = Color.FromArgb(170, 170, 170)
-            loginButton.FlatAppearance.BorderSize = 1
+            ShellChrome.StylePrimary(loginButton)
 
             ' Exit, not Cancel. This button ends the application - there is nothing to cancel,
             ' and the login screen is also where the main menu returns to on the way out, where
             ' "Cancel" reads as though it would undo something.
             cancelActionButton = New Button() With {
                 .Text = "Exit",
-                .Location = New Point(270, 144),
-                .Size = New Size(110, 36),
-                .FlatStyle = FlatStyle.Flat,
-                .BackColor = Color.White,
-                .ForeColor = Color.FromArgb(45, 45, 45)
+                .Location = New Point(270, 190),
+                .Size = New Size(130, 38)
             }
-            cancelActionButton.FlatAppearance.BorderColor = Color.FromArgb(170, 170, 170)
-            cancelActionButton.FlatAppearance.BorderSize = 1
+            ShellChrome.StyleSecondary(cancelActionButton)
 
             statusLabel = New Label() With {
                 .Text = String.Empty,
                 .AutoSize = False,
-                .Size = New Size(350, 30),
-                .Location = New Point(30, 186),
+                .Size = New Size(370, 34),
+                .Location = New Point(40, 234),
                 .ForeColor = Color.Firebrick
             }
 
             devHotspotPanel = New Panel() With {
                 .Name = "DEV_REVEAL_HOTSPOT",
-                .Location = New Point(Me.ClientSize.Width - 54, Me.ClientSize.Height - 54),
+                .Location = New Point(card.Width - 54, card.Height - 54),
                 .Size = New Size(48, 48),
                 .BackColor = Color.White,
                 .BorderStyle = BorderStyle.None,
@@ -139,17 +144,19 @@ Namespace SDC.Framework
             AddHandler btnASawyer.Click, AddressOf BtnASawyer_Click
             AddHandler devHotspotPanel.Click, AddressOf DevHotspotPanel_Click
 
-            Me.Controls.Add(btnSLitaker)
-            Me.Controls.Add(btnGRathke)
-            Me.Controls.Add(btnASawyer)
-            Me.Controls.Add(emailLabel)
-            Me.Controls.Add(emailTextBox)
-            Me.Controls.Add(passwordLabel)
-            Me.Controls.Add(passwordTextBox)
-            Me.Controls.Add(loginButton)
-            Me.Controls.Add(cancelActionButton)
-            Me.Controls.Add(statusLabel)
-            Me.Controls.Add(devHotspotPanel)
+            ' Onto the card, not the form. Anything added to the form would land behind the card
+            ' or beside it on the backdrop.
+            card.Controls.Add(btnSLitaker)
+            card.Controls.Add(btnGRathke)
+            card.Controls.Add(btnASawyer)
+            card.Controls.Add(emailLabel)
+            card.Controls.Add(emailTextBox)
+            card.Controls.Add(passwordLabel)
+            card.Controls.Add(passwordTextBox)
+            card.Controls.Add(loginButton)
+            card.Controls.Add(cancelActionButton)
+            card.Controls.Add(statusLabel)
+            card.Controls.Add(devHotspotPanel)
         End Sub
 
         Private Sub DevHotspotPanel_Click(sender As Object, e As EventArgs)

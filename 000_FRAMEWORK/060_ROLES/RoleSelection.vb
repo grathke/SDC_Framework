@@ -26,24 +26,33 @@ Namespace SDC.Framework
             roleList = If(roles, New List(Of UserRoleOption)())
             preselectedRoleId = initialSelectedRoleId
 
-            Me.Text = "ROLE SELECTION"
+            Me.Text = "Role Selection"
             Me.StartPosition = FormStartPosition.CenterParent
             Me.FormBorderStyle = FormBorderStyle.FixedDialog
             Me.MaximizeBox = False
             Me.MinimizeBox = False
-            Me.ClientSize = New Size(560, 370)
-            Me.BackColor = Color.White
 
+            ' A card on the shell's backdrop, like the login screen - these are the two windows a
+            ' user meets before the menu, and they used to be the two that looked least like it.
+            ' A little larger than the card, matching the login screen so the backdrop does not
+            ' change size between the two.
+            Me.ClientSize = New Size(700, 520)
+
+            Dim card = ShellChrome.BuildCard(Me, New Size(580, 430), "Choose the role for this session")
+
+            ' Sentence case, and shorter. The original was three lines of capitals, which reads as
+            ' shouting and is slower to take in than the sentence it replaces.
             Dim infoLabel As New Label() With {
-                .Text = "YOU APPEAR TO BELONG TO MULTIPLE ROLES. PLEASE SELECT ONE TO BECOME YOUR CURRENT ROLE FOR THIS SESSION." & Environment.NewLine & Environment.NewLine & "YOU MAY CHANGE YOUR SELECTION AT ANY TIME FROM THE MAIN MENU.",
-                .Location = New Point(18, 18),
-                .Size = New Size(524, 64),
-                .AutoSize = False
+                .Text = "You belong to more than one role. Pick the one to use for this session - you can change it at any time from the main menu.",
+                .Location = New Point(24, 92),
+                .Size = New Size(532, 40),
+                .AutoSize = False,
+                .ForeColor = ShellChrome.BodyInk
             }
 
             rolesGrid = New DataGridView() With {
-                .Location = New Point(18, 92),
-                .Size = New Size(524, 220),
+                .Location = New Point(24, 140),
+                .Size = New Size(532, 230),
                 .AllowUserToAddRows = False,
                 .AllowUserToDeleteRows = False,
                 .AllowUserToResizeRows = False,
@@ -89,28 +98,31 @@ Namespace SDC.Framework
 
             okButton = New Button() With {
                 .Text = "OK",
-                .Location = New Point(386, 326),
-                .Size = New Size(75, 32),
+                .Location = New Point(336, 384),
+                .Size = New Size(105, 34),
                 .DialogResult = DialogResult.OK,
                 .Enabled = False
             }
+            ShellChrome.StylePrimary(okButton)
 
             cancelActionButton = New Button() With {
                 .Text = "Cancel",
-                .Location = New Point(467, 326),
-                .Size = New Size(75, 32),
+                .Location = New Point(451, 384),
+                .Size = New Size(105, 34),
                 .DialogResult = DialogResult.Cancel
             }
+            ShellChrome.StyleSecondary(cancelActionButton)
 
             AddHandler okButton.Click, AddressOf OkButton_Click
 
             Me.AcceptButton = okButton
             Me.CancelButton = cancelActionButton
 
-            Me.Controls.Add(infoLabel)
-            Me.Controls.Add(rolesGrid)
-            Me.Controls.Add(okButton)
-            Me.Controls.Add(cancelActionButton)
+            ' Onto the card, not the form - the form is the backdrop.
+            card.Controls.Add(infoLabel)
+            card.Controls.Add(rolesGrid)
+            card.Controls.Add(okButton)
+            card.Controls.Add(cancelActionButton)
         End Sub
 
         Private Sub FW_RoleSelection_Shown(sender As Object, e As EventArgs)
