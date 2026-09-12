@@ -7,8 +7,7 @@ Imports System.Windows.Forms
 Namespace SDC.Framework
 
     ''' <summary>
-    ''' The default occupant of the Messages region, and a placeholder for whatever eventually
-    ''' belongs there.
+    ''' The default occupant of the main menu's left region: a product banner and a tabbed board.
     '''
     ''' It exists because of a rule worth keeping: **every region always has an occupant.** A
     ''' Messages button that can only ever show Messages has nothing to return to, and a hidden
@@ -16,75 +15,92 @@ Namespace SDC.Framework
     ''' With a default in place the button is a selector rather than a toggle, and the same control
     ''' answers "what is here when messaging is switched off".
     '''
-    ''' **It reports its own size on purpose.** There is no designer in this project - every control
-    ''' is built in code - so the way to decide what fits in this region is to look at how much room
-    ''' it has. The readout is not decoration: it is the measurement that the eventual content, a
-    ''' chart or a set of figures or a short list, has to be designed against. Delete it when
-    ''' something real goes in here.
+    ''' The tabs are empty on purpose. This is the shape the eventual content has to fit - a
+    ''' schedule, a count, a short list - and the shape is the part worth agreeing before anything
+    ''' is written to fill it.
     '''
     ''' It lives under 100_PROJECTS\SDC rather than in the framework because which default a given
     ''' application wants is MenuFormInitializer's decision. A second application on this framework
     ''' writes its own and changes nothing in 000_FRAMEWORK.
     ''' </summary>
-    Public Class OverviewWindowControl
+    Public Class QDeskWindowControl
         Inherits UserControl
         Implements IAccessControlledControl
 
-        Private ReadOnly titleLabel As Label
-        Private ReadOnly sizeLabel As Label
-        Private ReadOnly noteLabel As Label
+        ''' The banner, from the repository's images rather than embedded, so it can be replaced
+        ''' without a rebuild.
+        Private Const BannerImagePath As String = "QDesk\QDeskAdministration.png"
+
+        ''' The strip the banner sits in. The picture is left-aligned inside it rather than docked,
+        ''' because a docked PictureBox in Zoom mode centres its image in whatever width it has -
+        ''' which put the logo in the middle of the region instead of above the tabs.
+        Private ReadOnly bannerHost As Panel
+        Private ReadOnly bannerBox As PictureBox
+        Private ReadOnly boardPanel As Panel
+        Private ReadOnly boardTabs As TabControl
 
         Public Sub New()
             Me.Dock = DockStyle.Fill
             Me.BackColor = Color.White
-            Me.Padding = New Padding(8)
+            ' No inset. The region hides its caption bar for this control, so the banner starts at
+            ' the top edge and the tabs run to the bottom - the point of filling the cell.
+            Me.Padding = New Padding(6)
 
-            titleLabel = New Label() With {
-                .Text = "Nothing here yet",
-                .Location = New Point(12, 16),
-                .AutoSize = True,
-                .Font = New Font("Segoe UI", 15.0F, FontStyle.Regular),
-                .ForeColor = Color.FromArgb(76, 84, 94)
+            ' Zoom, not Stretch: the banner has its own proportions and a region that is wider on
+            ' one screen than another must not squash it.
+            Const bannerHeight As Integer = 78
+
+            bannerBox = New PictureBox() With {
+                .Location = New Point(0, 0),
+                .Height = bannerHeight,
+                .SizeMode = PictureBoxSizeMode.Zoom,
+                .Image = AssetImages.Load(BannerImagePath)
             }
 
-            sizeLabel = New Label() With {
-                .Text = "0 x 0",
-                .Location = New Point(12, 52),
-                .AutoSize = True,
-                .Font = New Font("Consolas", 12.0F, FontStyle.Regular),
-                .ForeColor = Color.FromArgb(58, 133, 197)
+            ' Only as wide as the picture needs at that height, so "left aligned" means the logo's
+            ' own left edge rather than the left edge of a box with the logo centred in it.
+            If bannerBox.Image IsNot Nothing AndAlso bannerBox.Image.Height > 0 Then
+                Dim aspect = bannerBox.Image.Width / CDbl(bannerBox.Image.Height)
+                bannerBox.Width = CInt(Math.Ceiling(bannerHeight * aspect))
+            End If
+
+            bannerHost = New Panel() With {
+                .Dock = DockStyle.Top,
+                .Height = bannerHeight,
+                .BackColor = Color.White
             }
+            bannerHost.Controls.Add(bannerBox)
 
-            noteLabel = New Label() With {
-                .Text = "This is the room a chart, a summary or a short list would have.",
-                .Location = New Point(12, 82),
-                .AutoSize = False,
-                .Size = New Size(320, 40),
-                .Anchor = AnchorStyles.Top Or AnchorStyles.Left Or AnchorStyles.Right,
-                .Font = New Font("Segoe UI", 9.5F, FontStyle.Regular),
-                .ForeColor = Color.FromArgb(120, 128, 138)
+            ' A missing image leaves the space rather than a broken-looking empty frame.
+            If bannerBox.Image Is Nothing Then bannerHost.Height = 0
+
+            boardTabs = New TabControl() With {
+                .Dock = DockStyle.Fill,
+                .Padding = New Point(12, 4)
             }
+            boardTabs.TabPages.Add(New TabPage("Today's Schedules") With {.BackColor = Color.White, .Padding = New Padding(8)})
+            boardTabs.TabPages.Add(New TabPage("Permits Sold") With {.BackColor = Color.White, .Padding = New Padding(8)})
 
-            Me.Controls.Add(titleLabel)
-            Me.Controls.Add(sizeLabel)
-            Me.Controls.Add(noteLabel)
+            boardPanel = New Panel() With {
+                .Dock = DockStyle.Fill,
+                .BackColor = Color.White,
+                .BorderStyle = BorderStyle.FixedSingle,
+                .Padding = New Padding(0),
+                .Margin = New Padding(0)
+            }
+            boardPanel.Controls.Add(boardTabs)
 
-            AddHandler Me.Resize, AddressOf Overview_Resize
+            ' Fill before Top, because a docked child added later sits inside what is already
+            ' docked - the banner has to be added after the panel to end up above it.
+            Me.Controls.Add(boardPanel)
+            Me.Controls.Add(bannerHost)
         End Sub
 
         ''' <summary>
-        ''' Kept current on every resize rather than read once, because the region is a percentage
-        ''' of the window and the number is only useful if it matches what is on screen.
-        ''' </summary>
-        Private Sub Overview_Resize(sender As Object, e As EventArgs)
-            sizeLabel.Text = Me.ClientSize.Width.ToString() & " x " & Me.ClientSize.Height.ToString()
-            noteLabel.Width = Math.Max(120, Me.ClientSize.Width - 24)
-        End Sub
-
-        ''' <summary>
-        ''' Nothing to restrict. A placeholder shows no data, so there is nothing a role could be
+        ''' Nothing to restrict yet. The tabs show no data, so there is nothing a role could be
         ''' allowed or denied - but the interface is implemented so this control can be loaded by
-        ''' the same path as every other region control rather than needing a special case.
+        ''' the same path as every other region control rather than needing a special case. When
+        ''' the tabs carry real figures, this is where their permissions belong.
         ''' </summary>
         Public Sub ApplyAccess(profile As AccessProfile, tableName As String) Implements IAccessControlledControl.ApplyAccess
         End Sub

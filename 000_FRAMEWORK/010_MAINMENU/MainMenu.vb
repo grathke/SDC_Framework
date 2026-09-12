@@ -579,7 +579,7 @@ Namespace SDC.Framework
             ' while something else is showing. Every region always has an occupant, so the Messages
             ' tile always has something to come back to and the cell is never a blank third of the
             ' page - and this is what sits there when messaging is switched off.
-            AddActionTile("region-overview", "Overview", AddressOf ShowOverviewRegion_Click, LoadMenuIcon("Color_Search.png", SystemIcons.Application.ToBitmap()))
+            AddActionTile("region-overview", "QDesk", AddressOf ShowOverviewRegion_Click, LoadMenuIcon("Color_Search.png", SystemIcons.Application.ToBitmap()))
 
             ' The "users" tile was removed on 2026-09-06. It was captioned Users and opened Roles_B,
             ' which is a mislabelled tile rather than a missing feature: Roles_B is reached from the
@@ -1121,6 +1121,24 @@ Namespace SDC.Framework
             newMessageMarker.Visible = hasUnread AndAlso canUseMessaging
         End Sub
 
+        ''' <summary>
+        ''' Whether a region shows its caption bar, and whether its content is inset.
+        '''
+        ''' Some occupants are a caption and a list, and want the shell's furniture. Others are a
+        ''' whole board - a banner and tabs of their own - and a caption above them is a second
+        ''' title saying less than the picture does, with a strip of white between the two. Those
+        ''' fill the cell instead.
+        ''' </summary>
+        Public Sub SetRegionChrome(region As MenuRegion, showHeader As Boolean)
+            Dim shell = GetRegionShell(region)
+            If shell Is Nothing Then Return
+
+            If shell.HeaderPanel IsNot Nothing Then shell.HeaderPanel.Visible = showHeader
+            If shell.ContentHost IsNot Nothing Then
+                shell.ContentHost.Padding = If(showHeader, New Padding(8), New Padding(0))
+            End If
+        End Sub
+
         Public Sub SetRegionHeader(region As MenuRegion, headerText As String)
             Dim shell = GetRegionShell(region)
             shell.HeaderLabel.Text = headerText
@@ -1645,6 +1663,7 @@ Namespace SDC.Framework
                 Return
             End If
 
+            SetRegionChrome(MenuRegion.RegionLeft, True)
             SetRegionHeader(MenuRegion.RegionLeft, "Messages")
             LoadRegionControl(MenuRegion.RegionLeft, New MessagesWindowControl())
         End Sub
@@ -1652,12 +1671,13 @@ Namespace SDC.Framework
         Private Sub ShowOverviewRegion_Click(sender As Object, e As EventArgs)
             ' Nothing to reload - it shows no data - so the click simply does nothing when it is
             ' already up, rather than rebuilding it for no reason.
-            If TypeOf GetRegionContent(MenuRegion.RegionLeft) Is OverviewWindowControl Then
+            If TypeOf GetRegionContent(MenuRegion.RegionLeft) Is QDeskWindowControl Then
                 Return
             End If
 
-            SetRegionHeader(MenuRegion.RegionLeft, "Overview")
-            LoadRegionControl(MenuRegion.RegionLeft, New OverviewWindowControl())
+            SetRegionHeader(MenuRegion.RegionLeft, "QDesk")
+            SetRegionChrome(MenuRegion.RegionLeft, False)
+            LoadRegionControl(MenuRegion.RegionLeft, New QDeskWindowControl())
         End Sub
 
         Private Sub Dashboard_Click(sender As Object, e As EventArgs)

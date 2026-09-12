@@ -45,17 +45,13 @@ Namespace SDC.Framework
             Return IconFamilyOrder.Length
         End Function
 
+        ''' <summary>
+        ''' Moved to AssetImages on 2026-09-12, when the main menu's region needed the same walk
+        ''' back up to the repository's images. Kept as a name here because the call sites read
+        ''' better for it.
+        ''' </summary>
         Private Shared Function DashboardImagesFolder() As String
-            Dim candidates As String() = {
-                Path.Combine(Application.StartupPath, "assets", "images"),
-                Path.Combine(Application.StartupPath, "..", "..", "..", "assets", "images"),
-                Path.Combine(Application.StartupPath, "..", "..", "..", "..", "assets", "images")
-            }
-            For Each candidate In candidates
-                Dim fullPath = Path.GetFullPath(candidate)
-                If Directory.Exists(fullPath) Then Return fullPath
-            Next
-            Return String.Empty
+            Return AssetImages.Folder()
         End Function
 
         ''' A choice is either a file in assets\images or one of the built-in glyphs, marked with

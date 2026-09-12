@@ -368,11 +368,21 @@ Namespace SDC.Framework
             ' occupant, and a role that may not have Messages gets Overview instead. It needs no
             ' registration setting - that setting decides which of the two opens for somebody
             ' allowed both, and cannot grant what permission has refused.
-            If profile.Can(TableMessaging, AccessCapability.Read) Then
-                LoadRegionAlways(menu, profile, FW_MainMenu.MenuRegion.RegionLeft, TableMessaging, Function() New MessagesWindowControl(), "Messages")
-            Else
-                LoadRegionAlways(menu, profile, FW_MainMenu.MenuRegion.RegionLeft, TableMessaging, Function() New OverviewWindowControl(), "Overview")
-            End If
+            ' QDesk opens here, always, until the registration can name an owner for the region.
+            '
+            ' The rule agreed 2026-09-12: the registration names which control opens, and with
+            ' nothing named the default opens. Nothing is named today - the setting needs a column
+            ' the schema does not have - so the default is what everybody gets, and Messages is a
+            ' tile away.
+            '
+            ' Permission still decides what is *available* rather than what opens: a role without
+            ' FW_Messages has no Messages tile to press. That is why this no longer branches on it
+            ' - the branch was answering "what opens" with a permission, which is the wrong
+            ' question, and it meant nobody with messaging ever saw the region's default at all.
+            '
+            ' No caption bar for QDesk: it brings its own banner and tabs, and the shell's title
+            ' above them would be a second heading over a strip of white.
+            LoadRegionAlways(menu, profile, FW_MainMenu.MenuRegion.RegionLeft, TableMessaging, Function() New QDeskWindowControl(), "QDesk", False)
             LoadRegionAlways(menu, profile, FW_MainMenu.MenuRegion.GeneralDashboard, TableFrameworkDashboard, Function() New GeneralDashboardWindowControl(), "General Dashboard")
             LoadRegionAlways(menu, profile, FW_MainMenu.MenuRegion.AcmeDashboard, TableRegistrationDashboard, Function() New AcmeDashboardWindowControl(), "Acme Dashboard")
             LoadRegionAlways(menu, profile, FW_MainMenu.MenuRegion.UsersAndLists, TableRoles, Function() New UsersListsWindowControl(), "Users & Lists")
@@ -385,8 +395,10 @@ Namespace SDC.Framework
                                      region As FW_MainMenu.MenuRegion,
                                      tableName As String,
                                      controlFactory As Func(Of Control),
-                                     headerText As String)
+                                     headerText As String,
+                                     Optional showHeader As Boolean = True)
             menu.SetRegionHeader(region, headerText)
+            menu.SetRegionChrome(region, showHeader)
 
             Dim control = controlFactory()
             Dim accessControlled = TryCast(control, IAccessControlledControl)
