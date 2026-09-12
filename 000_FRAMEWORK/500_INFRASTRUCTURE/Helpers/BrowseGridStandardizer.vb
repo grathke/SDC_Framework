@@ -52,8 +52,18 @@ Namespace SDC.Framework
                 Return
             End If
 
-            If grid.CurrentCell Is Nothing AndAlso grid.Rows.Count > 0 AndAlso grid.Columns.Count > 0 Then
-                grid.CurrentCell = grid.Rows(0).Cells(0)
+            ' The first *visible* cell, not the first cell. Cells(0) threw "Current cell cannot be
+            ' set to an invisible cell" on any page whose first column is hidden - PK is hidden on
+            ' every browse page, and a saved layout can hide others - so this failed wherever the
+            ' hiding reached column zero. Rows too: a row can be invisible, and the same rule
+            ' applies to it.
+            If grid.CurrentCell Is Nothing Then
+                Dim column = grid.Columns.GetFirstColumn(DataGridViewElementStates.Visible)
+                Dim rowIndex = grid.Rows.GetFirstRow(DataGridViewElementStates.Visible)
+
+                If column IsNot Nothing AndAlso rowIndex >= 0 Then
+                    grid.CurrentCell = grid.Rows(rowIndex).Cells(column.Index)
+                End If
             End If
 
             grid.Focus()

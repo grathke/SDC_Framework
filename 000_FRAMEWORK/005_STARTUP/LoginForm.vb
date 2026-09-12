@@ -27,7 +27,7 @@ Namespace SDC.Framework
         Private failedAttempts As Integer = 0
 
         Public Sub New()
-            Me.Text = "Contacts Login"
+            Me.Text = "User Logon"
             Me.StartPosition = FormStartPosition.CenterScreen
             Me.FormBorderStyle = FormBorderStyle.FixedDialog
             Me.MaximizeBox = False

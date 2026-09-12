@@ -2,6 +2,8 @@ Option Strict On
 Option Explicit On
 
 Imports System
+Imports System.Diagnostics
+Imports System.Globalization
 Imports System.IO
 Imports System.Linq
 Imports System.Threading
@@ -55,6 +57,11 @@ Namespace SDC.Framework
         ''' </summary>
         Private Const VirtualUIStartTimeoutMs As Integer = 5000
 
+        ''' Longer, because a dev run has just asked a browser to start and a cold one takes
+        ''' several seconds to reach the page. Nothing waits this long unless a browser was asked
+        ''' for and never arrived.
+        Private Const VirtualUIDevStartTimeoutMs As Integer = 20000
+
         ''' <summary>
         ''' Held for the life of the process. THINFINITY_NOTES.md section 3: constructing VirtualUI
         ''' also constructs the shared static instance the event handlers attach to, so it is
@@ -82,6 +89,20 @@ Namespace SDC.Framework
         End Property
 
         Private virtualUISessionAttached As Boolean
+
+        ''' <summary>
+        ''' The SDK instance, for the few places that need more than "am I in a browser".
+        '''
+        ''' Nothing may assume it: it is Nothing on a desktop run and on a run started with
+        ''' --no-tf, so a caller checks InBrowserSession first and treats this as the how rather
+        ''' than the whether. Owned here because Start() is called here and the object must outlive
+        ''' the call - a second instance would not be attached to the session.
+        ''' </summary>
+        Friend ReadOnly Property VirtualUISession As Cybele.Thinfinity.VirtualUI
+            Get
+                Return virtualUI
+            End Get
+        End Property
 
         ''' <summary>
         ''' Starts the VirtualUI session, before anything is drawn.
@@ -127,15 +148,26 @@ Namespace SDC.Framework
                 ' holding a database connection and, in dev mode, the development server's port.
                 AddHandler virtualUI.OnClose, AddressOf VirtualUISessionClosed
 
-                ' Five seconds, not the default sixty. Start() blocks until a browser attaches or
-                ' the timeout expires, and on a developer machine nobody is usually waiting at the
-                ' other end - measured on 2026-09-10, the first run sat for sixty-nine seconds
-                ' showing nothing at all before the login screen appeared.
+                ' We open the browser ourselves in dev mode, rather than letting the SDK ask.
                 '
-                ' A browser that is already open attaches in well under five. One that is not
-                ' costs five seconds and then the application opens on the desktop, which is what
-                ' a developer wanted in that case anyway.
-                Dim started = virtualUI.Start(VirtualUIStartTimeoutMs)
+                ' Its prompt has a "do not show this again" box, and once that is ticked nothing
+                ' opens a tab at all: Start() waits out its timeout, returns False, and the
+                ' application falls back to the desktop looking as though TF had been skipped.
+                ' Opening it here is also simply better - no dialog stands between "run" and the
+                ' application.
+                '
+                ' StartBrowser off first, so a machine where the prompt is still enabled does not
+                ' get two tabs.
+                Dim timeout = VirtualUIStartTimeoutMs
+                If devMode Then
+                    timeout = VirtualUIDevStartTimeoutMs
+                    OpenDevBrowser()
+                End If
+
+                ' Start() blocks until a browser attaches or the timeout expires. Five seconds is
+                ' plenty for a tab that is already open and nowhere near enough for a cold browser
+                ' start, which is why dev mode waits longer - it knows a browser is on its way.
+                Dim started = virtualUI.Start(timeout)
 
                 ' Hide the desktop window, but only once a browser is actually holding the
                 ' session. OPT_APPINVISIBLE is what stops the application appearing twice - once
@@ -208,6 +240,32 @@ Namespace SDC.Framework
             End Try
 
             GC.KeepAlive(killer)
+        End Sub
+
+        ''' <summary>
+        ''' Opens the development server's page in the default browser.
+        '''
+        ''' Called before Start(), which is what the page needs to connect to - the request will
+        ''' arrive while Start() is waiting, which is exactly the handshake it is waiting for. The
+        ''' port comes from the SDK rather than a constant here, so changing it in the manager
+        ''' does not leave this opening the wrong address.
+        ''' </summary>
+        Private Sub OpenDevBrowser()
+            Try
+                virtualUI.DevServer.StartBrowser = False
+
+                Dim port = virtualUI.DevServer.Port
+                If port <= 0 Then port = 6080
+
+                Dim url = "http://127.0.0.1:" & port.ToString(CultureInfo.InvariantCulture) & "/"
+                Log("Opening " & url)
+
+                Process.Start(New ProcessStartInfo(url) With {.UseShellExecute = True})
+            Catch ex As Exception
+                ' Not fatal. Without a browser Start() times out and the application opens on the
+                ' desktop, which is a worse run but still a run.
+                Log("Could not open the development browser: " & ex.Message)
+            End Try
         End Sub
 
         <STAThread>
