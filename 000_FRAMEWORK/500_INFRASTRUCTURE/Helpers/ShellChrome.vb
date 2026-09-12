@@ -64,7 +64,9 @@ Namespace SDC.Framework
                 e.Graphics.FillRectangle(brush, surface.ClientRectangle)
             End Using
 
-            PaintShellMock(e.Graphics, surface.ClientRectangle)
+            ' The drawn shell mock that used to go here was turned off on 2026-09-12 - it read as
+            ' clutter behind the card rather than context. PaintShellMock is kept, unused, because
+            ' the question of what belongs behind these two screens is not settled.
         End Sub
 
         ''' <summary>
