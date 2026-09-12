@@ -650,3 +650,96 @@ Pages are a different question and were left alone. A browse grid genuinely want
 `_B` and `_U` are better resizable than scaled.
 
 On the desktop none of this applies: sizable, both boxes, no maximum.
+
+## 11.6 The console account — **planned, not applied** — 2026-09-12
+
+`TF_Console` exists as a local account. **Nothing uses it, and nothing should be changed to use it
+while the server works.** This section is the plan on the shelf, not a description of the running
+system.
+
+### Why a console account at all
+
+11.2 records the fact that drives it: `ThinfinityVUISvcMgr` starts the listener **into the
+interactive session as the logged-on user**, not as LocalSystem. A server with nobody logged in has
+no VirtualUI server. On a real server that means somebody's session has to be up permanently, which
+is an account that auto-logs on at the console and is never signed out.
+
+### Why it was not applied
+
+The server works. Moving it to a different identity means deleting and re-adding the URL
+reservations and moving the `SDC_DB_*` environment variables to another profile — the exact ground
+that cost 11.2 through 11.4. Deferred on 2026-09-12 for that reason, which is the right call: a
+working server is worth more than a tidier account.
+
+`TF_Console` was created on that day with `New-LocalUser` from an elevated prompt. **It may have
+been added to Administrators before the reasoning below was worked out — check before assuming
+not.** Nothing runs as it either way, so removing that membership cannot affect Thinfinity.
+
+### It must not be an administrator
+
+This follows from 11.4 rather than from general caution. The whole purpose of the `urlacl` is to let
+a **non-elevated** process bind `http.sys`. Grant the reservation to the account and it needs no
+elevation, so the one argument for admin rights is already answered. Against it: an auto-logon
+account has a recoverable password stored on the machine, and the session sits signed in
+permanently on a box reachable from a browser.
+
+What it does need:
+
+- membership in **Users**, and nothing further
+- the two URL reservations, weak wildcard, granted to it by name
+- read/execute on the application folder, and write to the profile's `Start in` folder, or
+  `startup.log` never appears and a failed launch looks like a failed server
+
+### Auto logon stores a password — put it in LSA secrets
+
+`AutoAdminLogon` under `Winlogon` keeps `DefaultPassword` in **plaintext**, readable by anything
+running as an administrator. Sysinternals Autologon writes the same configuration but puts the
+password in LSA secrets:
+
+```
+Autologon64.exe TF_Console <machine> <password> /accepteula
+```
+
+Still recoverable by a local administrator — which is the second reason the account is not one.
+
+### Two accounts, not one
+
+| | the console account | the administrator |
+|---|---|---|
+| signs in | automatically, at the console, at boot | over RDP, when needed |
+| rights | Users | Administrators |
+| owns | the VirtualUI server session and the application | nothing that must keep running |
+
+They cannot be the same account, because auto logon would then leave an administrator's password on
+the machine.
+
+On **Windows 11 Pro** there is one interactive session, so connecting over RDP as the administrator
+**disconnects** the console session. Disconnect is not sign-out: the server and the running
+application survive, and only the desktop is unreachable, which does not matter when browser users
+arrive on 6580. Windows Server allows two sessions and the cost disappears.
+
+### The two things keyed to the account's identity
+
+This is what makes an identity change expensive, and neither failure names the account:
+
+- the URL reservations — wrong account gives **503 on every path**, the fault of 11.4
+- `SDC_DB_CONNECTION` or the `SDC_DB_*` variables, at that profile's user scope — absent, the
+  application exits with **"Database Configuration Required"** before the login screen (11.2)
+
+The environment is inherited at logon, so variables written into a profile only reach the server
+after that session signs in again. Written from another session into
+`HKEY_USERS\<SID>\Environment`, they need the profile to exist, which means the account has logged
+on at least once. Sequence, if this is ever applied: reservations, auto logon, reboot, variables,
+reboot again.
+
+### If it is applied later
+
+Do it when the server is being rebuilt or moved, not to a working one. Verify in this order, and
+stop at the first failure rather than reaching for the profile or the licence:
+
+```
+query session
+Get-Process Thinfinity.VirtualUI.Server -IncludeUserName | Select-Object Id, UserName
+```
+
+then `http://localhost:6580/` for a 200, then the tile, then `startup.log` in the `Start in` folder.

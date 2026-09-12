@@ -351,6 +351,12 @@ Namespace SDC.Framework
             ' session does it too. With minimum and maximum equal there is no size to argue about.
             If Program.InBrowserSession Then
                 Me.MaximumSize = Me.Size
+
+                ' And no taskbar button. The window is invisible on the desktop, so the button
+                ' restores nothing - it advertises a window that cannot be shown, for the whole
+                ' life of the session and for the two or three minutes the process lingers after
+                ' the browser has gone.
+                Me.ShowInTaskbar = False
             End If
 
             Me.BackColor = Color.White
