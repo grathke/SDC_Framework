@@ -97,8 +97,11 @@ Namespace SDC.Framework
             loginButton.FlatAppearance.BorderColor = Color.FromArgb(170, 170, 170)
             loginButton.FlatAppearance.BorderSize = 1
 
+            ' Exit, not Cancel. This button ends the application - there is nothing to cancel,
+            ' and the login screen is also where the main menu returns to on the way out, where
+            ' "Cancel" reads as though it would undo something.
             cancelActionButton = New Button() With {
-                .Text = "Cancel",
+                .Text = "Exit",
                 .Location = New Point(270, 144),
                 .Size = New Size(110, 36),
                 .FlatStyle = FlatStyle.Flat,

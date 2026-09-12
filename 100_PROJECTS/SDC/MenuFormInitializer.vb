@@ -69,7 +69,7 @@ Namespace SDC.Framework
         ''' and an anchor is what says so - it cannot be dragged and it carries the "Fixed
         ''' position" tooltip. Added without an anchor it went to the end of the row, behind the
         ''' generated tiles, because an unranked tile sorts last.
-        Private ReadOnly AnchoredMenuKeys As String() = {"close", "dashboard", "region-messages", "application-settings", "region-overview"}
+        Private ReadOnly AnchoredMenuKeys As String() = {"dashboard", "region-messages", "application-settings", "region-overview"}
 
         Private cachedAccessRoleId As Integer = 0
         Private cachedAccessRegistrationId As Integer = 0

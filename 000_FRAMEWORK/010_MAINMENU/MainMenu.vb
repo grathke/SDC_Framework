@@ -562,7 +562,6 @@ Namespace SDC.Framework
             contentLayout.SetColumnSpan(chartContainer, 2)
 
             actionTilesByKey = New Dictionary(Of String, ActionTile)(StringComparer.OrdinalIgnoreCase)
-            AddActionTile("close", "Close", AddressOf CloseMenu_Click, LoadMenuIcon("close.png", SystemIcons.Error.ToBitmap()))
             AddActionTile("dashboard", "Dashboard", AddressOf Dashboard_Click, LoadMenuIcon("dashboard.png", SystemIcons.Application.ToBitmap()))
 
             ' Messages sits here and nowhere else. It is a fixed position, not a movable tile the
@@ -1613,9 +1612,6 @@ Namespace SDC.Framework
             rightPinnedActionsPanel.BringToFront()
         End Sub
 
-        Private Sub CloseMenu_Click(sender As Object, e As EventArgs)
-            LogoutButton_Click(sender, e)
-        End Sub
         Private Sub ApplicationSettings_Click(sender As Object, e As EventArgs)
             Dim session = SessionState.Current
             Dim isAppAdmin As Boolean = session.HasValue AndAlso session.Value.IsApplicationAdminRole
@@ -1793,6 +1789,15 @@ Namespace SDC.Framework
             End Using
         End Sub
 
+        ''' <summary>
+        ''' Leaves the menu, which returns to the login screen.
+        '''
+        ''' There was a Close tile at the head of the ribbon doing exactly this, and it was removed
+        ''' on 2026-09-12: the window's own close box already does it. The menu is shown with
+        ''' ShowDialog from the login form, so closing it with DialogResult.Cancel - however that
+        ''' is asked for - lands back at the login screen rather than ending the process. A tile
+        ''' for it cost a slot in a row that runs out of them.
+        ''' </summary>
         Private Sub LogoutButton_Click(sender As Object, e As EventArgs)
             Me.DialogResult = DialogResult.Cancel
             Me.Close()
