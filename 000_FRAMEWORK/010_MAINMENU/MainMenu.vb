@@ -585,7 +585,12 @@ Namespace SDC.Framework
             ' App Admin and Company dashboards, so nothing became unreachable. Found while wiring
             ' caption overrides - the role's alias for FW_Roles would have re-captioned it "Roles",
             ' correcting the label and making the mismatch obvious.
-            AddActionTile("my-profile", "My" & Environment.NewLine & "Profile", AddressOf MyProfile_Click, LoadMenuIcon("my-profile.png", SystemIcons.Question.ToBitmap()))
+            ' Only where the company allows it. Not added rather than added and disabled: the
+            ' tiles flow, so the row closes up and an absent tile reads as a feature this company
+            ' does not have, where a greyed one reads as something broken.
+            If SessionState.IsActive AndAlso SessionState.Current.HasValue AndAlso SessionState.Current.Value.AllowUpdateMyProfile Then
+                AddActionTile("my-profile", "My" & Environment.NewLine & "Profile", AddressOf MyProfile_Click, LoadMenuIcon("my-profile.png", SystemIcons.Question.ToBitmap()))
+            End If
             AddActionTile("login-as-substitute", "Login as" & Environment.NewLine & "Different User", AddressOf LoginAsSubstitute_Click, LoadMenuIcon("substitute-user.png", SystemIcons.Warning.ToBitmap()))
             AddActionTile("select-role", "Select a Role (Application Admin)", AddressOf SelectRole_Click, LoadMenuIcon("users.png", SystemIcons.WinLogo.ToBitmap()))
             AddActionTile("help-desk", "Help" & Environment.NewLine & "Desk", AddressOf HelpDesk_Click, LoadMenuIcon("Color_Help_Desk.png", SystemIcons.Question.ToBitmap()))
@@ -1684,8 +1689,27 @@ Namespace SDC.Framework
                             MessageBoxIcon.Information)
         End Sub
 
+        ''' <summary>
+        ''' Opens the signed-in person's own employee record.
+        '''
+        ''' Their profile is their employee row - the name, address and phones live there now,
+        ''' not on the login. Opened in self-service mode, which is what stops somebody granting
+        ''' themselves a role or a different manager.
+        ''' </summary>
         Private Sub MyProfile_Click(sender As Object, e As EventArgs)
-            MessageBox.Show("Hook your Profile form here.", "Framework Menu", MessageBoxButtons.OK, MessageBoxIcon.Information)
+            Dim employeeId = DataAccess.GetEmployeeIdForUser(If(SessionState.IsActive AndAlso SessionState.Current.HasValue,
+                                                                SessionState.Current.Value.UserID, 0))
+            If employeeId <= 0 Then
+                MessageBox.Show(Me,
+                                "THERE IS NO EMPLOYEE RECORD FOR THIS SIGN-IN." & Environment.NewLine & Environment.NewLine &
+                                "PLEASE CONTACT YOUR ADMINISTRATOR.",
+                                "My Profile", MessageBoxButtons.OK, MessageBoxIcon.Information)
+                Return
+            End If
+
+            Using page As New FW_Employees_U(employeeId, currentUser, activeAccessProfile, selfService:=True)
+                page.ShowDialog(Me)
+            End Using
         End Sub
 
         Private Sub LoginAsSubstitute_Click(sender As Object, e As EventArgs)

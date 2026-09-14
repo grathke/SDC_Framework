@@ -3431,6 +3431,33 @@ Namespace SDC.Framework
             End Try
         End Function
 
+        ''' <summary>
+        ''' The employee behind a sign-in, or zero.
+        '''
+        ''' The other direction from EmployeeLoginId, and the one My Profile needs: somebody
+        ''' knows who they are signed in as and wants their own record. Deleted employees are
+        ''' excluded - a deleted record is not a profile to edit.
+        ''' </summary>
+        Public Shared Function GetEmployeeIdForUser(userId As Integer) As Integer
+            If userId <= 0 Then Return 0
+
+            Try
+                Using conn As New SqlConnection(ConnectionString)
+                    conn.Open()
+                    Using cmd As New SqlCommand(
+                        "SELECT TOP 1 EmployeeID FROM dbo.FW_Employees " &
+                        "WHERE UserId = @UserID AND ISNULL(DeletedFlag, 0) = 0 ORDER BY EmployeeID", conn)
+                        cmd.Parameters.Add("@UserID", SqlDbType.Int).Value = userId
+                        Dim result = cmd.ExecuteScalar()
+                        If result Is Nothing OrElse Convert.IsDBNull(result) Then Return 0
+                        Return Convert.ToInt32(result, CultureInfo.InvariantCulture)
+                    End Using
+                End Using
+            Catch
+                Return 0
+            End Try
+        End Function
+
         ''' <summary>The UserId an existing employee row already points at.</summary>
         Private Shared Function EmployeeLoginId(conn As SqlConnection, tx As SqlTransaction, employeeId As Integer) As Integer
             Using cmd As New SqlCommand("SELECT UserId FROM dbo.FW_Employees WHERE EmployeeID = @ID", conn, tx)

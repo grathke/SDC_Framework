@@ -152,6 +152,13 @@ Namespace SDC.Framework
         ''' </summary>
         Public Property DateFormat As String
         Public Property TimeFormat As String
+
+        ''' <summary>
+        ''' Whether this company lets people edit their own record. Off hides the My Profile tile
+        ''' outright rather than showing one that refuses - a button that is there and does
+        ''' nothing is worse than no button.
+        ''' </summary>
+        Public Property AllowUpdateMyProfile As Boolean
     End Structure
 
     Public Module SessionState
@@ -212,7 +219,8 @@ Namespace SDC.Framework
                                 Optional isCompanyAdminRole As Boolean = False,
                                 Optional maxRecordsNoQBE As Integer = 10,
                                 Optional dateFormat As String = "",
-                                Optional timeFormat As String = "")
+                                Optional timeFormat As String = "",
+                                Optional allowUpdateMyProfile As Boolean = False)
             If user Is Nothing Then
                 ClearSession()
                 Return
@@ -258,7 +266,8 @@ Namespace SDC.Framework
                 .CrudDeleteCaption = "Delete",
                 .MaxRecordsNoQBE = If(maxRecordsNoQBE > 0, maxRecordsNoQBE, 10),
                 .DateFormat = If(dateFormat, String.Empty).Trim(),
-                .TimeFormat = If(timeFormat, String.Empty).Trim()
+                .TimeFormat = If(timeFormat, String.Empty).Trim(),
+                .AllowUpdateMyProfile = allowUpdateMyProfile
             }
 
             seenUiHints = New HashSet(Of String)(StringComparer.OrdinalIgnoreCase)

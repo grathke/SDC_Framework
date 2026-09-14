@@ -35,14 +35,14 @@ Namespace SDC.Framework
         Private passwordTextBox As TextBox
         Private genderIDComboBox As ComboBox
         Private emailTextBox As TextBox
+        Private isActiveCheckBox As CheckBox
+        Private birthDateDateTimePicker As DateTimePicker
         Private hireDateDateTimePicker As DateTimePicker
         Private terminationDateDateTimePicker As DateTimePicker
         Private homePhoneTextBox As TextBox
         Private cellPhoneTextBox As TextBox
         Private workPhoneTextBox As TextBox
         Private extensionTextBox As TextBox
-        Private isActiveCheckBox As CheckBox
-        Private birthDateDateTimePicker As DateTimePicker
         Private assignedManagerIDComboBox As ComboBox
 
         ''' <summary>
@@ -63,16 +63,16 @@ Namespace SDC.Framework
             passwordTextBox = AddField("Password", 356, False, True, 20)
             genderIDComboBox = AddComboField("GenderID", 398, False, 20, 320)
             emailTextBox = AddField("Email", 440, False, False, 20)
-            hireDateDateTimePicker = AddDateField("HireDate", 20, False, 580, True, False)
-            terminationDateDateTimePicker = AddDateField("TerminationDate", 62, False, 580, True, False)
-            homePhoneTextBox = AddField("HomePhone", 104, False, False, 580)
-            cellPhoneTextBox = AddField("CellPhone", 146, False, False, 580)
-            workPhoneTextBox = AddField("WorkPhone", 188, False, False, 580)
-            extensionTextBox = AddField("Extension", 230, False, False, 580)
-            isActiveCheckBox = AddCheckField("IsActive", 272, 580)
-            birthDateDateTimePicker = AddDateField("BirthDate", 314, False, 580, True, False)
+            isActiveCheckBox = AddCheckField("IsActive", 20, 580)
+            birthDateDateTimePicker = AddDateField("BirthDate", 62, False, 580, True, False)
+            hireDateDateTimePicker = AddDateField("HireDate", 104, False, 580, True, False)
+            terminationDateDateTimePicker = AddDateField("TerminationDate", 146, False, 580, True, False)
+            homePhoneTextBox = AddField("HomePhone", 188, False, False, 580)
+            cellPhoneTextBox = AddField("CellPhone", 230, False, False, 580)
+            workPhoneTextBox = AddField("WorkPhone", 272, False, False, 580)
+            extensionTextBox = AddField("Extension", 314, False, False, 580)
             assignedManagerIDComboBox = AddComboField("AssignedManagerID", 356, False, 580, 320)
-            SetManualTabOrder(firstNameTextBox, lastNameTextBox, address1TextBox, address2TextBox, cityTextBox, stateTextBox, zipTextBox, userNameTextBox, passwordTextBox, genderIDComboBox, emailTextBox, hireDateDateTimePicker, terminationDateDateTimePicker, homePhoneTextBox, cellPhoneTextBox, workPhoneTextBox, extensionTextBox, isActiveCheckBox, birthDateDateTimePicker, assignedManagerIDComboBox, okButton, cancelActionButton)
+            SetManualTabOrder(firstNameTextBox, lastNameTextBox, address1TextBox, address2TextBox, cityTextBox, stateTextBox, zipTextBox, userNameTextBox, passwordTextBox, genderIDComboBox, emailTextBox, isActiveCheckBox, birthDateDateTimePicker, hireDateDateTimePicker, terminationDateDateTimePicker, homePhoneTextBox, cellPhoneTextBox, workPhoneTextBox, extensionTextBox, assignedManagerIDComboBox, okButton, cancelActionButton)
             BindToForm()
             ApplyMode()
             smartyAddressLookupController = New SmartyAddressLookupController(
@@ -109,9 +109,9 @@ Namespace SDC.Framework
                 control.DataBindings.Add("Text", formBindingSource, fieldName, True, DataSourceUpdateMode.Never)
                 If record.Table.Columns.Contains(fieldName) Then control.Text = If(record(fieldName) Is DBNull.Value, String.Empty, Convert.ToString(record(fieldName)))
             Next
+            If record.Table.Columns.Contains("BirthDate") Then SetDateField(birthDateDateTimePicker, record("BirthDate"))
             If record.Table.Columns.Contains("HireDate") Then SetDateField(hireDateDateTimePicker, record("HireDate"))
             If record.Table.Columns.Contains("TerminationDate") Then SetDateField(terminationDateDateTimePicker, record("TerminationDate"))
-            If record.Table.Columns.Contains("BirthDate") Then SetDateField(birthDateDateTimePicker, record("BirthDate"))
             If record.Table.Columns.Contains("IsActive") Then SetCheckField(isActiveCheckBox, record("IsActive"))
             ConfigureLookupCombo(genderIDComboBox, DataAccess.GetLookupTable("FW_Gender", "GenderID", "GenderDescription", True, CurrentLookupId("GenderID")), "GenderID", "GenderDescription", CurrentLookupId("GenderID"))
             ConfigureLookupCombo(assignedManagerIDComboBox, DataAccess.GetLookupTable("FW_Employees", "EmployeeID", "FirstLast", True, CurrentLookupId("AssignedManagerID")), "EmployeeID", "FirstLast", CurrentLookupId("AssignedManagerID"))
@@ -172,14 +172,14 @@ Namespace SDC.Framework
             values("Password") = passwordTextBox.Text
             values("GenderID") = GetComboSelectedIdOrNull(genderIDComboBox)
             values("Email") = emailTextBox.Text
+            values("IsActive") = CheckFieldValue(isActiveCheckBox)
+            values("BirthDate") = DateFieldValue(birthDateDateTimePicker)
             values("HireDate") = DateFieldValue(hireDateDateTimePicker)
             values("TerminationDate") = DateFieldValue(terminationDateDateTimePicker)
             values("HomePhone") = homePhoneTextBox.Text
             values("CellPhone") = cellPhoneTextBox.Text
             values("WorkPhone") = workPhoneTextBox.Text
             values("Extension") = extensionTextBox.Text
-            values("IsActive") = CheckFieldValue(isActiveCheckBox)
-            values("BirthDate") = DateFieldValue(birthDateDateTimePicker)
             values("AssignedManagerID") = GetComboSelectedIdOrNull(assignedManagerIDComboBox)
 
             OnBeforeSave(values)

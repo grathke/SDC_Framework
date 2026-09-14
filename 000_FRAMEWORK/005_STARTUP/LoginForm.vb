@@ -408,6 +408,10 @@ Namespace SDC.Framework
             Dim smartyAuthToken = If(registrationRecord Is Nothing, String.Empty, registrationRecord.Smarty_AuthToken)
             Dim smartyEmbeddedKey = If(registrationRecord Is Nothing, String.Empty, registrationRecord.Smarty_EmbeddedKey)
             Dim smartyUseEmbeddedKey = registrationRecord IsNot Nothing AndAlso registrationRecord.Smarty_UseEmbeddedKey
+
+            ' Off the record login already read for the Smarty keys, rather than a query of its
+            ' own. Login makes six registration round trips already.
+            Dim allowUpdateMyProfile = registrationRecord IsNot Nothing AndAlso registrationRecord.AllowUpdateMyProfile
             Dim businessRuleType = DataAccess.GetRegistrationBusinessRuleType(sessionRegistrationId)
             Dim maxRecordsNoQBE = DataAccess.GetMaxRecordsNoQBE(sessionRegistrationId)
             Dim registrationDatePattern As String = String.Empty
@@ -441,7 +445,8 @@ Namespace SDC.Framework
                                       selectedRole.IsCompanyAdmin,
                                       maxRecordsNoQBE,
                                       registrationDatePattern,
-                                      registrationTimePattern)
+                                      registrationTimePattern,
+                                      allowUpdateMyProfile)
 
             If loginWarnings.Count > 0 Then
                 MessageBox.Show(String.Join(vbCrLf & vbCrLf, loginWarnings).ToUpperInvariant(),

@@ -2232,7 +2232,7 @@ Namespace SDC.Framework
                 ElseIf TypeOf ctrl Is CheckBox Then
                     snapshot(ctrl.Name) = DirectCast(ctrl, CheckBox).Checked.ToString()
                 ElseIf TypeOf ctrl Is DateTimePicker Then
-                    snapshot(ctrl.Name) = DirectCast(ctrl, DateTimePicker).Value.ToString("o")
+                    snapshot(ctrl.Name) = DateFieldSnapshot(DirectCast(ctrl, DateTimePicker))
                 ElseIf TypeOf ctrl Is NumericUpDown Then
                     snapshot(ctrl.Name) = DirectCast(ctrl, NumericUpDown).Value.ToString()
                 End If
@@ -2314,7 +2314,7 @@ Namespace SDC.Framework
             End If
 
             If TypeOf control Is DateTimePicker Then
-                Return DirectCast(control, DateTimePicker).Value.ToString("o", Globalization.CultureInfo.InvariantCulture)
+                Return DateFieldSnapshot(DirectCast(control, DateTimePicker))
             End If
 
             If TypeOf control Is NumericUpDown Then
@@ -2460,10 +2460,17 @@ Namespace SDC.Framework
 
             ' Sits where a text box would start, so a column of fields lines up whatever mix of
             ' controls it holds.
+            '
+            ' Exactly y, not y + 3. The framework decides what a row is by comparing Top, and a
+            ' check box nudged down to look centred was not on its own row: permission collapse
+            ' and HideFieldAndCloseGap both read it as the row below, hiding the label while the
+            ' box stayed behind. The box is given the full row height instead and centres its
+            ' glyph within it, which looks the same and is true.
             Dim box As New CheckBox() With {
                 .Name = "CheckBox_" & caption,
-                .Location = New Point(fieldLeft + 130, y + 3),
-                .Size = New Size(20, 20),
+                .Location = New Point(fieldLeft + 130, y),
+                .Size = New Size(24, 26),
+                .CheckAlign = ContentAlignment.MiddleLeft,
                 .UseVisualStyleBackColor = True
             }
             Me.Controls.Add(box)
@@ -2660,6 +2667,82 @@ Namespace SDC.Framework
         ''' Shared and here rather than written into each generated page, so "unchecked means
         ''' null" is stated once. TrySaveGeneratedPageRecord turns Nothing into DBNull.
         ''' </summary>
+        ''' <summary>
+        ''' Hides a field and pulls the rest of its column up over the space it leaves.
+        '''
+        ''' Plain Visible = False leaves a hole. The row-collapse the permission system uses
+        ''' cannot help here: it only collapses a row when every control on it is hidden, and on
+        ''' a two-column page the other column keeps the row alive. A field hidden from the
+        ''' middle of one column therefore sits there as white space, which reads as a control
+        ''' that failed to draw.
+        '''
+        ''' The distance to close is measured from the next row in the same column rather than
+        ''' assumed. The generator spaces rows 42 apart today; a constant here would be a second
+        ''' copy of that figure, wrong the moment either changed.
+        '''
+        ''' Only field controls move. The role grids, the Zip Coder button and anything else a
+        ''' page has put below the fields stay where they are, because they are positioned from
+        ''' where the fields end rather than from each other.
+        ''' </summary>
+        Protected Sub HideFieldAndCloseGap(fieldName As String)
+            If String.IsNullOrWhiteSpace(fieldName) Then Return
+
+            Dim label = FieldLabel(fieldName)
+            If label Is Nothing Then Return
+
+            Dim rowTop = label.Top
+            Dim columnLeft = label.Left
+
+            ' Everything on the page that belongs to a field, so the grids and buttons are left
+            ' out of both the measuring and the moving.
+            Dim fieldControls = Controls.Cast(Of Control)().
+                Where(Function(item) IsFieldControl(item)).
+                ToList()
+
+            ' The same column, judged by where its labels start. A control belongs to the column
+            ' its label anchors, which is what keeps two columns from pulling each other about.
+            Dim inColumn = fieldControls.Where(Function(item) item.Left >= columnLeft AndAlso
+                                                              item.Left < columnLeft + 460).ToList()
+
+            ' Both sets are taken before anything moves. Shifting first and hiding afterwards
+            ' hides whatever has just moved into the vacated row instead of the field that was
+            ' asked for - the row below disappears and the gap stays exactly where it was.
+            Dim onRow = inColumn.Where(Function(item) item.Top = rowTop).ToList()
+            Dim below = inColumn.Where(Function(item) item.Top > rowTop).ToList()
+
+            For Each hidden In onRow
+                hidden.Visible = False
+            Next
+
+            If below.Count > 0 Then
+                Dim shift = below.Min(Function(item) item.Top) - rowTop
+                For Each moved In below
+                    moved.Top -= shift
+                Next
+            End If
+        End Sub
+
+        ''' <summary>
+        ''' A date field as the unsaved-changes check sees it.
+        '''
+        ''' The value that would be saved, not the value the control happens to hold. Both
+        ''' snapshot paths recorded Value alone and ignored Checked, which was wrong in two
+        ''' directions at once.
+        '''
+        ''' Ticking or unticking without touching the date changed nothing in the snapshot, so
+        ''' clearing a Termination Date and pressing Cancel reported nothing to discard. And
+        ''' unticking after editing the date left the edited value behind, so a field returned to
+        ''' null still read as changed - which is how this was found.
+        '''
+        ''' One string for "no date", because two nulls have to compare equal however the control
+        ''' arrived at them.
+        ''' </summary>
+        Private Shared Function DateFieldSnapshot(picker As DateTimePicker) As String
+            If picker Is Nothing Then Return String.Empty
+            If picker.ShowCheckBox AndAlso Not picker.Checked Then Return "(no date)"
+            Return picker.Value.ToString("o", Globalization.CultureInfo.InvariantCulture)
+        End Function
+
         Protected Shared Function DateFieldValue(picker As DateTimePicker) As Object
             If picker Is Nothing Then Return Nothing
             If picker.ShowCheckBox AndAlso Not picker.Checked Then Return Nothing

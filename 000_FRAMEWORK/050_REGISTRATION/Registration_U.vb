@@ -34,7 +34,6 @@ Namespace SDC.Framework
         Private allowMultipleRolesCheckBox As CheckBox
         Private allowPasswordChangeCheckBox As CheckBox
         Private allowUpdateProfileCheckBox As CheckBox
-        Private allowUpdateEmailCheckBox As CheckBox
         Private twoFactorCheckBox As CheckBox
         Private dateFormatComboBox As ComboBox
         Private timeFormatComboBox As ComboBox
@@ -226,23 +225,24 @@ Namespace SDC.Framework
 
             y += rowGap
             address2TextBox = AddField("Address2", y, False, False)
-            allowUpdateEmailCheckBox = AddOptionCheckBox("CheckBox_AllowUpdateMyProfileEmail", "Allow Update My Email", optionsX, y + 2)
+            ' Allow Update My Email sat here and was removed on 2026-09-14. Nothing read it - the
+            ' column existed, the box was ticked, and no page ever asked. The rows below closed
+            ' up rather than leaving the gap, which would have read as a setting that failed to
+            ' draw.
+            twoFactorCheckBox = AddOptionCheckBox("CheckBox_TwoFactorAuthentication", "Two-Factor Authentication (2FA)", optionsX, y + 2)
 
             y += rowGap
             cityTextBox = AddField("City", y, False, False)
-            ' Directly under Allow Update My Email. It used to sit two rows lower, against State,
-            ' with a gap above it that read as a separator between things that are not separate.
-            twoFactorCheckBox = AddOptionCheckBox("CheckBox_TwoFactorAuthentication", "Two-Factor Authentication (2FA)", optionsX, y + 2)
+            dateFormatComboBox = AddOptionComboBox("ComboBox_FormatDateID", "Date Format", optionsX, y)
 
             y += rowGap
             stateTextBox = AddField("State", y, False, False)
             stateTextBox.Width = 80
-            dateFormatComboBox = AddOptionComboBox("ComboBox_FormatDateID", "Date Format", optionsX, y)
+            timeFormatComboBox = AddOptionComboBox("ComboBox_FormatTimeID", "Time Format", optionsX, y)
 
             y += rowGap
             zipTextBox = AddField("Zip", y, False, False)
             zipTextBox.Width = 100
-            timeFormatComboBox = AddOptionComboBox("ComboBox_FormatTimeID", "Time Format", optionsX, y)
 
             y += rowGap
             mainFaxTextBox = AddField("MainFax", y, False, False)
@@ -483,7 +483,6 @@ Namespace SDC.Framework
             allowMultipleRolesCheckBox.Checked = record.AllowMultipleRoles
             allowPasswordChangeCheckBox.Checked = record.AllowPasswordChangeAtLogin
             allowUpdateProfileCheckBox.Checked = record.AllowUpdateMyProfile
-            allowUpdateEmailCheckBox.Checked = record.AllowUpdateMyProfileEmail
             twoFactorCheckBox.Checked = record.TwoFactorAuthentication
             FillFormatCombo(dateFormatComboBox,
                             DataAccess.GetFormatOptions("FW_Format_Date", "FormatDateID"),
@@ -513,6 +512,15 @@ Namespace SDC.Framework
             End If
         End Sub
 
+        ''' <summary>
+        ''' The record as the form now describes it.
+        '''
+        ''' AllowUpdateMyProfileEmail is carried through from the loaded record rather than read
+        ''' from a control. Its check box was removed on 2026-09-14 because nothing anywhere acts
+        ''' on the setting, and writing False here instead would quietly change stored data to
+        ''' suit a screen that no longer asks the question. Ribbonbar_InvisibleIcons has been
+        ''' handled the same way for the same reason.
+        ''' </summary>
         Private Function BuildRecordFromForm() As RegistrationRecord
             Dim regTypeId = 0
             If registrationTypeComboBox.SelectedValue IsNot Nothing Then
@@ -555,7 +563,7 @@ Namespace SDC.Framework
                 .AllowMultipleRoles = allowMultipleRolesCheckBox.Checked,
                 .AllowPasswordChangeAtLogin = allowPasswordChangeCheckBox.Checked,
                 .AllowUpdateMyProfile = allowUpdateProfileCheckBox.Checked,
-                .AllowUpdateMyProfileEmail = allowUpdateEmailCheckBox.Checked,
+                .AllowUpdateMyProfileEmail = If(currentRecord Is Nothing, False, currentRecord.AllowUpdateMyProfileEmail),
                 .Ribbonbar_InvisibleIcons = If(currentRecord Is Nothing, False, currentRecord.Ribbonbar_InvisibleIcons),
                 .TwoFactorAuthentication = twoFactorCheckBox.Checked,
                 .FormatDateID = GetComboSelectedIdOrZero(dateFormatComboBox),

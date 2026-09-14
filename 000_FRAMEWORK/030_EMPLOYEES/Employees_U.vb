@@ -29,11 +29,39 @@ Namespace SDC.Framework
         ''' </summary>
         Private roleSelector As EmployeeRolesSelector
 
+        ''' <summary>
+        ''' Whether somebody is editing their own record from My Profile.
+        '''
+        ''' A flag rather than working it out from the signed-in user, because the same person
+        ''' editing themselves through Employees is a different act. An administrator fixing
+        ''' their own address there is doing administration; the same person in My Profile is
+        ''' not, and should not be able to grant themselves a role by opening the other door.
+        ''' </summary>
+        Private ReadOnly selfServiceProfile As Boolean
+
         Public Sub New(id As Integer, user As UserContext, Optional profile As AccessProfile = Nothing)
+            Me.New(id, user, profile, selfService:=False)
+        End Sub
+
+        ''' <summary>
+        ''' "My Profile" when somebody is editing their own record, and the ordinary caption
+        ''' otherwise.
+        '''
+        ''' The same class serves both, and the window has to say which of the two it is. An
+        ''' administrator editing somebody else sees "Edit Employee", which is what they are
+        ''' doing; a person editing themselves should not.
+        ''' </summary>
+        Protected Overrides Function BuildMaintenanceTitle() As String
+            If selfServiceProfile Then Return "My Profile"
+            Return MyBase.BuildMaintenanceTitle()
+        End Function
+
+        Public Sub New(id As Integer, user As UserContext, profile As AccessProfile, selfService As Boolean)
             MyBase.New()
             recordId = id
             currentUser = user
             accessProfile = profile
+            selfServiceProfile = selfService
             BuildGeneratedFields()
             BindToForm()
             ApplyMode()
@@ -47,6 +75,17 @@ Namespace SDC.Framework
         ''' failure the split was built to avoid.
         ''' </summary>
         Private Sub OnFieldsBuilt()
+            ' Nobody edits their own access. In My Profile the role grids are not built at all
+            ' and the form shrinks to the fields, rather than being shown and refusing - a panel
+            ' that is there and does nothing invites somebody to work out why.
+            If selfServiceProfile Then
+                ClientSize = New Size(ClientSize.Width, GeneratedFieldsBottom + 60)
+                okButton.Location = New Point(ClientSize.Width - 270, ClientSize.Height - 46)
+                cancelActionButton.Location = New Point(ClientSize.Width - 135, ClientSize.Height - 46)
+                LockSelfServiceFields()
+                Return
+            End If
+
             Dim registrationId = If(SessionState.IsActive AndAlso SessionState.Current.HasValue,
                                     SessionState.Current.Value.RegistrationID, 0)
             roleSelector = New EmployeeRolesSelector(Me,
@@ -57,12 +96,38 @@ Namespace SDC.Framework
         End Sub
 
         ''' <summary>
+        ''' The fields somebody does not get to see about themselves.
+        '''
+        ''' Who your manager is is a decision the company makes about you, not a fact you report,
+        ''' and a disabled combo showing it invites the question of how to change it. Hidden is
+        ''' the plainer answer.
+        '''
+        ''' The column closes up behind each one, so hiding a field from the middle of a column
+        ''' leaves no white space. HideFieldAndCloseGap measures the row spacing rather than
+        ''' assuming it, which is what makes this survive the page being regenerated with the
+        ''' fields in a different order or a different column.
+        '''
+        ''' Named rather than held as variables, for the same reason: a field no longer on the
+        ''' page is simply not found, and nothing here has to be kept in step with the generator.
+        ''' </summary>
+        Private Sub LockSelfServiceFields()
+            ' IsActive is here as well as Assigned Manager. Whether somebody works here is not
+            ' theirs to answer, and while the check box is on the page it unticks - which is how
+            ' this was found.
+            For Each fieldName In {"AssignedManagerID", "IsActive"}
+                HideFieldAndCloseGap(fieldName)
+            Next
+        End Sub
+
+        ''' <summary>
         ''' Refuses a save that would leave this person with no role.
         '''
         ''' Somebody with none authenticates correctly and is then turned away at login for
         ''' having nothing to do, which reads as a broken account rather than an unfinished one.
         ''' </summary>
         Private Sub OnValidating(ByRef allowSave As Boolean)
+            ' No picker in self-service, and nothing to check. Roles are left exactly as they
+            ' are, because OnBeforeSave sends no list at all.
             If roleSelector Is Nothing Then Return
 
             Dim reason As String = Nothing
