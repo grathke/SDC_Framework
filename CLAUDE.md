@@ -236,6 +236,14 @@ Key areas:
   section 1 records that a `_B` page reads its columns at runtime, so a column change needs no
   rebuild, and section 5 that `Last Used` is written automatically and beats the `* Default`, which
   is why a reset that leaves it behind changes nothing anyone can see.
+- `PAGE_LAYOUT_RUNTIME_SPEC.md` — **proposed, not built.** Moving a `_U` page's layout out of
+  generated code and into data the page reads at runtime, and the drag-and-drop designer that
+  would edit it. Read it before changing how a `_U` is laid out and before adding to the
+  `FW_Base_U` field helpers — section 1 records why a row is the unit the framework reasons
+  about, and the three faults on 2026-09-14 that were all the same mistake of something not
+  being on the row it appeared to be on. Section 4 is the map of the helpers and the naming they
+  produce; section 5 says the first cut of the designer is a sandbox page and should be judged
+  as one.
 - `THINFINITY_NOTES.md` — **reference, nothing built.** The VirtualUI SDK surface behind the
   delivery rules below: session detection, `StdDialogs` and the file dialogs, upload and download,
   printing, the `Options` flags, `BrowserInfo`. Read it before adding the SDK to the project or
