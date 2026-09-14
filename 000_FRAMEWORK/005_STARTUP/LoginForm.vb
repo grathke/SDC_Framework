@@ -371,8 +371,12 @@ Namespace SDC.Framework
             End If
 
             If assignedRoles Is Nothing OrElse assignedRoles.Count = 0 Then
+                ' Addressed to the person reading it. "This user" described them in the third
+                ' person, and the people who sign in are not all users of the company anyway -
+                ' an employee, a contractor and a portal account all land here. "The selected
+                ' registration" went too: nobody selected one, it was resolved for them.
                 MessageBox.Show(
-                    "NO ROLES ARE ASSIGNED TO THIS USER FOR THE SELECTED REGISTRATION." & vbCrLf & vbCrLf &
+                    "YOU DO NOT HAVE ANY ROLES ASSIGNED." & vbCrLf & vbCrLf &
                     "PLEASE CONTACT YOUR ADMINISTRATOR.",
                     "No Roles Assigned",
                     MessageBoxButtons.OK,
@@ -406,6 +410,9 @@ Namespace SDC.Framework
             Dim smartyUseEmbeddedKey = registrationRecord IsNot Nothing AndAlso registrationRecord.Smarty_UseEmbeddedKey
             Dim businessRuleType = DataAccess.GetRegistrationBusinessRuleType(sessionRegistrationId)
             Dim maxRecordsNoQBE = DataAccess.GetMaxRecordsNoQBE(sessionRegistrationId)
+            Dim registrationDatePattern As String = String.Empty
+            Dim registrationTimePattern As String = String.Empty
+            DataAccess.GetRegistrationDisplayFormats(sessionRegistrationId, registrationDatePattern, registrationTimePattern)
             DataAccess.GetHelpDeskRouting(sessionRegistrationId, hdUserSupport, hdApplicationSupport)
 
             If hdUserSupport <= 0 Then
@@ -432,7 +439,9 @@ Namespace SDC.Framework
                                       selectedRole.RoleType,
                                       selectedRole.IsApplicationAdmin,
                                       selectedRole.IsCompanyAdmin,
-                                      maxRecordsNoQBE)
+                                      maxRecordsNoQBE,
+                                      registrationDatePattern,
+                                      registrationTimePattern)
 
             If loginWarnings.Count > 0 Then
                 MessageBox.Show(String.Join(vbCrLf & vbCrLf, loginWarnings).ToUpperInvariant(),

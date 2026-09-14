@@ -51,6 +51,18 @@ Namespace SDC.Framework
         Public Property MaintenancePath As String = String.Empty
         Public Property BrowseSource As String = String.Empty
         Public Property MaintenanceSource As String = String.Empty
+
+        ''' <summary>
+        ''' The half of a maintenance page that belongs to whoever is building it - the file the
+        ''' generator writes once and never reads or rewrites again.
+        '''
+        ''' A generated page used to be one file, which meant anything added to it by hand was
+        ''' lost the next time the fields changed. The triple confirmation before regenerating
+        ''' existed to warn about exactly that. Split in two, the warning is not needed for this
+        ''' half: the generator cannot reach it.
+        ''' </summary>
+        Public Property MaintenanceCompanionPath As String = String.Empty
+        Public Property MaintenanceCompanionSource As String = String.Empty
         Public Property TableName As String = String.Empty
         Public Property PrimaryKey As String = String.Empty
         Public Property TableAlias As String = String.Empty
@@ -123,6 +135,11 @@ Namespace SDC.Framework
                 End If
             End If
             If plan.GenerateMaintenancePage Then
+                ' The companion goes down only when there is nothing there, or when what is
+                ' there is a whole page from before the split - which would otherwise sit beside
+                ' the generated half declaring the same class twice.
+                WriteCompanionPage(plan.MaintenanceCompanionPath, plan.MaintenanceCompanionSource, created, skipped)
+
                 If WriteGeneratedPage(plan.MaintenancePath, plan.MaintenanceSource, overwriteExistingPages, created, skipped) Then
                     If Not SaveMaintenanceBaseline(requestId, plan.MaintenanceSource, errors) Then
                         errors.Add("The generated maintenance source baseline could not be saved.")
@@ -309,6 +326,10 @@ Namespace SDC.Framework
             Dim maintenanceFields = ParseFields(DbText(request("MaintenanceFields")))
             Dim lookupFields = ParseLookupFields(DbText(request("LookupFields")), plan.Errors)
             Dim requiredFields = ParseFields(DbText(request("AdminRequiredFields")))
+            ' Guarded like the other columns added after the table was in use: a request read
+            ' before sql/088 has been applied has no column map, which is exactly the same thing
+            ' as an empty one - a single-column page.
+            Dim columnTwoFields = ParseFields(If(request.Table.Columns.Contains("Column2Fields"), DbText(request("Column2Fields")), String.Empty))
             Dim useQbeOnly = ReadGenerationFlag(request, "UseQbeOnly", False)
             ' Ticking a field is asking for the panel, so it turns it on by itself. Two switches that
             ' can disagree is how somebody picks their fields, forgets the checkbox, and gets no Hot
@@ -352,7 +373,11 @@ Namespace SDC.Framework
             If Not plan.IsValid Then Return plan
 
             plan.BrowsePath = GeneratedPagePath(workspaceRoot, plan.BrowsePageName)
-            plan.MaintenancePath = GeneratedPagePath(workspaceRoot, plan.MaintenancePageName)
+            ' The companion is the page's real name and the anchor for finding it; the generated
+            ' half sits beside it with .Generated before the extension. Looking the companion up
+            ' first is what lets a filed page stay where somebody put it.
+            plan.MaintenanceCompanionPath = GeneratedPagePath(workspaceRoot, plan.MaintenancePageName)
+            plan.MaintenancePath = GeneratedHalfPath(plan.MaintenanceCompanionPath)
 
             If plan.GenerateBrowsePage Then
                 plan.BrowseSource = BuildBrowseSource(plan.BrowsePageName,
@@ -361,12 +386,14 @@ Namespace SDC.Framework
                                                       plan.GenerateMaintenancePage)
             End If
             If plan.GenerateMaintenancePage Then
+                plan.MaintenanceCompanionSource = BuildMaintenanceCompanionSource(plan.MaintenancePageName)
                 plan.MaintenanceSource = BuildMaintenanceSource(plan.MaintenancePageName,
                                                                 plan.TableName,
                                                                 plan.PrimaryKey,
                                                                 maintenanceFields,
                                                                 requiredFields,
-                                                                lookupFields)
+                                                                lookupFields,
+                                                                columnTwoFields)
             End If
 
             Return plan
@@ -400,6 +427,20 @@ Namespace SDC.Framework
             End If
             If plan.GenerateMaintenancePage Then
                 lines.Add("  " & Path.GetFileName(plan.MaintenancePath) & If(File.Exists(plan.MaintenancePath), "   (EXISTS - WOULD BE OVERWRITTEN)", "   (NEW FILE)"))
+
+                ' Named separately because the two halves are treated differently, and somebody
+                ' reading this list is entitled to know which of their files is at risk.
+                If Not String.IsNullOrWhiteSpace(plan.MaintenanceCompanionPath) Then
+                    Dim companionNote As String
+                    If Not File.Exists(plan.MaintenanceCompanionPath) Then
+                        companionNote = "   (NEW FILE - YOURS, WRITTEN ONCE)"
+                    ElseIf File.ReadAllText(plan.MaintenanceCompanionPath).IndexOf("Partial Public Class", StringComparison.OrdinalIgnoreCase) >= 0 Then
+                        companionNote = "   (YOURS - LEFT ALONE)"
+                    Else
+                        companionNote = "   (WHOLE PAGE FROM BEFORE THE SPLIT - WOULD BE REPLACED, OLD COPY KEPT)"
+                    End If
+                    lines.Add("  " & Path.GetFileName(plan.MaintenanceCompanionPath) & companionNote)
+                End If
             Else
                 lines.Add("  MAINTENANCE PAGE NOT SELECTED")
             End If
@@ -504,14 +545,25 @@ Namespace SDC.Framework
                     File.WriteAllText(Path.Combine(scratchRoot, plan.BrowsePageName & ".vb"), plan.BrowseSource, New UTF8Encoding(False))
                 End If
                 If plan.GenerateMaintenancePage Then
-                    File.WriteAllText(Path.Combine(scratchRoot, plan.MaintenancePageName & ".vb"), plan.MaintenanceSource, New UTF8Encoding(False))
+                    File.WriteAllText(Path.Combine(scratchRoot, plan.MaintenancePageName & ".Generated.vb"), plan.MaintenanceSource, New UTF8Encoding(False))
+
+                    ' Both halves, always. The generated half is a partial class with no
+                    ' constructor and no base class, so compiling it alone proves nothing and
+                    ' fails on everything.
+                    '
+                    ' The companion compiled here is the freshly built one rather than whatever
+                    ' is on disk, deliberately: the check is asking whether what the generator
+                    ' produces is sound, not whether somebody's own code happens to compile
+                    ' against a reference assembly built before they wrote it.
+                    File.WriteAllText(Path.Combine(scratchRoot, plan.MaintenancePageName & ".vb"),
+                                      plan.MaintenanceCompanionSource, New UTF8Encoding(False))
                 End If
 
                 File.WriteAllText(Path.Combine(scratchRoot, "PageGenPreview.vbproj"),
                                   BuildCompileCheckProject(referenceAssembly),
                                   New UTF8Encoding(False))
 
-                Dim startInfo As New Diagnostics.ProcessStartInfo("dotnet", "build PageGenPreview.vbproj --nologo -v q") With {
+                Dim startInfo As New Diagnostics.ProcessStartInfo(ResolveDotnetPath(), "build PageGenPreview.vbproj --nologo -v q") With {
                     .WorkingDirectory = scratchRoot,
                     .UseShellExecute = False,
                     .RedirectStandardOutput = True,
@@ -605,6 +657,31 @@ Namespace SDC.Framework
                 trimmed = trimmed.Substring(0, projectStart)
             End If
             Return trimmed.Trim()
+        End Function
+
+        ''' <summary>
+        ''' Where dotnet.exe actually is, rather than trusting PATH to say.
+        '''
+        ''' "dotnet" alone failed with "access is denied" in a VirtualUI session on 2026-09-14: the
+        ''' process inherits an environment the shell never touched, and PATH resolution is not
+        ''' something a launched application should rely on. The install location is checked first,
+        ''' then DOTNET_ROOT, and only then the bare name - which still works everywhere it worked
+        ''' before.
+        ''' </summary>
+        Private Shared Function ResolveDotnetPath() As String
+            Dim candidates As New List(Of String)()
+
+            Dim dotnetRoot = Environment.GetEnvironmentVariable("DOTNET_ROOT")
+            If Not String.IsNullOrWhiteSpace(dotnetRoot) Then candidates.Add(Path.Combine(dotnetRoot, "dotnet.exe"))
+
+            candidates.Add(Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles), "dotnet", "dotnet.exe"))
+            candidates.Add(Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ProgramFilesX86), "dotnet", "dotnet.exe"))
+
+            For Each candidate In candidates
+                If File.Exists(candidate) Then Return candidate
+            Next
+
+            Return "dotnet"
         End Function
 
         Private Shared Function BuildCompileCheckProject(referenceAssembly As String) As String
@@ -798,10 +875,30 @@ Namespace SDC.Framework
         ''' So the page is looked for before it is placed, the same way a dashboard is. Move a page
         ''' anywhere in the tree and regeneration follows it.
         ''' </summary>
+        ''' <summary>
+        ''' Where a generated page lives, so regeneration rewrites it where it was filed rather than
+        ''' dropping a second copy in 999_GENERATED PAGES.
+        '''
+        ''' **A file is never named FW_.** The prefix belongs to the class and to the folder a page
+        ''' is filed under, never to the file itself - so FW_Employees_B lives in Employees_B.vb,
+        ''' whether that is still in 999_GENERATED PAGES or filed under 000_FRAMEWORK\030_EMPLOYEES.
+        '''
+        ''' The prefixed name is still looked for, because pages generated before this rule was
+        ''' applied carry it, and regeneration must rewrite those where they are rather than leave
+        ''' one copy behind and write another.
+        ''' </summary>
         Public Shared Function GeneratedPagePath(workspaceRoot As String, pageName As String) As String
-            Dim fileName = pageName.Trim() & ".vb"
+            Dim trimmedName = pageName.Trim()
+            Dim fileName = If(trimmedName.StartsWith("FW_", StringComparison.OrdinalIgnoreCase), trimmedName.Substring(3), trimmedName) & ".vb"
+
             Dim existing = ResolveSourceFile(workspaceRoot, fileName)
             If existing.Length > 0 Then Return existing
+
+            ' Older pages, written before the rule.
+            If trimmedName.StartsWith("FW_", StringComparison.OrdinalIgnoreCase) Then
+                Dim legacy = ResolveSourceFile(workspaceRoot, trimmedName & ".vb")
+                If legacy.Length > 0 Then Return legacy
+            End If
 
             Return Path.Combine(workspaceRoot, GeneratedPagesFolder, fileName)
         End Function
@@ -1236,6 +1333,61 @@ Namespace SDC.Framework
             Next
         End Sub
 
+        ''' <summary>The generated half's path, given the companion's.</summary>
+        Friend Shared Function GeneratedHalfPath(companionPath As String) As String
+            If String.IsNullOrWhiteSpace(companionPath) Then Return String.Empty
+
+            Dim folder = System.IO.Path.GetDirectoryName(companionPath)
+            Dim stem = System.IO.Path.GetFileNameWithoutExtension(companionPath)
+            Return System.IO.Path.Combine(If(folder, String.Empty), stem & ".Generated.vb")
+        End Function
+
+        ''' <summary>
+        ''' Writes the hand-written half, once.
+        '''
+        ''' Never overwritten when it already holds a companion: that file is the reason the
+        ''' split exists, and rewriting it would throw away the code the split was meant to
+        ''' protect. It carries no overwrite prompt for the same reason - there is nothing to
+        ''' ask about.
+        '''
+        ''' The exception is a page from before the split, which is a whole class rather than a
+        ''' partial one. Left alone it would declare the same class as the generated half and
+        ''' the build would fail on a duplicate. Recognised by the absence of "Partial", and
+        ''' replaced - the one case where this file is rewritten, and only once.
+        ''' </summary>
+        Private Shared Function WriteCompanionPage(path As String,
+                                                   content As String,
+                                                   created As List(Of String),
+                                                   skipped As List(Of String)) As Boolean
+            If String.IsNullOrWhiteSpace(path) OrElse String.IsNullOrWhiteSpace(content) Then Return False
+
+            Dim name = System.IO.Path.GetFileName(path)
+            If File.Exists(path) Then
+                Dim existing = File.ReadAllText(path)
+                If existing.IndexOf("Partial Public Class", StringComparison.OrdinalIgnoreCase) >= 0 Then
+                    skipped.Add(name & "   (YOURS - LEFT ALONE)")
+                    Return False
+                End If
+
+                Dim folderForBackup = System.IO.Path.GetDirectoryName(path)
+                Dim backup = System.IO.Path.Combine(If(folderForBackup, String.Empty),
+                                                    System.IO.Path.GetFileNameWithoutExtension(path) & ".before-split.vb.txt")
+                File.WriteAllText(backup, existing, New UTF8Encoding(False))
+                File.WriteAllText(path, content, New UTF8Encoding(False))
+                created.Add("SPLIT: " & name & "   (previous page kept as " & System.IO.Path.GetFileName(backup) & ")")
+                Return True
+            End If
+
+            Dim folder = System.IO.Path.GetDirectoryName(path)
+            If Not String.IsNullOrEmpty(folder) AndAlso Not Directory.Exists(folder) Then
+                Directory.CreateDirectory(folder)
+            End If
+
+            File.WriteAllText(path, content, New UTF8Encoding(False))
+            created.Add(name & "   (YOURS - written once, never rewritten)")
+            Return True
+        End Function
+
         Private Shared Function WriteGeneratedPage(path As String,
                                                content As String,
                                                overwriteExistingPage As Boolean,
@@ -1353,10 +1505,155 @@ Namespace SDC.Framework
         ''' computed column, and on a new record the value does not exist until after the save - so
         ''' a required computed field can never be satisfied and would block the save on its own.
         ''' </summary>
-        Private Shared Function BuildMaintenanceSource(pageName As String, tableName As String, primaryKey As String, fields As List(Of String), requiredFields As List(Of String), lookupFields As List(Of LookupFieldSpec)) As String
+        ''' <summary>
+        ''' The first of the page's fields whose name matches one of the candidates, or empty.
+        '''
+        ''' Names rather than types, because that is all the generator knows: a column called City
+        ''' is a city. Case-insensitive, and the candidates are tried in order, so the most usual
+        ''' spelling wins when a table carries two.
+        ''' </summary>
+        ''' <summary>
+        ''' The address block among a page's fields - the street line, City, State and Zip - by the
+        ''' names this generator recognises.
+        '''
+        ''' Public because the field picker suggests a column split and must not break this group
+        ''' across it: Smarty types ahead on the street line and fills the other three, and the Zip
+        ''' Coder button sits against Zip, so a City on one side of the page and its Zip on the
+        ''' other is worse than an uneven split. One list, read by the code that wires the
+        ''' controllers and by the code that decides where they sit.
+        ''' </summary>
+        Friend Shared Function AddressGroupFields(fields As List(Of String)) As List(Of String)
+            Dim group As New List(Of String)()
+            For Each candidates In New String()() {
+                New String() {"Address1", "Address", "StreetAddress", "Street"},
+                New String() {"Address2"},
+                New String() {"City"},
+                New String() {"State", "StateCode", "StateAbbrev"},
+                New String() {"Zip", "ZipCode", "PostalCode"}}
+                Dim match = MatchField(fields, candidates)
+                If match <> String.Empty Then group.Add(match)
+            Next
+
+            ' The street line alone is not a block worth protecting - it is the four together that
+            ' the controllers act on, and a table with only an Address column has nothing to split.
+            Return If(group.Count >= 3, group, New List(Of String)())
+        End Function
+
+        Private Shared Function MatchField(fields As List(Of String), ParamArray candidates As String()) As String
+            For Each candidate In candidates
+                Dim match = fields.FirstOrDefault(Function(field) String.Equals(field, candidate, StringComparison.OrdinalIgnoreCase))
+                If match IsNot Nothing Then Return match
+            Next
+
+            Return String.Empty
+        End Function
+
+        ''' <param name="columnTwoFields">
+        ''' The fields that go in the second column. Empty is a one-column page, which is what
+        ''' every request written before the column map existed reads as.
+        '''
+        ''' Order is not taken from here. <paramref name="fields"/> already carries the order the
+        ''' request arranged, and each column reads that one list - so the fields cannot be in one
+        ''' order down the page and another in the tab sequence.
+        ''' </param>
+        ''' <summary>
+        ''' The half of a maintenance page that belongs to whoever is building it.
+        '''
+        ''' Written once, on the first generation, and never rewritten - which is the whole point.
+        ''' A generated page used to be a single file, so anything added by hand was lost the next
+        ''' time the fields changed, and the only protection was three confirmations warning that
+        ''' it was about to happen. Here there is nothing to warn about.
+        '''
+        ''' Deliberately small. Everything that could be regenerated is in the other file, and
+        ''' this one holds only what a constructor needs, so it cannot go stale as the generator
+        ''' learns new tricks. Custom code goes below, reaching the generated half through the
+        ''' hooks declared at the end of it.
+        ''' </summary>
+        Private Shared Function BuildMaintenanceCompanionSource(pageName As String) As String
+            Dim output As New StringBuilder()
+            output.AppendLine("Option Strict On")
+            output.AppendLine("Option Explicit On")
+            output.AppendLine()
+            output.AppendLine("Imports System.Collections.Generic")
+            output.AppendLine("Imports System.Data")
+            output.AppendLine("Imports System.Drawing")
+            output.AppendLine("Imports System.Windows.Forms")
+            output.AppendLine()
+            output.AppendLine("Namespace SDC.Framework")
+            output.AppendLine()
+            output.AppendLine("    ''' <summary>")
+            output.AppendLine("    ''' This file is yours. The page generator writes " & pageName & ".Generated.vb and never")
+            output.AppendLine("    ''' reads this one, so anything added here survives the page gaining or losing fields.")
+            output.AppendLine("    '''")
+            output.AppendLine("    ''' To reach into the generated half, implement OnFieldsBuilt, OnRecordBound,")
+            output.AppendLine("    ''' OnValidating or OnBeforeSave - all four are declared at the end of that file.")
+            output.AppendLine("    ''' </summary>")
+            output.AppendLine("    Partial Public Class " & pageName)
+            output.AppendLine("        Inherits FW_Base_U")
+            output.AppendLine()
+            output.AppendLine("        Private ReadOnly recordId As Integer")
+            output.AppendLine("        Private ReadOnly currentUser As UserContext")
+            output.AppendLine("        Private ReadOnly accessProfile As AccessProfile")
+            output.AppendLine()
+            output.AppendLine("        Public Sub New(id As Integer, user As UserContext, Optional profile As AccessProfile = Nothing)")
+            output.AppendLine("            MyBase.New()")
+            output.AppendLine("            recordId = id")
+            output.AppendLine("            currentUser = user")
+            output.AppendLine("            accessProfile = profile")
+            output.AppendLine("            BuildGeneratedFields()")
+            output.AppendLine("            BindToForm()")
+            output.AppendLine("            ApplyMode()")
+            output.AppendLine("        End Sub")
+            output.AppendLine()
+            output.AppendLine("    End Class")
+            output.AppendLine("End Namespace")
+            Return output.ToString()
+        End Function
+
+        Private Shared Function BuildMaintenanceSource(pageName As String, tableName As String, primaryKey As String, fields As List(Of String), requiredFields As List(Of String), lookupFields As List(Of LookupFieldSpec), Optional columnTwoFields As List(Of String) = Nothing) As String
             Dim computedColumns = DataAccess.GetComputedColumnNames(tableName)
             Dim computedOnPage = fields.Where(Function(field) computedColumns.Contains(field)).ToList()
+
+            ' Which fields are dates, from the schema rather than from their names. A date column
+            ' used to get a plain text box - which is how an empty Termination Date reached a
+            ' datetime parameter as "" and failed the save naming no field at all.
+            '
+            ' A lookup wins: a foreign key that happens to point at a date table is still a
+            ' choice from a list, and a computed date is never typed into.
+            ' The employee table carries a login, and a login is useless without a role. The
+            ' page therefore asks for one, which no column on the table could have told the
+            ' field picker - a role lives in FW_EmployeeRoles. Special-cased the same way the
+            ' address block and the password already are.
+            Dim carriesLogin = String.Equals(tableName.Trim(), "FW_Employees", StringComparison.OrdinalIgnoreCase)
+
+            Dim dateKinds = DataAccess.GetDateColumnKinds(tableName)
+            Dim nullableColumns = DataAccess.GetNullableColumnNames(tableName)
+            Dim dateFields = fields.Where(Function(field) dateKinds.ContainsKey(field) AndAlso
+                                                          Not IsLookupField(field, lookupFields) AndAlso
+                                                          Not computedColumns.Contains(field)).ToList()
+
+            ' A bit column is a yes or a no, and it gets a check box. As a text box it asked
+            ' somebody to type True and would accept anything.
+            Dim bitColumns = DataAccess.GetBitColumnNames(tableName)
+            Dim bitFields = fields.Where(Function(field) bitColumns.Contains(field) AndAlso
+                                                         Not IsLookupField(field, lookupFields) AndAlso
+                                                         Not computedColumns.Contains(field)).ToList()
+            ' Worked out before anything is written, because the class needs to declare where its
+            ' fields stop and that is a field declaration - it cannot wait for the layout section
+            ' further down.
+            Dim rightFields = If(columnTwoFields Is Nothing,
+                                 New List(Of String)(),
+                                 fields.Where(Function(field) columnTwoFields.Any(Function(item) String.Equals(item, field, StringComparison.OrdinalIgnoreCase))).ToList())
+            Dim leftFields = fields.Where(Function(field) Not rightFields.Contains(field)).ToList()
+            Dim twoColumns = rightFields.Count > 0
+            Dim rowsDown = Math.Max(leftFields.Count, rightFields.Count)
+
             Dim output As New StringBuilder()
+            output.AppendLine("' <auto-generated>")
+            output.AppendLine("' Written by the page generator. Every edit here is lost the next time the fields")
+            output.AppendLine("' are applied. Put your own code in " & pageName & ".vb, which is never rewritten,")
+            output.AppendLine("' and use the hooks at the end of this file to reach into what is generated.")
+            output.AppendLine("' </auto-generated>")
             output.AppendLine("Option Strict On")
             output.AppendLine("Option Explicit On")
             output.AppendLine()
@@ -1367,12 +1664,8 @@ Namespace SDC.Framework
             output.AppendLine("Imports System.Windows.Forms")
             output.AppendLine()
             output.AppendLine("Namespace SDC.Framework")
-            output.AppendLine("    Public Class " & pageName)
-            output.AppendLine("        Inherits FW_Base_U")
+            output.AppendLine("    Partial Public Class " & pageName)
             output.AppendLine()
-            output.AppendLine("        Private ReadOnly recordId As Integer")
-            output.AppendLine("        Private ReadOnly currentUser As UserContext")
-            output.AppendLine("        Private ReadOnly accessProfile As AccessProfile")
             output.AppendLine("        Private ReadOnly tableName As String = """ & EscapeLiteral(tableName) & """")
             output.AppendLine("        Private ReadOnly primaryKey As String = """ & EscapeLiteral(primaryKey) & """")
             If computedOnPage.Count > 0 Then
@@ -1381,65 +1674,155 @@ Namespace SDC.Framework
             Else
                 output.AppendLine("        Private ReadOnly computedFields As New HashSet(Of String)(StringComparer.OrdinalIgnoreCase)")
             End If
+            ' Where the generated fields stop, for whatever the companion puts underneath. Told
+            ' rather than guessed: the companion cannot work it out without knowing the column
+            ' split, and a hard-coded number in that file would be wrong the moment a field is
+            ' added - the exact drift the split exists to prevent.
+            output.AppendLine("        Protected ReadOnly GeneratedFieldsBottom As Integer = " & (20 + rowsDown * 42).ToString())
             output.AppendLine("        Private record As DataRow")
             output.AppendLine("        Private ReadOnly formBindingSource As New BindingSource()")
             output.AppendLine("        Private originalRowVersion As Byte()")
+
+            ' An address page gets the address behaviour the framework already has, without anybody
+            ' remembering to ask for it: Smarty type-ahead on the street line, and the Zip Coder
+            ' button beside Zip for when Smarty is switched off. Both exist as controllers and are
+            ' wired exactly as Registration_U wires them.
+            Dim addressField = MatchField(fields, "Address1", "Address", "StreetAddress", "Street")
+            Dim cityField = MatchField(fields, "City")
+            Dim stateField = MatchField(fields, "State", "StateCode", "StateAbbrev")
+            Dim zipField = MatchField(fields, "Zip", "ZipCode", "PostalCode")
+            Dim hasCityStateZip = cityField <> String.Empty AndAlso stateField <> String.Empty AndAlso zipField <> String.Empty
+            Dim wantsZipCoder = hasCityStateZip AndAlso
+                                Not IsLookupField(cityField, lookupFields) AndAlso
+                                Not IsLookupField(stateField, lookupFields) AndAlso
+                                Not IsLookupField(zipField, lookupFields)
+            Dim wantsSmarty = wantsZipCoder AndAlso addressField <> String.Empty AndAlso Not IsLookupField(addressField, lookupFields)
+
+            If wantsZipCoder Then
+                output.AppendLine("        Private zipCoderController As ZipCoderController")
+            End If
+            If wantsSmarty Then
+                output.AppendLine("        Private smartyAddressLookupController As SmartyAddressLookupController")
+            End If
             For Each field In fields
                 If IsLookupField(field, lookupFields) Then
-                    output.AppendLine("        Private ReadOnly " & LookupControlVariable(field) & " As ComboBox")
+                    output.AppendLine("        Private " & LookupControlVariable(field) & " As ComboBox")
+                ElseIf dateFields.Contains(field) Then
+                    output.AppendLine("        Private " & DateControlVariable(field) & " As DateTimePicker")
+                ElseIf bitFields.Contains(field) Then
+                    output.AppendLine("        Private " & CheckControlVariable(field) & " As CheckBox")
                 Else
-                    output.AppendLine("        Private ReadOnly " & ControlVariable(field) & " As TextBox")
+                    output.AppendLine("        Private " & ControlVariable(field) & " As TextBox")
                 End If
             Next
             output.AppendLine()
-            output.AppendLine("        Public Sub New(id As Integer, user As UserContext, Optional profile As AccessProfile = Nothing)")
-            output.AppendLine("            MyBase.New()")
-            output.AppendLine("            recordId = id")
-            output.AppendLine("            currentUser = user")
-            output.AppendLine("            accessProfile = profile")
+            output.AppendLine("        ''' <summary>")
+            output.AppendLine("        ''' Every control on the page, laid out. Called from the constructor in " & pageName & ".vb.")
+            output.AppendLine("        ''' </summary>")
+            output.AppendLine("        Private Sub BuildGeneratedFields()")
             ' No Text assignment: Base_U builds the caption from the page name and the mode, so a
             ' generated page opens as "Edit Entity X" rather than "EntityX_U". A generated page that
             ' needs its own wording overrides BuildMaintenanceTitle.
-            output.AppendLine("            ClientSize = New Size(600, " & Math.Max(120, 55 + fields.Count * 42).ToString() & ")")
+            ' Two columns when the request put something on the right, one when it did not -
+            ' which is every request written before the column map existed, so those generate the
+            ' page they always did, to the pixel.
+            '
+            ' Each column reads the same field list in the same order, so the page runs down the
+            ' left and then down the right, and the tab order is that same sequence. There is no
+            ' second ordering to keep in step with the first.
+            ' A column is the label (120), the gap to its control (10) and the control (320).
+            Const ColumnWidth As Integer = 450
+            ' The Zip Coder button sits past the right edge of the Zip box, so whichever column
+            ' holds Zip needs the room: between the two columns, or past the edge of the form.
+            Dim zipOnTheRight = wantsZipCoder AndAlso rightFields.Any(Function(field) String.Equals(field, zipField, StringComparison.OrdinalIgnoreCase))
+            Dim columnTwoLeft = 20 + ColumnWidth + If(wantsZipCoder AndAlso Not zipOnTheRight, 110, 40)
+            Dim formWidth = If(twoColumns, columnTwoLeft + ColumnWidth + If(zipOnTheRight, 140, 30), 600)
+            ' Room below the fields for whatever the page's own file puts there. An employee
+            ' page hosts the role selector; every other page leaves it empty and costs nothing,
+            ' because the generator cannot know what a companion will add and a page that has to
+            ' resize itself afterwards flickers on every open.
+            Dim extraBelowFields = If(carriesLogin, EmployeeRolesSelector.PanelHeight + 16, 0)
+
+            output.AppendLine("            ClientSize = New Size(" & formWidth.ToString() & ", " & (Math.Max(120, 55 + rowsDown * 42) + extraBelowFields).ToString() & ")")
             output.AppendLine("            okButton.Location = New Point(ClientSize.Width - 270, ClientSize.Height - 46)")
             output.AppendLine("            cancelActionButton.Location = New Point(ClientSize.Width - 135, ClientSize.Height - 46)")
-            Dim y = 20
-            For Each field In fields
-                ' A computed field is never required, whatever the request says. An older saved
-                ' request can still carry one, so the refusal is here as well as in the grid that
-                ' offers the tick - the page must not be generated with a rule it cannot satisfy.
-                Dim isRequired = requiredFields.Any(Function(item) String.Equals(item, field, StringComparison.OrdinalIgnoreCase)) AndAlso
-                                 Not computedColumns.Contains(field)
 
-                If IsLookupField(field, lookupFields) Then
-                    ' A foreign key goes through AddComboField for the same reason a plain field
-                    ' goes through AddField: the helper paints the App Admin blue when required,
-                    ' adds the marker, registers the required border and names both controls to the
-                    ' convention. Built by hand, as this used to be, a required lookup got the
-                    ' asterisk but never the blue - and since ShouldSkipBrRequiredStyling decides
-                    ' App Admin ownership by that blue, the field silently lost its precedence.
-                    output.AppendLine("            " & LookupControlVariable(field) & " = AddComboField(""" & EscapeLiteral(field) & """, " & y.ToString() & ", " & If(isRequired, "True", "False") & ", 20, 320)")
-                Else
-                    output.AppendLine("            " & ControlVariable(field) & " = AddField(""" & EscapeLiteral(field) & """, " & y.ToString() & ", False, " & If(isRequired, "True", "False") & ")")
-                End If
+            Dim emitColumn =
+                Sub(columnFields As List(Of String), fieldLeft As Integer)
+                    Dim y = 20
+                    For Each field In columnFields
+                        ' A computed field is never required, whatever the request says. An older
+                        ' saved request can still carry one, so the refusal is here as well as in
+                        ' the grid that offers the tick - the page must not be generated with a
+                        ' rule it cannot satisfy.
+                        Dim isRequired = requiredFields.Any(Function(item) String.Equals(item, field, StringComparison.OrdinalIgnoreCase)) AndAlso
+                                         Not computedColumns.Contains(field)
 
-                y += 42
-            Next
-            output.AppendLine("            SetManualTabOrder(" & String.Join(", ", fields.Select(Function(field) FieldControlVariable(field, lookupFields)).Concat({"okButton", "cancelActionButton"})) & ")")
+                        If bitFields.Contains(field) Then
+                            output.AppendLine("            " & CheckControlVariable(field) & " = AddCheckField(""" & EscapeLiteral(field) & """, " &
+                                              y.ToString() & ", " & fieldLeft.ToString() & ")")
+                        ElseIf dateFields.Contains(field) Then
+                            ' Date-only unless the column carries a time. A hire date shown as
+                            ' "15/03/2026 00:00" puts a time on screen that nobody entered.
+                            Dim showTime = Not String.Equals(dateKinds(field), "date", StringComparison.OrdinalIgnoreCase)
+                            Dim nullable = nullableColumns.Contains(field)
+                            output.AppendLine("            " & DateControlVariable(field) & " = AddDateField(""" & EscapeLiteral(field) & """, " & y.ToString() & ", " &
+                                              If(isRequired, "True", "False") & ", " & fieldLeft.ToString() & ", " &
+                                              If(nullable, "True", "False") & ", " & If(showTime, "True", "False") & ")")
+                        ElseIf IsLookupField(field, lookupFields) Then
+                            ' A foreign key goes through AddComboField for the same reason a plain
+                            ' field goes through AddField: the helper paints the App Admin blue
+                            ' when required, adds the marker, registers the required border and
+                            ' names both controls to the convention. Built by hand, as this used
+                            ' to be, a required lookup got the asterisk but never the blue - and
+                            ' since ShouldSkipBrRequiredStyling decides App Admin ownership by
+                            ' that blue, the field silently lost its precedence.
+                            output.AppendLine("            " & LookupControlVariable(field) & " = AddComboField(""" & EscapeLiteral(field) & """, " & y.ToString() & ", " & If(isRequired, "True", "False") & ", " & fieldLeft.ToString() & ", 320)")
+                        Else
+                            output.AppendLine("            " & ControlVariable(field) & " = AddField(""" & EscapeLiteral(field) & """, " & y.ToString() & ", False, " & If(isRequired, "True", "False") & ", " & fieldLeft.ToString() & ")")
+                        End If
+
+                        y += 42
+                    Next
+                End Sub
+
+            emitColumn(leftFields, 20)
+            If twoColumns Then emitColumn(rightFields, columnTwoLeft)
+
+            ' A single Role combo lived here briefly and came out again: one combo cannot show
+            ' somebody holding two roles, and it put the question on the generator's side of the
+            ' line where it could not be arranged to suit a page. Roles are chosen through the
+            ' EmployeeRolesSelector widget, attached in the page's own file.
+            Dim tabOrder = leftFields.Concat(rightFields).Select(Function(field) FieldControlVariable(field, lookupFields, dateFields, bitFields)).ToList()
+            output.AppendLine("            SetManualTabOrder(" & String.Join(", ", tabOrder.Concat({"okButton", "cancelActionButton"})) & ")")
             output.AppendLine("            BindToForm()")
             output.AppendLine("            ApplyMode()")
+
+            ' After ApplyMode, as Registration_U does: the Zip Coder button places itself against
+            ' the Zip box's final position, and Smarty's suggestion list is sized from the address
+            ' box - both need the layout settled.
+            If wantsSmarty Then
+                output.AppendLine("            smartyAddressLookupController = New SmartyAddressLookupController(")
+                output.AppendLine("                Me,")
+                output.AppendLine("                " & ControlVariable(addressField) & ",")
+                output.AppendLine("                " & ControlVariable(cityField) & ",")
+                output.AppendLine("                " & ControlVariable(stateField) & ",")
+                output.AppendLine("                " & ControlVariable(zipField) & ",")
+                output.AppendLine("                Function() SmartyAddressLookupController.IsSessionLookupEnabled(),")
+                output.AppendLine("                Function() SmartyAddressLookupController.GetSessionEmbeddedKey())")
+            End If
+            If wantsZipCoder Then
+                ' The button hides itself when Smarty is on - the controller applies that rule - so
+                ' the two never both offer to fill the same three boxes.
+                output.AppendLine("            zipCoderController = New ZipCoderController(Me, " &
+                                  ControlVariable(cityField) & ", " &
+                                  ControlVariable(stateField) & ", " &
+                                  ControlVariable(zipField) & ")")
+            End If
+
+            output.AppendLine()
+            output.AppendLine("            OnFieldsBuilt()")
             output.AppendLine("        End Sub")
-            output.AppendLine()
-            output.AppendLine("        Public Overrides ReadOnly Property SavedRecordId As Integer")
-            output.AppendLine("            Get")
-            output.AppendLine("                If record Is Nothing OrElse record.Table Is Nothing OrElse Not record.Table.Columns.Contains(primaryKey) OrElse record.IsNull(primaryKey) Then Return 0")
-            output.AppendLine("                Return Convert.ToInt32(record(primaryKey), Globalization.CultureInfo.InvariantCulture)")
-            output.AppendLine("            End Get")
-            output.AppendLine("        End Property")
-            output.AppendLine()
-            output.AppendLine("        Protected Overrides Function GetPageName() As String")
-            output.AppendLine("            Return NameOf(" & pageName & ")")
-            output.AppendLine("        End Function")
             output.AppendLine()
             output.AppendLine("        Protected Overrides Function GetTableNameOverride() As String")
             output.AppendLine("            Return tableName")
@@ -1456,7 +1839,9 @@ Namespace SDC.Framework
             output.AppendLine("            End If")
             output.AppendLine("            formBindingSource.DataSource = record.Table")
             output.AppendLine("            formBindingSource.Position = record.Table.Rows.IndexOf(record)")
-            Dim textFields = fields.Where(Function(field) Not IsLookupField(field, lookupFields)).ToList()
+            Dim textFields = fields.Where(Function(field) Not IsLookupField(field, lookupFields) AndAlso
+                                                          Not dateFields.Contains(field) AndAlso
+                                                          Not bitFields.Contains(field)).ToList()
             If textFields.Count > 0 Then
                 output.AppendLine("            For Each control In New Control() {" & String.Join(", ", textFields.Select(Function(field) ControlVariable(field))) & "}")
                 output.AppendLine("                Dim fieldName = control.Name.Substring(""TextBox_"".Length)")
@@ -1466,10 +1851,24 @@ Namespace SDC.Framework
                 output.AppendLine("            Next")
             End If
 
+            ' Set rather than data-bound. A DateTimePicker has no Text binding worth having: it
+            ' cannot hold an empty string, and its check box - not its value - is what says the
+            ' column is null.
+            For Each field In dateFields
+                output.AppendLine("            If record.Table.Columns.Contains(""" & EscapeLiteral(field) & """) Then SetDateField(" &
+                                  DateControlVariable(field) & ", record(""" & EscapeLiteral(field) & """))")
+            Next
+
+            For Each field In bitFields
+                output.AppendLine("            If record.Table.Columns.Contains(""" & EscapeLiteral(field) & """) Then SetCheckField(" &
+                                  CheckControlVariable(field) & ", record(""" & EscapeLiteral(field) & """))")
+            Next
+
             For Each spec In lookupFields.Where(Function(item) fields.Any(Function(field) String.Equals(field, item.FieldName, StringComparison.OrdinalIgnoreCase)))
                 output.AppendLine("            ConfigureLookupCombo(" & LookupControlVariable(spec.FieldName) &
                                   ", DataAccess.GetLookupTable(""" & EscapeLiteral(spec.LookupTable) & """, """ & EscapeLiteral(spec.ValueColumn) & """, """ & EscapeLiteral(spec.DisplayColumn) & """, " &
-                                  If(spec.FilterByRegistration, "True", "False") & ")" &
+                                  If(spec.FilterByRegistration, "True", "False") &
+                                  ", CurrentLookupId(""" & EscapeLiteral(spec.FieldName) & """))" &
                                   ", """ & EscapeLiteral(spec.ValueColumn) & """, """ & EscapeLiteral(spec.DisplayColumn) & """, CurrentLookupId(""" & EscapeLiteral(spec.FieldName) & """))")
             Next
             If fields.Any(Function(field) String.Equals(field, "RegistrationID", StringComparison.OrdinalIgnoreCase)) Then
@@ -1480,6 +1879,8 @@ Namespace SDC.Framework
             End If
             output.AppendLine("            If record.Table.Columns.Contains(""RowVersion"") AndAlso Not record.IsNull(""RowVersion"") Then originalRowVersion = CType(DirectCast(record(""RowVersion""), Byte()).Clone(), Byte())")
             output.AppendLine("            CaptureOriginalRowVersion(originalRowVersion)")
+            output.AppendLine()
+            output.AppendLine("            OnRecordBound()")
             output.AppendLine("        End Sub")
             output.AppendLine()
             output.AppendLine("        ''' <summary>")
@@ -1496,7 +1897,9 @@ Namespace SDC.Framework
             output.AppendLine("        End Sub")
             output.AppendLine()
             output.AppendLine("        Protected Overrides Function TryBuildRecord() As Boolean")
-            output.AppendLine("            Return True")
+            output.AppendLine("            Dim allowSave = True")
+            output.AppendLine("            OnValidating(allowSave)")
+            output.AppendLine("            Return allowSave")
             output.AppendLine("        End Function")
             output.AppendLine()
             output.AppendLine("        ''' <summary>Warns before discarding edits. Without this Cancel would discard silently.</summary>")
@@ -1527,10 +1930,17 @@ Namespace SDC.Framework
             For Each field In fields
                 If IsLookupField(field, lookupFields) Then
                     output.AppendLine("            values(""" & EscapeLiteral(field) & """) = GetComboSelectedIdOrNull(" & LookupControlVariable(field) & ")")
+                ElseIf dateFields.Contains(field) Then
+                    output.AppendLine("            values(""" & EscapeLiteral(field) & """) = DateFieldValue(" & DateControlVariable(field) & ")")
+                ElseIf bitFields.Contains(field) Then
+                    output.AppendLine("            values(""" & EscapeLiteral(field) & """) = CheckFieldValue(" & CheckControlVariable(field) & ")")
                 Else
                     output.AppendLine("            values(""" & EscapeLiteral(field) & """) = " & ControlVariable(field) & ".Text")
                 End If
             Next
+            output.AppendLine()
+            output.AppendLine("            OnBeforeSave(values)")
+            output.AppendLine()
             output.AppendLine("            Dim savedId As Integer = recordId")
             output.AppendLine("            If savedId <= 0 AndAlso record.Table.Columns.Contains(primaryKey) AndAlso Not record.IsNull(primaryKey) Then Integer.TryParse(Convert.ToString(record(primaryKey)), savedId)")
             output.AppendLine("            Dim updatedBy = If(SessionState.IsActive, SessionState.Current.Value.UserID, 0)")
@@ -1569,6 +1979,33 @@ Namespace SDC.Framework
             output.AppendLine("        Protected Overrides Function ResolveAuditRecordKey() As String")
             output.AppendLine("            Return If(record Is Nothing OrElse record.Table Is Nothing OrElse Not record.Table.Columns.Contains(primaryKey) OrElse record.IsNull(primaryKey), String.Empty, Convert.ToString(record(primaryKey)))")
             output.AppendLine("        End Function")
+            output.AppendLine()
+            output.AppendLine("        ' Hooks. Implement any of these in " & pageName & ".vb to reach into what is")
+            output.AppendLine("        ' generated above. One nobody implements compiles away to nothing, and a page")
+            output.AppendLine("        ' using none of them carries no cost at all.")
+            output.AppendLine()
+            output.AppendLine("        ''' <summary>Every generated control exists and the tab order is set.</summary>")
+            output.AppendLine("        Partial Private Sub OnFieldsBuilt()")
+            output.AppendLine("        End Sub")
+            output.AppendLine()
+            output.AppendLine("        ''' <summary>The record is loaded and every generated control is bound to it.</summary>")
+            output.AppendLine("        Partial Private Sub OnRecordBound()")
+            output.AppendLine("        End Sub")
+            output.AppendLine()
+            output.AppendLine("        ''' <summary>")
+            output.AppendLine("        ''' A save has been asked for and nothing is written yet. Set allowSave to False")
+            output.AppendLine("        ''' to refuse it, which leaves the page open with its edits intact.")
+            output.AppendLine("        '''")
+            output.AppendLine("        ''' ByRef rather than a return value, because a VB partial method cannot return")
+            output.AppendLine("        ''' one - an unimplemented partial method leaves no call site to take a result")
+            output.AppendLine("        ''' from.")
+            output.AppendLine("        ''' </summary>")
+            output.AppendLine("        Partial Private Sub OnValidating(ByRef allowSave As Boolean)")
+            output.AppendLine("        End Sub")
+            output.AppendLine()
+            output.AppendLine("        ''' <summary>The values are built and nothing is written. Add, change or remove entries.</summary>")
+            output.AppendLine("        Partial Private Sub OnBeforeSave(values As Dictionary(Of String, Object))")
+            output.AppendLine("        End Sub")
             output.AppendLine("    End Class")
             output.AppendLine("End Namespace")
             Return output.ToString()
@@ -1649,14 +2086,28 @@ Namespace SDC.Framework
             Return Char.ToLowerInvariant(field(0)) & field.Substring(1) & "ComboBox"
         End Function
 
+        Private Shared Function CheckControlVariable(field As String) As String
+            Return Char.ToLowerInvariant(field(0)) & field.Substring(1) & "CheckBox"
+        End Function
+
+        Private Shared Function DateControlVariable(field As String) As String
+            Return Char.ToLowerInvariant(field(0)) & field.Substring(1) & "DateTimePicker"
+        End Function
+
         Private Shared Function IsLookupField(field As String, lookupFields As List(Of LookupFieldSpec)) As Boolean
             Return lookupFields IsNot Nothing AndAlso
                    lookupFields.Any(Function(spec) String.Equals(spec.FieldName, field, StringComparison.OrdinalIgnoreCase))
         End Function
 
         ''' <summary>The generated variable name for a field, whichever control type it becomes.</summary>
-        Private Shared Function FieldControlVariable(field As String, lookupFields As List(Of LookupFieldSpec)) As String
-            Return If(IsLookupField(field, lookupFields), LookupControlVariable(field), ControlVariable(field))
+        Private Shared Function FieldControlVariable(field As String,
+                                                     lookupFields As List(Of LookupFieldSpec),
+                                                     Optional dateFields As List(Of String) = Nothing,
+                                                     Optional bitFields As List(Of String) = Nothing) As String
+            If IsLookupField(field, lookupFields) Then Return LookupControlVariable(field)
+            If dateFields IsNot Nothing AndAlso dateFields.Contains(field) Then Return DateControlVariable(field)
+            If bitFields IsNot Nothing AndAlso bitFields.Contains(field) Then Return CheckControlVariable(field)
+            Return ControlVariable(field)
         End Function
 
         Private Shared Function DeriveTableAlias(tableName As String) As String

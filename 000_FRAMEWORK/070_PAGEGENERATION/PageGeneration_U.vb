@@ -73,7 +73,7 @@ Namespace SDC.Framework
 
         ''' Extra room for the Browse SQL editor, and the matching growth in the form so nothing
         ''' below it is squeezed.
-        Private Const BrowseSqlExtraHeight As Integer = 60
+        Private Const BrowseSqlExtraHeight As Integer = 160
 
         Private tableSelectionPanel As FlowLayoutPanel
         Private fieldSelectionPanel As FlowLayoutPanel
@@ -216,6 +216,21 @@ Namespace SDC.Framework
             AddHandler generateBrowsePageCheckBox.CheckedChanged, AddressOf GenerateBrowsePageCheckBox_CheckedChanged
             AddHandler useQbeOnlyCheckBox.CheckedChanged, AddressOf BrowseOptionCheckBox_CheckedChanged
             AddHandler displayHotFieldsCheckBox.CheckedChanged, AddressOf BrowseOptionCheckBox_CheckedChanged
+
+            ' A tick is a change. Only text boxes marked the form dirty, so Save && Generate - which
+            ' saves only when the request is new or dirty - skipped the save entirely for a request
+            ' whose only edit was a checkbox.
+            '
+            ' Ticking Create as Framework Pages usually rewrites the page names too, and *that*
+            ' marked it dirty, which is why this went unnoticed: it failed only when the names
+            ' already read FW_..., so the rewrite changed no text. The request then generated with
+            ' the setting it had on disk - unticked - and wrote Employees_B where the box said
+            ' FW_Employees_B.
+            AddHandler createAsFrameworkPagesCheckBox.CheckedChanged, AddressOf MarkDirty
+            AddHandler generateBrowsePageCheckBox.CheckedChanged, AddressOf MarkDirty
+            AddHandler generateMaintenancePageCheckBox.CheckedChanged, AddressOf MarkDirty
+            AddHandler useQbeOnlyCheckBox.CheckedChanged, AddressOf MarkDirty
+            AddHandler displayHotFieldsCheckBox.CheckedChanged, AddressOf MarkDirty
             underlyingTableNameTextBox = AddEntryField(fields, "UnderlyingTableName", True, 34, 150, False, "5. Underlying Table Name")
             AddHandler underlyingTableNameTextBox.TextChanged, AddressOf UnderlyingTableNameTextBox_TextChanged
             Dim underlyingTableRow = fields.GetRow(underlyingTableNameTextBox)
@@ -354,13 +369,16 @@ Namespace SDC.Framework
                 .Width = 780,
                 .Height = 205 + BrowseSqlExtraHeight
             }
+            ' The whole panel, less the row the Validate button sits on. The box was 165 in a panel
+            ' of 265, so sixty pixels of the room already reserved for it went unused and the SQL
+            ' scrolled four lines earlier than it needed to.
             browseSqlTextBox.Dock = DockStyle.Top
-            browseSqlTextBox.Height = 165
+            browseSqlTextBox.Height = 165 + BrowseSqlExtraHeight
             browseSqlPanel.Controls.Add(browseSqlTextBox)
             validateSqlButton = New Button With {
                 .Text = "Validate SQL",
                 .Size = New Size(110, 32),
-                .Location = New Point(browseSqlPanel.Width - 110, 170),
+                .Location = New Point(browseSqlPanel.Width - 110, 170 + BrowseSqlExtraHeight),
                 .Anchor = AnchorStyles.Top Or AnchorStyles.Right
             }
             AddHandler validateSqlButton.Click, AddressOf ValidateSqlButton_Click
@@ -376,6 +394,7 @@ Namespace SDC.Framework
             AddFieldControl(fields, useRegistrationIdCheckBox, "10. Use RegistrationID from selected table")
             UpdateRegistrationOptionState()
             AddHandler useRegistrationIdCheckBox.CheckedChanged, AddressOf UseRegistrationIdCheckBox_CheckedChanged
+            AddHandler useRegistrationIdCheckBox.CheckedChanged, AddressOf MarkDirty
             ApplyPageRequiredFieldStyling()
 
             directionsPanel = New Panel With {
@@ -469,6 +488,27 @@ Namespace SDC.Framework
             ApplyQuestionTabOrder()
         End Sub
 
+        ''' <summary>
+        ''' Re-reads the row's concurrency token after generation has written to it.
+        '''
+        ''' Silent on failure: a token that cannot be re-read leaves the old one in place, and the
+        ''' next save asks about a conflict - which is the safe direction. Generation has already
+        ''' succeeded by this point, and a message about a token nobody has heard of would only
+        ''' confuse a report that is otherwise good news.
+        ''' </summary>
+        Private Sub RecaptureRowVersion(generationRequestId As Integer)
+            If generationRequestId <= 0 Then Return
+
+            Try
+                Dim row = DataAccess.GetPageGenerationById(generationRequestId)
+                If row Is Nothing OrElse Not row.Table.Columns.Contains("RowVersion") OrElse row.IsNull("RowVersion") Then Return
+
+                originalRowVersion = CType(DirectCast(row("RowVersion"), Byte()).Clone(), Byte())
+                CaptureOriginalRowVersion(originalRowVersion)
+            Catch
+            End Try
+        End Sub
+
         Private Sub GeneratePagesButton_Click(sender As Object, e As EventArgs)
             If Not generateBrowsePageCheckBox.Checked AndAlso Not generateMaintenancePageCheckBox.Checked Then
                 MessageBox.Show(Me, "SELECT AT LEAST ONE PAGE TARGET TO GENERATE.", "GENERATE PAGES", MessageBoxButtons.OK, MessageBoxIcon.Information)
@@ -530,6 +570,12 @@ Namespace SDC.Framework
             End If
 
             Dim result = PageGenerator.Generate(generationRequestId, Environment.CurrentDirectory, overwriteExistingPages)
+
+            ' Generation writes to this very row - the hashes of the source it just emitted - so the
+            ' RowVersion the page is holding is now a version behind. Saving afterwards asked
+            ' "changed by another user, overwrite?", which was this page, one second earlier, and
+            ' the honest answer to the question is that it was never a conflict at all.
+            RecaptureRowVersion(generationRequestId)
             Dim blockingErrors = result.Errors.Where(Function(errorMessage) Not errorMessage.StartsWith("ICON WARNING:", StringComparison.OrdinalIgnoreCase)).ToList()
             If blockingErrors.Count > 0 Then
                 MessageBox.Show(Me, String.Join(Environment.NewLine, blockingErrors).ToUpperInvariant(), "GENERATE PAGES", MessageBoxButtons.OK, MessageBoxIcon.Error)
@@ -608,9 +654,18 @@ Namespace SDC.Framework
         ''' there is no baseline: a page generated before the baseline existed is not evidence of a
         ''' manual change, and treating it as one would lock a request nobody had touched.
         ''' </summary>
+        ''' <param name="generatedHalf">
+        ''' Whether the page is written in two files, with the generator owning only one of them.
+        ''' True for a _U, which the generator splits; False for a _B, which is still one file.
+        '''
+        ''' It matters because this is the check that locks the page. Hashing the wrong half
+        ''' would report somebody's own code as a manual change to be warned about and offered
+        ''' for destruction - the exact opposite of what the split is for.
+        ''' </param>
         Private Shared Function FileDiffersFromBaseline(dataRow As DataRowView,
                                                         hashColumn As String,
-                                                        pageName As String) As Boolean
+                                                        pageName As String,
+                                                        Optional generatedHalf As Boolean = False) As Boolean
             If dataRow Is Nothing OrElse String.IsNullOrWhiteSpace(pageName) Then Return False
             If Not dataRow.Row.Table.Columns.Contains(hashColumn) OrElse dataRow.Row.IsNull(hashColumn) Then Return False
 
@@ -618,6 +673,7 @@ Namespace SDC.Framework
             If expectedHash = String.Empty Then Return False
 
             Dim pagePath = PageGenerator.GeneratedPagePath(Environment.CurrentDirectory, pageName)
+            If generatedHalf Then pagePath = PageGenerator.GeneratedHalfPath(pagePath)
             If Not File.Exists(pagePath) Then Return False
 
             Dim hasher As SHA256 = SHA256.Create()
@@ -643,7 +699,7 @@ Namespace SDC.Framework
 
             ' Both generated pages are checked. Only the _U page used to be, so a hand-edited _B was
             ' overwritten by the next generation with no warning at all.
-            maintenancePageHasManualChanges = FileDiffersFromBaseline(dataRow, "GeneratedMaintenanceHash", maintenancePageNameTextBox.Text)
+            maintenancePageHasManualChanges = FileDiffersFromBaseline(dataRow, "GeneratedMaintenanceHash", maintenancePageNameTextBox.Text, generatedHalf:=True)
             browsePageHasManualChanges = FileDiffersFromBaseline(dataRow, "GeneratedBrowseHash", browsePageNameTextBox.Text)
             pageHasManualChanges = maintenancePageHasManualChanges OrElse browsePageHasManualChanges
 
@@ -671,7 +727,7 @@ Namespace SDC.Framework
         Private Function ChangedPageFileList() As String
             Dim changed As New List(Of String)()
             If browsePageHasManualChanges Then changed.Add(browsePageNameTextBox.Text.Trim() & ".vb")
-            If maintenancePageHasManualChanges Then changed.Add(maintenancePageNameTextBox.Text.Trim() & ".vb")
+            If maintenancePageHasManualChanges Then changed.Add(maintenancePageNameTextBox.Text.Trim() & ".Generated.vb")
             Return String.Join(Environment.NewLine, changed)
         End Function
 
@@ -691,12 +747,22 @@ Namespace SDC.Framework
             Dim fileList = ChangedPageFileList()
             Dim fileWord = If(browsePageHasManualChanges AndAlso maintenancePageHasManualChanges, "FILES HAVE", "FILE HAS")
 
+            ' Names where the code should have gone, rather than only warning that it is about
+            ' to be lost. A page is two files now: the .Generated.vb half is rewritten on every
+            ' generation, and the half named after the page is never read or written again after
+            ' the first time. Code in the second is safe and raises none of this.
             Dim proceed = MessageBox.Show(Me,
                             "A GENERATED PAGE " & fileWord & " BEEN CHANGED IN VS CODE." & Environment.NewLine &
                             Environment.NewLine &
                             fileList & Environment.NewLine &
                             Environment.NewLine &
-                            "SAVE AND SAVE & GENERATE ARE DISABLED TO PROTECT THOSE CHANGES." & Environment.NewLine &
+                            "THESE ARE THE GENERATOR'S FILES. IT REWRITES THEM IN FULL." & Environment.NewLine &
+                            Environment.NewLine &
+                            "YOUR OWN CODE BELONGS IN THE PAGE'S OTHER FILE - THE ONE WITHOUT .GENERATED" & Environment.NewLine &
+                            "IN ITS NAME. IT IS NEVER REWRITTEN, AND ANYTHING IN IT SURVIVES EVERY" & Environment.NewLine &
+                            "REGENERATION." & Environment.NewLine &
+                            Environment.NewLine &
+                            "SAVE AND SAVE & GENERATE ARE DISABLED UNTIL YOU DECIDE." & Environment.NewLine &
                             Environment.NewLine &
                             "DO YOU WANT TO REGENERATE THIS PAGE ANYWAY?",
                             "MANUAL PAGE CHANGES DETECTED",
@@ -750,7 +816,26 @@ Namespace SDC.Framework
             openWasCancelled = True
         End Sub
 
+        ''' <summary>
+        ''' Whether the generation report mentions a given page, under either name it can have.
+        '''
+        ''' The class is FW_Employees_B; the file, once filed under a numbered framework folder, is
+        ''' Employees_B.vb - the folder carries the prefix and the file does not. The report names
+        ''' the path it wrote, so looking only for the class name found nothing, the page decided
+        ''' generation was incomplete, said so, and stayed open after a generate that had in fact
+        ''' worked.
+        ''' </summary>
         Private Shared Function IsGenerationResultPresent(result As PageGenerationResult, marker As String, nameMarker As String) As Boolean
+            If MentionsName(result, marker, nameMarker) Then Return True
+
+            If Not String.IsNullOrWhiteSpace(nameMarker) AndAlso nameMarker.StartsWith("FW_", StringComparison.OrdinalIgnoreCase) Then
+                Return MentionsName(result, marker, nameMarker.Substring(3))
+            End If
+
+            Return False
+        End Function
+
+        Private Shared Function MentionsName(result As PageGenerationResult, marker As String, nameMarker As String) As Boolean
             Return result.CreatedFiles.Concat(result.SkippedFiles).Any(Function(item) item.IndexOf(marker, StringComparison.OrdinalIgnoreCase) >= 0 AndAlso (String.IsNullOrWhiteSpace(nameMarker) OrElse item.IndexOf(nameMarker, StringComparison.OrdinalIgnoreCase) >= 0))
         End Function
 
@@ -1327,6 +1412,7 @@ Namespace SDC.Framework
                 hotFieldsTextBox.Text = If(row.Table.Columns.Contains("HotFields"), DbText(row("HotFields")), String.Empty)
                 maintenanceFieldsTextBox.Text = DbText(row("MaintenanceFields"))
                 browseSqlTextBox.Text = DbText(row("BrowseSql"))
+                column2Fields = If(row.Table.Columns.Contains("Column2Fields"), DbText(row("Column2Fields")), String.Empty)
                 lookupSpecs = DbText(row("LookupFields"))
                 lookupFieldsTextBox.Text = LookupFieldNames(lookupSpecs)
                 LoadLookupTargetsFromText(lookupSpecs)
@@ -1694,7 +1780,11 @@ Namespace SDC.Framework
                 tableName = tableName.Substring(4)
             End If
 
+            ' RowVersion is never a field anybody picks. It is the concurrency token: the framework
+            ' reads and writes it on every save, and a page that put it on screen would be showing a
+            ' row of hex nobody can act on. Offering it only invited it to be ticked by mistake.
             Dim fields = DataAccess.GetTableFieldNames(tableName).
+                Where(Function(field) Not String.Equals(field, "RowVersion", StringComparison.OrdinalIgnoreCase)).
                 OrderBy(Function(field) field, StringComparer.OrdinalIgnoreCase).
                 ToList()
             If fields.Count = 0 Then
@@ -1884,6 +1974,26 @@ Namespace SDC.Framework
                     .Width = 150
                 })
 
+                ' Which column of a two-column _U the field lands in. A cell rather than a marker
+                ' row in the grid: a marker row has to be skipped by every loop that reads this
+                ' grid - seeding, the Include, Required and Lookup handlers, the Displays
+                ' mirroring, the save and the ordering - and the day one of them forgets, a
+                ' phantom field is generated. A cell is read by the loops that care and ignored
+                ' by the rest.
+                '
+                ' Choosing 2 does not move the row. The grid order is the tab order and is
+                ' maintained by Move Up and Move Down; rows that jump under the cursor while the
+                ' choice is being made fight those buttons and lose the reader's place. The
+                ' second column is shown by tint instead.
+                Dim columnChoice As New DataGridViewComboBoxColumn With {
+                    .Name = "Column",
+                    .HeaderText = "Column",
+                    .Width = 70
+                }
+                columnChoice.Items.Add(Column1Choice)
+                columnChoice.Items.Add(Column2Choice)
+                maintenanceGrid.Columns.Add(columnChoice)
+
                 AddHandler maintenanceGrid.CurrentCellDirtyStateChanged,
                     Sub(gridSender, eventArgs)
                         If maintenanceGrid.IsCurrentCellDirty Then
@@ -1900,6 +2010,9 @@ Namespace SDC.Framework
                             If Not isIncluded Then
                                 row.Cells("Required").Value = False
                                 row.Cells("Lookup").Value = False
+                                ' A field that is not on the page is not in a column of it.
+                                row.Cells("Column").Value = Column1Choice
+                                ApplyColumnTint(row)
                             End If
                         ElseIf eventArgs.ColumnIndex = maintenanceGrid.Columns("Required").Index OrElse
                                eventArgs.ColumnIndex = maintenanceGrid.Columns("Lookup").Index Then
@@ -1946,6 +2059,14 @@ Namespace SDC.Framework
                                     lookupTargets.Remove(fieldName)
                                 End If
                             End If
+                        ElseIf eventArgs.ColumnIndex = maintenanceGrid.Columns("Column").Index Then
+                            ' Putting a field in a column is asking for it on the page, the same
+                            ' way Required and Lookup are. Nothing else follows: the row stays
+                            ' where it is and only its tint changes.
+                            If String.Equals(Convert.ToString(row.Cells("Column").Value), Column2Choice, StringComparison.Ordinal) Then
+                                row.Cells("Include").Value = True
+                            End If
+                            ApplyColumnTint(row)
                         ElseIf eventArgs.ColumnIndex = maintenanceGrid.Columns("Displays").Index AndAlso Not seedingSelectionGrids Then
                             ' Changing what a ticked lookup shows rewrites its spec in place. Left
                             ' untouched, the grid would show one column and the generated page
@@ -1986,6 +2107,37 @@ Namespace SDC.Framework
                                     Exit For
                                 End If
                             Next
+                        ElseIf eventArgs.ColumnIndex = browseGrid.Columns("Displays").Index AndAlso Not seedingSelectionGrids Then
+                            ' What a foreign key shows on the browse page is almost always what it
+                            ' should show on the maintenance page - they are the same column of the
+                            ' same table, read by the same person. Answering it twice invited them
+                            ' to disagree, and the pair that disagreed silently was the browse grid
+                            ' showing a name while the maintenance combo showed something else.
+                            '
+                            ' Only when the right-hand grid offers the same choice, and only when
+                            ' this is the user's own edit rather than the seeding pass.
+                            Dim chosenDisplay = Convert.ToString(row.Cells("Displays").Value)
+                            If Not String.IsNullOrWhiteSpace(chosenDisplay) Then
+                                For Each maintenanceRow As DataGridViewRow In maintenanceGrid.Rows
+                                    If Not String.Equals(Convert.ToString(maintenanceRow.Cells("FieldName").Value), fieldName, StringComparison.OrdinalIgnoreCase) Then Continue For
+
+                                    Dim displayCell = TryCast(maintenanceRow.Cells("Displays"), DataGridViewComboBoxCell)
+                                    If displayCell IsNot Nothing AndAlso displayCell.Items.Contains(chosenDisplay) Then
+                                        displayCell.Value = chosenDisplay
+
+                                        ' A ticked lookup carries the column inside its spec, so the
+                                        ' spec is rewritten too - otherwise the cell would say one
+                                        ' thing and the generated page build another.
+                                        Dim relationship As DataAccess.ColumnRelationship = Nothing
+                                        If Convert.ToBoolean(maintenanceRow.Cells("Lookup").Value) AndAlso relationships.TryGetValue(fieldName, relationship) Then
+                                            Dim mirroredSpec = BuildLookupSpecFromRelationship(fieldName, relationship, chosenDisplay, lookupRegistrationCache)
+                                            If mirroredSpec <> String.Empty Then lookupTargets(fieldName) = mirroredSpec
+                                        End If
+                                    End If
+
+                                    Exit For
+                                Next
+                            End If
                         ElseIf eventArgs.ColumnIndex = browseGrid.Columns("OrderBy").Index Then
                             If Convert.ToBoolean(row.Cells("OrderBy").Value) Then
                                 If Not orderByFields.Any(Function(orderField) String.Equals(orderField, fieldName, StringComparison.OrdinalIgnoreCase)) Then
@@ -2000,6 +2152,16 @@ Namespace SDC.Framework
 
                 Dim savedMaintenanceFields = maintenanceFieldsTextBox.Text.Trim()
                 Dim specDisplayColumns = ParseSpecDisplayColumns(lookupTargets)
+
+                ' A request that has never answered the lookup question gets the obvious answer:
+                ' every declared foreign key is a lookup. The alternative was a page generated with
+                ' raw identifiers in its combos, because the tick was there to be found rather than
+                ' offered.
+                '
+                ' Only when nothing was answered. A saved request that deliberately unticked one
+                ' keeps that decision - re-ticking it here would overrule the user on every reopen.
+                Dim lookupsUnanswered = lookupTargets.Count = 0
+
                 seedingSelectionGrids = True
                 For Each field In fields
                     Dim maintenanceRowIndex = maintenanceGrid.Rows.Add(
@@ -2011,7 +2173,24 @@ Namespace SDC.Framework
                         lookupTargets.ContainsKey(field))
 
                     Dim maintenanceRow = maintenanceGrid.Rows(maintenanceRowIndex)
+                    maintenanceRow.Cells("Column").Value = If(ContainsField(column2Fields, field), Column2Choice, Column1Choice)
+                    ApplyColumnTint(maintenanceRow)
                     ConfigureLookupDisplayCell(maintenanceRow, field, relationships, specDisplayColumns, lookupColumnCache)
+
+                    If lookupsUnanswered Then
+                        Dim seededRelationship As DataAccess.ColumnRelationship = Nothing
+                        If relationships.TryGetValue(field, seededRelationship) Then
+                            Dim seededSpec = BuildLookupSpecFromRelationship(field,
+                                                                            seededRelationship,
+                                                                            Convert.ToString(maintenanceRow.Cells("Displays").Value),
+                                                                            lookupRegistrationCache)
+                            If seededSpec <> String.Empty Then
+                                lookupTargets(field) = seededSpec
+                                maintenanceRow.Cells("Lookup").Value = True
+                                maintenanceRow.Cells("Include").Value = True
+                            End If
+                        End If
+                    End If
 
                     ' Nothing to point at, so nothing to tick. A spec written before the foreign
                     ' keys were declared keeps its tick, so it can still be removed - it just
@@ -2040,7 +2219,7 @@ Namespace SDC.Framework
                 Next
                 seedingSelectionGrids = False
                 OrderSelectionGrid(maintenanceGrid, savedMaintenanceFields)
-                layout.Controls.Add(CreateSelectionPanel("_U Maintenance Fields", maintenanceGrid), 1, 0)
+                layout.Controls.Add(CreateSelectionPanel("_U Maintenance Fields", maintenanceGrid, Nothing, offerColumnSuggestion:=True), 1, 0)
 
                 Dim actions As New FlowLayoutPanel With {.Dock = DockStyle.Fill, .FlowDirection = FlowDirection.RightToLeft}
                 Dim cancelButton As New Button With {.Text = "Cancel", .DialogResult = DialogResult.Cancel, .AutoSize = True}
@@ -2077,10 +2256,17 @@ Namespace SDC.Framework
                     browseFieldsTextBox.Text = JoinCheckedGridFields(browseGrid, "Include")
                     hotFieldsTextBox.Text = JoinCheckedGridFields(browseGrid, "HotField", requireInclude:=False)
                     maintenanceFieldsTextBox.Text = JoinIncludedGridFields(maintenanceGrid)
+                    column2Fields = JoinColumnTwoFields(maintenanceGrid)
                     lookupSpecs = JoinLookupFields(maintenanceGrid)
                     lookupFieldsTextBox.Text = LookupFieldNames(lookupSpecs)
                     adminRequiredFieldsTextBox.Text = JoinCheckedGridFields(maintenanceGrid, "Required")
                     browseSqlTextBox.Text = BuildGeneratedBrowseSql(tableName, browseGrid, fields, primaryKeyField, orderByFields)
+
+                    ' Explicitly, because the two answers that live outside a bound text box -
+                    ' the lookup specs and the column map - can be the only thing that changed.
+                    ' Save and Generate skips the save when the record is clean, so a page would
+                    ' be generated from the stored request rather than from what is on screen.
+                    MarkDirty(Me, EventArgs.Empty)
                     RefreshSavedPageDocumentTemplate()
                 End If
             End Using
@@ -2157,6 +2343,7 @@ Namespace SDC.Framework
             hotFieldsTextBox.Text = String.Empty
             tableAliasTextBox.Text = String.Empty
             maintenanceFieldsTextBox.Text = String.Empty
+            column2Fields = String.Empty
             lookupTargets.Clear()
             lookupSpecs = String.Empty
             lookupFieldsTextBox.Text = String.Empty
@@ -2167,9 +2354,14 @@ Namespace SDC.Framework
             RefreshSavedPageDocumentTemplate()
         End Sub
 
+        ''' <param name="offerColumnSuggestion">
+        ''' Whether to offer the two-column split. Only the _U grid has a Column cell to fill, and
+        ''' a button that did nothing on the _B grid would read as one that was broken.
+        ''' </param>
         Private Shared Function CreateSelectionPanel(caption As String,
                                                      grid As DataGridView,
-                                                     Optional note As String = Nothing) As Control
+                                                     Optional note As String = Nothing,
+                                                     Optional offerColumnSuggestion As Boolean = False) As Control
             Dim hasNote = Not String.IsNullOrWhiteSpace(note)
             Dim panel As New TableLayoutPanel With {.Dock = DockStyle.Fill, .RowCount = If(hasNote, 4, 3), .ColumnCount = 1}
             panel.RowStyles.Add(New RowStyle(SizeType.Absolute, 28))
@@ -2204,6 +2396,11 @@ Namespace SDC.Framework
             AddHandler moveDownButton.Click, Sub(sender As Object, e As EventArgs) MoveSelectedField(grid, 1)
             actions.Controls.Add(moveUpButton)
             actions.Controls.Add(moveDownButton)
+            If offerColumnSuggestion Then
+                Dim suggestButton As New Button With {.Text = "Suggest Columns", .AutoSize = True, .Margin = New Padding(18, 3, 3, 3)}
+                AddHandler suggestButton.Click, Sub(sender As Object, e As EventArgs) SuggestColumns(grid)
+                actions.Controls.Add(suggestButton)
+            End If
             panel.Controls.Add(actions, 0, actionsRow)
             Return panel
         End Function
@@ -2353,6 +2550,18 @@ Namespace SDC.Framework
         ''' the sentences are for the generator, and four of them make an unreadable line.
         ''' </summary>
         Private lookupSpecs As String = String.Empty
+
+        ''' <summary>
+        ''' The _U fields that sit in the second column, as stored. Column one is absence: a field
+        ''' not named here is in column one, so a request that has never answered the question
+        ''' generates the single-column page it always did.
+        '''
+        ''' No order is kept here. MaintenanceFields already carries the order Move Up and Move
+        ''' Down arranged, and the generated page reads that one list twice - the fields not named
+        ''' here down the left, the fields named here down the right, each in that same order. Two
+        ''' orders that can disagree is the thing this avoids.
+        ''' </summary>
+        Private column2Fields As String = String.Empty
 
         ''' <summary>The field names from a set of lookup specs, in the order they were written.</summary>
         Private Shared Function LookupFieldNames(specs As String) As String
@@ -2594,6 +2803,110 @@ Namespace SDC.Framework
                 If fieldName <> String.Empty Then lookupTargets(fieldName) = spec
             Next
         End Sub
+
+        ''' <summary>
+        ''' Below this many fields a page stays in one column. A generated _U is 55 pixels of
+        ''' furniture plus 42 a row, so nine rows is a 433-pixel box - splitting that produces a
+        ''' wide, half-empty form, which is worse than a tall narrow one. Past it the single column
+        ''' starts running off the screen.
+        ''' </summary>
+        Private Const TwoColumnThreshold As Integer = 10
+
+        ''' <summary>
+        ''' Fills the Column cells with a guess, for the fields currently included.
+        '''
+        ''' A button rather than something that happens on its own. The guess is only meaningful
+        ''' once the fields are ticked, and one that re-applied itself on every reopen would
+        ''' overrule a page deliberately left in one column - with nothing on screen to say it had.
+        '''
+        ''' The order is not touched. The split is a cut through the list the Move buttons
+        ''' arranged, never a re-sort of it: everything before the cut is column one, everything
+        ''' after it column two.
+        ''' </summary>
+        Private Shared Sub SuggestColumns(grid As DataGridView)
+            Dim includedRows = grid.Rows.Cast(Of DataGridViewRow)().
+                Where(Function(row) Convert.ToBoolean(row.Cells("Include").Value)).
+                ToList()
+            Dim includedFields = includedRows.Select(Function(row) Convert.ToString(row.Cells("FieldName").Value)).ToList()
+            Dim splitAt = SuggestedColumnSplit(includedFields)
+
+            For position = 0 To includedRows.Count - 1
+                includedRows(position).Cells("Column").Value = If(splitAt > 0 AndAlso position >= splitAt, Column2Choice, Column1Choice)
+                ApplyColumnTint(includedRows(position))
+            Next
+
+            ' Anything not on the page is not in a column of it, whatever it was left holding.
+            For Each row As DataGridViewRow In grid.Rows
+                If Convert.ToBoolean(row.Cells("Include").Value) Then Continue For
+                row.Cells("Column").Value = Column1Choice
+                ApplyColumnTint(row)
+            Next
+        End Sub
+
+        ''' <summary>
+        ''' Where to cut the included fields into two columns, or zero for one column.
+        '''
+        ''' The midpoint, rounded up, so the left column is the same height as the right or one
+        ''' row taller - a left column shorter than the right reads as a page that stopped early.
+        '''
+        ''' The address block is never cut through. Smarty fills City, State and Zip from the
+        ''' street line and the Zip Coder button sits against Zip, so those four belong together;
+        ''' where the midpoint lands inside them the cut moves to whichever end of the block is
+        ''' nearer, and if that would empty a column the page stays in one.
+        ''' </summary>
+        Private Shared Function SuggestedColumnSplit(includedFields As List(Of String)) As Integer
+            If includedFields.Count < TwoColumnThreshold Then Return 0
+
+            Dim midpoint = CInt(Math.Ceiling(includedFields.Count / 2.0))
+            Dim addressGroup = PageGenerator.AddressGroupFields(includedFields)
+            If addressGroup.Count > 0 Then
+                Dim positions = addressGroup.
+                    Select(Function(field) includedFields.FindIndex(Function(item) String.Equals(item, field, StringComparison.OrdinalIgnoreCase))).
+                    Where(Function(index) index >= 0).
+                    ToList()
+                If positions.Count > 0 Then
+                    Dim firstAddress = positions.Min()
+                    Dim pastLastAddress = positions.Max() + 1
+                    If midpoint > firstAddress AndAlso midpoint < pastLastAddress Then
+                        midpoint = If(midpoint - firstAddress <= pastLastAddress - midpoint, firstAddress, pastLastAddress)
+                    End If
+                End If
+            End If
+
+            ' A cut at either end is not a split.
+            If midpoint <= 0 OrElse midpoint >= includedFields.Count Then Return 0
+            Return midpoint
+        End Function
+
+        ''' <summary>The two answers the Column cell offers. Text, because the cell is a combo.</summary>
+        Private Const Column1Choice As String = "1"
+        Private Const Column2Choice As String = "2"
+
+        ''' The wash behind a second-column row. Pale enough to read through, strong enough to
+        ''' group - the row says which side it is on without being moved to that side.
+        Private Shared ReadOnly Column2RowBackColor As Color = Color.FromArgb(238, 244, 250)
+
+        Private Shared Sub ApplyColumnTint(row As DataGridViewRow)
+            If row.DataGridView Is Nothing OrElse Not row.DataGridView.Columns.Contains("Column") Then Return
+
+            Dim inColumnTwo = String.Equals(Convert.ToString(row.Cells("Column").Value), Column2Choice, StringComparison.Ordinal)
+            row.DefaultCellStyle.BackColor = If(inColumnTwo, Column2RowBackColor, Color.Empty)
+        End Sub
+
+        ''' <summary>
+        ''' The included fields marked column two, in grid order. Grid order is the whole of the
+        ''' ordering answer: column one is this list's complement, read in the same order.
+        ''' </summary>
+        Private Shared Function JoinColumnTwoFields(grid As DataGridView) As String
+            Dim selectedFields As New List(Of String)()
+            For Each row As DataGridViewRow In grid.Rows
+                If Not Convert.ToBoolean(row.Cells("Include").Value) Then Continue For
+                If String.Equals(Convert.ToString(row.Cells("Column").Value), Column2Choice, StringComparison.Ordinal) Then
+                    selectedFields.Add(Convert.ToString(row.Cells("FieldName").Value))
+                End If
+            Next
+            Return String.Join(", ", selectedFields)
+        End Function
 
         Private Shared Function JoinIncludedGridFields(grid As DataGridView) As String
             Dim selectedFields As New List(Of String)()
@@ -2840,6 +3153,7 @@ Namespace SDC.Framework
                     {"MaintenanceFields", DbSaveValue(maintenanceFieldsTextBox.Text)},
                     {"BrowseSql", DbSaveValue(browseSqlTextBox.Text)},
                     {"LookupFields", DbSaveValue(lookupSpecs)},
+                    {"Column2Fields", DbSaveValue(column2Fields)},
                     {"AdminRequiredFields", DbSaveValue(adminRequiredFieldsTextBox.Text)},
                     {"MenuCaller", DbSaveValue(SelectedMenuCaller())},
                     {"IconFileName", DbSaveValue(IconPicker.IconChoiceValue(iconFileNameTextBox.Text))}

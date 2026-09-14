@@ -8,52 +8,83 @@ Imports System.Drawing
 Imports System.Windows.Forms
 
 Namespace SDC.Framework
-    Public Class UserX_U
+    Public Class FW_Employees_U
         Inherits FW_Base_U
 
         Private ReadOnly recordId As Integer
         Private ReadOnly currentUser As UserContext
         Private ReadOnly accessProfile As AccessProfile
-        Private ReadOnly tableName As String = "FW_USERS"
-        Private ReadOnly primaryKey As String = "UserId"
-        Private ReadOnly computedFields As New HashSet(Of String)(StringComparer.OrdinalIgnoreCase) From {"FirstLast"}
+        Private ReadOnly tableName As String = "FW_Employees"
+        Private ReadOnly primaryKey As String = "EmployeeID"
+        Private ReadOnly computedFields As New HashSet(Of String)(StringComparer.OrdinalIgnoreCase)
         Private record As DataRow
         Private ReadOnly formBindingSource As New BindingSource()
         Private originalRowVersion As Byte()
-        Private ReadOnly firstLastTextBox As TextBox
+        Private ReadOnly assignRoleComboBox As ComboBox
+        Private ReadOnly zipCoderController As ZipCoderController
+        Private ReadOnly smartyAddressLookupController As SmartyAddressLookupController
         Private ReadOnly firstNameTextBox As TextBox
         Private ReadOnly lastNameTextBox As TextBox
         Private ReadOnly address1TextBox As TextBox
+        Private ReadOnly address2TextBox As TextBox
         Private ReadOnly cityTextBox As TextBox
         Private ReadOnly stateTextBox As TextBox
         Private ReadOnly zipTextBox As TextBox
-        Private ReadOnly emailTextBox As TextBox
+        Private ReadOnly userNameTextBox As TextBox
         Private ReadOnly passwordTextBox As TextBox
+        Private ReadOnly genderIDComboBox As ComboBox
+        Private ReadOnly emailTextBox As TextBox
+        Private ReadOnly hireDateDateTimePicker As DateTimePicker
+        Private ReadOnly terminationDateDateTimePicker As DateTimePicker
+        Private ReadOnly homePhoneTextBox As TextBox
+        Private ReadOnly cellPhoneTextBox As TextBox
+        Private ReadOnly workPhoneTextBox As TextBox
+        Private ReadOnly extensionTextBox As TextBox
+        Private ReadOnly isActiveTextBox As TextBox
+        Private ReadOnly birthDateDateTimePicker As DateTimePicker
         Private ReadOnly assignedManagerIDComboBox As ComboBox
-        Private ReadOnly genderIDTextBox As TextBox
 
         Public Sub New(id As Integer, user As UserContext, Optional profile As AccessProfile = Nothing)
             MyBase.New()
             recordId = id
             currentUser = user
             accessProfile = profile
-            ClientSize = New Size(600, 517)
+            ClientSize = New Size(1060, 517)
             okButton.Location = New Point(ClientSize.Width - 270, ClientSize.Height - 46)
             cancelActionButton.Location = New Point(ClientSize.Width - 135, ClientSize.Height - 46)
-            firstLastTextBox = AddField("FirstLast", 20, False, False)
-            firstNameTextBox = AddField("FirstName", 62, False, True)
-            lastNameTextBox = AddField("LastName", 104, False, True)
-            address1TextBox = AddField("Address1", 146, False, False)
-            cityTextBox = AddField("City", 188, False, False)
-            stateTextBox = AddField("State", 230, False, False)
-            zipTextBox = AddField("Zip", 272, False, False)
-            emailTextBox = AddField("Email", 314, False, True)
-            passwordTextBox = AddField("Password", 356, False, True)
-            assignedManagerIDComboBox = AddComboField("AssignedManagerID", 398, True, 20, 320)
-            genderIDTextBox = AddField("GenderID", 440, False, False)
-            SetManualTabOrder(firstLastTextBox, firstNameTextBox, lastNameTextBox, address1TextBox, cityTextBox, stateTextBox, zipTextBox, emailTextBox, passwordTextBox, assignedManagerIDComboBox, genderIDTextBox, okButton, cancelActionButton)
+            firstNameTextBox = AddField("FirstName", 20, False, True, 20)
+            lastNameTextBox = AddField("LastName", 62, False, True, 20)
+            address1TextBox = AddField("Address1", 104, False, False, 20)
+            address2TextBox = AddField("Address2", 146, False, False, 20)
+            cityTextBox = AddField("City", 188, False, False, 20)
+            stateTextBox = AddField("State", 230, False, False, 20)
+            zipTextBox = AddField("Zip", 272, False, False, 20)
+            userNameTextBox = AddField("UserName", 314, False, True, 20)
+            passwordTextBox = AddField("Password", 356, False, True, 20)
+            genderIDComboBox = AddComboField("GenderID", 398, False, 20, 320)
+            emailTextBox = AddField("Email", 440, False, False, 20)
+            hireDateDateTimePicker = AddDateField("HireDate", 20, False, 580, True, False)
+            terminationDateDateTimePicker = AddDateField("TerminationDate", 62, False, 580, True, False)
+            homePhoneTextBox = AddField("HomePhone", 104, False, False, 580)
+            cellPhoneTextBox = AddField("CellPhone", 146, False, False, 580)
+            workPhoneTextBox = AddField("WorkPhone", 188, False, False, 580)
+            extensionTextBox = AddField("Extension", 230, False, False, 580)
+            isActiveTextBox = AddField("IsActive", 272, False, False, 580)
+            birthDateDateTimePicker = AddDateField("BirthDate", 314, False, 580, True, False)
+            assignedManagerIDComboBox = AddComboField("AssignedManagerID", 356, False, 580, 320)
+            assignRoleComboBox = AddComboField("AssignRoleID", 398, True, 580, 320, "Role")
+            SetManualTabOrder(firstNameTextBox, lastNameTextBox, address1TextBox, address2TextBox, cityTextBox, stateTextBox, zipTextBox, userNameTextBox, passwordTextBox, genderIDComboBox, emailTextBox, hireDateDateTimePicker, terminationDateDateTimePicker, homePhoneTextBox, cellPhoneTextBox, workPhoneTextBox, extensionTextBox, isActiveTextBox, birthDateDateTimePicker, assignedManagerIDComboBox, assignRoleComboBox, okButton, cancelActionButton)
             BindToForm()
             ApplyMode()
+            smartyAddressLookupController = New SmartyAddressLookupController(
+                Me,
+                address1TextBox,
+                cityTextBox,
+                stateTextBox,
+                zipTextBox,
+                Function() SmartyAddressLookupController.IsSessionLookupEnabled(),
+                Function() SmartyAddressLookupController.GetSessionEmbeddedKey())
+            zipCoderController = New ZipCoderController(Me, cityTextBox, stateTextBox, zipTextBox)
         End Sub
 
         Public Overrides ReadOnly Property SavedRecordId As Integer
@@ -64,7 +95,7 @@ Namespace SDC.Framework
         End Property
 
         Protected Overrides Function GetPageName() As String
-            Return NameOf(UserX_U)
+            Return NameOf(FW_Employees_U)
         End Function
 
         Protected Overrides Function GetTableNameOverride() As String
@@ -82,13 +113,26 @@ Namespace SDC.Framework
             End If
             formBindingSource.DataSource = record.Table
             formBindingSource.Position = record.Table.Rows.IndexOf(record)
-            For Each control In New Control() {firstLastTextBox, firstNameTextBox, lastNameTextBox, address1TextBox, cityTextBox, stateTextBox, zipTextBox, emailTextBox, passwordTextBox, genderIDTextBox}
+            For Each control In New Control() {firstNameTextBox, lastNameTextBox, address1TextBox, address2TextBox, cityTextBox, stateTextBox, zipTextBox, userNameTextBox, passwordTextBox, emailTextBox, homePhoneTextBox, cellPhoneTextBox, workPhoneTextBox, extensionTextBox, isActiveTextBox}
                 Dim fieldName = control.Name.Substring("TextBox_".Length)
                 control.DataBindings.Clear()
                 control.DataBindings.Add("Text", formBindingSource, fieldName, True, DataSourceUpdateMode.Never)
                 If record.Table.Columns.Contains(fieldName) Then control.Text = If(record(fieldName) Is DBNull.Value, String.Empty, Convert.ToString(record(fieldName)))
             Next
-            ConfigureLookupCombo(assignedManagerIDComboBox, DataAccess.GetLookupTable("FW_Users", "UserId", "FirstLast", True), "UserId", "FirstLast", CurrentLookupId("AssignedManagerID"))
+            If record.Table.Columns.Contains("HireDate") Then SetDateField(hireDateDateTimePicker, record("HireDate"))
+            If record.Table.Columns.Contains("TerminationDate") Then SetDateField(terminationDateDateTimePicker, record("TerminationDate"))
+            If record.Table.Columns.Contains("BirthDate") Then SetDateField(birthDateDateTimePicker, record("BirthDate"))
+            Dim roleRegistrationId = If(SessionState.IsActive AndAlso SessionState.Current.HasValue, SessionState.Current.Value.RegistrationID, 0)
+            ConfigureLookupCombo(assignRoleComboBox,
+                                 DataAccess.GetSelectableRolesByRegistration(roleRegistrationId),
+                                 "ID", "RoleName", DataAccess.GetEmployeeRoleId(recordId))
+
+            ' Asked once, when the person is created. One combo cannot honestly show
+            ' somebody holding several roles, and changing them afterwards belongs in
+            ' Roles, where the whole set is visible.
+            assignRoleComboBox.Enabled = IsCreatingNewRecord()
+            ConfigureLookupCombo(genderIDComboBox, DataAccess.GetLookupTable("FW_Gender", "GenderID", "GenderDescription", True, CurrentLookupId("GenderID")), "GenderID", "GenderDescription", CurrentLookupId("GenderID"))
+            ConfigureLookupCombo(assignedManagerIDComboBox, DataAccess.GetLookupTable("FW_Employees", "EmployeeID", "FirstLast", True, CurrentLookupId("AssignedManagerID")), "EmployeeID", "FirstLast", CurrentLookupId("AssignedManagerID"))
             If record.Table.Columns.Contains("RowVersion") AndAlso Not record.IsNull("RowVersion") Then originalRowVersion = CType(DirectCast(record("RowVersion"), Byte()).Clone(), Byte())
             CaptureOriginalRowVersion(originalRowVersion)
         End Sub
@@ -107,6 +151,12 @@ Namespace SDC.Framework
         End Sub
 
         Protected Overrides Function TryBuildRecord() As Boolean
+            If IsCreatingNewRecord() AndAlso GetComboSelectedIdOrZero(assignRoleComboBox) <= 0 Then
+                MessageBox.Show(Me, "Choose a role. Without one this person can sign in and reach nothing.", "Role Required", MessageBoxButtons.OK, MessageBoxIcon.Warning)
+                assignRoleComboBox.Focus()
+                Return False
+            End If
+
             Return True
         End Function
 
@@ -131,17 +181,29 @@ Namespace SDC.Framework
 
         Protected Overrides Function SaveRecord() As Boolean
             Dim values As New Dictionary(Of String, Object)(StringComparer.OrdinalIgnoreCase)
-            values("FirstLast") = firstLastTextBox.Text
             values("FirstName") = firstNameTextBox.Text
             values("LastName") = lastNameTextBox.Text
             values("Address1") = address1TextBox.Text
+            values("Address2") = address2TextBox.Text
             values("City") = cityTextBox.Text
             values("State") = stateTextBox.Text
             values("Zip") = zipTextBox.Text
-            values("Email") = emailTextBox.Text
+            values("UserName") = userNameTextBox.Text
             values("Password") = passwordTextBox.Text
+            values("GenderID") = GetComboSelectedIdOrNull(genderIDComboBox)
+            values("Email") = emailTextBox.Text
+            values("HireDate") = DateFieldValue(hireDateDateTimePicker)
+            values("TerminationDate") = DateFieldValue(terminationDateDateTimePicker)
+            values("HomePhone") = homePhoneTextBox.Text
+            values("CellPhone") = cellPhoneTextBox.Text
+            values("WorkPhone") = workPhoneTextBox.Text
+            values("Extension") = extensionTextBox.Text
+            values("IsActive") = isActiveTextBox.Text
+            values("BirthDate") = DateFieldValue(birthDateDateTimePicker)
             values("AssignedManagerID") = GetComboSelectedIdOrNull(assignedManagerIDComboBox)
-            values("GenderID") = genderIDTextBox.Text
+            ' Not a column on the table. The save takes it out of the value set and
+            ' writes FW_EmployeeRoles with it, inside the same transaction.
+            values(DataAccess.AssignRoleValueKey) = GetComboSelectedIdOrZero(assignRoleComboBox)
             Dim savedId As Integer = recordId
             If savedId <= 0 AndAlso record.Table.Columns.Contains(primaryKey) AndAlso Not record.IsNull(primaryKey) Then Integer.TryParse(Convert.ToString(record(primaryKey)), savedId)
             Dim updatedBy = If(SessionState.IsActive, SessionState.Current.Value.UserID, 0)

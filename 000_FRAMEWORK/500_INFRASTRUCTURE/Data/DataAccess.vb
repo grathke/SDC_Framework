@@ -628,8 +628,8 @@ Namespace SDC.Framework
             user = Nothing
             errorMessage = String.Empty
 
-                Dim emailLookup = NormalizeEmailForLookup(emailInput).Trim()
-            If emailLookup = String.Empty Then
+                Dim userNameLookup = NormalizeEmailForLookup(emailInput).Trim()
+            If userNameLookup = String.Empty Then
                 errorMessage = "User name is required."
                 Return False
             End If
@@ -656,7 +656,7 @@ Namespace SDC.Framework
                     ' same "no user" as an address that never existed. Confirming that a deleted
                     ' account was once real tells an attacker something and tells an honest user
                     ' nothing they can act on.
-                    If Not TryGetCurrentUserRecord(conn, emailLookup, userId, dbEmail, firstName, lastName, storedPasswordHash, isActive) Then
+                    If Not TryGetCurrentUserRecord(conn, userNameLookup, userId, dbEmail, firstName, lastName, storedPasswordHash, isActive) Then
                         errorMessage = "No user found for that user name."
                         Return False
                     End If
@@ -681,7 +681,7 @@ Namespace SDC.Framework
                     Dim hashInput = RemoveSpaces(enteredPassword)
                     Dim passwordMatches = ValidateComputedHashAgainstStored(hashInput, userId, storedPasswordHash)
                     If Not passwordMatches Then
-                        errorMessage = "Invalid email or password."
+                        errorMessage = "Invalid user name or password."
                         Return False
                     End If
 
@@ -717,7 +717,12 @@ Namespace SDC.Framework
         ''' no change to it.
         ''' </summary>
         Private Shared Function TryGetCurrentUserRecord(conn As SqlConnection, userNameLookup As String, ByRef userId As Integer, ByRef dbEmail As String, ByRef firstName As String, ByRef lastName As String, ByRef storedPasswordHash As String, ByRef isActive As Boolean) As Boolean
-            Using cmd As New SqlCommand("SELECT TOP 1 v.UserId, v.Email, ISNULL(v.FirstName, ''), ISNULL(v.LastName, ''), ISNULL(v.PasswordHash, ''), ISNULL(v.IsActive, 0) " &
+            ' Every column is null-guarded, Email included. It was the one that was not, from when
+            ' an email was how people signed in and could not be missing. An account created from
+            ' an employee has no email at all - the person's address lives on FW_Employees - and
+            ' login died on reader.GetString with "Data is Null", which names neither the column
+            ' nor the account and reads like a broken password.
+            Using cmd As New SqlCommand("SELECT TOP 1 v.UserId, ISNULL(v.Email, ''), ISNULL(v.FirstName, ''), ISNULL(v.LastName, ''), ISNULL(v.PasswordHash, ''), ISNULL(v.IsActive, 0) " &
                                         "FROM dbo.vw_FW_CurrentUser v " &
                                         "INNER JOIN dbo.FW_Users u ON u.UserId = v.UserId " &
                                         "WHERE LOWER(REPLACE(ISNULL(u.UserName, ''), ' ', '')) = @UserNameLookup", conn)
@@ -2452,10 +2457,48 @@ Namespace SDC.Framework
             End Try
         End Function
 
+        ''' <param name="keepValue">
+        ''' The row the record being edited already points at, which is kept in the list even when
+        ''' it is no longer active.
+        '''
+        ''' Without it, filtering on IsActive quietly loses data: a record whose manager has since
+        ''' left would find no matching row, ConfigureLookupCombo would fall back to "Make a
+        ''' Selection", and the next save would write a null over a manager nobody meant to clear.
+        ''' So the rule is what you would say out loud - you cannot choose someone inactive, but
+        ''' you can still see who was chosen. Pass 0 for a new record, which has chosen nobody.
+        ''' </param>
+        ''' <summary>
+        ''' The rows of FW_Format_Date or FW_Format_Time, for the combos that choose one.
+        '''
+        ''' Not GetLookupTable, for two reasons. These come back in DisplayOrder, which is how
+        ''' usual each format is - sorted alphabetically by description the ISO one lands in the
+        ''' middle of the list for no reason a reader could see. And both the pattern and its
+        ''' description are needed, because the label is built from them rather than stored: what
+        ''' somebody picks from is then what they will actually see, and no stored sample can
+        ''' drift from the pattern beside it.
+        ''' </summary>
+        Public Shared Function GetFormatOptions(tableName As String, keyColumn As String) As DataTable
+            Dim table As New DataTable(tableName)
+            Using conn As New SqlConnection(ConnectionString)
+                conn.Open()
+                Using cmd As New SqlCommand(
+                    "SELECT " & QuoteGeneratedIdentifier(keyColumn) & " AS FormatID, FormatPattern, Description " &
+                    "FROM dbo." & QuoteGeneratedIdentifier(tableName) & " " &
+                    "WHERE ISNULL(IsActive, 1) = 1 " &
+                    "ORDER BY DisplayOrder, Description", conn)
+                    Using da As New SqlDataAdapter(cmd)
+                        da.Fill(table)
+                    End Using
+                End Using
+            End Using
+            Return table
+        End Function
+
         Public Shared Function GetLookupTable(tableName As String,
                                               valueColumn As String,
                                               displayColumn As String,
-                                              Optional filterByRegistration As Boolean = True) As DataTable
+                                              Optional filterByRegistration As Boolean = True,
+                                              Optional keepValue As Integer = 0) As DataTable
             Dim result As New DataTable()
             Dim normalizedTable = NormalizeTableName(tableName)
 
@@ -2468,15 +2511,35 @@ Namespace SDC.Framework
                 filters.Add("ISNULL([DeletedFlag], 0) = 0")
             End If
 
+            ' Deleted rows are gone from the list outright; inactive ones survive only as the
+            ' answer already given. A deleted row is a mistake or a removal, and nothing should
+            ' still be pointing at it - an inactive one is a real past choice.
+            Dim honourIsActive = TableHasColumn(normalizedTable, "IsActive")
+            If honourIsActive Then
+                filters.Add("(ISNULL([IsActive], 1) = 1 OR " & QuoteGeneratedIdentifier(valueColumn) & " = @KeepValue)")
+            End If
+
             Dim whereClause = If(filters.Count = 0, String.Empty, " WHERE " & String.Join(" AND ", filters))
+
+            ' An inactive row that survived says so, or it reads as an ordinary choice that other
+            ' people are mysteriously unable to make.
+            Dim displaySelect = QuoteGeneratedIdentifier(displayColumn) & " AS " & QuoteGeneratedIdentifier(displayColumn)
+            If honourIsActive Then
+                displaySelect = "CASE WHEN ISNULL([IsActive], 1) = 1 THEN CAST(" & QuoteGeneratedIdentifier(displayColumn) & " AS nvarchar(4000)) " &
+                                "ELSE CAST(" & QuoteGeneratedIdentifier(displayColumn) & " AS nvarchar(4000)) + N' (inactive)' END AS " &
+                                QuoteGeneratedIdentifier(displayColumn)
+            End If
 
             Using conn As New SqlConnection(ConnectionString)
                 conn.Open()
                 Using cmd As New SqlCommand("SELECT " & QuoteGeneratedIdentifier(valueColumn) & " AS " & QuoteGeneratedIdentifier(valueColumn) &
-                                            ", " & QuoteGeneratedIdentifier(displayColumn) & " AS " & QuoteGeneratedIdentifier(displayColumn) &
+                                            ", " & displaySelect &
                                             " FROM dbo." & QuoteGeneratedIdentifier(normalizedTable) &
                                             whereClause &
                                             " ORDER BY " & QuoteGeneratedIdentifier(displayColumn), conn)
+                    If honourIsActive Then
+                        cmd.Parameters.Add("@KeepValue", SqlDbType.Int).Value = keepValue
+                    End If
                     If scopeToRegistration Then
                         cmd.Parameters.AddWithValue("@RegistrationID",
                                                     If(SessionState.IsActive AndAlso SessionState.Current.HasValue,
@@ -2524,16 +2587,34 @@ Namespace SDC.Framework
 
                 Using conn As New SqlConnection(ConnectionString)
                     conn.Open()
-                    Using cmd As New SqlCommand(
-                        "UPDATE dbo." & QuoteGeneratedIdentifier(normalizedTable) &
-                        " SET " & String.Join(", ", assignments) &
-                        " WHERE " & QuoteGeneratedIdentifier(primaryKey) & " = @RecordID", conn)
-                        cmd.Parameters.Add("@RecordID", SqlDbType.Int).Value = recordId
-                        cmd.Parameters.Add("@UserID", SqlDbType.Int).Value = If(userId > 0, CType(userId, Object), DBNull.Value)
+                    Using tx = conn.BeginTransaction()
+                        Using cmd As New SqlCommand(
+                            "UPDATE dbo." & QuoteGeneratedIdentifier(normalizedTable) &
+                            " SET " & String.Join(", ", assignments) &
+                            " WHERE " & QuoteGeneratedIdentifier(primaryKey) & " = @RecordID", conn, tx)
+                            cmd.Parameters.Add("@RecordID", SqlDbType.Int).Value = recordId
+                            cmd.Parameters.Add("@UserID", SqlDbType.Int).Value = If(userId > 0, CType(userId, Object), DBNull.Value)
 
-                        If cmd.ExecuteNonQuery() <> 1 Then
-                            Return "The record was not found. It may already have been deleted."
+                            If cmd.ExecuteNonQuery() <> 1 Then
+                                tx.Rollback()
+                                Return "The record was not found. It may already have been deleted."
+                            End If
+                        End Using
+
+                        ' Deleting an employee takes their sign-in with it. Both rows or neither:
+                        ' a person removed from the company who can still log in is the failure
+                        ' worth preventing, and doing it here rather than on the page means no
+                        ' page can forget.
+                        '
+                        ' This is the simple reading, chosen on 2026-09-14 over deriving access
+                        ' from the employee record. It is the wrong answer the day a second
+                        ' application shares these logins - one application's delete would lock
+                        ' somebody out of another - and it is meant to be revisited then.
+                        If IsEmployeeLoginTable(normalizedTable) Then
+                            SetEmployeeLoginDeleted(conn, tx, recordId, userId, True)
                         End If
+
+                        tx.Commit()
                     End Using
                 End Using
 
@@ -2588,16 +2669,27 @@ Namespace SDC.Framework
 
                 Using conn As New SqlConnection(ConnectionString)
                     conn.Open()
-                    Using cmd As New SqlCommand(
-                        "UPDATE dbo." & QuoteGeneratedIdentifier(normalizedTable) &
-                        " SET " & String.Join(", ", assignments) &
-                        " WHERE " & QuoteGeneratedIdentifier(primaryKey) & " = @RecordID", conn)
-                        cmd.Parameters.Add("@RecordID", SqlDbType.Int).Value = recordId
-                        cmd.Parameters.Add("@UserID", SqlDbType.Int).Value = If(userId > 0, CType(userId, Object), DBNull.Value)
+                    Using tx = conn.BeginTransaction()
+                        Using cmd As New SqlCommand(
+                            "UPDATE dbo." & QuoteGeneratedIdentifier(normalizedTable) &
+                            " SET " & String.Join(", ", assignments) &
+                            " WHERE " & QuoteGeneratedIdentifier(primaryKey) & " = @RecordID", conn, tx)
+                            cmd.Parameters.Add("@RecordID", SqlDbType.Int).Value = recordId
+                            cmd.Parameters.Add("@UserID", SqlDbType.Int).Value = If(userId > 0, CType(userId, Object), DBNull.Value)
 
-                        If cmd.ExecuteNonQuery() <> 1 Then
-                            Return "The record was not found. It may already have been restored."
+                            If cmd.ExecuteNonQuery() <> 1 Then
+                                tx.Rollback()
+                                Return "The record was not found. It may already have been restored."
+                            End If
+                        End Using
+
+                        ' Exactly what the delete undid. A restored employee who still could not
+                        ' sign in would look restored and not be.
+                        If IsEmployeeLoginTable(normalizedTable) Then
+                            SetEmployeeLoginDeleted(conn, tx, recordId, userId, False)
                         End If
+
+                        tx.Commit()
                     End Using
                 End Using
 
@@ -2690,10 +2782,10 @@ Namespace SDC.Framework
             outcome = SaveResult.Succeeded
             Dim schema = GetGeneratedPageSchema(tableName)
 
-            ' A password typed on any page is taken out of the ordinary column write and put back
-            ' through UpdateUserPasswordHash afterwards, which is the only code that knows the
-            ' contract: store the raw value, hash it keyed on the UserId, then overwrite the column
-            ' with the sentinel.
+            ' A password typed on any page is taken out of the ordinary column write and put
+            ' through WritePasswordHash instead, which is the only code that knows the contract:
+            ' hash it keyed on the UserId, store the hash, and leave the sentinel in the column
+            ' the value was typed into. The raw string is never written anywhere.
             '
             ' Held here rather than in each page because that is where it failed. The rule lived in
             ' Users_AppAdmin_U alone, so a generated page editing FW_Users wrote "1234" into
@@ -2701,25 +2793,25 @@ Namespace SDC.Framework
             ' plaintext password stored, and an account that could not log in. A rule enforced in one
             ' form is not enforced.
             Dim pendingPassword As String = Nothing
+            Dim pendingRoleIds As List(Of Integer) = Nothing
+
+            ' An employee's typed password goes the same way a user's does: out of the value set
+            ' before anything is written, and the column it came from never holds it. The chosen
+            ' role leaves with it, for a different reason - it is not a column at all.
+            If IsEmployeeLoginTable(tableName) Then
+                pendingPassword = TakeGeneratedPasswordValue(values)
+                pendingRoleIds = TakeGeneratedRoleValues(values)
+            End If
+
             If IsUserPasswordTable(tableName) Then
                 pendingPassword = TakeGeneratedPasswordValue(values)
 
-                ' Refused here as well as validated on the page, for the same reason the password is
-                ' hashed here: a rule that lives only in a form is not a rule. Two accounts sharing
-                ' an email leave login picking one by row order.
-                ' Normalised before it is checked and before it is written, so the value compared
-                ' for duplicates is the value stored. Checking one form and storing another is how
-                ' two rows end up different to the index and identical to login.
+                ' Still normalised, so the same address is stored the same way every time. What
+                ' has gone is the uniqueness check that used to follow it: an email was how people
+                ' signed in, so two accounts sharing one left login picking by row order. Login
+                ' moved to UserName on 2026-09-14, and an email is now just a way to reach
+                ' somebody - two people can share one, and across registrations they routinely do.
                 NormalizeGeneratedEmailValue(values)
-
-                Dim proposedEmail = GetGeneratedValueText(values, "Email")
-                If proposedEmail <> String.Empty Then
-                    Dim emailProblem = GetEmailUnavailableMessage(proposedEmail, Math.Max(0, recordId))
-                    If emailProblem <> String.Empty Then
-                        outcome = SaveResult.Failed
-                        Throw New InvalidOperationException(emailProblem)
-                    End If
-                End If
             End If
 
             ' Computed columns are the database's to fill, and SQL Server refuses outright any write
@@ -2738,7 +2830,16 @@ Namespace SDC.Framework
                                                        Not IsProtectedPasswordColumn(tableName, pair.Key)).ToList()
             Using conn As New SqlConnection(ConnectionString)
                 conn.Open()
-                If recordId <= 0 Then
+
+                ' One transaction over the whole save, which it did not used to be. The row was
+                ' committed and the password hashed afterwards on a second connection, so a
+                ' failure between them left an account that existed and could not be signed into -
+                ' the code said as much, logging Password_HashFailedAfterSave. An employee makes
+                ' that worse still: it writes two tables, and half of that is a person with no
+                ' login or a login with no person.
+                Using tx = conn.BeginTransaction()
+                  Try
+                    If recordId <= 0 Then
                     If schema.Columns.Contains("RegistrationID") AndAlso
                        Not String.Equals(tableName.Trim(), "FW_Registration", StringComparison.OrdinalIgnoreCase) AndAlso
                        SessionState.IsActive AndAlso SessionState.Current.HasValue AndAlso SessionState.Current.Value.RegistrationID > 0 Then
@@ -2749,6 +2850,39 @@ Namespace SDC.Framework
                             writableValues.Add(New KeyValuePair(Of String, Object)("RegistrationID", SessionState.Current.Value.RegistrationID))
                         End If
                     End If
+                    ' The login first. FW_Employees.UserId is NOT NULL, so the employee row
+                    ' cannot be written until the account it points at exists - and doing it in
+                    ' this order means there is no window where either half stands alone, and no
+                    ' second update to write the key back.
+                    If IsEmployeeLoginTable(tableName) Then
+                        Dim employeeUserName = GetGeneratedValueText(values, "UserName")
+                        Dim employeeRegistration = 0
+                        Dim registrationForLogin = writableValues.FirstOrDefault(Function(pair) String.Equals(pair.Key, "RegistrationId", StringComparison.OrdinalIgnoreCase)).Value
+                        If registrationForLogin Is Nothing OrElse Not Integer.TryParse(Convert.ToString(registrationForLogin, CultureInfo.InvariantCulture), employeeRegistration) Then
+                            employeeRegistration = If(SessionState.IsActive AndAlso SessionState.Current.HasValue, SessionState.Current.Value.RegistrationID, 0)
+                        End If
+
+                        Dim createdUserId = CreateLoginForEmployee(conn, tx, employeeUserName, employeeRegistration, userId)
+
+                        ' The hash is keyed on the UserId that has just been issued. It could not
+                        ' have been computed any earlier.
+                        If Not String.IsNullOrWhiteSpace(pendingPassword) Then
+                            If Not WritePasswordHash(conn, tx, createdUserId, pendingPassword, userId) Then
+                                Throw New InvalidOperationException("The password could not be stored for the new sign-in.")
+                            End If
+                        End If
+
+                        writableValues.RemoveAll(Function(pair) String.Equals(pair.Key, "UserId", StringComparison.OrdinalIgnoreCase))
+                        writableValues.Add(New KeyValuePair(Of String, Object)("UserId", createdUserId))
+
+                        ' The mask, never the typed value. IsProtectedPasswordColumn kept the real
+                        ' one out of the value set; this puts the placeholder in deliberately.
+                        If schema.Columns.Contains("Password") Then
+                            writableValues.RemoveAll(Function(pair) String.Equals(pair.Key, "Password", StringComparison.OrdinalIgnoreCase))
+                            writableValues.Add(New KeyValuePair(Of String, Object)("Password", StoredPasswordMask))
+                        End If
+                    End If
+
                     AddMissingGeneratedInsertValues(schema, writableValues)
                     Dim columns = writableValues.Select(Function(pair) QuoteGeneratedIdentifier(pair.Key)).ToList()
                     Dim parameters = writableValues.Select(Function(pair, index) "@Value" & index.ToString(CultureInfo.InvariantCulture)).ToList()
@@ -2760,25 +2894,65 @@ Namespace SDC.Framework
                         columns.Add("[CreatedOn]")
                         parameters.Add("GETDATE()")
                     End If
-                    Using cmd As New SqlCommand("INSERT INTO dbo." & QuoteGeneratedIdentifier(tableName) & " (" & String.Join(", ", columns) & ") VALUES (" & String.Join(", ", parameters) & ")", conn)
+                    Using cmd As New SqlCommand("INSERT INTO dbo." & QuoteGeneratedIdentifier(tableName) & " (" & String.Join(", ", columns) & ") VALUES (" & String.Join(", ", parameters) & ")", conn, tx)
                         AddGeneratedParameters(cmd, writableValues, schema)
                         If schema.Columns.Contains("CreatedBy") Then cmd.Parameters.Add("@CreatedBy", SqlDbType.Int).Value = userId
                         cmd.CommandText &= "; SELECT CAST(SCOPE_IDENTITY() AS INT);"
                         Dim insertedId = Convert.ToInt32(cmd.ExecuteScalar(), CultureInfo.InvariantCulture)
 
-                        ' After the insert, never before: the hash is keyed on the UserId, so it
+                        ' The registration's default role, if it has named one. After the insert
+                        ' because roles are keyed to the employee, and the employee did not exist
+                        ' until this statement - which is also why this cannot live with the
+                        ' login creation above.
+                        If IsEmployeeLoginTable(tableName) Then
+                            SetEmployeeRoles(conn, tx, insertedId, pendingRoleIds, userId)
+                        End If
+
+                        ' After the insert, never before: the hash is keyed on the UserId, and it
                         ' cannot be computed until the row exists and identity has issued one.
-                        ApplyGeneratedPasswordIfSupplied(tableName, insertedId, pendingPassword, userId, outcome)
+                        ' FW_Users only - an employee's account was hashed above, before its row.
+                        If IsUserPasswordTable(tableName) AndAlso Not String.IsNullOrWhiteSpace(pendingPassword) Then
+                            If Not WritePasswordHash(conn, tx, insertedId, pendingPassword, userId) Then
+                                Throw New InvalidOperationException("The password could not be stored for the new sign-in.")
+                            End If
+                        End If
+
+                        tx.Commit()
                         Return insertedId
                     End Using
                 End If
+
+                    ' An edit reaches the login too: a new password is re-hashed against the
+                    ' UserId the employee already points at, and a changed user name is written
+                    ' to both rows or neither. An employee whose name moved on one row only is an
+                    ' employee who cannot sign in.
+                    If IsEmployeeLoginTable(tableName) Then
+                        Dim existingUserId = EmployeeLoginId(conn, tx, recordId)
+                        If existingUserId > 0 Then
+                            SyncLoginUserName(conn, tx, existingUserId, GetGeneratedValueText(values, "UserName"), userId)
+
+                            ' TakeGeneratedPasswordValue returns nothing for the mask, so an
+                            ' untouched box re-hashes nothing. Only a genuinely new password gets
+                            ' this far.
+                            If Not String.IsNullOrWhiteSpace(pendingPassword) Then
+                                If Not WritePasswordHash(conn, tx, existingUserId, pendingPassword, userId) Then
+                                    Throw New InvalidOperationException("The password could not be updated for this sign-in.")
+                                End If
+                            End If
+                        End If
+
+                        If schema.Columns.Contains("Password") Then
+                            writableValues.RemoveAll(Function(pair) String.Equals(pair.Key, "Password", StringComparison.OrdinalIgnoreCase))
+                            writableValues.Add(New KeyValuePair(Of String, Object)("Password", StoredPasswordMask))
+                        End If
+                    End If
 
                 Dim assignments = writableValues.Select(Function(pair, index) QuoteGeneratedIdentifier(pair.Key) & " = @Value" & index.ToString(CultureInfo.InvariantCulture)).ToList()
                 If schema.Columns.Contains("UpdatedBy") Then assignments.Add("[UpdatedBy] = @UpdatedBy")
                 If schema.Columns.Contains("UpdatedOn") Then assignments.Add("[UpdatedOn] = GETDATE()")
                 Dim whereClause = QuoteGeneratedIdentifier(primaryKey) & " = @RecordID"
                 If schema.Columns.Contains("RowVersion") Then whereClause &= " AND [RowVersion] = @RowVersion"
-                Using cmd As New SqlCommand("UPDATE dbo." & QuoteGeneratedIdentifier(tableName) & " SET " & String.Join(", ", assignments) & " WHERE " & whereClause, conn)
+                Using cmd As New SqlCommand("UPDATE dbo." & QuoteGeneratedIdentifier(tableName) & " SET " & String.Join(", ", assignments) & " WHERE " & whereClause, conn, tx)
                     AddGeneratedParameters(cmd, writableValues, schema)
                     cmd.Parameters.Add("@RecordID", SqlDbType.Int).Value = recordId
                     If schema.Columns.Contains("UpdatedBy") Then cmd.Parameters.Add("@UpdatedBy", SqlDbType.Int).Value = userId
@@ -2786,15 +2960,42 @@ Namespace SDC.Framework
                     If cmd.ExecuteNonQuery() <> 1 Then
                         ' No row matched: either the RowVersion moved on or the record is gone.
                         ' Distinguishing the two is what lets the page offer an overwrite for one
-                        ' and refuse it for the other.
+                        ' and refuse it for the other. Rolled back first, so a login edit made
+                        ' above does not survive a row that was never written.
+                        tx.Rollback()
                         outcome = If(GeneratedPageRecordExists(conn, tableName, primaryKey, recordId),
                                      SaveResult.RecordChanged,
                                      SaveResult.RecordDeleted)
                         Return 0
                     End If
 
-                    ApplyGeneratedPasswordIfSupplied(tableName, recordId, pendingPassword, userId, outcome)
+                    ' After the row is known to have been written, and inside the same
+                    ' transaction. Editing an employee reconciles their roles to whatever the
+                    ' picker holds - added, removed, or untouched when the page has no picker
+                    ' and sends nothing.
+                    If IsEmployeeLoginTable(tableName) Then
+                        SetEmployeeRoles(conn, tx, recordId, pendingRoleIds, userId)
+                    End If
+
+                    If IsUserPasswordTable(tableName) AndAlso Not String.IsNullOrWhiteSpace(pendingPassword) Then
+                        If Not WritePasswordHash(conn, tx, recordId, pendingPassword, userId) Then
+                            Throw New InvalidOperationException("The password could not be updated for this sign-in.")
+                        End If
+                    End If
+
+                    tx.Commit()
                     Return recordId
+                End Using
+                  Catch
+                    ' Nothing half-written reaches the database. The message is left to the
+                    ' caller, which shows it: a user name already taken is the one a person can
+                    ' act on, and swallowing it would report a save that did not happen.
+                    Try
+                        tx.Rollback()
+                    Catch
+                    End Try
+                    Throw
+                  End Try
                 End Using
             End Using
         End Function
@@ -2808,6 +3009,17 @@ Namespace SDC.Framework
         End Function
 
         ''' <summary>
+        ''' The table whose rows own a login without being one.
+        '''
+        ''' An employee is a person; FW_Users is how that person signs in. Saving an employee
+        ''' therefore has to reach two tables, and FW_Employees.UserId is NOT NULL - so the login
+        ''' is created first and the employee carries its key, rather than the other way round.
+        ''' </summary>
+        Private Shared Function IsEmployeeLoginTable(tableName As String) As Boolean
+            Return String.Equals(If(tableName, String.Empty).Trim(), "FW_Employees", StringComparison.OrdinalIgnoreCase)
+        End Function
+
+        ''' <summary>
         ''' Columns a page may never write directly.
         '''
         ''' Password because it must be hashed on the way in; PasswordHash because it is derived and
@@ -2816,7 +3028,7 @@ Namespace SDC.Framework
         ''' simply must not reach the column as typed.
         ''' </summary>
         Private Shared Function IsProtectedPasswordColumn(tableName As String, columnName As String) As Boolean
-            If Not IsUserPasswordTable(tableName) Then
+            If Not IsUserPasswordTable(tableName) AndAlso Not IsEmployeeLoginTable(tableName) Then
                 Return False
             End If
 
@@ -2874,6 +3086,45 @@ Namespace SDC.Framework
         ''' every edit - rehashing then would replace a good password with the same one and churn
         ''' UpdatedOn for no reason. An empty box means the same.
         ''' </summary>
+        ''' <summary>
+        ''' The key a generated employee page uses to carry the role chosen on screen.
+        '''
+        ''' Not a column on FW_Employees - a role lives in FW_EmployeeRoles - and it travels in
+        ''' the value set instead, taken out before anything is written. Only schema columns
+        ''' survive the filter, and it would be dropped there anyway; taking it out deliberately
+        ''' is how the save gets to read it.
+        ''' </summary>
+        Public Const AssignRoleValueKey As String = "AssignRoleID"
+
+        ''' <summary>
+        ''' The roles chosen on screen, or Nothing when the page did not ask.
+        '''
+        ''' Nothing and an empty list mean different things, which is why this returns a
+        ''' reference rather than a count. Nothing is "this page has no role picker, leave the
+        ''' roles alone"; empty is "the picker was there and everything was moved off it", which
+        ''' the save must act on by removing what is there.
+        ''' </summary>
+        Private Shared Function TakeGeneratedRoleValues(values As Dictionary(Of String, Object)) As List(Of Integer)
+            If values Is Nothing Then Return Nothing
+
+            For Each key In values.Keys.Where(Function(k) String.Equals(k, AssignRoleValueKey, StringComparison.OrdinalIgnoreCase)).ToList()
+                Dim raw = If(values(key) Is Nothing OrElse IsDBNull(values(key)), String.Empty, values(key).ToString())
+                values.Remove(key)
+
+                Dim chosen As New List(Of Integer)()
+                For Each part In raw.Split(","c)
+                    Dim roleId As Integer
+                    If Integer.TryParse(part.Trim(), roleId) AndAlso roleId > 0 AndAlso Not chosen.Contains(roleId) Then
+                        chosen.Add(roleId)
+                    End If
+                Next
+
+                Return chosen
+            Next
+
+            Return Nothing
+        End Function
+
         Private Shared Function TakeGeneratedPasswordValue(values As Dictionary(Of String, Object)) As String
             If values Is Nothing Then
                 Return Nothing
@@ -2892,32 +3143,303 @@ Namespace SDC.Framework
         End Function
 
         ''' <summary>
-        ''' Puts a typed password through the hash path once the row is known.
+        ''' Writes a password hash on a connection and transaction the caller owns.
         '''
-        ''' Its own transaction rather than the caller's, which is a real seam: the row is committed
-        ''' before the password is. A failure here therefore leaves a saved record with no password
-        ''' rather than no record, which is why the outcome is reported rather than swallowed - the
-        ''' page must not say the save succeeded when the password did not.
+        ''' The point of taking them as arguments is that the hash then commits or rolls back with
+        ''' the row it belongs to. What this replaced opened its own connection, so the row was
+        ''' committed before the password was and a failure between them left an account that
+        ''' existed and could not be signed into.
+        '''
+        ''' The raw value is never written. FW_Users still has a Password column and still gets
+        ''' the mask, but the typed string exists only in memory on the way to the hash.
         ''' </summary>
-        Private Shared Sub ApplyGeneratedPasswordIfSupplied(tableName As String,
-                                                            recordId As Integer,
-                                                            rawPassword As String,
-                                                            updatedBy As Integer,
-                                                            ByRef outcome As SaveResult)
-            If Not IsUserPasswordTable(tableName) OrElse
-               recordId <= 0 OrElse
-               String.IsNullOrWhiteSpace(rawPassword) Then
-                Return
+        Private Shared Function WritePasswordHash(conn As SqlConnection,
+                                                  tx As SqlTransaction,
+                                                  targetUserId As Integer,
+                                                  rawPassword As String,
+                                                  updatedBy As Integer) As Boolean
+            If targetUserId <= 0 Then Return False
+
+            Dim rawValue = If(rawPassword, String.Empty).Trim()
+            If rawValue = String.Empty Then Return False
+
+            Dim passwordHash = ComputePasswordHashForUser(rawValue, targetUserId)
+            If String.IsNullOrWhiteSpace(passwordHash) Then Return False
+
+            Using cmd As New SqlCommand(
+                "UPDATE dbo.FW_Users " &
+                "SET PasswordHash = @PasswordHash, [Password] = @PasswordMask, " &
+                "    UpdatedBy = @UpdatedBy, UpdatedOn = GETDATE() " &
+                "WHERE UserID = @UserID", conn, tx)
+                cmd.Parameters.Add("@PasswordHash", SqlDbType.NVarChar, 255).Value = passwordHash
+                cmd.Parameters.Add("@PasswordMask", SqlDbType.VarChar, 50).Value = StoredPasswordMask
+                cmd.Parameters.Add("@UpdatedBy", SqlDbType.Int).Value = updatedBy
+                cmd.Parameters.Add("@UserID", SqlDbType.Int).Value = targetUserId
+                Return cmd.ExecuteNonQuery() = 1
+            End Using
+        End Function
+
+        ''' <summary>
+        ''' Creates the login an employee signs in with, and returns its UserId.
+        '''
+        ''' First, not last. FW_Employees.UserId is NOT NULL, so the employee row cannot exist
+        ''' until this one does - which also means there is no window where an employee has no
+        ''' account, and no second update to write the key back.
+        '''
+        ''' No password is set here. The hash is keyed on the UserId this returns, so it cannot be
+        ''' computed until the row exists; the caller does it next, in the same transaction.
+        ''' </summary>
+        Private Shared Function CreateLoginForEmployee(conn As SqlConnection,
+                                                       tx As SqlTransaction,
+                                                       userName As String,
+                                                       registrationId As Integer,
+                                                       createdBy As Integer) As Integer
+            Dim name = If(userName, String.Empty).Trim()
+            If name = String.Empty Then
+                Throw New InvalidOperationException("A user name is required: it is what the employee signs in with.")
             End If
 
-            If Not UpdateUserPasswordHash(recordId, rawPassword, updatedBy) Then
-                outcome = SaveResult.Failed
-                LogFallbackUsage("Password_HashFailedAfterSave",
-                                 "The record saved but the password could not be hashed for user " &
-                                 recordId.ToString(CultureInfo.InvariantCulture) & ".",
-                                 tableName)
-            End If
+            ' Refused here rather than left to the unique index, so the message names the problem
+            ' instead of quoting a constraint. Deleted accounts count - they keep their name, and
+            ' restoring one must not collide with something created since.
+            Using check As New SqlCommand(
+                "SELECT COUNT(*) FROM dbo.FW_Users WHERE LOWER(LTRIM(RTRIM(UserName))) = @UserName", conn, tx)
+                check.Parameters.Add("@UserName", SqlDbType.VarChar, 50).Value = name.ToLowerInvariant()
+                If Convert.ToInt32(check.ExecuteScalar(), CultureInfo.InvariantCulture) > 0 Then
+                    Throw New InvalidOperationException("That user name is already in use: " & name)
+                End If
+            End Using
+
+            Using cmd As New SqlCommand(
+                "INSERT INTO dbo.FW_Users (RegistrationID, UserName, IsActive, CreatedBy, CreatedOn) " &
+                "VALUES (@RegistrationID, @UserName, 1, @CreatedBy, GETDATE()); " &
+                "SELECT CAST(SCOPE_IDENTITY() AS INT);", conn, tx)
+                cmd.Parameters.Add("@RegistrationID", SqlDbType.Int).Value =
+                    If(registrationId > 0, CType(registrationId, Object), DBNull.Value)
+                cmd.Parameters.Add("@UserName", SqlDbType.VarChar, 50).Value = name
+                cmd.Parameters.Add("@CreatedBy", SqlDbType.Int).Value = createdBy
+                Return Convert.ToInt32(cmd.ExecuteScalar(), CultureInfo.InvariantCulture)
+            End Using
+        End Function
+
+        ''' <summary>
+        ''' Keeps the login's user name in step when an employee's is edited.
+        '''
+        ''' Two spellings of one fact, so they are written together or not at all. An employee
+        ''' whose user name was changed on one row only is an employee who cannot sign in.
+        ''' </summary>
+        Private Shared Sub SyncLoginUserName(conn As SqlConnection,
+                                             tx As SqlTransaction,
+                                             targetUserId As Integer,
+                                             userName As String,
+                                             updatedBy As Integer)
+            Dim name = If(userName, String.Empty).Trim()
+            If targetUserId <= 0 OrElse name = String.Empty Then Return
+
+            ' Refused by name rather than left to the unique index, which would surface as a
+            ' constraint violation naming neither the field nor who has it. Editing is where this
+            ' matters most: creating a duplicate is caught at the point of asking, but taking a
+            ' name off somebody else happens to an account that already works.
+            '
+            ' Deleted accounts count, as they do on insert - a soft-deleted row keeps its name,
+            ' and giving it away makes that row impossible to restore.
+            Using check As New SqlCommand(
+                "SELECT COUNT(*) FROM dbo.FW_Users " &
+                "WHERE LOWER(LTRIM(RTRIM(ISNULL(UserName, '')))) = @UserName AND UserID <> @UserID", conn, tx)
+                check.Parameters.Add("@UserName", SqlDbType.VarChar, 50).Value = name.ToLowerInvariant()
+                check.Parameters.Add("@UserID", SqlDbType.Int).Value = targetUserId
+                If Convert.ToInt32(check.ExecuteScalar(), CultureInfo.InvariantCulture) > 0 Then
+                    Throw New InvalidOperationException("That user name is already in use: " & name)
+                End If
+            End Using
+
+            Using cmd As New SqlCommand(
+                "UPDATE dbo.FW_Users SET UserName = @UserName, UpdatedBy = @UpdatedBy, UpdatedOn = GETDATE() " &
+                "WHERE UserID = @UserID AND ISNULL(UserName, '') <> @UserName", conn, tx)
+                cmd.Parameters.Add("@UserName", SqlDbType.VarChar, 50).Value = name
+                cmd.Parameters.Add("@UpdatedBy", SqlDbType.Int).Value = updatedBy
+                cmd.Parameters.Add("@UserID", SqlDbType.Int).Value = targetUserId
+                cmd.ExecuteNonQuery()
+            End Using
         End Sub
+
+        ''' <summary>
+        ''' Soft-deletes or restores the login belonging to an employee, in the caller's
+        ''' transaction.
+        '''
+        ''' One method for both directions, taking the state as an argument, because the two have
+        ''' to be exact opposites - written separately they drift, and a restore that leaves one
+        ''' field set is an account nobody can explain.
+        ''' </summary>
+        Private Shared Sub SetEmployeeLoginDeleted(conn As SqlConnection,
+                                                   tx As SqlTransaction,
+                                                   employeeId As Integer,
+                                                   actingUserId As Integer,
+                                                   deleted As Boolean)
+            Dim loginId = EmployeeLoginId(conn, tx, employeeId)
+            If loginId <= 0 Then Return
+
+            Dim sql = If(deleted,
+                         "UPDATE dbo.FW_Users SET DeletedFlag = 1, DeletedBy = @UserID, DeletedOn = SYSUTCDATETIME(), " &
+                         "    IsActive = 0, UpdatedBy = @UserID, UpdatedOn = GETDATE() WHERE UserID = @LoginID",
+                         "UPDATE dbo.FW_Users SET DeletedFlag = 0, DeletedBy = NULL, DeletedOn = NULL, " &
+                         "    IsActive = 1, UpdatedBy = @UserID, UpdatedOn = GETDATE() WHERE UserID = @LoginID")
+
+            Using cmd As New SqlCommand(sql, conn, tx)
+                cmd.Parameters.Add("@LoginID", SqlDbType.Int).Value = loginId
+                cmd.Parameters.Add("@UserID", SqlDbType.Int).Value =
+                    If(actingUserId > 0, CType(actingUserId, Object), DBNull.Value)
+                cmd.ExecuteNonQuery()
+            End Using
+        End Sub
+
+        ''' <summary>
+        ''' Gives a new employee the role chosen on the create screen.
+        '''
+        ''' Chosen, not configured. A stored default on the registration was built first and
+        ''' taken out the same day: whoever is typing in a new employee knows what that employee
+        ''' does, and asking them there answers the question at the one moment somebody is
+        ''' looking at it. A setting elsewhere guesses, and is applied without being read.
+        '''
+        ''' Without a role, creating an employee produced a person, a login and no way in - the
+        ''' account authenticated correctly and was turned away for having none. The create
+        ''' screen looked like one step and was two.
+        '''
+        ''' The role must belong to this employee's own registration, be live, and never be an
+        ''' Application Admin role. The screen offers none of those, and a screen is not where
+        ''' this is enforced: a value can arrive from a stale form, and the rule that must not be
+        ''' bypassed is the one handing out the ability to change every other role.
+        ''' </summary>
+        Private Shared Sub SetEmployeeRoles(conn As SqlConnection,
+                                            tx As SqlTransaction,
+                                            employeeId As Integer,
+                                            chosenRoleIds As List(Of Integer),
+                                            actingUserId As Integer)
+            If employeeId <= 0 OrElse chosenRoleIds Is Nothing Then Return
+
+            ' Whatever is no longer on the right-hand side, soft-deleted rather than removed.
+            ' A role somebody held is a fact about what they could do, and the audit trail reads
+            ' against rows that still exist.
+            Using remove As New SqlCommand(
+                "UPDATE dbo.FW_EmployeeRoles " &
+                "SET DeletedFlag = 1, DeletedBy = @ActingUserID, DeletedOn = SYSUTCDATETIME(), " &
+                "    IsActive = 0, UpdatedBy = @ActingUserID, UpdatedOn = GETDATE() " &
+                "WHERE EmployeeID = @EmployeeID AND ISNULL(DeletedFlag, 0) = 0 " &
+                "  AND RoleID NOT IN (SELECT value FROM STRING_SPLIT(@Keep, ','))", conn, tx)
+                remove.Parameters.Add("@EmployeeID", SqlDbType.Int).Value = employeeId
+                remove.Parameters.Add("@ActingUserID", SqlDbType.Int).Value =
+                    If(actingUserId > 0, CType(actingUserId, Object), DBNull.Value)
+                ' -1 stands in for "keep nothing" - STRING_SPLIT of an empty string yields one
+                ' empty row, which NOT IN then compares against and matches nothing.
+                remove.Parameters.Add("@Keep", SqlDbType.VarChar, -1).Value =
+                    If(chosenRoleIds.Count = 0, "-1", String.Join(",", chosenRoleIds))
+                remove.ExecuteNonQuery()
+            End Using
+
+            For Each roleId In chosenRoleIds
+                ' Each one checked against this employee's own registration, and never an
+                ' Application Admin role. The screen offers neither, and a screen is not where
+                ' this is enforced: a value can arrive from a stale form, and the rule that must
+                ' not be bypassed is the one handing out the ability to change every other role.
+                Using add As New SqlCommand(
+                    "UPDATE dbo.FW_EmployeeRoles " &
+                    "SET DeletedFlag = 0, DeletedBy = NULL, DeletedOn = NULL, IsActive = 1, " &
+                    "    UpdatedBy = @ActingUserID, UpdatedOn = GETDATE() " &
+                    "WHERE EmployeeID = @EmployeeID AND RoleID = @RoleID; " &
+                    "IF @@ROWCOUNT = 0 " &
+                    "INSERT INTO dbo.FW_EmployeeRoles (RegistrationID, EmployeeID, RoleID, DisplayOrder, IsActive, DeletedFlag, CreatedBy, CreatedOn) " &
+                    "SELECT e.RegistrationId, e.EmployeeID, r.ID, ISNULL(r.DisplayOrder, 1), 1, 0, @ActingUserID, GETDATE() " &
+                    "FROM dbo.FW_Employees e " &
+                    "INNER JOIN dbo.FW_Roles r ON r.ID = @RoleID " &
+                    "                         AND r.RegistrationID = e.RegistrationId " &
+                    "                         AND ISNULL(r.IsActive, 1) = 1 " &
+                    "                         AND ISNULL(r.DeletedFlag, 0) = 0 " &
+                    "                         AND ISNULL(r.Typ_AppAdmin, 0) = 0 " &
+                    "WHERE e.EmployeeID = @EmployeeID", conn, tx)
+                    add.Parameters.Add("@EmployeeID", SqlDbType.Int).Value = employeeId
+                    add.Parameters.Add("@RoleID", SqlDbType.Int).Value = roleId
+                    add.Parameters.Add("@ActingUserID", SqlDbType.Int).Value =
+                        If(actingUserId > 0, CType(actingUserId, Object), DBNull.Value)
+                    add.ExecuteNonQuery()
+                End Using
+            Next
+        End Sub
+
+        ''' <summary>
+        ''' Every role an employee holds, ranked, with its name.
+        '''
+        ''' Names come back with the ids because a role somebody holds might no longer be
+        ''' offered - deactivated, or Application Admin - and the picker still has to show it.
+        ''' Looking it up from the offered list would leave it blank, or drop it, and a role
+        ''' that cannot be seen cannot be taken away.
+        ''' </summary>
+        Public Shared Function GetEmployeeRoleIds(employeeId As Integer) As List(Of KeyValuePair(Of Integer, String))
+            Dim held As New List(Of KeyValuePair(Of Integer, String))()
+            If employeeId <= 0 Then Return held
+
+            Try
+                Using conn As New SqlConnection(ConnectionString)
+                    conn.Open()
+                    Using cmd As New SqlCommand(
+                        "SELECT er.RoleID, ISNULL(r.RoleName, '') AS RoleName FROM dbo.FW_EmployeeRoles er " &
+                        "INNER JOIN dbo.FW_Roles r ON r.ID = er.RoleID " &
+                        "WHERE er.EmployeeID = @ID AND ISNULL(er.IsActive, 1) = 1 AND ISNULL(er.DeletedFlag, 0) = 0 " &
+                        "ORDER BY CASE WHEN ISNULL(r.DisplayOrder, 0) = 0 THEN 1 ELSE 0 END, ISNULL(r.DisplayOrder, 255), r.RoleName", conn)
+                        cmd.Parameters.Add("@ID", SqlDbType.Int).Value = employeeId
+                        Using reader = cmd.ExecuteReader()
+                            While reader.Read()
+                                held.Add(New KeyValuePair(Of Integer, String)(
+                                    Convert.ToInt32(reader("RoleID"), CultureInfo.InvariantCulture),
+                                    Convert.ToString(reader("RoleName"))))
+                            End While
+                        End Using
+                    End Using
+                End Using
+            Catch
+            End Try
+
+            Return held
+        End Function
+
+        ''' <summary>
+        ''' The role an employee already holds, highest ranked first, or zero.
+        '''
+        ''' Only ever shown, never acted on: the create screen's combo uses it to display what an
+        ''' existing person has, disabled. Somebody holding several roles is represented by their
+        ''' most senior, which is a simplification the page owns up to by refusing to edit there
+        ''' at all - Roles shows the whole set.
+        ''' </summary>
+        Public Shared Function GetEmployeeRoleId(employeeId As Integer) As Integer
+            If employeeId <= 0 Then Return 0
+
+            Try
+                Using conn As New SqlConnection(ConnectionString)
+                    conn.Open()
+                    Using cmd As New SqlCommand(
+                        "SELECT TOP 1 er.RoleID FROM dbo.FW_EmployeeRoles er " &
+                        "INNER JOIN dbo.FW_Roles r ON r.ID = er.RoleID " &
+                        "WHERE er.EmployeeID = @ID AND ISNULL(er.IsActive, 1) = 1 AND ISNULL(er.DeletedFlag, 0) = 0 " &
+                        "ORDER BY CASE WHEN ISNULL(r.DisplayOrder, 0) = 0 THEN 1 ELSE 0 END, ISNULL(r.DisplayOrder, 255)", conn)
+                        cmd.Parameters.Add("@ID", SqlDbType.Int).Value = employeeId
+                        Dim result = cmd.ExecuteScalar()
+                        If result Is Nothing OrElse Convert.IsDBNull(result) Then Return 0
+                        Return Convert.ToInt32(result, CultureInfo.InvariantCulture)
+                    End Using
+                End Using
+            Catch
+                Return 0
+            End Try
+        End Function
+
+        ''' <summary>The UserId an existing employee row already points at.</summary>
+        Private Shared Function EmployeeLoginId(conn As SqlConnection, tx As SqlTransaction, employeeId As Integer) As Integer
+            Using cmd As New SqlCommand("SELECT UserId FROM dbo.FW_Employees WHERE EmployeeID = @ID", conn, tx)
+                cmd.Parameters.Add("@ID", SqlDbType.Int).Value = employeeId
+                Dim result = cmd.ExecuteScalar()
+                If result Is Nothing OrElse Convert.IsDBNull(result) Then Return 0
+                Return Convert.ToInt32(result, CultureInfo.InvariantCulture)
+            End Using
+        End Function
 
         Private Shared Sub AddMissingGeneratedInsertValues(schema As DataTable, values As List(Of KeyValuePair(Of String, Object)))
             Dim existing = New HashSet(Of String)(values.Select(Function(pair) pair.Key), StringComparer.OrdinalIgnoreCase)
@@ -2972,9 +3494,39 @@ Namespace SDC.Framework
             For index As Integer = 0 To values.Count - 1
                 Dim column = schema.Columns(values(index).Key)
                 Dim parameter = command.Parameters.Add("@Value" & index.ToString(CultureInfo.InvariantCulture), SqlTypeFor(column.DataType))
-                parameter.Value = If(values(index).Value Is Nothing, DBNull.Value, values(index).Value)
+                parameter.Value = GeneratedParameterValue(values(index).Value, column)
             Next
         End Sub
+
+        ''' <summary>
+        ''' What a control's value becomes at the parameter.
+        '''
+        ''' Every non-lookup field on a generated page arrives here as the text of a text box, so an
+        ''' empty date box arrives as "" against a datetime parameter and ADO.NET refuses it:
+        ''' "Failed to convert parameter value from a String to a DateTime." A blank int, decimal or
+        ''' bit fails the same way, with the same message naming a different type - and no message
+        ''' names the column, so the user is told a save failed and nothing about which field.
+        '''
+        ''' An empty box means no value, which is DBNull. Decided here rather than on the page for
+        ''' two reasons: every generated page has the same boxes and would otherwise each need the
+        ''' same rule, and the page cannot see the column type, which is the thing that decides it.
+        '''
+        ''' A text column keeps its empty string. "" and NULL are different values there, and a page
+        ''' that has always stored one must not quietly start storing the other.
+        '''
+        ''' A NOT NULL column still refuses the null, which is the right outcome: the field should
+        ''' have been marked Admin Required, and the database saying the column cannot be null is
+        ''' more use than a conversion error that names no column at all.
+        ''' </summary>
+        Private Shared Function GeneratedParameterValue(value As Object, column As DataColumn) As Object
+            If value Is Nothing OrElse Convert.IsDBNull(value) Then Return DBNull.Value
+
+            Dim text = TryCast(value, String)
+            If text Is Nothing Then Return value
+            If column.DataType Is GetType(String) OrElse column.DataType Is GetType(Char) Then Return text
+
+            Return If(text.Trim() = String.Empty, CObj(DBNull.Value), CObj(text))
+        End Function
 
         Private Shared Function SqlTypeFor(dataType As Type) As SqlDbType
             If dataType Is GetType(String) OrElse dataType Is GetType(Char) Then Return SqlDbType.VarChar
@@ -3032,11 +3584,19 @@ Namespace SDC.Framework
                                                    generatedPageId As Integer,
                                                    values As Dictionary(Of String, Object),
                                                    originalRowVersion As Byte()) As Boolean
+            ' Every column the page sends. Three were missing until 2026-09-14 -
+            ' CreateAsFrameworkPages, TableAlias and HotFields - so the page built a parameter for
+            ' each, the command carried it, and no column ever received it. Nothing failed: the
+            ' save reported success and the setting was simply the value it had before.
+            '
+            ' CreateAsFrameworkPages was the one that showed: ticking it renames the pages to FW_,
+            ' the request saved without it, and generation then wrote the unprefixed names the
+            ' stored row still asked for.
             Dim writableColumns = New String() {
                 "RequestName", "PageBaseName", "BrowsePageName", "MaintenancePageName", "UnderlyingTableName",
                 "UseRegistrationID", "BrowseFields", "MaintenanceFields", "BrowseSql", "LookupFields", "AdminRequiredFields",
                 "MenuCaller", "IconFileName", "GenerateBrowsePage", "GenerateMaintenancePage", "UseQbeOnly",
-                "UseHotFields"
+                "UseHotFields", "CreateAsFrameworkPages", "TableAlias", "HotFields", "Column2Fields"
             }
 
             Using conn As New SqlConnection(ConnectionString)
@@ -3069,7 +3629,8 @@ Namespace SDC.Framework
                                    String.Equals(pair.Key, "GenerateBrowsePage", StringComparison.OrdinalIgnoreCase) OrElse
                                    String.Equals(pair.Key, "GenerateMaintenancePage", StringComparison.OrdinalIgnoreCase) OrElse
                                    String.Equals(pair.Key, "UseQbeOnly", StringComparison.OrdinalIgnoreCase) OrElse
-                                   String.Equals(pair.Key, "UseHotFields", StringComparison.OrdinalIgnoreCase),
+                                   String.Equals(pair.Key, "UseHotFields", StringComparison.OrdinalIgnoreCase) OrElse
+                                   String.Equals(pair.Key, "CreateAsFrameworkPages", StringComparison.OrdinalIgnoreCase),
                                    command.Parameters.Add("@" & pair.Key, SqlDbType.Bit),
                                    command.Parameters.Add("@" & pair.Key, SqlDbType.VarChar, -1))
                 parameter.Value = If(pair.Value Is Nothing, DBNull.Value, pair.Value)
@@ -3390,18 +3951,18 @@ Namespace SDC.Framework
             End Select
         End Function
 
-        Private Shared Function ValidateComputedHashAgainstStored(emailWithoutSpaces As String, userId As Integer, storedHash As String) As Boolean
+        Private Shared Function ValidateComputedHashAgainstStored(passwordWithoutSpaces As String, userId As Integer, storedHash As String) As Boolean
             If String.IsNullOrWhiteSpace(storedHash) Then
                 Return False
             End If
 
             Dim candidates As New List(Of String)()
-            candidates.Add(ComputeHmacHashAsUnicodeString(emailWithoutSpaces, Encoding.Unicode.GetBytes(userId.ToString(CultureInfo.InvariantCulture)), Encoding.Unicode))
-            candidates.Add(ComputeHmacHashAsUnicodeString(emailWithoutSpaces, Encoding.UTF8.GetBytes(userId.ToString(CultureInfo.InvariantCulture)), Encoding.UTF8))
+            candidates.Add(ComputeHmacHashAsUnicodeString(passwordWithoutSpaces, Encoding.Unicode.GetBytes(userId.ToString(CultureInfo.InvariantCulture)), Encoding.Unicode))
+            candidates.Add(ComputeHmacHashAsUnicodeString(passwordWithoutSpaces, Encoding.UTF8.GetBytes(userId.ToString(CultureInfo.InvariantCulture)), Encoding.UTF8))
 
             Dim idBytes = BitConverter.GetBytes(userId)
-            candidates.Add(ComputeHmacHashAsUnicodeString(emailWithoutSpaces, idBytes, Encoding.Unicode))
-            candidates.Add(ComputeHmacHashAsUnicodeString(emailWithoutSpaces, idBytes, Encoding.UTF8))
+            candidates.Add(ComputeHmacHashAsUnicodeString(passwordWithoutSpaces, idBytes, Encoding.Unicode))
+            candidates.Add(ComputeHmacHashAsUnicodeString(passwordWithoutSpaces, idBytes, Encoding.UTF8))
 
             For Each candidate In candidates
                 If String.Equals(candidate, storedHash, StringComparison.Ordinal) Then
@@ -3465,63 +4026,8 @@ Namespace SDC.Framework
                                                   Encoding.Unicode)
         End Function
 
-        Public Shared Function UpdateUserPasswordHash(userId As Integer, rawPassword As String, updatedBy As Integer) As Boolean
-            If userId <= 0 Then
-                Return False
-            End If
-
-            Dim rawValue = If(rawPassword, String.Empty).Trim()
-            If rawValue = String.Empty Then
-                Return False
-            End If
-
-            Dim passwordHash = ComputePasswordHashForUser(rawValue, userId)
-            If String.IsNullOrWhiteSpace(passwordHash) Then
-                Return False
-            End If
-
-            Try
-                Using conn As New SqlConnection(ConnectionString)
-                    conn.Open()
-                    Using tx = conn.BeginTransaction()
-                        Try
-                            Using saveRawCmd As New SqlCommand(
-                                "UPDATE dbo.FW_Users " &
-                                "SET [Password] = @RawPassword, UpdatedBy = @UpdatedBy, UpdatedOn = GETDATE() " &
-                                "WHERE UserID = @UserID", conn, tx)
-                                saveRawCmd.Parameters.AddWithValue("@RawPassword", rawValue)
-                                saveRawCmd.Parameters.AddWithValue("@UpdatedBy", updatedBy)
-                                saveRawCmd.Parameters.AddWithValue("@UserID", userId)
-                                saveRawCmd.ExecuteNonQuery()
-                            End Using
-
-                            Dim rowsUpdated As Integer
-                            Using saveHashCmd As New SqlCommand(
-                                "UPDATE dbo.FW_Users " &
-                                "SET PasswordHash = @PasswordHash, [Password] = @PasswordMask, UpdatedBy = @UpdatedBy, UpdatedOn = GETDATE() " &
-                                "WHERE UserID = @UserID", conn, tx)
-                                saveHashCmd.Parameters.AddWithValue("@PasswordHash", passwordHash)
-                                saveHashCmd.Parameters.AddWithValue("@PasswordMask", StoredPasswordMask)
-                                saveHashCmd.Parameters.AddWithValue("@UpdatedBy", updatedBy)
-                                saveHashCmd.Parameters.AddWithValue("@UserID", userId)
-                                rowsUpdated = saveHashCmd.ExecuteNonQuery()
-                            End Using
-
-                            tx.Commit()
-                            Return rowsUpdated > 0
-                        Catch
-                            tx.Rollback()
-                            Return False
-                        End Try
-                    End Using
-                End Using
-            Catch
-                Return False
-            End Try
-        End Function
-
-        Private Shared Function ComputeHmacHashAsUnicodeString(emailWithoutSpaces As String, keyBytes As Byte(), messageEncoding As Encoding) As String
-            Return Encoding.Unicode.GetString(ComputeHmacHashBytes(emailWithoutSpaces, keyBytes, messageEncoding))
+        Private Shared Function ComputeHmacHashAsUnicodeString(passwordWithoutSpaces As String, keyBytes As Byte(), messageEncoding As Encoding) As String
+            Return Encoding.Unicode.GetString(ComputeHmacHashBytes(passwordWithoutSpaces, keyBytes, messageEncoding))
         End Function
 
         ''' <summary>Single implementation of the keyed hash. Both representations below use it.</summary>
@@ -4089,7 +4595,7 @@ Namespace SDC.Framework
 
             Using conn As New SqlConnection(ConnectionString)
                 conn.Open()
-                Using cmd As New SqlCommand("SELECT RegTypeID AS ID, RegTypeName AS RegistrationType FROM dbo.FW_RegistrationType ORDER BY RegTypeName", conn)
+                Using cmd As New SqlCommand("SELECT RegistrationTypeID AS ID, RegTypeName AS RegistrationType FROM dbo.FW_RegistrationType ORDER BY RegTypeName", conn)
                     Using da As New SqlDataAdapter(cmd)
                         da.Fill(table)
                     End Using
@@ -4107,7 +4613,7 @@ Namespace SDC.Framework
             Using conn As New SqlConnection(ConnectionString)
                 conn.Open()
                 Using cmd As New SqlCommand(
-                    "SELECT TOP 1 RegistrationID, RegName, Smarty_AuthID, Smarty_AuthToken, Smarty_EmbeddedKey, ISNULL(Smarty_UseEmbeddedKey, 0) AS Smarty_UseEmbeddedKey, ISNULL(LTRIM(RTRIM(BusinessRuleType)), '') AS BusinessRuleType, RegistrationTypeID, Address1, Address2, City, State, Zip, MainFax, MainPhone, MainEMail, WebLandingPage, " &
+                    "SELECT TOP 1 RegistrationID, RegName, Smarty_AuthID, Smarty_AuthToken, Smarty_EmbeddedKey, ISNULL(Smarty_UseEmbeddedKey, 0) AS Smarty_UseEmbeddedKey, ISNULL(LTRIM(RTRIM(BusinessRuleType)), '') AS BusinessRuleType, RegistrationTypeID, FormatDateID, FormatTimeID, Address1, Address2, City, State, Zip, MainFax, MainPhone, MainEMail, WebLandingPage, " &
                     "ISNULL(DisplayDashboardOnStartUp, 0) AS DisplayDashboardOnStartUp, " &
                     "ISNULL(AllowMessaging, 0) AS AllowMessaging, " &
                     "ISNULL(AllowMultipleRoles, 0) AS AllowMultipleRoles, " &
@@ -4137,6 +4643,8 @@ Namespace SDC.Framework
                             .Smarty_UseEmbeddedKey = Convert.ToBoolean(reader("Smarty_UseEmbeddedKey"), CultureInfo.InvariantCulture),
                             .BusinessRuleType = NormalizeBusinessRuleType(SafeString(reader("BusinessRuleType"))),
                             .RegistrationTypeID = If(IsDBNull(reader("RegistrationTypeID")), 0, Convert.ToInt32(reader("RegistrationTypeID"), CultureInfo.InvariantCulture)),
+                            .FormatDateID = If(IsDBNull(reader("FormatDateID")), 0, Convert.ToInt32(reader("FormatDateID"), CultureInfo.InvariantCulture)),
+                            .FormatTimeID = If(IsDBNull(reader("FormatTimeID")), 0, Convert.ToInt32(reader("FormatTimeID"), CultureInfo.InvariantCulture)),
                             .Address1 = SafeString(reader("Address1")),
                             .Address2 = SafeString(reader("Address2")),
                             .City = SafeString(reader("City")),
@@ -4191,14 +4699,20 @@ Namespace SDC.Framework
                 Dim normalizedBusinessRuleType = NormalizeBusinessRuleType(record.BusinessRuleType)
                 Using cmd As New SqlCommand(
                     "INSERT INTO dbo.FW_Registration " &
-                    "(RegName, BusinessRuleType, RegistrationTypeID, Address1, Address2, City, State, Zip, MainFax, MainPhone, MainEMail, WebLandingPage, Smarty_AuthID, Smarty_AuthToken, Smarty_EmbeddedKey, Smarty_UseEmbeddedKey, DisplayDashboardOnStartUp, AllowMessaging, AllowMultipleRoles, AllowPasswordChangeAtLogin, AllowUpdateMyProfile, AllowUpdateMyProfileEmail, Ribbonbar_InvisibleIcons, TwoFactorAuthentication, IsActive, CreatedBy, CreatedOn, UpdatedBy, UpdatedOn) " &
+                    "(RegName, BusinessRuleType, RegistrationTypeID, FormatDateID, FormatTimeID, Address1, Address2, City, State, Zip, MainFax, MainPhone, MainEMail, WebLandingPage, Smarty_AuthID, Smarty_AuthToken, Smarty_EmbeddedKey, Smarty_UseEmbeddedKey, DisplayDashboardOnStartUp, AllowMessaging, AllowMultipleRoles, AllowPasswordChangeAtLogin, AllowUpdateMyProfile, AllowUpdateMyProfileEmail, Ribbonbar_InvisibleIcons, TwoFactorAuthentication, IsActive, CreatedBy, CreatedOn, UpdatedBy, UpdatedOn) " &
                     "VALUES " &
-                    "(@RegName, @BusinessRuleType, @RegistrationTypeID, @Address1, @Address2, @City, @State, @Zip, @MainFax, @MainPhone, @MainEMail, @WebLandingPage, @Smarty_AuthID, @Smarty_AuthToken, @Smarty_EmbeddedKey, @Smarty_UseEmbeddedKey, @DisplayDashboardOnStartUp, @AllowMessaging, @AllowMultipleRoles, @AllowPasswordChangeAtLogin, @AllowUpdateMyProfile, @AllowUpdateMyProfileEmail, @Ribbonbar_InvisibleIcons, @TwoFactorAuthentication, @IsActive, @CurrentUserId, GETDATE(), @CurrentUserId, GETDATE()); " &
+                    "(@RegName, @BusinessRuleType, @RegistrationTypeID, @FormatDateID, @FormatTimeID, @Address1, @Address2, @City, @State, @Zip, @MainFax, @MainPhone, @MainEMail, @WebLandingPage, @Smarty_AuthID, @Smarty_AuthToken, @Smarty_EmbeddedKey, @Smarty_UseEmbeddedKey, @DisplayDashboardOnStartUp, @AllowMessaging, @AllowMultipleRoles, @AllowPasswordChangeAtLogin, @AllowUpdateMyProfile, @AllowUpdateMyProfileEmail, @Ribbonbar_InvisibleIcons, @TwoFactorAuthentication, @IsActive, @CurrentUserId, GETDATE(), @CurrentUserId, GETDATE()); " &
                     "SELECT CAST(SCOPE_IDENTITY() AS INT);", conn)
 
                     cmd.Parameters.AddWithValue("@RegName", DbValue(record.RegName))
                     cmd.Parameters.AddWithValue("@BusinessRuleType", normalizedBusinessRuleType)
                     cmd.Parameters.AddWithValue("@RegistrationTypeID", If(record.RegistrationTypeID > 0, CType(record.RegistrationTypeID, Object), DBNull.Value))
+                    ' Zero means nothing was chosen, which the foreign key can only accept as NULL,
+                    ' and DisplayFormats reads a missing choice as the framework default. The page
+                    ' always offers a real row, so in practice this only fires for a registration
+                    ' created before the combos existed.
+                    cmd.Parameters.AddWithValue("@FormatDateID", If(record.FormatDateID > 0, CType(record.FormatDateID, Object), DBNull.Value))
+                    cmd.Parameters.AddWithValue("@FormatTimeID", If(record.FormatTimeID > 0, CType(record.FormatTimeID, Object), DBNull.Value))
                     cmd.Parameters.AddWithValue("@Address1", DbValue(record.Address1))
                     cmd.Parameters.AddWithValue("@Address2", DbValue(record.Address2))
                     cmd.Parameters.AddWithValue("@City", DbValue(record.City))
@@ -4241,6 +4755,8 @@ Namespace SDC.Framework
                     "RegName = @RegName, " &
                     "BusinessRuleType = @BusinessRuleType, " &
                     "RegistrationTypeID = @RegistrationTypeID, " &
+                    "FormatDateID = @FormatDateID, " &
+                    "FormatTimeID = @FormatTimeID, " &
                     "Address1 = @Address1, " &
                     "Address2 = @Address2, " &
                     "City = @City, " &
@@ -4271,6 +4787,12 @@ Namespace SDC.Framework
                     cmd.Parameters.AddWithValue("@RegName", DbValue(record.RegName))
                     cmd.Parameters.AddWithValue("@BusinessRuleType", normalizedBusinessRuleType)
                     cmd.Parameters.AddWithValue("@RegistrationTypeID", If(record.RegistrationTypeID > 0, CType(record.RegistrationTypeID, Object), DBNull.Value))
+                    ' Zero means nothing was chosen, which the foreign key can only accept as NULL,
+                    ' and DisplayFormats reads a missing choice as the framework default. The page
+                    ' always offers a real row, so in practice this only fires for a registration
+                    ' created before the combos existed.
+                    cmd.Parameters.AddWithValue("@FormatDateID", If(record.FormatDateID > 0, CType(record.FormatDateID, Object), DBNull.Value))
+                    cmd.Parameters.AddWithValue("@FormatTimeID", If(record.FormatTimeID > 0, CType(record.FormatTimeID, Object), DBNull.Value))
                     cmd.Parameters.AddWithValue("@Address1", DbValue(record.Address1))
                     cmd.Parameters.AddWithValue("@Address2", DbValue(record.Address2))
                     cmd.Parameters.AddWithValue("@City", DbValue(record.City))
@@ -4327,7 +4849,7 @@ Namespace SDC.Framework
                 Using cmd As New SqlCommand(
                     "SELECT r.RegistrationID, r.RegName, ISNULL(rt.RegTypeName, '') AS RegistrationType " &
                     "FROM dbo.FW_Registration r " &
-                    "LEFT JOIN dbo.FW_RegistrationType rt ON rt.RegTypeID = r.RegistrationTypeID " &
+                    "LEFT JOIN dbo.FW_RegistrationType rt ON rt.RegistrationTypeID = r.RegistrationTypeID " &
                     "ORDER BY r.RegName", conn)
                     
                     Using da As New SqlDataAdapter(cmd)
@@ -4919,6 +5441,51 @@ Namespace SDC.Framework
 
             Return captions
         End Function
+
+        ''' <summary>
+        ''' The registration's date and time patterns, in one round trip.
+        '''
+        ''' Joined rather than fetched as two lookups, and read once at login rather than when a
+        ''' date is drawn. Login already makes six separate registration queries; this is not
+        ''' going to be the seventh and eighth.
+        '''
+        ''' Empty means the registration has not chosen. DisplayFormats supplies the default -
+        ''' deciding it here as well would be two answers to one question.
+        ''' </summary>
+        Public Shared Sub GetRegistrationDisplayFormats(registrationId As Integer,
+                                                        ByRef datePattern As String,
+                                                        ByRef timePattern As String)
+            datePattern = String.Empty
+            timePattern = String.Empty
+            If registrationId <= 0 Then Return
+
+            Try
+                Using conn As New SqlConnection(ConnectionString)
+                    conn.Open()
+                    Using cmd As New SqlCommand(
+                        "SELECT TOP 1 ISNULL(d.FormatPattern, '') AS DatePattern, " &
+                        "             ISNULL(t.FormatPattern, '') AS TimePattern " &
+                        "FROM dbo.FW_Registration r " &
+                        "LEFT JOIN dbo.FW_Format_Date d ON d.FormatDateID = r.FormatDateID " &
+                        "LEFT JOIN dbo.FW_Format_Time t ON t.FormatTimeID = r.FormatTimeID " &
+                        "WHERE r.RegistrationID = @ID", conn)
+                        cmd.Parameters.Add("@ID", SqlDbType.Int).Value = registrationId
+
+                        Using reader = cmd.ExecuteReader()
+                            If reader.Read() Then
+                                datePattern = SafeString(reader("DatePattern"))
+                                timePattern = SafeString(reader("TimePattern"))
+                            End If
+                        End Using
+                    End Using
+                End Using
+            Catch
+                ' A registration read before sql/093 has been applied has no such tables, and a
+                ' login that fails because nobody has chosen a date format would be a poor trade.
+                datePattern = String.Empty
+                timePattern = String.Empty
+            End Try
+        End Sub
 
         Public Shared Function GetMaxRecordsNoQBE(registrationId As Integer) As Integer
             If registrationId <= 0 Then
@@ -6058,9 +6625,48 @@ Namespace SDC.Framework
                 conn.Open()
                 Using cmd As New SqlCommand(
                     "SELECT ID, RegistrationID, RoleName FROM dbo.FW_Roles WHERE RegistrationID = @RegistrationID ORDER BY RoleName", conn)
-                    
+
                     cmd.Parameters.AddWithValue("@RegistrationID", registrationId)
-                    
+
+                    Using da As New SqlDataAdapter(cmd)
+                        da.Fill(table)
+                    End Using
+                End Using
+            End Using
+
+            Return table
+        End Function
+
+        ''' <summary>
+        ''' A registration's roles, for choosing one rather than for managing them.
+        '''
+        ''' Its own name rather than a flag on GetRolesByRegistration, which already exists twice
+        ''' with different signatures - a third overload made the one-argument call ambiguous and
+        ''' broke Roles_U. The two that are there are worth consolidating; that is a change for
+        ''' its own day, not a side effect of this one.
+        '''
+        ''' Deleted and inactive roles are left out. An administration page has to show a role in
+        ''' order to restore it, but offering a deleted role to somebody being given one would
+        ''' hand out access through a role nobody can see.
+        '''
+        ''' Application Admin is left out as well. It is the role that can change every other
+        ''' role, and nothing about adding an employee should be able to grant it - least of all
+        ''' a list where it sits one line above the ordinary answers and is reached by a
+        ''' mis-click. Granting it stays a deliberate act in Roles.
+        ''' </summary>
+        Public Shared Function GetSelectableRolesByRegistration(registrationId As Integer) As DataTable
+            Dim table As New DataTable("FW_Roles")
+
+            Using conn As New SqlConnection(ConnectionString)
+                conn.Open()
+                Using cmd As New SqlCommand(
+                    "SELECT ID, RegistrationID, RoleName, ISNULL(DisplayOrder, 0) AS DisplayOrder FROM dbo.FW_Roles " &
+                    "WHERE RegistrationID = @RegistrationID " &
+                    "  AND ISNULL(IsActive, 1) = 1 AND ISNULL(DeletedFlag, 0) = 0 " &
+                    "  AND ISNULL(Typ_AppAdmin, 0) = 0 " &
+                    "ORDER BY CASE WHEN ISNULL(DisplayOrder, 0) = 0 THEN 1 ELSE 0 END, " &
+                    "         ISNULL(DisplayOrder, 255), RoleName", conn)
+                    cmd.Parameters.Add("@RegistrationID", SqlDbType.Int).Value = registrationId
                     Using da As New SqlDataAdapter(cmd)
                         da.Fill(table)
                     End Using
@@ -7288,6 +7894,114 @@ Namespace SDC.Framework
             Return columns
         End Function
 
+        ''' <summary>
+        ''' The date-ish columns of a table, and which kind each is: "date", "datetime" or "time".
+        '''
+        ''' Read from the schema rather than guessed from the column name, so a column called
+        ''' Updated is a date because it is declared one, and a column called BirthDateText is not.
+        '''
+        ''' The three kinds are what the page does with them: a date gets a calendar, a datetime
+        ''' gets a calendar and a time, and a time gets an up-down with no calendar at all.
+        ''' </summary>
+        ''' <summary>
+        ''' The columns of a table that accept NULL.
+        '''
+        ''' A date field uses this to decide whether to show its check box - the built-in way to
+        ''' say "no date". Asked of the schema rather than inferred from whether the field is
+        ''' Admin Required: those are different questions, and a column can be nullable in the
+        ''' database while a page insists on it, or the reverse.
+        ''' </summary>
+        Public Shared Function GetNullableColumnNames(tableName As String) As HashSet(Of String)
+            Dim results As New HashSet(Of String)(StringComparer.OrdinalIgnoreCase)
+            Dim normalizedTable = NormalizeTableName(tableName)
+            If String.IsNullOrWhiteSpace(normalizedTable) Then
+                Return results
+            End If
+
+            Using conn As New SqlConnection(ConnectionString)
+                conn.Open()
+                Using cmd As New SqlCommand(
+                    "SELECT COLUMN_NAME FROM INFORMATION_SCHEMA.COLUMNS " &
+                    "WHERE TABLE_SCHEMA = 'dbo' AND TABLE_NAME = @TableName AND IS_NULLABLE = 'YES'", conn)
+                    cmd.Parameters.AddWithValue("@TableName", normalizedTable)
+
+                    Using reader = cmd.ExecuteReader()
+                        While reader.Read()
+                            Dim columnName = reader("COLUMN_NAME").ToString().Trim()
+                            If columnName <> String.Empty Then results.Add(columnName)
+                        End While
+                    End Using
+                End Using
+            End Using
+
+            Return results
+        End Function
+
+        ''' <summary>
+        ''' The bit columns of a table.
+        '''
+        ''' Read from the schema rather than guessed from a name beginning with Is or Allow. A
+        ''' page asking somebody to type True into a box is asking for Ture, and the value that
+        ''' reaches the database is then whatever the parser made of it.
+        ''' </summary>
+        Public Shared Function GetBitColumnNames(tableName As String) As HashSet(Of String)
+            Dim results As New HashSet(Of String)(StringComparer.OrdinalIgnoreCase)
+            Dim normalizedTable = NormalizeTableName(tableName)
+            If String.IsNullOrWhiteSpace(normalizedTable) Then Return results
+
+            Using conn As New SqlConnection(ConnectionString)
+                conn.Open()
+                Using cmd As New SqlCommand(
+                    "SELECT COLUMN_NAME FROM INFORMATION_SCHEMA.COLUMNS " &
+                    "WHERE TABLE_SCHEMA = 'dbo' AND TABLE_NAME = @TableName AND DATA_TYPE = 'bit'", conn)
+                    cmd.Parameters.AddWithValue("@TableName", normalizedTable)
+                    Using reader = cmd.ExecuteReader()
+                        While reader.Read()
+                            Dim columnName = reader("COLUMN_NAME").ToString().Trim()
+                            If columnName <> String.Empty Then results.Add(columnName)
+                        End While
+                    End Using
+                End Using
+            End Using
+
+            Return results
+        End Function
+
+        Public Shared Function GetDateColumnKinds(tableName As String) As Dictionary(Of String, String)
+            Dim results As New Dictionary(Of String, String)(StringComparer.OrdinalIgnoreCase)
+            Dim normalizedTable = NormalizeTableName(tableName)
+            If String.IsNullOrWhiteSpace(normalizedTable) Then
+                Return results
+            End If
+
+            Using conn As New SqlConnection(ConnectionString)
+                conn.Open()
+                Using cmd As New SqlCommand(
+                    "SELECT COLUMN_NAME, DATA_TYPE " &
+                    "FROM INFORMATION_SCHEMA.COLUMNS " &
+                    "WHERE TABLE_SCHEMA = 'dbo' AND TABLE_NAME = @TableName " &
+                    "AND DATA_TYPE IN ('date', 'datetime', 'datetime2', 'smalldatetime', 'time')", conn)
+                    cmd.Parameters.AddWithValue("@TableName", normalizedTable)
+
+                    Using reader = cmd.ExecuteReader()
+                        While reader.Read()
+                            Dim columnName = reader("COLUMN_NAME").ToString().Trim()
+                            Dim dataType = reader("DATA_TYPE").ToString().Trim().ToLowerInvariant()
+                            If columnName = String.Empty Then Continue While
+
+                            Select Case dataType
+                                Case "date" : results(columnName) = "date"
+                                Case "time" : results(columnName) = "time"
+                                Case Else : results(columnName) = "datetime"
+                            End Select
+                        End While
+                    End Using
+                End Using
+            End Using
+
+            Return results
+        End Function
+
         Public Shared Function GetTextColumnMaxLengths(tableName As String) As Dictionary(Of String, Integer)
             Dim results As New Dictionary(Of String, Integer)(StringComparer.OrdinalIgnoreCase)
             Dim normalizedTable = NormalizeTableName(tableName)
@@ -7544,33 +8258,92 @@ Namespace SDC.Framework
         ''' be left empty. Returns True when all checks pass.
         ''' </summary>
         ''' <summary>
-        ''' The message to show when a page is about to save a duplicate email, or empty when it is
-        ''' not. Any page editing FW_Users qualifies - hand-written or generated - because it looks
-        ''' for the control by the naming convention rather than by knowing the page.
+        ''' The message to show when a page is about to save a user name somebody else holds,
+        ''' or empty when it is not.
+        '''
+        ''' This is the invariant that replaced the unique email: a user name is how somebody
+        ''' signs in, and login matches it with SELECT TOP 1, so two rows holding one name means
+        ''' login picks by row order. Not a rule an administrator should be able to switch off,
+        ''' which is why it is here rather than in the FW_RoleFields loop.
+        '''
+        ''' Checked against FW_Users, whichever table the page edits. An employee's user name is
+        ''' written through to their login, so a name free on FW_Employees and taken on FW_Users
+        ''' is still a name this person cannot have.
+        '''
+        ''' Deleted accounts count. A soft-deleted row keeps its name, and handing that name to
+        ''' somebody else makes the original impossible to restore.
         ''' </summary>
-        Private Shared Function GetUserEmailDuplicateMessage(form As System.Windows.Forms.Form,
-                                                             tableName As String,
-                                                             currentRecordKey As String) As String
-            If form Is Nothing OrElse Not IsUserPasswordTable(NormalizeTableName(tableName)) Then
+        Private Shared Function GetUserNameDuplicateMessage(form As System.Windows.Forms.Form,
+                                                            tableName As String,
+                                                            currentRecordKey As String) As String
+            Dim normalizedTable = NormalizeTableName(tableName)
+            If form Is Nothing Then Return String.Empty
+            If Not IsUserPasswordTable(normalizedTable) AndAlso Not IsEmployeeLoginTable(normalizedTable) Then
                 Return String.Empty
             End If
 
-            Dim matches = form.Controls.Find("TextBox_Email", True)
-            If matches.Length = 0 Then
-                Return String.Empty
+            Dim matches = form.Controls.Find("TextBox_UserName", True)
+            If matches.Length = 0 Then Return String.Empty
+
+            Dim typedName = If(matches(0).Text, String.Empty).Trim()
+            If typedName = String.Empty Then Return String.Empty
+
+            ' Which login this page must not compare against - its own. An employee page knows its
+            ' employee, so the login is looked up from it; a user page is the login already. On a
+            ' new record nothing is excluded, which is right: it is not one of them yet.
+            Dim currentKey As Integer
+            Integer.TryParse(If(currentRecordKey, String.Empty).Trim(), currentKey)
+
+            Dim excludeUserId = 0
+            If currentKey > 0 Then
+                excludeUserId = If(IsEmployeeLoginTable(normalizedTable), LoginIdForEmployee(currentKey), currentKey)
             End If
 
-            Dim typedEmail = If(matches(0).Text, String.Empty).Trim()
-            If typedEmail = String.Empty Then
+            Dim holder = UserNameHolder(typedName, excludeUserId)
+            If holder = String.Empty Then Return String.Empty
+
+            Return "The user name " & typedName & " already belongs to " & holder & "." & Environment.NewLine &
+                   "A user name is how somebody signs in. It has to be theirs alone."
+        End Function
+
+        ''' <summary>Who holds a user name, other than the account being edited, or empty.</summary>
+        Private Shared Function UserNameHolder(userName As String, excludeUserId As Integer) As String
+            Try
+                Using conn As New SqlConnection(ConnectionString)
+                    conn.Open()
+                    Using cmd As New SqlCommand(
+                        "SELECT TOP 1 CASE WHEN ISNULL(DeletedFlag, 0) = 1 THEN 'a deleted account' " &
+                        "            ELSE 'another account' END " &
+                        "FROM dbo.FW_Users " &
+                        "WHERE LOWER(LTRIM(RTRIM(ISNULL(UserName, '')))) = @UserName AND UserID <> @ExcludeUserID", conn)
+                        cmd.Parameters.Add("@UserName", SqlDbType.VarChar, 50).Value = userName.Trim().ToLowerInvariant()
+                        cmd.Parameters.Add("@ExcludeUserID", SqlDbType.Int).Value = excludeUserId
+                        Dim result = cmd.ExecuteScalar()
+                        Return If(result Is Nothing OrElse Convert.IsDBNull(result), String.Empty, Convert.ToString(result))
+                    End Using
+                End Using
+            Catch
+                ' Unreachable means unknown, and refusing a save on a check that could not run
+                ' would block work for a reason nobody can see. The unique index still stands.
                 Return String.Empty
-            End If
+            End Try
+        End Function
 
-            ' On a new record the key is empty, so nothing is excluded and the user is compared
-            ' against every existing row - which is right, because they are not one of them yet.
-            Dim excludeUserId As Integer
-            Integer.TryParse(If(currentRecordKey, String.Empty).Trim(), excludeUserId)
-
-            Return GetEmailUnavailableMessage(typedEmail, Math.Max(0, excludeUserId))
+        ''' <summary>The login an employee points at, outside any transaction.</summary>
+        Private Shared Function LoginIdForEmployee(employeeId As Integer) As Integer
+            Try
+                Using conn As New SqlConnection(ConnectionString)
+                    conn.Open()
+                    Using cmd As New SqlCommand("SELECT UserId FROM dbo.FW_Employees WHERE EmployeeID = @ID", conn)
+                        cmd.Parameters.Add("@ID", SqlDbType.Int).Value = employeeId
+                        Dim result = cmd.ExecuteScalar()
+                        If result Is Nothing OrElse Convert.IsDBNull(result) Then Return 0
+                        Return Convert.ToInt32(result, CultureInfo.InvariantCulture)
+                    End Using
+                End Using
+            Catch
+                Return 0
+            End Try
         End Function
 
         Public Shared Function ValidateUniqueFields(form As System.Windows.Forms.Form,
@@ -7582,14 +8355,17 @@ Namespace SDC.Framework
             errorMessage = String.Empty
             Dim failures As New List(Of String)()
 
-            ' Checked before anything else, and outside the role-field loop below, because it is a
-            ' framework invariant rather than a configurable rule: login cannot resolve an account
-            ' when two share an address. The loop would skip it anyway - every FW_Users.Email row in
-            ' FW_RoleFields has IsUnique null and IsActive 0, so the rule is switched off in data.
-            ' It is not the kind of rule an administrator should be able to switch off.
-            Dim duplicateEmailMessage = GetUserEmailDuplicateMessage(form, tableName, currentRecordKey)
-            If Not String.IsNullOrWhiteSpace(duplicateEmailMessage) Then
-                errorMessage = duplicateEmailMessage
+            ' A duplicate email used to be refused here as a framework invariant, because an email
+            ' was how somebody signed in. It no longer is - login matches on UserName - so two
+            ' people sharing an address is ordinary rather than broken, and across registrations
+            ' it always was. The rule an administrator can still switch on per field, through
+            ' FW_RoleFields.IsUnique, is handled by the loop below like any other.
+            '
+            ' UserName is the invariant now, and it is enforced where it can be kept: in the
+            ' transaction that writes it, and by a unique index behind that.
+            Dim duplicateUserNameMessage = GetUserNameDuplicateMessage(form, tableName, currentRecordKey)
+            If Not String.IsNullOrWhiteSpace(duplicateUserNameMessage) Then
+                errorMessage = duplicateUserNameMessage
                 Return False
             End If
 
@@ -8245,7 +9021,7 @@ Namespace SDC.Framework
                     "  AND ISNULL(r.IsActive, 0) = 1 " &
                     "  AND ISNULL(ur.IsActive, 1) = 1 " &
                     "  AND ISNULL(u.IsActive, 1) = 1 " &
-                    "ORDER BY ISNULL(ur.DisplayOrder, 0), ur.UserID", conn)
+                    "ORDER BY ISNULL(ur.DisplayOrder, 0), ur.EmployeeID", conn)
                     cmd.Parameters.AddWithValue("@RegistrationID", registrationId)
                     Dim result = cmd.ExecuteScalar()
                     Return If(result IsNot Nothing AndAlso Not IsDBNull(result), CInt(result), 0)

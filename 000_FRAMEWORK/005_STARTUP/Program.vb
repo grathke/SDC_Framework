@@ -187,9 +187,22 @@ Namespace SDC.Framework
                     ' that reason, and grid column reordering is the same gesture. Nothing here
                     ' accepts a dropped file - the Help Desk uses a file dialog - so the trade is
                     ' one-sided.
-                    virtualUI.Options = virtualUI.Options Or
-                                        CUInt(Cybele.Thinfinity.Options.OPT_APPINVISIBLE) Or
-                                        CUInt(Cybele.Thinfinity.Options.OPT_NOHTML_DRAG)
+                    ' NOHTML_DRAG always: VirtualUI otherwise treats a drag in the browser as an
+                    ' HTML5 file drag and swallows the mouse-down, move and up that a drag *inside*
+                    ' the application needs. Ribbon tiles would not move without it.
+                    virtualUI.Options = virtualUI.Options Or CUInt(Cybele.Thinfinity.Options.OPT_NOHTML_DRAG)
+
+                    ' APPINVISIBLE always, dev run included. Seeing the application twice - once on
+                    ' the desktop and once in the tab - is the thing that must not happen, decided
+                    ' 2026-09-14 after trying it both ways.
+                    '
+                    ' The flag hides the application's window and nothing else. A combo dropdown, a
+                    ' menu and a tooltip are each their own transient top-level window, so Windows
+                    ' still draws those on the desktop: a lookup shows its list in the tab and again
+                    ' on screen behind it. That is the known cost, and it is the smaller one - on a
+                    ' server nobody watches that desktop, and here a stray list beats a stray copy
+                    ' of the whole application.
+                    virtualUI.Options = virtualUI.Options Or CUInt(Cybele.Thinfinity.Options.OPT_APPINVISIBLE)
                 End If
 
                 Log("VirtualUI DevMode=" & devMode.ToString() &

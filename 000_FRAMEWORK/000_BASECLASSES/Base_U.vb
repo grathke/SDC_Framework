@@ -770,7 +770,16 @@ Namespace SDC.Framework
                 Return False
             End If
 
-            If control Is okButton OrElse control Is cancelActionButton Then
+            ' Page furniture, not part of the sequence somebody would reorder. OK and Cancel have
+            ' always been excluded; Help Desk was not, only because it is not named here - and
+            ' IsRowLayoutControl already treats it as furniture, so the two tests disagreed about
+            ' what it is. Every generated page listed a "Button_HelpDesk" row in its Tab Order
+            ' panel that nobody would ever want to move.
+            '
+            ' Excluded from the manager, not from tabbing: these keep whatever position the page
+            ' gave them, the way SetManualTabOrder puts OK and Cancel at the end.
+            If control Is okButton OrElse control Is cancelActionButton OrElse
+               String.Equals(control.Name, HelpDeskLauncher.ButtonName, StringComparison.OrdinalIgnoreCase) Then
                 Return False
             End If
 
@@ -1558,7 +1567,10 @@ Namespace SDC.Framework
             DataAccess.ApplyControlUpdates(Me, Me.GetType().Name, ResolveTableNameForConstraints(), IsCreatingNewRecord())
             ReportUnmappedFieldControls()
             AdoptRequiredBorderPanels()
-            NormalizeTextInputsForSave()
+            ' Sized only here, on load. The save pass runs the same normalisation to trim and cap
+            ' the values, but a box that changed width while somebody was typing in it would be
+            ' the page rearranging itself under them.
+            NormalizeTextInputsForSave(sizeToColumnLength:=True)
             baselineControlSnapshotJson = CaptureControlSnapshotJson()
             ResetPendingRecordBaseline()
         End Sub
@@ -1828,7 +1840,11 @@ Namespace SDC.Framework
             Return Nothing
         End Function
 
-        Private Sub NormalizeTextInputsForSave()
+        ''' <param name="sizeToColumnLength">
+        ''' Whether to also narrow each box towards what its column can hold. Load only - see the
+        ''' call site.
+        ''' </param>
+        Private Sub NormalizeTextInputsForSave(Optional sizeToColumnLength As Boolean = False)
             Dim tableName = ResolveTableNameForConstraints()
             Dim pageName = GetPageName()
             Dim columnLengths = DataAccess.GetTextColumnMaxLengths(tableName)
@@ -1845,13 +1861,13 @@ Namespace SDC.Framework
             For Each ctrl In allControls
                 If TypeOf ctrl Is TextBox Then
                     Dim tb = DirectCast(ctrl, TextBox)
-                    NormalizeTextControl(tb, controlMap, columnLengths)
+                    NormalizeTextControl(tb, controlMap, columnLengths, sizeToColumnLength)
                 ElseIf TypeOf ctrl Is MaskedTextBox Then
                     Dim mb = DirectCast(ctrl, MaskedTextBox)
-                    NormalizeTextControl(mb, controlMap, columnLengths)
+                    NormalizeTextControl(mb, controlMap, columnLengths, sizeToColumnLength)
                 ElseIf TypeOf ctrl Is RichTextBox Then
                     Dim rb = DirectCast(ctrl, RichTextBox)
-                    NormalizeTextControl(rb, controlMap, columnLengths)
+                    NormalizeTextControl(rb, controlMap, columnLengths, sizeToColumnLength)
                 End If
             Next
         End Sub
@@ -1867,9 +1883,56 @@ Namespace SDC.Framework
             Next
         End Sub
 
+        ''' <summary>
+        ''' The narrowest a field is allowed to get. Two characters' worth of text is not a
+        ''' comfortable click target, and a row of stubs reads as a broken layout rather than a
+        ''' set of short fields.
+        ''' </summary>
+        Private Const MinimumSizedFieldWidth As Integer = 44
+
+        ''' <summary>
+        ''' Narrows a box towards what its column can hold.
+        '''
+        ''' A State that takes two characters and a Notes that takes 255 are the same 320 pixels
+        ''' wide today, which tells the reader nothing about either. The width is a hint, never a
+        ''' promise: the font is proportional, so a measured average is right for ordinary text
+        ''' and wrong for a field full of Ws.
+        '''
+        ''' It only ever shrinks. Growing a box could push it over the Zip Coder button, past the
+        ''' edge of a two-column page, or over whatever a hand-written page put beside it - and
+        ''' the width the page chose is a deliberate statement that this cannot know better than.
+        ''' That also settles Registration_U, which sizes State and Zip by hand: the measurement
+        ''' agrees with it or is ignored.
+        '''
+        ''' Multiline boxes are left alone. Their size says how many lines to show, which has
+        ''' nothing to do with how many characters the column holds.
+        ''' </summary>
+        Private Sub SizeControlToColumnLength(ctrl As TextBoxBase, maxLength As Integer)
+            If maxLength <= 0 OrElse ctrl.Multiline OrElse ctrl.Width <= MinimumSizedFieldWidth Then Return
+
+            ' Measured rather than multiplied by a constant, so it follows the page's font and DPI
+            ' instead of assuming this machine's. Capped at 40 characters because anything longer
+            ' already exceeds the width the page gave the box and would be clamped away.
+            Dim sample As New String("n"c, Math.Min(maxLength, 40))
+            Dim measured = TextRenderer.MeasureText(sample, ctrl.Font).Width + 12
+
+            Dim sized = Math.Max(MinimumSizedFieldWidth, Math.Min(measured, ctrl.Width))
+            If sized = ctrl.Width Then Return
+
+            ctrl.Width = sized
+
+            ' The required border sits one pixel outside its field, so it has to follow or it is
+            ' left framing empty space to the right of the box it belongs to.
+            Dim border As Panel = Nothing
+            If requiredBorderPanels.TryGetValue(ctrl, border) AndAlso border IsNot Nothing Then
+                border.Size = New Size(ctrl.Width + 2, ctrl.Height + 2)
+            End If
+        End Sub
+
         Private Sub NormalizeTextControl(ctrl As TextBoxBase,
                                          controlMap As Dictionary(Of String, String),
-                                         columnLengths As Dictionary(Of String, Integer))
+                                         columnLengths As Dictionary(Of String, Integer),
+                                         Optional sizeToColumnLength As Boolean = False)
             Dim textValue = If(ctrl.Text, String.Empty).Trim()
             Dim maxLength = ResolveColumnMaxLength(ctrl.Name, controlMap, columnLengths)
 
@@ -1884,6 +1947,8 @@ Namespace SDC.Framework
             ElseIf TypeOf ctrl Is RichTextBox AndAlso maxLength > 0 Then
                 DirectCast(ctrl, RichTextBox).MaxLength = maxLength
             End If
+
+            If sizeToColumnLength Then SizeControlToColumnLength(ctrl, maxLength)
         End Sub
 
         Private Function ResolveColumnMaxLength(controlName As String,
@@ -2368,6 +2433,302 @@ Namespace SDC.Framework
 
             Return combo
         End Function
+
+        ''' <summary>
+        ''' Creates a yes-or-no field. The control becomes CheckBox_&lt;field&gt; and its label
+        ''' Label_&lt;field&gt;, the same naming every other field helper follows.
+        '''
+        ''' A bit column used to get a text box, which asked somebody to type "True" and accepted
+        ''' "Ture" - and a checkbox is the one control where the value and the way it is shown
+        ''' cannot disagree.
+        '''
+        ''' No required marker. A check box always holds one of its two values, so there is no
+        ''' such thing as leaving it blank, and an asterisk on one would promise a rule that can
+        ''' never fire. A column that must be True is a business rule, not a required field.
+        ''' </summary>
+        Protected Function AddCheckField(caption As String, y As Integer,
+                                         Optional fieldLeft As Integer = 20,
+                                         Optional labelText As String = Nothing) As CheckBox
+            Dim lbl As New Label() With {
+                .Name = "Label_" & caption,
+                .Text = If(String.IsNullOrWhiteSpace(labelText), ToPascalCaseDisplay(caption), labelText),
+                .Location = New Point(fieldLeft, y),
+                .Size = New Size(120, 26),
+                .TextAlign = ContentAlignment.MiddleLeft
+            }
+            Me.Controls.Add(lbl)
+
+            ' Sits where a text box would start, so a column of fields lines up whatever mix of
+            ' controls it holds.
+            Dim box As New CheckBox() With {
+                .Name = "CheckBox_" & caption,
+                .Location = New Point(fieldLeft + 130, y + 3),
+                .Size = New Size(20, 20),
+                .UseVisualStyleBackColor = True
+            }
+            Me.Controls.Add(box)
+            Return box
+        End Function
+
+        ''' <summary>What a check box contributes to a save.</summary>
+        Protected Shared Function CheckFieldValue(box As CheckBox) As Object
+            If box Is Nothing Then Return False
+            Return box.Checked
+        End Function
+
+        ''' <summary>
+        ''' Puts a stored value into a check box.
+        '''
+        ''' A null reads as False. The column allows one and the control cannot show it, and
+        ''' "not set" is far closer to No than to Yes for every flag this framework has.
+        ''' </summary>
+        Protected Shared Sub SetCheckField(box As CheckBox, value As Object)
+            If box Is Nothing Then Return
+
+            If value Is Nothing OrElse Convert.IsDBNull(value) Then
+                box.Checked = False
+                Return
+            End If
+
+            Dim flag As Boolean
+            If Boolean.TryParse(Convert.ToString(value), flag) Then
+                box.Checked = flag
+                Return
+            End If
+
+            Dim number As Integer
+            If Integer.TryParse(Convert.ToString(value), number) Then box.Checked = number <> 0
+        End Sub
+
+        ''' <summary>
+        ''' Creates a date field. The control becomes DateTimePicker_&lt;field&gt; and its label
+        ''' Label_&lt;field&gt;, the same naming every other field helper follows.
+        '''
+        ''' A date column used to get a plain text box, which is how an empty Termination Date
+        ''' reached a datetime parameter as "" and failed the save with a message naming no field.
+        ''' A picker cannot produce that value, or 31 February, or a month spelled out in a
+        ''' language the parser does not read.
+        '''
+        ''' It still accepts typing. The segments take digits and arrow keys, so somebody entering
+        ''' forty records is not made to click through a calendar - the constraint is on what can
+        ''' be expressed, not on how it is entered. That is the distinction worth keeping: free
+        ''' text is the problem, typing is not.
+        '''
+        ''' Everything else here mirrors AddField exactly - the asterisk, the App Admin blue, the
+        ''' required border, the hover watch - because a required date has to behave like every
+        ''' other required field, and a second implementation is how one of them stops doing so.
+        ''' </summary>
+        ''' <param name="nullable">
+        ''' Whether "no date" is a value the column accepts. Shows the picker's own check box,
+        ''' which is the built-in way to say it: unchecked greys the date and reads as null. A NOT
+        ''' NULL column gets no check box, because there is nothing for it to express.
+        ''' </param>
+        ''' <param name="showTime">
+        ''' Whether the time is part of the value. Off by default: a hire date shown as
+        ''' "15/03/2026 00:00" puts a time on screen that nobody entered and nobody means.
+        ''' </param>
+        Protected Function AddDateField(caption As String, y As Integer,
+                                        Optional required As Boolean = False,
+                                        Optional fieldLeft As Integer = 20,
+                                        Optional nullable As Boolean = False,
+                                        Optional showTime As Boolean = False,
+                                        Optional labelText As String = Nothing) As DateTimePicker
+            Dim lbl As New Label() With {
+                .Name = "Label_" & caption,
+                .Text = If(String.IsNullOrWhiteSpace(labelText), ToPascalCaseDisplay(caption), labelText),
+                .Location = New Point(fieldLeft, y),
+                .Size = New Size(120, 26),
+                .TextAlign = ContentAlignment.MiddleLeft
+            }
+
+            If required Then
+                If Not lbl.Text.EndsWith(" *", StringComparison.Ordinal) Then
+                    lbl.Text &= " *"
+                End If
+
+                ' The same ARGB ShouldSkipBrRequiredStyling reads. See AddField.
+                lbl.BackColor = AppAdminRequiredBackColor
+            End If
+
+            Me.Controls.Add(lbl)
+
+            ' Wide enough for the format it shows, and no wider. The check box adds its own room.
+            Dim pickerWidth = If(showTime, 200, 130) + If(nullable, 22, 0)
+
+            Dim picker As New DateTimePicker() With {
+                .Name = "DateTimePicker_" & caption,
+                .Location = New Point(fieldLeft + 130, y),
+                .Size = New Size(pickerWidth, 26),
+                .ShowCheckBox = nullable
+            }
+            ApplyDateFieldFormat(picker, showTime)
+
+            ' An unticked date shows nothing at all rather than a greyed-out date. A greyed date
+            ' still reads as a value - somebody looking at a Termination Date of 09/14/2026 has
+            ' to notice a tick to know the person has not left - and the grey is easy to miss
+            ' next to a field that is legitimately read-only.
+            '
+            ' A DateTimePicker cannot be empty, so the display is emptied instead: the format is
+            ' swapped for a blank one while the box is unticked, and put back when it is ticked.
+            ' The real format is kept here because ValueChanged has no way to recover it, and
+            ' recomputing it would need showTime, which only this method knows.
+            dateFieldFormats(picker) = picker.CustomFormat
+            AddHandler picker.ValueChanged, Sub(sender As Object, e As EventArgs) RefreshDateFieldDisplay(picker)
+            RefreshDateFieldDisplay(picker)
+
+            Me.Controls.Add(picker)
+
+            If required Then
+                picker.Tag = "Required"
+
+                Dim borderPanel As New Panel() With {
+                    .BackColor = SystemColors.Control,
+                    .Location = New Point(picker.Left - 1, picker.Top - 1),
+                    .Size = New Size(picker.Width + 2, picker.Height + 2),
+                    .Tag = "LocalRequiredBorder_" & caption
+                }
+
+                Me.Controls.Add(borderPanel)
+                borderPanel.Visible = False
+                borderPanel.BringToFront()
+                picker.BringToFront()
+                requiredBorderPanels(picker) = borderPanel
+                WatchRequiredHover(picker)
+
+                Dim refresh = Sub(s As Object, e As EventArgs)
+                                  If Not loading Then MarkRequiredTouched(picker)
+                                  RefreshLocalRequiredBorders()
+                              End Sub
+                AddHandler picker.ValueChanged, refresh
+            End If
+
+            Return picker
+        End Function
+
+        ''' <summary>
+        ''' How a date field displays its value - the one place the format is decided.
+        '''
+        ''' Explicit rather than DateTimePickerFormat.Short, which reads the machine's locale.
+        ''' Under VirtualUI the machine is the server, so Short would show every user in every
+        ''' country whatever the server happened to be installed as - a format nobody chose, and
+        ''' one with no visible reason for being what it is.
+        '''
+        ''' The patterns come from the registration, resolved at login and answered from the
+        ''' session. DisplayFormats owns that, and the grids will read the same two patterns, so
+        ''' a page and the grid that lists it cannot write a date two ways.
+        ''' </summary>
+        ''' <summary>
+        ''' Each date field's real display format, so it can be put back after the field has been
+        ''' blanked. Keyed by the control, like requiredBorderPanels, and per page - the pages
+        ''' come and go with their controls.
+        ''' </summary>
+        Private ReadOnly dateFieldFormats As New Dictionary(Of DateTimePicker, String)()
+
+        ''' <summary>The blank a DateTimePicker shows when its value is null. A space, because an
+        ''' empty custom format is ignored and the control falls back to the short date.</summary>
+        Private Const EmptyDateFormat As String = " "
+
+        ''' <summary>
+        ''' Shows or hides a date field's value according to its check box.
+        '''
+        ''' Called whenever the box is toggled, by the user or in code, so the display and the
+        ''' value can never disagree about whether there is a date.
+        ''' </summary>
+        Private Sub RefreshDateFieldDisplay(picker As DateTimePicker)
+            If picker Is Nothing Then Return
+
+            Dim realFormat As String = Nothing
+            If Not dateFieldFormats.TryGetValue(picker, realFormat) OrElse String.IsNullOrEmpty(realFormat) Then Return
+
+            Dim showsNothing = picker.ShowCheckBox AndAlso Not picker.Checked
+            Dim wanted = If(showsNothing, EmptyDateFormat, realFormat)
+            If Not String.Equals(picker.CustomFormat, wanted, StringComparison.Ordinal) Then
+                picker.CustomFormat = wanted
+            End If
+        End Sub
+
+        Protected Shared Sub ApplyDateFieldFormat(picker As DateTimePicker, showTime As Boolean)
+            If picker Is Nothing Then Return
+
+            picker.Format = DateTimePickerFormat.Custom
+            picker.CustomFormat = If(showTime, DisplayFormats.DateTimePattern(), DisplayFormats.DatePattern())
+        End Sub
+
+        ''' <summary>
+        ''' What a date field contributes to a save: the date, or Nothing for no date.
+        '''
+        ''' Shared and here rather than written into each generated page, so "unchecked means
+        ''' null" is stated once. TrySaveGeneratedPageRecord turns Nothing into DBNull.
+        ''' </summary>
+        Protected Shared Function DateFieldValue(picker As DateTimePicker) As Object
+            If picker Is Nothing Then Return Nothing
+            If picker.ShowCheckBox AndAlso Not picker.Checked Then Return Nothing
+            Return picker.Value
+        End Function
+
+        ''' <summary>
+        ''' Puts a stored value into a date field, or clears it.
+        '''
+        ''' A null with no check box to express it has to land somewhere, and today is the least
+        ''' surprising place - the alternative is 01/01/1753, which reads as data rather than as
+        ''' an empty field. A column that can be null should be declared nullable so the check box
+        ''' exists to say so.
+        ''' </summary>
+        Protected Sub SetDateField(picker As DateTimePicker, value As Object)
+            If picker Is Nothing Then Return
+
+            If value Is Nothing OrElse Convert.IsDBNull(value) Then
+                If picker.ShowCheckBox Then
+                    SetDateFieldChecked(picker, False)
+                Else
+                    picker.Value = Date.Today
+                End If
+                Return
+            End If
+
+            Dim stored As Date
+            If Not Date.TryParse(Convert.ToString(value, Globalization.CultureInfo.CurrentCulture), stored) Then
+                If TypeOf value Is Date Then
+                    stored = DirectCast(value, Date)
+                Else
+                    Return
+                End If
+            End If
+
+            ' Outside what the control can show is a data problem, not a reason to throw on load.
+            If stored < picker.MinDate OrElse stored > picker.MaxDate Then Return
+
+            picker.Value = stored
+            If picker.ShowCheckBox Then SetDateFieldChecked(picker, True)
+        End Sub
+
+        ''' <summary>
+        ''' Ticks or unticks a date field's check box so that it survives the control being shown.
+        '''
+        ''' DateTimePicker.Checked does not stick before the window handle exists. BindToForm runs
+        ''' from the page's constructor, long before the form is displayed, so setting it there
+        ''' looked right and did nothing: at handle creation the control initialises itself from
+        ''' Value and comes up ticked. Every nullable date therefore opened as though it held
+        ''' today's date, and a null Termination Date read as "terminated today" - wrong in the
+        ''' most alarming possible direction, and it would have been saved that way on the next
+        ''' Save.
+        '''
+        ''' Set now for the case where the handle already exists, and again when it is created.
+        ''' The handler removes itself, so reloading a page cannot accumulate them.
+        ''' </summary>
+        Private Sub SetDateFieldChecked(picker As DateTimePicker, isChecked As Boolean)
+            picker.Checked = isChecked
+            RefreshDateFieldDisplay(picker)
+            If picker.IsHandleCreated Then Return
+
+            Dim reapply As EventHandler = Nothing
+            reapply = Sub(sender As Object, e As EventArgs)
+                          RemoveHandler picker.HandleCreated, reapply
+                          picker.Checked = isChecked
+                          RefreshDateFieldDisplay(picker)
+                      End Sub
+            AddHandler picker.HandleCreated, reapply
+        End Sub
 
         ''' <summary>
         ''' Creates a bound text field. The field name is the single input: the control becomes

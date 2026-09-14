@@ -53,8 +53,12 @@ Namespace SDC.Framework
 
             Dim qbeButton = FindButtonStartingWithText(Me, "QBE")
             Dim closeButton = FindButtonByText(Me, "Close")
-            Dim actionTop = If(IsAppAdminSession(), 112, 42)
-            Dim splitTop = If(IsAppAdminSession(), 162, 92)
+            ' The shell's own geometry, not a copy of it. These were 112 and 162 for an App Admin,
+            ' which was right while the SQL path and Apply SQL row sat above the actions; with that
+            ' row hidden the shell moved to 48, and this page did not - so QBE and Close hung below
+            ' Add, Edit and Delete with a band of white between them.
+            Dim actionTop = HeaderBandHeight
+            Dim splitTop = BrowseGridTop
 
             If qbeButton IsNot Nothing Then
                 qbeButton.Top = actionTop

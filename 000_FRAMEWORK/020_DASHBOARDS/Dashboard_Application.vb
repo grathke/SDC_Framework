@@ -209,7 +209,7 @@ Namespace SDC.Framework
 
             newPageRequestsButton = New DashboardIconButton() With {
                 .Name = "ActionKey_PageGeneration",
-                .Text = "Page Gen _B _U",
+                .Text = "Page Generator",
                 .Location = DashboardGridLayout.CellLocation(3, 1),
                 .Size = New Size(DashboardGridLayout.IconWidth, DashboardGridLayout.IconHeight),
                 .BackColor = Color.Transparent,
@@ -421,8 +421,30 @@ Namespace SDC.Framework
             End Using
         End Sub
 
+        ''' <summary>
+        ''' Page generation is a desktop tool, and says so rather than half-working in a browser.
+        '''
+        ''' It writes .vb files into the workspace and shells out to dotnet to compile-check them.
+        ''' In a VirtualUI session the compile check fails with "access is denied" - measured
+        ''' 2026-09-14, with the full path to dotnet.exe, so it is the session rather than PATH -
+        ''' and a generator that cannot compile what it wrote is worse than one that is closed:
+        ''' it reports a pass it never established.
+        '''
+        ''' The rest of the page would work, which is exactly why this is refused up front.
+        ''' </summary>
         Private Sub NewPageRequestsButton_Click(sender As Object, e As EventArgs)
             ResetIconButtonVisuals()
+
+            If Program.InBrowserSession Then
+                MessageBox.Show(Me,
+                                "PAGE GENERATION RUNS ON THE DESKTOP." & Environment.NewLine & Environment.NewLine &
+                                "It writes source files and compiles them to check they build, and the compile step cannot run inside a browser session." & Environment.NewLine & Environment.NewLine &
+                                "Close this and start the application with 'run no tf'.",
+                                "Page Generation",
+                                MessageBoxButtons.OK,
+                                MessageBoxIcon.Information)
+                Return
+            End If
             Using page As New FW_PageGeneration_B(currentUser, accessProfile)
                 page.ShowDialog(Me)
             End Using

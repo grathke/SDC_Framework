@@ -267,10 +267,10 @@ Namespace SDC.Framework
             ' AddMenuTestTile call that happened to sit last in this method, which meant deleting a
             ' demonstration tile would have broken page generation.
             menu.UpsertActionTile(
-                actionKey:="generated-userx_b",
-                caption:="UserX",
+                actionKey:="generated-fw_employees_b",
+                caption:="FW_Employees",
                 onClick:=Sub(sender, e)
-                             Using frm As New UserX_B(user, profile)
+                             Using frm As New FW_Employees_B(user, profile)
                                  frm.ShowDialog(menu)
                              End Using
                          End Sub,
@@ -278,7 +278,7 @@ Namespace SDC.Framework
                 fallbackIcon:=SystemIcons.Application.ToBitmap(),
                 isVisible:=True,
                 isEnabled:=True)
-            menu.SetActionPage("generated-userx_b", "UserX_B")
+            menu.SetActionPage("generated-fw_employees_b", "FW_Employees_B")
 
             ' PAGEGEN RIBBON ANCHOR
         End Sub

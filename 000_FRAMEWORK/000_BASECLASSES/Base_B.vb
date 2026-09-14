@@ -197,7 +197,12 @@ Namespace SDC.Framework
         ''' side, and clears the Help Desk button, which sits at 10 and is 28 tall. The action row
         ''' begins where the band ends, so the two cannot overlap however the caption is sized.
         ''' </summary>
-        Private Const HeaderBandHeight As Integer = 48
+        ''' Protected so a page laying itself out uses the band the shell drew rather than a number
+        ''' copied from it. PageGeneration_B held 112 and 162 from when the SQL row existed, and
+        ''' kept them after the row was hidden - its QBE and Close buttons sat 64px below the
+        ''' actions they belong beside.
+        Protected Const HeaderBandHeight As Integer = 48
+        Protected Const BrowseGridTop As Integer = HeaderBandHeight + 50
         Private Const HeaderBandCenterY As Integer = HeaderBandHeight \ 2
 
         Private backgroundColorPicker As PageBackgroundColorPicker
@@ -1732,7 +1737,7 @@ Namespace SDC.Framework
 
 
             qbeSplitContainer.Left = contentLeft
-            qbeSplitContainer.Top = HeaderBandHeight + 50
+            qbeSplitContainer.Top = BrowseGridTop
             qbeSplitContainer.Width = contentWidth
             qbeSplitContainer.Height = Math.Max(180, Me.ClientSize.Height - qbeSplitContainer.Top - margin)
 

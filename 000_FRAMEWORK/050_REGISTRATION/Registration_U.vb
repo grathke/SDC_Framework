@@ -36,6 +36,8 @@ Namespace SDC.Framework
         Private allowUpdateProfileCheckBox As CheckBox
         Private allowUpdateEmailCheckBox As CheckBox
         Private twoFactorCheckBox As CheckBox
+        Private dateFormatComboBox As ComboBox
+        Private timeFormatComboBox As ComboBox
         Private activeRegistrationId As Integer
         Private currentRecord As RegistrationRecord
 
@@ -228,14 +230,19 @@ Namespace SDC.Framework
 
             y += rowGap
             cityTextBox = AddField("City", y, False, False)
+            ' Directly under Allow Update My Email. It used to sit two rows lower, against State,
+            ' with a gap above it that read as a separator between things that are not separate.
+            twoFactorCheckBox = AddOptionCheckBox("CheckBox_TwoFactorAuthentication", "Two-Factor Authentication (2FA)", optionsX, y + 2)
+
             y += rowGap
             stateTextBox = AddField("State", y, False, False)
             stateTextBox.Width = 80
-            twoFactorCheckBox = AddOptionCheckBox("CheckBox_TwoFactorAuthentication", "Two-Factor Authentication (2FA)", optionsX, y + 2)
+            dateFormatComboBox = AddOptionComboBox("ComboBox_FormatDateID", "Date Format", optionsX, y)
 
             y += rowGap
             zipTextBox = AddField("Zip", y, False, False)
             zipTextBox.Width = 100
+            timeFormatComboBox = AddOptionComboBox("ComboBox_FormatTimeID", "Time Format", optionsX, y)
 
             y += rowGap
             mainFaxTextBox = AddField("MainFax", y, False, False)
@@ -292,6 +299,79 @@ Namespace SDC.Framework
             Me.Controls.Add(combo)
             Return combo
         End Function
+
+        ''' <summary>
+        ''' A labelled combo in the right-hand options column, laid out like the check boxes it
+        ''' sits among rather than like the fields on the left.
+        '''
+        ''' Named ComboBox_&lt;Field&gt; so the framework can still map it to its column - that
+        ''' convention is what field permissions and the tab order manager read, and it does not
+        ''' care which column of the form the control is in.
+        ''' </summary>
+        Private Function AddOptionComboBox(name As String,
+                                           labelText As String,
+                                           x As Integer,
+                                           y As Integer) As ComboBox
+            Dim lbl As New Label() With {
+                .Name = "Label_" & name.Replace("ComboBox_", String.Empty, StringComparison.Ordinal),
+                .Text = labelText,
+                .Location = New Point(x, y + 4),
+                .Size = New Size(90, 22),
+                .TextAlign = ContentAlignment.MiddleLeft
+            }
+            Me.Controls.Add(lbl)
+
+            Dim combo As New ComboBox() With {
+                .Name = name,
+                .Location = New Point(x + 95, y),
+                .Size = New Size(290, 26),
+                .DropDownStyle = ComboBoxStyle.DropDownList,
+                .BackColor = SystemColors.Window
+            }
+            Me.Controls.Add(combo)
+            Return combo
+        End Function
+
+        ''' <summary>
+        ''' Fills a format combo, showing each pattern as what it produces.
+        '''
+        ''' No "make a selection" row: a company always writes dates some way, so there is no such
+        ''' thing as not having chosen. Where a registration has never been asked, the framework
+        ''' default is selected - which is the format it has been using all along, so the combo
+        ''' tells the truth about the page rather than inviting an answer that changes nothing.
+        ''' </summary>
+        Private Shared Sub FillFormatCombo(combo As ComboBox,
+                                           options As DataTable,
+                                           selectedId As Integer,
+                                           defaultPattern As String)
+            If combo Is Nothing OrElse options Is Nothing Then Return
+
+            options.Columns.Add("Choice", GetType(String))
+            For Each row As DataRow In options.Rows
+                Dim pattern = Convert.ToString(row("FormatPattern"))
+                row("Choice") = DisplayFormats.SampleOf(pattern, defaultPattern) & "   -   " & Convert.ToString(row("Description"))
+            Next
+
+            combo.DataSource = options
+            combo.DisplayMember = "Choice"
+            combo.ValueMember = "FormatID"
+
+            If selectedId > 0 Then
+                combo.SelectedValue = selectedId
+                If combo.SelectedIndex >= 0 Then Return
+            End If
+
+            ' Nothing stored, or stored against a row that has since gone: land on the pattern the
+            ' page would have used anyway rather than on whatever happens to be first.
+            For index = 0 To options.Rows.Count - 1
+                If String.Equals(Convert.ToString(options.Rows(index)("FormatPattern")), defaultPattern, StringComparison.Ordinal) Then
+                    combo.SelectedIndex = index
+                    Return
+                End If
+            Next
+
+            If combo.Items.Count > 0 Then combo.SelectedIndex = 0
+        End Sub
 
         Private Function AddOptionCheckBox(name As String,
                                            text As String,
@@ -405,6 +485,14 @@ Namespace SDC.Framework
             allowUpdateProfileCheckBox.Checked = record.AllowUpdateMyProfile
             allowUpdateEmailCheckBox.Checked = record.AllowUpdateMyProfileEmail
             twoFactorCheckBox.Checked = record.TwoFactorAuthentication
+            FillFormatCombo(dateFormatComboBox,
+                            DataAccess.GetFormatOptions("FW_Format_Date", "FormatDateID"),
+                            record.FormatDateID,
+                            DisplayFormats.DefaultDatePattern)
+            FillFormatCombo(timeFormatComboBox,
+                            DataAccess.GetFormatOptions("FW_Format_Time", "FormatTimeID"),
+                            record.FormatTimeID,
+                            DisplayFormats.DefaultTimePattern)
 
             smartyAuthIdTextBox.DataBindings.Clear()
             smartyAuthIdTextBox.DataBindings.Add("Text", record, "Smarty_AuthID", True)
@@ -470,6 +558,8 @@ Namespace SDC.Framework
                 .AllowUpdateMyProfileEmail = allowUpdateEmailCheckBox.Checked,
                 .Ribbonbar_InvisibleIcons = If(currentRecord Is Nothing, False, currentRecord.Ribbonbar_InvisibleIcons),
                 .TwoFactorAuthentication = twoFactorCheckBox.Checked,
+                .FormatDateID = GetComboSelectedIdOrZero(dateFormatComboBox),
+                .FormatTimeID = GetComboSelectedIdOrZero(timeFormatComboBox),
                 .IsActive = True,
                 .RowVersion = CopyOriginalRowVersion()
             }

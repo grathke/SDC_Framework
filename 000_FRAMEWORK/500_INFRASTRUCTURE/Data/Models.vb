@@ -140,6 +140,18 @@ Namespace SDC.Framework
         Public Property CrudUpdateCaption As String
         Public Property CrudDeleteCaption As String
         Public Property MaxRecordsNoQBE As Integer
+
+        ''' <summary>
+        ''' How this company writes a date and a time - the .NET patterns, resolved at login from
+        ''' FW_Format_Date and FW_Format_Time through the registration's choice.
+        '''
+        ''' Held on the session rather than looked up where they are needed, for the reason every
+        ''' other registration setting here is: a page with five date fields would otherwise ask
+        ''' the same question five times. Read them through DisplayFormats, which supplies the
+        ''' default when a registration has not chosen and when a stored pattern is unusable.
+        ''' </summary>
+        Public Property DateFormat As String
+        Public Property TimeFormat As String
     End Structure
 
     Public Module SessionState
@@ -198,7 +210,9 @@ Namespace SDC.Framework
                                 Optional roleType As String = "",
                                 Optional isApplicationAdminRole As Boolean = False,
                                 Optional isCompanyAdminRole As Boolean = False,
-                                Optional maxRecordsNoQBE As Integer = 10)
+                                Optional maxRecordsNoQBE As Integer = 10,
+                                Optional dateFormat As String = "",
+                                Optional timeFormat As String = "")
             If user Is Nothing Then
                 ClearSession()
                 Return
@@ -242,7 +256,9 @@ Namespace SDC.Framework
                 .CrudReadCaption = "Read",
                 .CrudUpdateCaption = "Modify",
                 .CrudDeleteCaption = "Delete",
-                .MaxRecordsNoQBE = If(maxRecordsNoQBE > 0, maxRecordsNoQBE, 10)
+                .MaxRecordsNoQBE = If(maxRecordsNoQBE > 0, maxRecordsNoQBE, 10),
+                .DateFormat = If(dateFormat, String.Empty).Trim(),
+                .TimeFormat = If(timeFormat, String.Empty).Trim()
             }
 
             seenUiHints = New HashSet(Of String)(StringComparer.OrdinalIgnoreCase)
@@ -389,6 +405,23 @@ Namespace SDC.Framework
         Public Property AllowUpdateMyProfileEmail As Boolean
         Public Property Ribbonbar_InvisibleIcons As Boolean
         Public Property TwoFactorAuthentication As Boolean
+
+        ''' <summary>
+        ''' How this company writes dates and times. Zero means it has not chosen, and the
+        ''' framework default applies - which is why these are plain Integers with a zero meaning
+        ''' rather than Nullable: the page's combo has a "use the default" row at value 0, and one
+        ''' spelling of "not chosen" is easier to keep right than two.
+        ''' </summary>
+        Public Property FormatDateID As Integer
+        Public Property FormatTimeID As Integer
+
+        ''' <summary>
+        ''' The role a new employee is given when their record is created, or zero for none.
+        '''
+        ''' Zero is not "no access by mistake" - it is a company that has chosen to assign roles
+        ''' by hand, which is what every registration did before this existed.
+        ''' </summary>
+
         Public Property HDUserSupport As Integer
         Public Property HDApplicationSupport As Integer
         Public Property IsActive As Boolean
