@@ -73,7 +73,7 @@ Namespace SDC.Framework
             }
 
             emailLabel = New Label() With {
-                .Text = "Email",
+                .Text = "User Name",
                 .AutoSize = True,
                 .Location = New Point(40, 103),
                 .ForeColor = ShellChrome.BodyInk

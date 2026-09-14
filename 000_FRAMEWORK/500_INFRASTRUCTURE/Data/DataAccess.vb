@@ -630,7 +630,7 @@ Namespace SDC.Framework
 
                 Dim emailLookup = NormalizeEmailForLookup(emailInput).Trim()
             If emailLookup = String.Empty Then
-                errorMessage = "Email is required."
+                errorMessage = "User name is required."
                 Return False
             End If
 
@@ -657,7 +657,7 @@ Namespace SDC.Framework
                     ' account was once real tells an attacker something and tells an honest user
                     ' nothing they can act on.
                     If Not TryGetCurrentUserRecord(conn, emailLookup, userId, dbEmail, firstName, lastName, storedPasswordHash, isActive) Then
-                        errorMessage = "No user found for that email."
+                        errorMessage = "No user found for that user name."
                         Return False
                     End If
 
@@ -701,15 +701,27 @@ Namespace SDC.Framework
         End Function
 
         ''' <summary>
-        ''' The account behind an email, for authentication.
+        ''' The account behind a user name, for authentication.
         '''
         ''' IsActive comes back rather than being filtered, because login has to tell somebody their
         ''' access was removed instead of claiming they do not exist. Deleted users are filtered by
         ''' the view itself - a deleted account should not confirm it ever existed.
+        '''
+        ''' **User name only.** The login moved from email to UserName on 2026-09-14, as the first
+        ''' step of separating a person from a login, and email is not a way in any more - an
+        ''' account with no UserName cannot sign in, deliberately, rather than quietly falling back
+        ''' to the identifier being retired.
+        '''
+        ''' UserName is read from FW_Users rather than the view, joined on the key the view already
+        ''' returns. The view does not expose it, and a view is a protected contract - this needed
+        ''' no change to it.
         ''' </summary>
-        Private Shared Function TryGetCurrentUserRecord(conn As SqlConnection, emailLookup As String, ByRef userId As Integer, ByRef dbEmail As String, ByRef firstName As String, ByRef lastName As String, ByRef storedPasswordHash As String, ByRef isActive As Boolean) As Boolean
-            Using cmd As New SqlCommand("SELECT TOP 1 UserId, Email, ISNULL(FirstName, ''), ISNULL(LastName, ''), ISNULL(PasswordHash, ''), ISNULL(IsActive, 0) FROM dbo.vw_FW_CurrentUser WHERE LOWER(REPLACE(Email, ' ', '')) = @EmailLookup", conn)
-                cmd.Parameters.AddWithValue("@EmailLookup", emailLookup)
+        Private Shared Function TryGetCurrentUserRecord(conn As SqlConnection, userNameLookup As String, ByRef userId As Integer, ByRef dbEmail As String, ByRef firstName As String, ByRef lastName As String, ByRef storedPasswordHash As String, ByRef isActive As Boolean) As Boolean
+            Using cmd As New SqlCommand("SELECT TOP 1 v.UserId, v.Email, ISNULL(v.FirstName, ''), ISNULL(v.LastName, ''), ISNULL(v.PasswordHash, ''), ISNULL(v.IsActive, 0) " &
+                                        "FROM dbo.vw_FW_CurrentUser v " &
+                                        "INNER JOIN dbo.FW_Users u ON u.UserId = v.UserId " &
+                                        "WHERE LOWER(REPLACE(ISNULL(u.UserName, ''), ' ', '')) = @UserNameLookup", conn)
+                cmd.Parameters.AddWithValue("@UserNameLookup", userNameLookup)
 
                 Using reader = cmd.ExecuteReader()
                     If Not reader.Read() Then
