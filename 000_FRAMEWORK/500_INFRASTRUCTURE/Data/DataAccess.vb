@@ -3317,6 +3317,24 @@ Namespace SDC.Framework
                                             actingUserId As Integer)
             If employeeId <= 0 OrElse chosenRoleIds Is Nothing Then Return
 
+            ' Nothing and empty mean different things here, and this is where the difference
+            ' earns its keep. Nothing is a page with no role picker - My Profile, or any page
+            ' that does not offer roles - and its roles are left exactly as they are. Empty is a
+            ' page that offered the question and came back with no answer, which is refused.
+            '
+            ' Refused at the boundary as well as on the page. EmployeeRolesSelector.Validate
+            ' already stops it, but a rule that lives only in a form is not a rule: a second
+            ' employee page, or a companion whose OnValidating is deleted while the grids stay,
+            ' would strip somebody's last role and the save would report success.
+            '
+            ' What this cannot enforce is that every employee has a role. A page with no picker
+            ' can create one without, and refusing that would block pages with no way to ask.
+            If chosenRoleIds.Count = 0 Then
+                Throw New InvalidOperationException(
+                    "An employee must have at least one role." & Environment.NewLine &
+                    "Without one they can sign in and reach nothing.")
+            End If
+
             ' Whatever is no longer on the right-hand side, soft-deleted rather than removed.
             ' A role somebody held is a fact about what they could do, and the audit trail reads
             ' against rows that still exist.
