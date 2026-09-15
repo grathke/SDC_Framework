@@ -31,6 +31,13 @@ Namespace SDC.Framework
             AcmeDashboard
             UsersAndLists
             Chart
+
+            ''' <summary>
+            ''' The whole content area, holding one picture. It is the only occupant of the Home
+            ''' layout and appears in no other, which is what lets it be the full width and height
+            ''' rather than a cell of the grid.
+            ''' </summary>
+            Home
         End Enum
 
         Private Class ActionTile
@@ -109,6 +116,31 @@ Namespace SDC.Framework
         Private ReadOnly userBadgeLabel As Label
         Private ReadOnly eodLabel As Label
         Private ReadOnly rfrLabel As Label
+        ''' <summary>
+        ''' The area under the ribbon. It holds every layout, one of which is showing.
+        '''
+        ''' The layouts are built once and shown or hidden, rather than one grid being rebuilt each
+        ''' time. A region therefore belongs to exactly one layout and keeps whatever was loaded
+        ''' into it - pressing Home and coming back does not re-read anything, which is the whole
+        ''' reason a swap costs no database round trip.
+        ''' </summary>
+        Private ReadOnly contentHost As Panel
+
+        ''' <summary>
+        ''' The layouts by name, and which is up. A name rather than an enum because a project
+        ''' registers its own - MenuFormInitializer decides what this application's menu offers,
+        ''' the same way it already decides which tiles the ribbon has.
+        ''' </summary>
+        Private ReadOnly menuLayouts As Dictionary(Of String, Control)
+        Private currentLayoutName As String = String.Empty
+
+        ''' <summary>The Home layout's picture, kept so the graphic can be replaced without rebuilding it.</summary>
+        Private homePicture As PictureBox
+
+        ''' <summary>The arrangement Home returns to, and the one every region-loading tile needs showing.</summary>
+        Public Const DashboardsLayoutName As String = "Dashboards"
+        Public Const HomeLayoutName As String = "Home"
+
         Private ReadOnly contentLayout As TableLayoutPanel
         Private ReadOnly actionTilesByKey As Dictionary(Of String, ActionTile)
         Private ReadOnly regionShells As Dictionary(Of MenuRegion, RegionShell)
@@ -512,10 +544,20 @@ Namespace SDC.Framework
                 .ForeColor = Color.FromArgb(52, 60, 70)
             }
 
-            contentLayout = New TableLayoutPanel() With {
+            ' The host carries the position and the anchoring that contentLayout used to. Every
+            ' layout inside it docks to fill, which is what keeps them all the same size as each
+            ' other without any of them repeating the arithmetic.
+            contentHost = New Panel() With {
                 .Location = New Point(24, 236 + LayoutShift),
                 .Size = New Size(Me.ClientSize.Width - 48, Me.ClientSize.Height - 260 - LayoutShift),
                 .Anchor = AnchorStyles.Top Or AnchorStyles.Left Or AnchorStyles.Right Or AnchorStyles.Bottom,
+                .BackColor = Color.White,
+                .Padding = New Padding(0),
+                .Margin = New Padding(0)
+            }
+
+            contentLayout = New TableLayoutPanel() With {
+                .Dock = DockStyle.Fill,
                 .ColumnCount = 3,
                 .RowCount = 2,
                 .BackColor = Color.White,
@@ -561,7 +603,50 @@ Namespace SDC.Framework
             contentLayout.Controls.Add(chartContainer, 1, 1)
             contentLayout.SetColumnSpan(chartContainer, 2)
 
+            ' The Home layout: one cell, the whole area, one picture. A layout rather than a panel
+            ' toggled on top of the grid, because every other arrangement this menu grows will be
+            ' registered the same way and there is no reason for the first one to be special.
+            homePicture = New PictureBox() With {
+                .Dock = DockStyle.Fill,
+                .SizeMode = PictureBoxSizeMode.Zoom,
+                .BackColor = Color.White
+            }
+            regionShells(MenuRegion.Home) = CreateRegionShell("Home")
+            regionShells(MenuRegion.Home).ContentHost.Controls.Add(homePicture)
+
+            Dim homeLayout As New TableLayoutPanel() With {
+                .Dock = DockStyle.Fill,
+                .ColumnCount = 1,
+                .RowCount = 1,
+                .BackColor = Color.White,
+                .Padding = New Padding(0),
+                .Margin = New Padding(0)
+            }
+            homeLayout.GrowStyle = TableLayoutPanelGrowStyle.FixedSize
+            homeLayout.ColumnStyles.Add(New ColumnStyle(SizeType.Percent, 100.0F))
+            homeLayout.RowStyles.Add(New RowStyle(SizeType.Percent, 100.0F))
+            homeLayout.Controls.Add(regionShells(MenuRegion.Home).RootPanel, 0, 0)
+
+            ' No caption bar. The picture is the whole point of the region, and a title strip above
+            ' it would be a heading over a banner that already says what it is.
+            menuLayouts = New Dictionary(Of String, Control)(StringComparer.OrdinalIgnoreCase)
+            RegisterMenuLayout(DashboardsLayoutName, contentLayout)
+            RegisterMenuLayout(HomeLayoutName, homeLayout)
+            SetRegionChrome(MenuRegion.Home, False)
+
+            ' Applied here rather than left to the project, because every layout is registered
+            ' hidden and a menu whose configuration never ran would otherwise open on a blank
+            ' panel. A project wanting to open somewhere else calls ApplyMenuLayout itself; this is
+            ' the floor, not the policy.
+            ApplyMenuLayout(HomeLayoutName)
+
             actionTilesByKey = New Dictionary(Of String, ActionTile)(StringComparer.OrdinalIgnoreCase)
+
+            ' First tile, because it is where the menu opens and the way back to it. The region
+            ' selectors below all switch to the Dashboards layout as part of what they do, which
+            ' means Home is the only tile whose whole job is the arrangement rather than an
+            ' occupant of one.
+            AddActionTile("layout-home", "Home", AddressOf ShowHomeLayout_Click, LoadMenuIcon("Color_Home.png", SystemIcons.Application.ToBitmap()))
             AddActionTile("dashboard", "Dashboard", AddressOf Dashboard_Click, LoadMenuIcon("dashboard.png", SystemIcons.Application.ToBitmap()))
 
             ' Messages sits here and nowhere else. It is a fixed position, not a movable tile the
@@ -607,7 +692,7 @@ Namespace SDC.Framework
             Me.Controls.Add(userBadgeLabel)
             Me.Controls.Add(eodLabel)
             Me.Controls.Add(rfrLabel)
-            Me.Controls.Add(contentLayout)
+            Me.Controls.Add(contentHost)
 
             ConfigureActionVisibility("application-settings", True, True)
             ConfigureActionVisibility("login-as-substitute", True, True)
@@ -1148,6 +1233,103 @@ Namespace SDC.Framework
             shell.HeaderLabel.Text = headerText
         End Sub
 
+        ''' <summary>
+        ''' Adds an arrangement of the content area under a name, ready to be shown.
+        '''
+        ''' Public because the arrangement belongs to the application rather than the shell. The
+        ''' framework owns what a layout *is* - a control filling the area under the ribbon - and
+        ''' MenuFormInitializer owns which ones this menu has, the same division that already
+        ''' decides the ribbon's tiles.
+        '''
+        ''' Registering a name twice replaces it; the old one is removed from the host rather than
+        ''' left behind invisible, or a layout nobody can reach would keep its occupants alive.
+        ''' </summary>
+        Public Sub RegisterMenuLayout(layoutName As String, root As Control)
+            If String.IsNullOrWhiteSpace(layoutName) OrElse root Is Nothing Then Return
+
+            Dim existing As Control = Nothing
+            If menuLayouts.TryGetValue(layoutName, existing) AndAlso existing IsNot root Then
+                contentHost.Controls.Remove(existing)
+                existing.Dispose()
+            End If
+
+            root.Dock = DockStyle.Fill
+            root.Visible = False
+            menuLayouts(layoutName) = root
+            If Not contentHost.Controls.Contains(root) Then contentHost.Controls.Add(root)
+        End Sub
+
+        ''' <summary>
+        ''' Shows one arrangement and hides the rest. Unknown names are ignored rather than thrown:
+        ''' a tile naming a layout the project did not register should leave the menu as it is, not
+        ''' take the application down.
+        ''' </summary>
+        Public Sub ApplyMenuLayout(layoutName As String)
+            Dim target As Control = Nothing
+            If String.IsNullOrWhiteSpace(layoutName) OrElse Not menuLayouts.TryGetValue(layoutName, target) Then Return
+            If String.Equals(currentLayoutName, layoutName, StringComparison.OrdinalIgnoreCase) AndAlso target.Visible Then Return
+
+            contentHost.SuspendLayout()
+            Try
+                For Each entry In menuLayouts
+                    entry.Value.Visible = entry.Value Is target
+                Next
+                target.BringToFront()
+                currentLayoutName = layoutName
+            Finally
+                contentHost.ResumeLayout(True)
+            End Try
+        End Sub
+
+        ''' <summary>Which arrangement is showing, for a caller deciding whether it needs to switch.</summary>
+        Public Function CurrentMenuLayout() As String
+            Return currentLayoutName
+        End Function
+
+        ''' <summary>
+        ''' Whether a region is part of the arrangement now showing. Every caller that loads a
+        ''' region needs this: a layout that does not include Messages must not be asked to show
+        ''' messages, and the answer is no rather than an exception.
+        ''' </summary>
+        Public Function IsRegionInCurrentLayout(region As MenuRegion) As Boolean
+            Dim shell As RegionShell = Nothing
+            If Not regionShells.TryGetValue(region, shell) Then Return False
+            If shell.RootPanel Is Nothing Then Return False
+
+            Dim ancestor As Control = shell.RootPanel.Parent
+            While ancestor IsNot Nothing
+                For Each entry In menuLayouts
+                    If entry.Value Is ancestor Then
+                        Return String.Equals(entry.Key, currentLayoutName, StringComparison.OrdinalIgnoreCase)
+                    End If
+                Next
+                ancestor = ancestor.Parent
+            End While
+
+            Return False
+        End Function
+
+        ''' <summary>
+        ''' The picture the Home Region shows, by file name in assets\images.
+        '''
+        ''' Loaded at its own size and scaled by the PictureBox, never scaled here: the content
+        ''' area is 1196 x 452 at the smallest window and about 1856 x 733 maximised, and a picture
+        ''' fitted to the first is soft at the second.
+        '''
+        ''' A name that resolves to nothing leaves whatever is showing, rather than blanking the
+        ''' region - a mistyped registration setting should not produce an empty home page.
+        ''' </summary>
+        Public Sub SetHomeGraphic(fileName As String)
+            If homePicture Is Nothing OrElse String.IsNullOrWhiteSpace(fileName) Then Return
+
+            Dim loaded = IconScaler.LoadFullSize(fileName, Nothing)
+            If loaded Is Nothing Then Return
+
+            Dim previous = homePicture.Image
+            homePicture.Image = loaded
+            If previous IsNot Nothing Then previous.Dispose()
+        End Sub
+
         Public Sub SetRegionVisible(region As MenuRegion, isVisible As Boolean)
             Dim shell = GetRegionShell(region)
             shell.RootPanel.Visible = isVisible
@@ -1653,7 +1835,21 @@ Namespace SDC.Framework
         ''' LoadRegionControl replaces whatever is in the cell, so there is no stacking of hidden
         ''' panels and no state to keep about which was there before.
         ''' </summary>
+        ''' <summary>
+        ''' Back to the picture. Nothing is unloaded - the Dashboards layout keeps its occupants
+        ''' and comes back exactly as it was left.
+        ''' </summary>
+        Private Sub ShowHomeLayout_Click(sender As Object, e As EventArgs)
+            ApplyMenuLayout(HomeLayoutName)
+        End Sub
+
         Private Sub ShowMessagesRegion_Click(sender As Object, e As EventArgs)
+            ' The region lives in the Dashboards layout, and pressing Messages while Home is up is
+            ' asking to see messages - not to load them into an arrangement nobody is looking at.
+            ' Before the reload test below, or a click from Home would find the messages already
+            ' loaded, reload them, and leave the picture showing.
+            ApplyMenuLayout(DashboardsLayoutName)
+
             ' Already showing: reload in place rather than build a second control. Rebuilding
             ' flashed the region and lost the selected row, for a click that had asked for
             ' nothing. Re-reading the folder is what someone pressing Messages while looking at
@@ -1670,6 +1866,9 @@ Namespace SDC.Framework
         End Sub
 
         Private Sub ShowOverviewRegion_Click(sender As Object, e As EventArgs)
+            ' As Messages: the arrangement first, for the same reason.
+            ApplyMenuLayout(DashboardsLayoutName)
+
             ' Nothing to reload - it shows no data - so the click simply does nothing when it is
             ' already up, rather than rebuilding it for no reason.
             If TypeOf GetRegionContent(MenuRegion.RegionLeft) Is QDeskWindowControl Then

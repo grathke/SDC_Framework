@@ -69,7 +69,21 @@ Namespace SDC.Framework
         ''' and an anchor is what says so - it cannot be dragged and it carries the "Fixed
         ''' position" tooltip. Added without an anchor it went to the end of the row, behind the
         ''' generated tiles, because an unranked tile sorts last.
-        Private ReadOnly AnchoredMenuKeys As String() = {"dashboard", "region-messages", "application-settings", "region-overview"}
+        ''' layout-home leads the row because it is where the menu opens. Anchored for the same
+        ''' reason region-messages is: it has one home and is not a tile a user arranges. Unranked
+        ''' it would sort last, behind the generated tiles, which is the wrong end for the way back.
+        Private ReadOnly AnchoredMenuKeys As String() = {"layout-home", "dashboard", "region-messages", "application-settings", "region-overview"}
+
+        ''' <summary>
+        ''' The picture the Home Region shows until a registration names its own.
+        '''
+        ''' A file in assets\images rather than bytes in the database: it changes about once a year,
+        ''' it is read on every menu load, and under Thinfinity the application runs on the server
+        ''' where the file already is. The registration will name one of these by file name - the
+        ''' choice in the database, the bytes on disk - and this is what a registration that has
+        ''' not chosen gets.
+        ''' </summary>
+        Private Const DefaultHomeGraphic As String = "CityNexus Saraland Event Center Banner.png"
 
         Private cachedAccessRoleId As Integer = 0
         Private cachedAccessRegistrationId As Integer = 0
@@ -388,7 +402,29 @@ Namespace SDC.Framework
             LoadRegionAlways(menu, profile, FW_MainMenu.MenuRegion.UsersAndLists, TableRoles, Function() New UsersListsWindowControl(), "Users & Lists")
             menu.SetRegionHeader(FW_MainMenu.MenuRegion.Chart, "Evolution of Acme Products")
             menu.SetRegionVisible(FW_MainMenu.MenuRegion.Chart, True)
+
+            ' Re-resolved on every configure, not once at startup: Select Role can change the
+            ' registration mid-session, and the Home graphic belongs to the registration rather
+            ' than to the process.
+            menu.SetHomeGraphic(ResolveHomeGraphic())
+
+            ' No ApplyMenuLayout here. The shell opens on Home already, and Configure runs again on
+            ' a role change - applying a layout here would throw somebody back to the picture in the
+            ' middle of whatever they were doing. Setting the graphic is safe to repeat; choosing
+            ' the arrangement is not.
         End Sub
+
+        ''' <summary>
+        ''' The registration's picture, or this application's default when it has not chosen one.
+        ''' </summary>
+        Private Function ResolveHomeGraphic() As String
+            If SessionState.IsActive AndAlso SessionState.Current.HasValue Then
+                Dim chosen = If(SessionState.Current.Value.HomeGraphic, String.Empty).Trim()
+                If chosen <> String.Empty Then Return chosen
+            End If
+
+            Return DefaultHomeGraphic
+        End Function
 
         Private Sub LoadRegionAlways(menu As FW_MainMenu,
                                      profile As AccessProfile,

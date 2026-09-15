@@ -40,6 +40,19 @@ Namespace SDC.Framework
             End Try
         End Function
 
+        ''' <summary>
+        ''' The same file lookup, at the image's own size. For a surface that scales the picture
+        ''' itself - the menu's Home Region hands a 2040-wide banner to a PictureBox set to Zoom -
+        ''' where scaling it down here first would only throw away the sharpness a maximised window
+        ''' is about to ask for.
+        '''
+        ''' Named rather than left as Load(file, 0, fallback), which reads as a mistake at the call
+        ''' site even though it is what the zero means.
+        ''' </summary>
+        Public Shared Function LoadFullSize(fileName As String, fallback As Image) As Image
+            Return Load(fileName, 0, fallback)
+        End Function
+
         ''' Returns a copy no larger than target on either side, keeping the aspect ratio. An image
         ''' already within the target is copied unchanged.
         Public Shared Function Fit(source As Image, target As Integer) As Image
