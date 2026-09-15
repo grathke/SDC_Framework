@@ -127,6 +127,38 @@ at runtime. `PAGE_GENERATION_SIMPLIFICATION.md` argues the same for browse pages
 place, snap to the row pitch. It edits the data from step 1 and owns `<Page>.Generated.vb`
 outright.
 
+### What the palette holds
+
+Two orders are possible and they fail differently.
+
+**Field-first** - pick the table, the palette lists its fields, drag one on. The control type
+comes from the schema, as section 3 describes. You cannot place a control bound to nothing, and
+you cannot choose the wrong control for a column.
+
+**Toolbox-first** - drag a TextBox, then assign a field to it. More familiar, and it is what a
+designer usually feels like. But it allows a control bound to nothing, which this framework
+already refuses to save, and it allows a `bit` in a text box - the "type True and it accepts
+Ture" problem that `AddCheckField` was added on 2026-09-14 to remove.
+
+**Do both, with one palette holding two kinds of item.** Toolbox-first buys the thing field-first
+cannot express: everything that is not a field - a section heading, a group box, a static label,
+a button. Those have no column and never will.
+
+| Palette item | Placed as | Named | Bound |
+|---|---|---|---|
+| a field of the table | the control its column type dictates | `TextBox_<Field>` and so on | to that column |
+| heading, label, separator, button | the control chosen | free | not a column - declare it |
+
+Anything unbound goes through `DeclareUnboundField(controlName, reason)`, or the page will not
+save and the report will name the control. That is the guard working, not a problem to route
+around.
+
+**Overriding a field's control type** - a `bit` shown as a Yes/No combo, say - is worth allowing
+eventually, but only against a list of types that can actually carry the column. Offered freely
+it undoes the type decisions in section 3 one page at a time.
+
+### The first cut
+
 **The first cut of step 3 is a sandbox page**, for testing and investigating rather than for
 anybody to use: an empty `_U`, pick a table, list its fields, drag them on. It exists to prove
 the model - that a layout can be held as data, snapped to rows, and turned back into real
