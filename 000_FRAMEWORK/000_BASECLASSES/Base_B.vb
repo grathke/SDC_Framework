@@ -1035,7 +1035,10 @@ Namespace SDC.Framework
                 sql.Append("SELECT ").Append(topClause).Append("t.[").Append(primaryKey).Append("] AS PK, t.* FROM ").Append(qualifiedName).Append(" AS t")
             End If
 
-            If DataAccess.TableHasColumn(tableName, "RegistrationID") Then
+            ' Not when RegistrationID is the table's own key - on FW_Registration that would show
+            ' an App Admin only their own registration.
+            If DataAccess.TableHasColumn(tableName, "RegistrationID") AndAlso
+               DataAccess.IsRegistrationScopedTable(tableName) Then
                 sql.Append(" WHERE t.[RegistrationID] = @RegistrationID")
             End If
 
@@ -3998,17 +4001,6 @@ Namespace SDC.Framework
                 LoadRegistrationCombo()
             End If
         End Sub
-
-        Private Function ActiveSqlHasExplicitRegistrationPredicate() As Boolean
-            Dim activeSql = GetActiveBaseSql()
-            If String.IsNullOrWhiteSpace(activeSql) Then
-                Return False
-            End If
-
-            Return Regex.IsMatch(activeSql,
-                                 "\bWHERE\b[\s\S]*?(?:[A-Za-z_][A-Za-z0-9_]*\.)?\[?RegistrationID\]?\s*=",
-                                 RegexOptions.IgnoreCase)
-        End Function
 
         Private Sub LoadRegistrationCombo()
             suppressRegistrationSelectionChanged = True

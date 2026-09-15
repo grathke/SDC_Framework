@@ -769,7 +769,10 @@ Namespace SDC.Framework
                         effectiveSql,
                         "\bWHERE\b[\s\S]*?(?:[A-Za-z_][A-Za-z0-9_]*\.)?\[?RegistrationID\]?\s*=",
                         RegexOptions.IgnoreCase)
-                    If registrationId > 0 AndAlso hasRegistrationReference Then
+                    ' A mention of RegistrationID is not proof the page is scoped: on FW_Registration
+                    ' it is the primary key, aliased AS PK in the select list.
+                    If registrationId > 0 AndAlso hasRegistrationReference AndAlso
+                       IsRegistrationScopedTable(sourceTableName) Then
                         Dim registrationValue = registrationId.ToString(CultureInfo.InvariantCulture)
 
                         If hasExplicitRegistrationPredicate Then
@@ -812,8 +815,11 @@ Namespace SDC.Framework
                         End Try
                     End Using
 
+                    ' Same rule as the predicate above: a result carrying RegistrationID is not
+                    ' scoped when that column is the table's own key.
                     If registrationId > 0 AndAlso Not hasExplicitRegistrationPredicate AndAlso
-                       table.Columns.Contains("RegistrationID") Then
+                       table.Columns.Contains("RegistrationID") AndAlso
+                       IsRegistrationScopedTable(sourceTableName) Then
                         table = FilterBrowseRowsByRegistration(table, registrationId)
                     End If
 
@@ -893,6 +899,19 @@ Namespace SDC.Framework
             Return sql &
                    If(Regex.IsMatch(sql, "\s+WHERE\s+", RegexOptions.IgnoreCase), " AND ", " WHERE ") &
                    predicate
+        End Function
+
+        ''' <summary>
+        ''' Whether rows of this table belong to a registration. False when RegistrationID is the
+        ''' table's own key - on FW_Registration the filter would mean "show me my own row".
+        ''' </summary>
+        Public Shared Function IsRegistrationScopedTable(tableName As String) As Boolean
+            If String.IsNullOrWhiteSpace(tableName) Then Return True
+
+            Dim normalized = NormalizeTableName(tableName)
+            If normalized = String.Empty Then Return True
+
+            Return Not String.Equals(GetPrimaryKeyFieldName(normalized), "RegistrationID", StringComparison.OrdinalIgnoreCase)
         End Function
 
         Private Shared Function AddBrowseRegistrationPredicate(sql As String, registrationValue As String) As String
@@ -4665,7 +4684,7 @@ Namespace SDC.Framework
                     "ISNULL(AllowPasswordChangeAtLogin, 0) AS AllowPasswordChangeAtLogin, " &
                     "ISNULL(AllowUpdateMyProfile, 0) AS AllowUpdateMyProfile, " &
                     "ISNULL(AllowUpdateMyProfileEmail, 0) AS AllowUpdateMyProfileEmail, " &
-                    "ISNULL(Ribbonbar_InvisibleIcons, 0) AS Ribbonbar_InvisibleIcons, " &
+                    "ISNULL(LTRIM(RTRIM(HomeGraphic)), '') AS HomeGraphic, " &
                     "ISNULL(TwoFactorAuthentication, 0) AS TwoFactorAuthentication, " &
                     "ISNULL(HDUserSupport, 0) AS HDUserSupport, " &
                     "ISNULL(HDApplicationSupport, 0) AS HDApplicationSupport, " &
@@ -4705,7 +4724,7 @@ Namespace SDC.Framework
                             .AllowPasswordChangeAtLogin = Convert.ToBoolean(reader("AllowPasswordChangeAtLogin"), CultureInfo.InvariantCulture),
                             .AllowUpdateMyProfile = Convert.ToBoolean(reader("AllowUpdateMyProfile"), CultureInfo.InvariantCulture),
                             .AllowUpdateMyProfileEmail = Convert.ToBoolean(reader("AllowUpdateMyProfileEmail"), CultureInfo.InvariantCulture),
-                            .Ribbonbar_InvisibleIcons = Convert.ToBoolean(reader("Ribbonbar_InvisibleIcons"), CultureInfo.InvariantCulture),
+                            .HomeGraphic = SafeString(reader("HomeGraphic")),
                             .TwoFactorAuthentication = Convert.ToBoolean(reader("TwoFactorAuthentication"), CultureInfo.InvariantCulture),
                             .HDUserSupport = Convert.ToInt32(reader("HDUserSupport"), CultureInfo.InvariantCulture),
                             .HDApplicationSupport = Convert.ToInt32(reader("HDApplicationSupport"), CultureInfo.InvariantCulture),
@@ -4744,9 +4763,9 @@ Namespace SDC.Framework
                 Dim normalizedBusinessRuleType = NormalizeBusinessRuleType(record.BusinessRuleType)
                 Using cmd As New SqlCommand(
                     "INSERT INTO dbo.FW_Registration " &
-                    "(RegName, BusinessRuleType, RegistrationTypeID, FormatDateID, FormatTimeID, Address1, Address2, City, State, Zip, MainFax, MainPhone, MainEMail, WebLandingPage, Smarty_AuthID, Smarty_AuthToken, Smarty_EmbeddedKey, Smarty_UseEmbeddedKey, DisplayDashboardOnStartUp, AllowMessaging, AllowMultipleRoles, AllowPasswordChangeAtLogin, AllowUpdateMyProfile, AllowUpdateMyProfileEmail, Ribbonbar_InvisibleIcons, TwoFactorAuthentication, IsActive, CreatedBy, CreatedOn, UpdatedBy, UpdatedOn) " &
+                    "(RegName, BusinessRuleType, RegistrationTypeID, FormatDateID, FormatTimeID, Address1, Address2, City, State, Zip, MainFax, MainPhone, MainEMail, WebLandingPage, Smarty_AuthID, Smarty_AuthToken, Smarty_EmbeddedKey, Smarty_UseEmbeddedKey, DisplayDashboardOnStartUp, AllowMessaging, AllowMultipleRoles, AllowPasswordChangeAtLogin, AllowUpdateMyProfile, AllowUpdateMyProfileEmail, HomeGraphic, TwoFactorAuthentication, IsActive, CreatedBy, CreatedOn, UpdatedBy, UpdatedOn) " &
                     "VALUES " &
-                    "(@RegName, @BusinessRuleType, @RegistrationTypeID, @FormatDateID, @FormatTimeID, @Address1, @Address2, @City, @State, @Zip, @MainFax, @MainPhone, @MainEMail, @WebLandingPage, @Smarty_AuthID, @Smarty_AuthToken, @Smarty_EmbeddedKey, @Smarty_UseEmbeddedKey, @DisplayDashboardOnStartUp, @AllowMessaging, @AllowMultipleRoles, @AllowPasswordChangeAtLogin, @AllowUpdateMyProfile, @AllowUpdateMyProfileEmail, @Ribbonbar_InvisibleIcons, @TwoFactorAuthentication, @IsActive, @CurrentUserId, GETDATE(), @CurrentUserId, GETDATE()); " &
+                    "(@RegName, @BusinessRuleType, @RegistrationTypeID, @FormatDateID, @FormatTimeID, @Address1, @Address2, @City, @State, @Zip, @MainFax, @MainPhone, @MainEMail, @WebLandingPage, @Smarty_AuthID, @Smarty_AuthToken, @Smarty_EmbeddedKey, @Smarty_UseEmbeddedKey, @DisplayDashboardOnStartUp, @AllowMessaging, @AllowMultipleRoles, @AllowPasswordChangeAtLogin, @AllowUpdateMyProfile, @AllowUpdateMyProfileEmail, @HomeGraphic, @TwoFactorAuthentication, @IsActive, @CurrentUserId, GETDATE(), @CurrentUserId, GETDATE()); " &
                     "SELECT CAST(SCOPE_IDENTITY() AS INT);", conn)
 
                     cmd.Parameters.AddWithValue("@RegName", DbValue(record.RegName))
@@ -4777,7 +4796,7 @@ Namespace SDC.Framework
                     cmd.Parameters.AddWithValue("@AllowPasswordChangeAtLogin", record.AllowPasswordChangeAtLogin)
                     cmd.Parameters.AddWithValue("@AllowUpdateMyProfile", record.AllowUpdateMyProfile)
                     cmd.Parameters.AddWithValue("@AllowUpdateMyProfileEmail", record.AllowUpdateMyProfileEmail)
-                    cmd.Parameters.AddWithValue("@Ribbonbar_InvisibleIcons", record.Ribbonbar_InvisibleIcons)
+                    cmd.Parameters.AddWithValue("@HomeGraphic", If(String.IsNullOrWhiteSpace(record.HomeGraphic), CType(DBNull.Value, Object), record.HomeGraphic.Trim()))
                     cmd.Parameters.AddWithValue("@TwoFactorAuthentication", record.TwoFactorAuthentication)
                     cmd.Parameters.AddWithValue("@IsActive", record.IsActive)
                     cmd.Parameters.AddWithValue("@CurrentUserId", currentUserId)
@@ -4821,7 +4840,7 @@ Namespace SDC.Framework
                     "AllowPasswordChangeAtLogin = @AllowPasswordChangeAtLogin, " &
                     "AllowUpdateMyProfile = @AllowUpdateMyProfile, " &
                     "AllowUpdateMyProfileEmail = @AllowUpdateMyProfileEmail, " &
-                    "Ribbonbar_InvisibleIcons = @Ribbonbar_InvisibleIcons, " &
+                    "HomeGraphic = @HomeGraphic, " &
                     "TwoFactorAuthentication = @TwoFactorAuthentication, " &
                     "IsActive = @IsActive, " &
                     "UpdatedBy = @CurrentUserId, " &
@@ -4857,7 +4876,7 @@ Namespace SDC.Framework
                     cmd.Parameters.AddWithValue("@AllowPasswordChangeAtLogin", record.AllowPasswordChangeAtLogin)
                     cmd.Parameters.AddWithValue("@AllowUpdateMyProfile", record.AllowUpdateMyProfile)
                     cmd.Parameters.AddWithValue("@AllowUpdateMyProfileEmail", record.AllowUpdateMyProfileEmail)
-                    cmd.Parameters.AddWithValue("@Ribbonbar_InvisibleIcons", record.Ribbonbar_InvisibleIcons)
+                    cmd.Parameters.AddWithValue("@HomeGraphic", If(String.IsNullOrWhiteSpace(record.HomeGraphic), CType(DBNull.Value, Object), record.HomeGraphic.Trim()))
                     cmd.Parameters.AddWithValue("@TwoFactorAuthentication", record.TwoFactorAuthentication)
                     cmd.Parameters.AddWithValue("@IsActive", record.IsActive)
                     cmd.Parameters.AddWithValue("@CurrentUserId", currentUserId)

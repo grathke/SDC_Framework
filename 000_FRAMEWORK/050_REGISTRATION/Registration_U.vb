@@ -518,8 +518,17 @@ Namespace SDC.Framework
         ''' AllowUpdateMyProfileEmail is carried through from the loaded record rather than read
         ''' from a control. Its check box was removed on 2026-09-14 because nothing anywhere acts
         ''' on the setting, and writing False here instead would quietly change stored data to
-        ''' suit a screen that no longer asks the question. Ribbonbar_InvisibleIcons has been
-        ''' handled the same way for the same reason.
+        ''' suit a screen that no longer asks the question.
+        '''
+        ''' Ribbonbar_InvisibleIcons was carried the same way until 2026-09-15, when the column was
+        ''' dropped from FW_Registration along with ImportantDOB, ImportantDaysFuture,
+        ''' ImportantDaysPast, ExternalUnique, Ribbonbar_Main and Ribbonbar_Examples. Carrying a
+        ''' value through is for a column that still exists and is not on screen; once the column
+        ''' is gone the property has to go too, or every read and write names a column the table
+        ''' does not have.
+        '''
+        ''' HomeGraphic is carried through as well - no control asks for it yet, and writing empty
+        ''' would blank the registration's picture on every save.
         ''' </summary>
         Private Function BuildRecordFromForm() As RegistrationRecord
             Dim regTypeId = 0
@@ -564,7 +573,7 @@ Namespace SDC.Framework
                 .AllowPasswordChangeAtLogin = allowPasswordChangeCheckBox.Checked,
                 .AllowUpdateMyProfile = allowUpdateProfileCheckBox.Checked,
                 .AllowUpdateMyProfileEmail = If(currentRecord Is Nothing, False, currentRecord.AllowUpdateMyProfileEmail),
-                .Ribbonbar_InvisibleIcons = If(currentRecord Is Nothing, False, currentRecord.Ribbonbar_InvisibleIcons),
+                .HomeGraphic = If(currentRecord Is Nothing, String.Empty, currentRecord.HomeGraphic),
                 .TwoFactorAuthentication = twoFactorCheckBox.Checked,
                 .FormatDateID = GetComboSelectedIdOrZero(dateFormatComboBox),
                 .FormatTimeID = GetComboSelectedIdOrZero(timeFormatComboBox),
@@ -598,7 +607,6 @@ Namespace SDC.Framework
                 .AllowPasswordChangeAtLogin = True,
                 .AllowUpdateMyProfile = True,
                 .AllowUpdateMyProfileEmail = True,
-                .Ribbonbar_InvisibleIcons = True,
                 .TwoFactorAuthentication = False,
                 .IsActive = True
             }

@@ -159,6 +159,9 @@ Namespace SDC.Framework
         ''' nothing is worse than no button.
         ''' </summary>
         Public Property AllowUpdateMyProfile As Boolean
+
+        ''' <summary>This registration's Home Region picture, a file name in assets\images.</summary>
+        Public Property HomeGraphic As String
     End Structure
 
     Public Module SessionState
@@ -220,7 +223,8 @@ Namespace SDC.Framework
                                 Optional maxRecordsNoQBE As Integer = 10,
                                 Optional dateFormat As String = "",
                                 Optional timeFormat As String = "",
-                                Optional allowUpdateMyProfile As Boolean = False)
+                                Optional allowUpdateMyProfile As Boolean = False,
+                                Optional homeGraphic As String = "")
             If user Is Nothing Then
                 ClearSession()
                 Return
@@ -267,7 +271,8 @@ Namespace SDC.Framework
                 .MaxRecordsNoQBE = If(maxRecordsNoQBE > 0, maxRecordsNoQBE, 10),
                 .DateFormat = If(dateFormat, String.Empty).Trim(),
                 .TimeFormat = If(timeFormat, String.Empty).Trim(),
-                .AllowUpdateMyProfile = allowUpdateMyProfile
+                .AllowUpdateMyProfile = allowUpdateMyProfile,
+                .HomeGraphic = If(homeGraphic, String.Empty).Trim()
             }
 
             seenUiHints = New HashSet(Of String)(StringComparer.OrdinalIgnoreCase)
@@ -412,7 +417,10 @@ Namespace SDC.Framework
         Public Property AllowPasswordChangeAtLogin As Boolean
         Public Property AllowUpdateMyProfile As Boolean
         Public Property AllowUpdateMyProfileEmail As Boolean
-        Public Property Ribbonbar_InvisibleIcons As Boolean
+
+        ''' <summary>File name in assets\images for the main menu's Home Region. Never a path.</summary>
+        Public Property HomeGraphic As String = String.Empty
+
         Public Property TwoFactorAuthentication As Boolean
 
         ''' <summary>
