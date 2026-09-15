@@ -23,9 +23,20 @@ Namespace SDC.Framework
         ''' gradient behind it stays visible.
         Private ReadOnly card As Panel
         Private ReadOnly statusLabel As Label
+        ''' The card is its normal height until the hotspot is triple-clicked, then it grows
+        ''' downward to uncover the two rows. Growing rather than re-centring: re-centring moves
+        ''' the whole card up by 20 and the sign-in box jumps under the cursor.
+        Private Const CardNormalHeight As Integer = 300
+        Private Const CardRevealedHeight As Integer = 340
+        Private Const DevRowOneTop As Integer = 276
+        Private Const DevRowTwoTop As Integer = 306
+
         Private ReadOnly btnSLitaker As Button
         Private ReadOnly btnGRathke As Button
         Private ReadOnly btnASawyer As Button
+        Private ReadOnly btnSarSLitaker As Button
+        Private ReadOnly btnSarGRathke As Button
+        Private ReadOnly btnSarASawyer As Button
         Private ReadOnly devHotspotPanel As Panel
         Private hiddenRevealClickCount As Integer = 0
         Private failedAttempts As Integer = 0
@@ -46,12 +57,14 @@ Namespace SDC.Framework
             ' was too much window for a login box.
             Me.ClientSize = New Size(560, 420)
 
-            card = ShellChrome.BuildCard(Me, New Size(440, 300), "Sign in to continue")
+            card = ShellChrome.BuildCard(Me, New Size(440, CardNormalHeight), "Sign in to continue")
 
+            ' Both rows sit below the status label, never over it - revealed at y=240 they covered
+            ' the login error that had just been shown.
             btnSLitaker = New Button() With {
                 .Name = "BTN_SLitaker",
                 .Text = "S Litaker",
-                .Location = New Point(16, 240),
+                .Location = New Point(16, DevRowOneTop),
                 .Size = New Size(130, 26),
                 .Visible = False
             }
@@ -59,7 +72,7 @@ Namespace SDC.Framework
             btnGRathke = New Button() With {
                 .Name = "BTN_GRathke",
                 .Text = "G Rathke",
-                .Location = New Point(154, 240),
+                .Location = New Point(154, DevRowOneTop),
                 .Size = New Size(130, 26),
                 .Visible = False
             }
@@ -67,7 +80,31 @@ Namespace SDC.Framework
             btnASawyer = New Button() With {
                 .Name = "BTN_ASawyer",
                 .Text = "A Sawyer",
-                .Location = New Point(292, 240),
+                .Location = New Point(292, DevRowOneTop),
+                .Size = New Size(130, 26),
+                .Visible = False
+            }
+
+            btnSarSLitaker = New Button() With {
+                .Name = "BTN_SAR_SLitaker",
+                .Text = "s S Litaker",
+                .Location = New Point(16, DevRowTwoTop),
+                .Size = New Size(130, 26),
+                .Visible = False
+            }
+
+            btnSarGRathke = New Button() With {
+                .Name = "BTN_SAR_GRathke",
+                .Text = "s G Rathke",
+                .Location = New Point(154, DevRowTwoTop),
+                .Size = New Size(130, 26),
+                .Visible = False
+            }
+
+            btnSarASawyer = New Button() With {
+                .Name = "BTN_SAR_ASawyer",
+                .Text = "s A Sawyer",
+                .Location = New Point(292, DevRowTwoTop),
                 .Size = New Size(130, 26),
                 .Visible = False
             }
@@ -142,6 +179,9 @@ Namespace SDC.Framework
             AddHandler btnSLitaker.Click, AddressOf BtnSLitaker_Click
             AddHandler btnGRathke.Click, AddressOf BtnGRathke_Click
             AddHandler btnASawyer.Click, AddressOf BtnASawyer_Click
+            AddHandler btnSarSLitaker.Click, AddressOf BtnSarSLitaker_Click
+            AddHandler btnSarGRathke.Click, AddressOf BtnSarGRathke_Click
+            AddHandler btnSarASawyer.Click, AddressOf BtnSarASawyer_Click
             AddHandler devHotspotPanel.Click, AddressOf DevHotspotPanel_Click
 
             ' Onto the card, not the form. Anything added to the form would land behind the card
@@ -149,6 +189,9 @@ Namespace SDC.Framework
             card.Controls.Add(btnSLitaker)
             card.Controls.Add(btnGRathke)
             card.Controls.Add(btnASawyer)
+            card.Controls.Add(btnSarSLitaker)
+            card.Controls.Add(btnSarGRathke)
+            card.Controls.Add(btnSarASawyer)
             card.Controls.Add(emailLabel)
             card.Controls.Add(emailTextBox)
             card.Controls.Add(passwordLabel)
@@ -161,12 +204,27 @@ Namespace SDC.Framework
 
         Private Sub DevHotspotPanel_Click(sender As Object, e As EventArgs)
             hiddenRevealClickCount += 1
-            If hiddenRevealClickCount >= 3 Then
-                btnSLitaker.Visible = True
-                btnGRathke.Visible = True
-                btnASawyer.Visible = True
-                hiddenRevealClickCount = 0
-            End If
+            If hiddenRevealClickCount < 3 Then Return
+
+            hiddenRevealClickCount = 0
+            card.Height = CardRevealedHeight
+
+            For Each quickLogin As Button In New Button() {btnSLitaker, btnGRathke, btnASawyer,
+                                                           btnSarSLitaker, btnSarGRathke, btnSarASawyer}
+                quickLogin.Visible = True
+            Next
+        End Sub
+
+        Private Sub BtnSarSLitaker_Click(sender As Object, e As EventArgs)
+            QuickFillAndLogin("sandy@saraland.org", "1234")
+        End Sub
+
+        Private Sub BtnSarGRathke_Click(sender As Object, e As EventArgs)
+            QuickFillAndLogin("glenn@saraland.org", "1234")
+        End Sub
+
+        Private Sub BtnSarASawyer_Click(sender As Object, e As EventArgs)
+            QuickFillAndLogin("alan@saraland.org", "1234")
         End Sub
 
         Private Sub BtnSLitaker_Click(sender As Object, e As EventArgs)
@@ -300,6 +358,10 @@ Namespace SDC.Framework
                 Return
             End If
 
+            ' The form stays alive behind the main menu, so without this a signed-out user comes
+            ' back carrying the failures from before they got in.
+            failedAttempts = 0
+
             statusLabel.Text = "Logging in..."
             statusLabel.ForeColor = Color.Firebrick
             statusLabel.Refresh()
@@ -412,6 +474,7 @@ Namespace SDC.Framework
             ' Off the record login already read for the Smarty keys, rather than a query of its
             ' own. Login makes six registration round trips already.
             Dim allowUpdateMyProfile = registrationRecord IsNot Nothing AndAlso registrationRecord.AllowUpdateMyProfile
+            Dim homeGraphic = If(registrationRecord Is Nothing, String.Empty, If(registrationRecord.HomeGraphic, String.Empty))
             Dim businessRuleType = DataAccess.GetRegistrationBusinessRuleType(sessionRegistrationId)
             Dim maxRecordsNoQBE = DataAccess.GetMaxRecordsNoQBE(sessionRegistrationId)
             Dim registrationDatePattern As String = String.Empty
@@ -446,7 +509,8 @@ Namespace SDC.Framework
                                       maxRecordsNoQBE,
                                       registrationDatePattern,
                                       registrationTimePattern,
-                                      allowUpdateMyProfile)
+                                      allowUpdateMyProfile,
+                                      homeGraphic)
 
             If loginWarnings.Count > 0 Then
                 MessageBox.Show(String.Join(vbCrLf & vbCrLf, loginWarnings).ToUpperInvariant(),

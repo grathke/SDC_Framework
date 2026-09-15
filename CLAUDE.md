@@ -244,6 +244,13 @@ Key areas:
   being on the row it appeared to be on. Section 4 is the map of the helpers and the naming they
   produce; section 5 says the first cut of the designer is a sandbox page and should be judged
   as one.
+- `FORM_DESIGNER_SPEC.md` — **proposed, nothing built.** Expands section 5 of the document above:
+  the second kind of `_U` page whose field block is read from data, and the three-pane designer that
+  edits it. Read it before adding `LayoutMode` to the generation request, before changing
+  `BuildMaintenanceSource`, and before painting anything in a designer — section 2 is nine products
+  and the one idea worth taking from each, section 6 is the layout document and why a row is an
+  object in it, and section 7 records that `AppAdminRequiredBackColor` is a load-bearing exact ARGB
+  that no other colour may borrow.
 - `THINFINITY_NOTES.md` — **reference, nothing built.** The VirtualUI SDK surface behind the
   delivery rules below: session detection, `StdDialogs` and the file dialogs, upload and download,
   printing, the `Options` flags, `BrowserInfo`. Read it before adding the SDK to the project or
