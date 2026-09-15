@@ -23,6 +23,7 @@ Namespace SDC.Framework
         Private ReadOnly databaseConfigButton As DashboardIconButton
         Private ReadOnly companyDashboardButton As DashboardIconButton
         Private ReadOnly closeIconButton As Button
+        Private ReadOnly generatedFW_Employees_BButton As DashboardIconButton
         Private ReadOnly generatedFW_UserAccessDiagnostic_BButton As DashboardIconButton
         Private iconDragController As DashboardIconDragController
         Private iconImageController As IconImageController
@@ -252,6 +253,26 @@ Namespace SDC.Framework
 
 
 
+
+            generatedFW_Employees_BButton = New DashboardIconButton() With {
+                .Name = "ActionKey_FW_Employees_B",
+                .PageName = "FW_Employees_B",
+                .Text = "FW_Employees",
+                .Location = DashboardGridLayout.CellLocation(1, 2),
+                .Size = New Size(DashboardGridLayout.IconWidth, DashboardGridLayout.IconHeight),
+                .BackColor = Color.Transparent,
+                .UseVisualStyleBackColor = False,
+                .FlatStyle = FlatStyle.Flat,
+                .Font = New Font("Segoe UI", 13.0F, FontStyle.Regular),
+                .Image = IconScaler.Load("Color_OK.png", DashboardIconSize, SystemIcons.Application.ToBitmap()),
+                .TextImageRelation = TextImageRelation.ImageAboveText,
+                .ImageAlign = ContentAlignment.TopCenter,
+                .TextAlign = ContentAlignment.BottomCenter,
+                .TabStop = False
+            }
+            generatedFW_Employees_BButton.FlatAppearance.BorderSize = 0
+            generatedFW_Employees_BButton.FlatAppearance.MouseOverBackColor = Color.Transparent
+            generatedFW_Employees_BButton.FlatAppearance.MouseDownBackColor = Color.Transparent
             AddHandler Me.Load, AddressOf Dashboard_Application_Load
             AddHandler Me.Resize, AddressOf Dashboard_Application_Resize
             AddHandler rolesButton.MouseEnter, AddressOf IconButton_MouseEnter
@@ -281,8 +302,12 @@ Namespace SDC.Framework
             AddHandler generatedFW_UserAccessDiagnostic_BButton.MouseEnter, AddressOf IconButton_MouseEnter
             AddHandler generatedFW_UserAccessDiagnostic_BButton.MouseLeave, AddressOf IconButton_MouseLeave
             AddHandler generatedFW_UserAccessDiagnostic_BButton.Click, AddressOf GeneratedFW_UserAccessDiagnostic_BButton_Click
+            AddHandler generatedFW_Employees_BButton.MouseEnter, AddressOf IconButton_MouseEnter
+            AddHandler generatedFW_Employees_BButton.MouseLeave, AddressOf IconButton_MouseLeave
+            AddHandler generatedFW_Employees_BButton.Click, AddressOf GeneratedFW_Employees_BButton_Click
             AddHandler closeIconButton.Click, AddressOf CloseButton_Click
             Me.Controls.Add(generatedFW_UserAccessDiagnostic_BButton)
+            Me.Controls.Add(generatedFW_Employees_BButton)
             Me.Controls.Add(topStripLabel)
             Me.Controls.Add(closeIconButton)
             Me.Controls.Add(headerLabel)
@@ -338,6 +363,8 @@ Namespace SDC.Framework
 
         Private Sub Dashboard_Application_Resize(sender As Object, e As EventArgs)
             rolesButton.Top = DashboardGridLayout.CellTop(1)
+            generatedFW_Employees_BButton.Left = DashboardGridLayout.CellLeft(2)
+            generatedFW_Employees_BButton.Top = DashboardGridLayout.CellTop(1)
             generatedFW_UserAccessDiagnostic_BButton.Left = DashboardGridLayout.CellLeft(4)
             generatedFW_UserAccessDiagnostic_BButton.Top = DashboardGridLayout.CellTop(1)
             registrationButton.Top = DashboardGridLayout.CellTop(1)
@@ -462,6 +489,13 @@ Namespace SDC.Framework
         End Sub
 
 
+
+        Private Sub GeneratedFW_Employees_BButton_Click(sender As Object, e As EventArgs)
+            ResetIconButtonVisuals()
+            Using page As New FW_Employees_B(currentUser, accessProfile)
+                page.ShowDialog(Me)
+            End Using
+        End Sub
         Private Sub IconButton_MouseEnter(sender As Object, e As EventArgs)
             Dim button = TryCast(sender, Button)
             If button Is Nothing Then

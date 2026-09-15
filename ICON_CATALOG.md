@@ -161,6 +161,23 @@ holds its anchored place in the row; the old target is gone and is not what it w
   was pointed at the dashboards. That page has now been deleted with the rest of the `FW_Users`
   pages.
 
+## ActionKey_FW_Employees_B
+
+- placement: `Dashboard_Application` and `Dashboard_Company`, both at grid cell (1, 2)
+- ActionType: Page
+- target: `FW_Employees_B`
+- caption source: fixed (`FW_Employees`) - the generation request's alias, worth renaming
+- icon file: `Color_OK.png`
+- visibility rule: none of its own. Placement is the gate: both dashboards are reachable only
+  through `user-admin`, which opens the application one for an App Admin and the company one for
+  everybody else. The page still enforces its own permissions through the `AccessProfile` it is
+  handed - the placement is convenience, not the control.
+- click behavior: opens `FW_Employees_B` modally with the dashboard's user and profile
+- note: written by the page generator on 2026-09-15, once per dashboard, by setting the request's
+  Menu Caller to each in turn. It had a ribbon tile (`generated-fw_employees_b`) until the same
+  day; that was removed by hand, which is what the generator's own report asks for - it adds an
+  icon but never removes the one somewhere else.
+
 ## menu-test
 
 - placement: main ribbon, flow panel, after `user-admin` — movable

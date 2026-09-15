@@ -763,7 +763,10 @@ Namespace SDC.Framework
             Dim systemName = SystemIconName(iconFileName)
             If systemName.Length > 0 Then Return "SystemIcons." & systemName & ".ToBitmap()"
             If String.IsNullOrWhiteSpace(iconFileName) Then Return "SystemIcons.Application.ToBitmap()"
-            Return "LoadDashboardIcon(""" & EscapeLiteral(iconFileName.Trim()) & """, SystemIcons.Application.ToBitmap())"
+            ' IconScaler.Load, not LoadDashboardIcon: that wrapper is private to Dashboard_Application,
+            ' so an icon generated onto Dashboard_Company did not compile. Every dashboard declares
+            ' DashboardIconSize.
+            Return "IconScaler.Load(""" & EscapeLiteral(iconFileName.Trim()) & """, DashboardIconSize, SystemIcons.Application.ToBitmap())"
         End Function
 
         Public Shared Function DashboardCallers() As List(Of String)

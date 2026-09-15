@@ -24,6 +24,7 @@ Namespace SDC.Framework
         ''' application dashboard uses, so the two look alike when the same picture is chosen.
         Private Const DashboardIconSize As Integer = 80
         Private ReadOnly closeIconButton As Button
+        Private ReadOnly generatedFW_Employees_BButton As DashboardIconButton
 
         Public Sub New(user As UserContext, Optional profile As AccessProfile = Nothing)
             currentUser = user
@@ -111,6 +112,26 @@ Namespace SDC.Framework
             userDiagnosticButton.FlatAppearance.MouseOverBackColor = Color.Transparent
             userDiagnosticButton.FlatAppearance.MouseDownBackColor = Color.Transparent
 
+
+            generatedFW_Employees_BButton = New DashboardIconButton() With {
+                .Name = "ActionKey_FW_Employees_B",
+                .PageName = "FW_Employees_B",
+                .Text = "FW_Employees",
+                .Location = DashboardGridLayout.CellLocation(1, 2),
+                .Size = New Size(DashboardGridLayout.IconWidth, DashboardGridLayout.IconHeight),
+                .BackColor = Color.Transparent,
+                .UseVisualStyleBackColor = False,
+                .FlatStyle = FlatStyle.Flat,
+                .Font = New Font("Segoe UI", 13.0F, FontStyle.Regular),
+                .Image = IconScaler.Load("Color_OK.png", DashboardIconSize, SystemIcons.Application.ToBitmap()),
+                .TextImageRelation = TextImageRelation.ImageAboveText,
+                .ImageAlign = ContentAlignment.TopCenter,
+                .TextAlign = ContentAlignment.BottomCenter,
+                .TabStop = False
+            }
+            generatedFW_Employees_BButton.FlatAppearance.BorderSize = 0
+            generatedFW_Employees_BButton.FlatAppearance.MouseOverBackColor = Color.Transparent
+            generatedFW_Employees_BButton.FlatAppearance.MouseDownBackColor = Color.Transparent
             AddHandler Me.Load, AddressOf Dashboard_Company_Load
             AddHandler Me.Resize, AddressOf Dashboard_Company_Resize
             AddHandler rolesButton.MouseEnter, AddressOf IconButton_MouseEnter
@@ -119,8 +140,12 @@ Namespace SDC.Framework
             AddHandler userDiagnosticButton.MouseEnter, AddressOf IconButton_MouseEnter
             AddHandler userDiagnosticButton.MouseLeave, AddressOf IconButton_MouseLeave
             AddHandler userDiagnosticButton.Click, AddressOf UserDiagnosticButton_Click
+            AddHandler generatedFW_Employees_BButton.MouseEnter, AddressOf IconButton_MouseEnter
+            AddHandler generatedFW_Employees_BButton.MouseLeave, AddressOf IconButton_MouseLeave
+            AddHandler generatedFW_Employees_BButton.Click, AddressOf GeneratedFW_Employees_BButton_Click
             AddHandler closeIconButton.Click, AddressOf CloseButton_Click
 
+            Me.Controls.Add(generatedFW_Employees_BButton)
             Me.Controls.Add(topStripLabel)
             Me.Controls.Add(closeIconButton)
             Me.Controls.Add(headerLabel)
@@ -159,6 +184,8 @@ Namespace SDC.Framework
 
         Private Sub Dashboard_Company_Resize(sender As Object, e As EventArgs)
             rolesButton.Top = DashboardGridLayout.CellTop(1)
+            generatedFW_Employees_BButton.Left = DashboardGridLayout.CellLeft(2)
+            generatedFW_Employees_BButton.Top = DashboardGridLayout.CellTop(1)
             userDiagnosticButton.Top = rolesButton.Top
 
             ' Last, so a dragged arrangement is laid back over the cells this file pins.
@@ -184,6 +211,13 @@ Namespace SDC.Framework
             End Using
         End Sub
 
+
+        Private Sub GeneratedFW_Employees_BButton_Click(sender As Object, e As EventArgs)
+            ResetIconButtonVisuals()
+            Using page As New FW_Employees_B(currentUser, accessProfile)
+                page.ShowDialog(Me)
+            End Using
+        End Sub
         Private Sub IconButton_MouseEnter(sender As Object, e As EventArgs)
             Dim button = TryCast(sender, Button)
             If button Is Nothing Then

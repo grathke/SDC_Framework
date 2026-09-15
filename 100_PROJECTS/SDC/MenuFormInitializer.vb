@@ -280,19 +280,8 @@ Namespace SDC.Framework
             ' found no recognised place rather than failing quietly. It used to anchor on an
             ' AddMenuTestTile call that happened to sit last in this method, which meant deleting a
             ' demonstration tile would have broken page generation.
-            menu.UpsertActionTile(
-                actionKey:="generated-fw_employees_b",
-                caption:="FW_Employees",
-                onClick:=Sub(sender, e)
-                             Using frm As New FW_Employees_B(user, profile)
-                                 frm.ShowDialog(menu)
-                             End Using
-                         End Sub,
-                iconFileName:="Color_OK.png",
-                fallbackIcon:=SystemIcons.Application.ToBitmap(),
-                isVisible:=True,
-                isEnabled:=True)
-            menu.SetActionPage("generated-fw_employees_b", "FW_Employees_B")
+            ' Employees is reached from the App Admin and Company Admin dashboards, not the ribbon.
+            ' Its generated tile was removed on 2026-09-15 once both dashboards had the icon.
 
             ' PAGEGEN RIBBON ANCHOR
         End Sub
