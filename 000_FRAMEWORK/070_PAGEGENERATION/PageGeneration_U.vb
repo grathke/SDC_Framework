@@ -2086,6 +2086,14 @@ Namespace SDC.Framework
                             End If
                         End If
                         NormalizeSelectionGridOrder(maintenanceGrid)
+
+                        ' Ticking a placeholder places it, which asks the same question moving it
+                        ' does. After the reorder, for the same reason: it takes the column of
+                        ' wherever it has just landed.
+                        If eventArgs.ColumnIndex = maintenanceGrid.Columns("Include").Index AndAlso
+                           Convert.ToBoolean(row.Cells("Include").Value) Then
+                            ApplyPlaceholderColumnFromNeighbour(maintenanceGrid, Convert.ToString(row.Cells("FieldName").Value))
+                        End If
                     End Sub
 
                 AddHandler browseGrid.CurrentCellDirtyStateChanged,
@@ -2206,16 +2214,41 @@ Namespace SDC.Framework
                     ' with nothing to point at is, and a tick carried by an older saved request is
                     ' cleared rather than honoured.
                     If computedFields.Contains(field) Then
-                        maintenanceRow.Cells("Required").Value = False
-                        maintenanceRow.Cells("Required").ReadOnly = True
-                        maintenanceRow.Cells("Required").Style.BackColor = SystemColors.Control
+                        DisableSelectionCell(maintenanceRow, "Required", "COMPUTED - it cannot be written, so it cannot be Required.")
 
                         ' A greyed cell says only that it cannot be ticked, never why. Both cells
                         ' carry the reason so it is found from whichever one is hovered - the field
                         ' name is the wider target and the likelier one.
                         maintenanceRow.Cells("FieldName").ToolTipText = "COMPUTED - the database fills this column."
-                        maintenanceRow.Cells("Required").ToolTipText = "COMPUTED - it cannot be written, so it cannot be Required."
                     End If
+                Next
+
+                ' The placeholder pool: vertical space, carried in MaintenanceFields as though it
+                ' were a field. That is the whole of the mechanism - an entry in that list is
+                ' ordered by Move Up and Move Down and placed by the Column cell, so a placeholder
+                ' inherits both without either being taught what it is.
+                '
+                ' Unticked, they sort to the top of the unselected block: OrderSelectionGrid falls
+                ' back to name order and "(" sorts ahead of every letter. That is where they are
+                ' wanted - directly under the last chosen field, rather than at the foot of a long
+                ' table.
+                Const placeholderReason As String =
+                    "Vertical space on the _U page. It names no column, so it cannot be Required, a Lookup, or display anything."
+                For number = 1 To PageGenerator.PlaceholderPoolSize
+                    For Each token In New String() {PageGenerator.BlankLinePlaceholder(number),
+                                                    PageGenerator.DividerPlaceholder(number)}
+                        Dim placeholderIndex = maintenanceGrid.Rows.Add(ContainsField(savedMaintenanceFields, token), token, False, False)
+                        Dim placeholderRow = maintenanceGrid.Rows(placeholderIndex)
+                        placeholderRow.Cells("Column").Value = If(ContainsField(column2Fields, token), Column2Choice, Column1Choice)
+                        ApplyColumnTint(placeholderRow)
+
+                        ' Not ConfigureLookupDisplayCell: there is no field to find a relationship
+                        ' for, and the Displays cell is disabled rather than filled.
+                        DisableSelectionCell(placeholderRow, "Required", placeholderReason)
+                        DisableSelectionCell(placeholderRow, "Lookup", placeholderReason)
+                        DisableSelectionCell(placeholderRow, "Displays", placeholderReason)
+                        placeholderRow.Cells("FieldName").ToolTipText = placeholderReason
+                    Next
                 Next
                 seedingSelectionGrids = False
                 OrderSelectionGrid(maintenanceGrid, savedMaintenanceFields)
@@ -2242,7 +2275,10 @@ Namespace SDC.Framework
                         If Not browseGrid.Rows.Cast(Of DataGridViewRow)().Any(Function(row) Convert.ToBoolean(row.Cells("Include").Value)) Then
                             missingSelections.Add("SELECT AT LEAST ONE _B DATA GRID FIELD.")
                         End If
-                        If Not maintenanceGrid.Rows.Cast(Of DataGridViewRow)().Any(Function(row) Convert.ToBoolean(row.Cells("Include").Value)) Then
+                        ' Past the placeholders. A page of blank lines and no fields is not a page.
+                        If Not maintenanceGrid.Rows.Cast(Of DataGridViewRow)().
+                               Any(Function(row) Convert.ToBoolean(row.Cells("Include").Value) AndAlso
+                                                 Not PageGenerator.IsPlaceholderField(Convert.ToString(row.Cells("FieldName").Value))) Then
                             missingSelections.Add("SELECT AT LEAST ONE _U MAINTENANCE FIELD.")
                         End If
                         If missingSelections.Count > 0 Then
@@ -2444,6 +2480,13 @@ Namespace SDC.Framework
             ' for a different type - and the value then landed in a fresh cell that did not accept
             ' it: "DataGridViewComboBoxCell value is not valid". Moving the row objects keeps
             ' whatever each cell was configured with.
+            ' Unchosen placeholders sit past the unchosen fields. Left to the name sort they lead
+            ' it - "(" sorts ahead of every letter - which puts the pool between the chosen fields
+            ' and the alphabetical list of what is left, interrupting the reading of both.
+            ' Included placeholders are untouched: the term is zero for every chosen row.
+            Dim placeholdersLast = Function(included As Boolean, fieldName As String) _
+                If(Not included AndAlso PageGenerator.IsPlaceholderField(fieldName), 1, 0)
+
             Dim rows = grid.Rows.Cast(Of DataGridViewRow)().
                 Select(Function(row) New With {
                     .Row = row,
@@ -2452,6 +2495,7 @@ Namespace SDC.Framework
                 }).
                 OrderByDescending(Function(item) item.Included).
                 ThenBy(Function(item) If(item.Included AndAlso savedPositions.ContainsKey(item.FieldName), savedPositions(item.FieldName), Integer.MaxValue)).
+                ThenBy(Function(item) placeholdersLast(item.Included, item.FieldName)).
                 ThenBy(Function(item) item.FieldName, StringComparer.OrdinalIgnoreCase).
                 Select(Function(item) item.Row).
                 ToList()
@@ -2489,6 +2533,9 @@ Namespace SDC.Framework
             includedFields(selectedPosition) = targetField
             OrderSelectionGrid(grid, String.Join(", ", includedFields))
 
+            ' After the reorder, never before: the column is read from where the row has landed.
+            ApplyPlaceholderColumnFromNeighbour(grid, selectedField)
+
             grid.ClearSelection()
             For Each row As DataGridViewRow In grid.Rows
                 If String.Equals(Convert.ToString(row.Cells("FieldName").Value), selectedField, StringComparison.OrdinalIgnoreCase) Then
@@ -2498,6 +2545,57 @@ Namespace SDC.Framework
                 End If
             Next
         End Sub
+
+        ''' <summary>
+        ''' A placeholder takes the column of the field it was dropped beside.
+        '''
+        ''' Grid order and the Column cell answer two different questions - where a row sits within
+        ''' its column, and which column that is - and for a field the answer to the second is
+        ''' deliberate. For a blank line it is not: nobody moves a divider under Termination Date
+        ''' meaning to put it at the foot of the other column, which is exactly what happened on
+        ''' 2026-09-15 and read as the feature being broken.
+        '''
+        ''' The cell stays editable, and an explicit answer holds until the row is moved again.
+        ''' Moving it is the gesture that re-asks the question.
+        ''' </summary>
+        Private Shared Sub ApplyPlaceholderColumnFromNeighbour(grid As DataGridView, fieldName As String)
+            If grid Is Nothing OrElse Not grid.Columns.Contains("Column") Then Return
+            If Not PageGenerator.IsPlaceholderField(fieldName) Then Return
+
+            Dim included = grid.Rows.Cast(Of DataGridViewRow)().
+                Where(Function(row) Convert.ToBoolean(row.Cells("Include").Value)).ToList()
+            Dim position = included.FindIndex(Function(row) String.Equals(Convert.ToString(row.Cells("FieldName").Value),
+                                                                         fieldName, StringComparison.OrdinalIgnoreCase))
+            If position < 0 Then Return
+
+            ' The field above it, or the field below when it has been moved to the very top. A run
+            ' of placeholders is stepped over rather than read - one of them has no more answer to
+            ' give than the row being placed.
+            Dim column = NeighbourColumnChoice(included, position, -1)
+            If column = String.Empty Then column = NeighbourColumnChoice(included, position, 1)
+            If column = String.Empty Then Return
+            If String.Equals(Convert.ToString(included(position).Cells("Column").Value), column, StringComparison.Ordinal) Then Return
+
+            included(position).Cells("Column").Value = column
+            ApplyColumnTint(included(position))
+        End Sub
+
+        ''' <summary>
+        ''' The Column cell of the nearest real field in one direction, or empty when there is none.
+        ''' </summary>
+        Private Shared Function NeighbourColumnChoice(included As List(Of DataGridViewRow),
+                                                      position As Integer,
+                                                      direction As Integer) As String
+            Dim index = position + direction
+            While index >= 0 AndAlso index < included.Count
+                Dim neighbourName = Convert.ToString(included(index).Cells("FieldName").Value)
+                If Not PageGenerator.IsPlaceholderField(neighbourName) Then
+                    Return Convert.ToString(included(index).Cells("Column").Value)
+                End If
+                index += direction
+            End While
+            Return String.Empty
+        End Function
 
         Private Shared Function ContainsField(value As String, field As String) As Boolean
             Return value.Split({",", ";"}, StringSplitOptions.RemoveEmptyEntries).Any(Function(item) String.Equals(item.Trim(), field, StringComparison.OrdinalIgnoreCase))
@@ -2885,6 +2983,24 @@ Namespace SDC.Framework
         ''' The wash behind a second-column row. Pale enough to read through, strong enough to
         ''' group - the row says which side it is on without being moved to that side.
         Private Shared ReadOnly Column2RowBackColor As Color = Color.FromArgb(238, 244, 250)
+
+        ''' <summary>
+        ''' A cell whose question this row cannot answer: unticked, read-only, greyed and carrying
+        ''' the reason. One helper rather than a copy per case - a greyed cell says only that it
+        ''' cannot be ticked, never why, and two copies of that rule is how one of them ends up
+        ''' without the tooltip.
+        ''' </summary>
+        Private Shared Sub DisableSelectionCell(row As DataGridViewRow, columnName As String, reason As String)
+            If row.DataGridView Is Nothing OrElse Not row.DataGridView.Columns.Contains(columnName) Then Return
+
+            Dim cell = row.Cells(columnName)
+            ' Only a tick can be cleared. A combo cell holds no items for a row like this, and
+            ' writing False into one raises "value is not valid".
+            If TypeOf cell Is DataGridViewCheckBoxCell Then cell.Value = False
+            cell.ReadOnly = True
+            cell.Style.BackColor = SystemColors.Control
+            cell.ToolTipText = reason
+        End Sub
 
         Private Shared Sub ApplyColumnTint(row As DataGridViewRow)
             If row.DataGridView Is Nothing OrElse Not row.DataGridView.Columns.Contains("Column") Then Return

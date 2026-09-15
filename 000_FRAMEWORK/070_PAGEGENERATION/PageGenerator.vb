@@ -344,7 +344,12 @@ Namespace SDC.Framework
             If plan.GenerateMaintenancePage Then ValidateName(plan.MaintenancePageName, "Maintenance page name", "_U", plan.Errors)
             If String.IsNullOrWhiteSpace(plan.TableName) Then plan.Errors.Add("The underlying table is required.")
             If plan.GenerateBrowsePage AndAlso browseFields.Count = 0 Then plan.Errors.Add("At least one _B field is required.")
-            If plan.GenerateMaintenancePage AndAlso maintenanceFields.Count = 0 Then plan.Errors.Add("At least one _U field is required.")
+            ' Counted past the placeholders. A request holding nothing but blank lines would
+            ' otherwise generate a page of empty rows and no fields at all.
+            If plan.GenerateMaintenancePage AndAlso
+               Not maintenanceFields.Any(Function(field) Not IsPlaceholderField(field)) Then
+                plan.Errors.Add("At least one _U field is required.")
+            End If
             If plan.GenerateBrowsePage AndAlso String.IsNullOrWhiteSpace(plan.BrowseSql) Then plan.Errors.Add("Browse SQL is required.")
 
             ' Only an explicit alias named PK is accepted as the row key - there is no fallback to
@@ -366,7 +371,10 @@ Namespace SDC.Framework
             If String.IsNullOrWhiteSpace(plan.PrimaryKey) Then plan.Errors.Add("The underlying table does not have a primary key: " & plan.TableName)
             If plan.GenerateBrowsePage Then ValidateFields(browseFields, schemaFields, "_B", plan.Errors)
             If plan.GenerateMaintenancePage Then
-                ValidateFields(maintenanceFields, schemaFields, "_U", plan.Errors)
+                ' Placeholders name no column and must not be measured against the schema. They
+                ' stay in the list every line below this reads - only the existence check skips
+                ' them.
+                ValidateFields(maintenanceFields.Where(Function(field) Not IsPlaceholderField(field)), schemaFields, "_U", plan.Errors)
                 ValidateFields(lookupFields.Select(Function(item) item.FieldName), maintenanceFields, "Lookup", plan.Errors)
                 ValidateFields(requiredFields, maintenanceFields, "Admin Required", plan.Errors)
             End If
@@ -1705,6 +1713,10 @@ Namespace SDC.Framework
                 output.AppendLine("        Private smartyAddressLookupController As SmartyAddressLookupController")
             End If
             For Each field In fields
+                ' A placeholder is a row, not a control the page holds a reference to. The blank
+                ' line emits nothing at all and the dividing line is added and forgotten.
+                If IsPlaceholderField(field) Then Continue For
+
                 If IsLookupField(field, lookupFields) Then
                     output.AppendLine("        Private " & LookupControlVariable(field) & " As ComboBox")
                 ElseIf dateFields.Contains(field) Then
@@ -1758,6 +1770,40 @@ Namespace SDC.Framework
                         Dim isRequired = requiredFields.Any(Function(item) String.Equals(item, field, StringComparison.OrdinalIgnoreCase)) AndAlso
                                          Not computedColumns.Contains(field)
 
+                        If IsBlankLinePlaceholder(field) Then
+                            ' Nothing is emitted. The row exists because y moves on, which is all
+                            ' a blank line is - and it costs the page no control to collapse, no
+                            ' name to map and nothing for the unmapped-field report to find.
+                            output.AppendLine("            ' " & field & " - vertical space, no control")
+                            y += 42
+                            Continue For
+                        ElseIf IsDividerPlaceholder(field) Then
+                            Dim dividerName = "Label_Divider" & PlaceholderNumber(field).ToString()
+
+                            ' At exactly y, not centred in the row. The row's Top is the pitch:
+                            ' CollapseHiddenFieldRows consumes RowTop(next) - RowTop(current) when
+                            ' a row above is hidden, so a rule dropped 12 pixels to look centred
+                            ' would have that row consume 54 instead of 42 and pull every row
+                            ' below it out of step.
+                            '
+                            ' Named Label_ deliberately, though it names no column. IsFieldControl
+                            ' matches on that prefix, and a control the field grid does not
+                            ' recognise is treated as trailing furniture and moved as a block
+                            ' below the fields the moment a permission hides anything. The price
+                            ' is the unmapped-field report, which DeclareUnboundField answers.
+                            output.AppendLine("            Controls.Add(New Label() With {")
+                            output.AppendLine("                .Name = """ & dividerName & """,")
+                            output.AppendLine("                .AutoSize = False,")
+                            output.AppendLine("                .Text = String.Empty,")
+                            output.AppendLine("                .Location = New Point(" & fieldLeft.ToString() & ", " & y.ToString() & "),")
+                            output.AppendLine("                .Size = New Size(450, 2),")
+                            output.AppendLine("                .BackColor = SystemColors.ControlDark")
+                            output.AppendLine("            })")
+                            output.AppendLine("            DeclareUnboundField(""" & dividerName & """, ""A dividing line between groups of fields. It names no column."")")
+                            y += 42
+                            Continue For
+                        End If
+
                         If bitFields.Contains(field) Then
                             output.AppendLine("            " & CheckControlVariable(field) & " = AddCheckField(""" & EscapeLiteral(field) & """, " &
                                               y.ToString() & ", " & fieldLeft.ToString() & ")")
@@ -1793,7 +1839,11 @@ Namespace SDC.Framework
             ' somebody holding two roles, and it put the question on the generator's side of the
             ' line where it could not be arranged to suit a page. Roles are chosen through the
             ' EmployeeRolesSelector widget, attached in the page's own file.
-            Dim tabOrder = leftFields.Concat(rightFields).Select(Function(field) FieldControlVariable(field, lookupFields, dateFields, bitFields)).ToList()
+            ' Placeholders hold no control and take no tab stop. Left in, the emitted call would
+            ' name a variable that was never declared.
+            Dim tabOrder = leftFields.Concat(rightFields).
+                Where(Function(field) Not IsPlaceholderField(field)).
+                Select(Function(field) FieldControlVariable(field, lookupFields, dateFields, bitFields)).ToList()
             output.AppendLine("            SetManualTabOrder(" & String.Join(", ", tabOrder.Concat({"okButton", "cancelActionButton"})) & ")")
             output.AppendLine("            BindToForm()")
             output.AppendLine("            ApplyMode()")
@@ -1839,7 +1889,10 @@ Namespace SDC.Framework
             output.AppendLine("            End If")
             output.AppendLine("            formBindingSource.DataSource = record.Table")
             output.AppendLine("            formBindingSource.Position = record.Table.Rows.IndexOf(record)")
-            Dim textFields = fields.Where(Function(field) Not IsLookupField(field, lookupFields) AndAlso
+            ' Everything that is not a lookup, a date or a check box gets a text box - which a
+            ' placeholder would fall into by default, and it has no control to bind.
+            Dim textFields = fields.Where(Function(field) Not IsPlaceholderField(field) AndAlso
+                                                          Not IsLookupField(field, lookupFields) AndAlso
                                                           Not dateFields.Contains(field) AndAlso
                                                           Not bitFields.Contains(field)).ToList()
             If textFields.Count > 0 Then
@@ -1928,6 +1981,10 @@ Namespace SDC.Framework
             output.AppendLine("        Protected Overrides Function SaveRecord() As Boolean")
             output.AppendLine("            Dim values As New Dictionary(Of String, Object)(StringComparer.OrdinalIgnoreCase)")
             For Each field In fields
+                ' A placeholder writes no column. Left in, the save would name one the table does
+                ' not have and take its value from a control that was never declared.
+                If IsPlaceholderField(field) Then Continue For
+
                 If IsLookupField(field, lookupFields) Then
                     output.AppendLine("            values(""" & EscapeLiteral(field) & """) = GetComboSelectedIdOrNull(" & LookupControlVariable(field) & ")")
                 ElseIf dateFields.Contains(field) Then
@@ -2068,6 +2125,61 @@ Namespace SDC.Framework
             Next
 
             Return specs
+        End Function
+
+        ''' <summary>
+        ''' How many of each placeholder the _U field grid offers. A fixed pool rather than a
+        ''' button that makes another: the pool needs no new control, no removal path, and it
+        ''' reaches the grid through the same seeding loop every field does.
+        ''' </summary>
+        Public Const PlaceholderPoolSize As Integer = 4
+
+        Private Const BlankLinePlaceholderPrefix As String = "(blank line "
+        Private Const DividerPlaceholderPrefix As String = "(dividing line "
+
+        ''' <summary>
+        ''' Vertical space on a generated _U, carried in MaintenanceFields as though it were a
+        ''' field. That is the whole trick: an entry in that list is ordered by Move Up and Move
+        ''' Down and assigned a column by the Column cell, so a placeholder inherits both without
+        ''' either being taught about it.
+        '''
+        ''' The cost is the one the Column cell's own comment warns about - a row in the grid that
+        ''' is not a field has to be skipped by every loop that reads a field name. The loops that
+        ''' matter are the schema validation, the control declarations, the field emitter, the tab
+        ''' order and the form binding; each one names this helper rather than testing the text.
+        '''
+        ''' Numbered because MaintenanceFields is keyed by name - ParseFields applies Distinct, and
+        ''' OrderSelectionGrid keys its saved positions by name, so two blank lines sharing one
+        ''' would collapse into a single row.
+        ''' </summary>
+        Public Shared Function BlankLinePlaceholder(number As Integer) As String
+            Return BlankLinePlaceholderPrefix & number.ToString() & ")"
+        End Function
+
+        Public Shared Function DividerPlaceholder(number As Integer) As String
+            Return DividerPlaceholderPrefix & number.ToString() & ")"
+        End Function
+
+        Public Shared Function IsBlankLinePlaceholder(field As String) As Boolean
+            Return field IsNot Nothing AndAlso field.Trim().StartsWith(BlankLinePlaceholderPrefix, StringComparison.OrdinalIgnoreCase)
+        End Function
+
+        Public Shared Function IsDividerPlaceholder(field As String) As Boolean
+            Return field IsNot Nothing AndAlso field.Trim().StartsWith(DividerPlaceholderPrefix, StringComparison.OrdinalIgnoreCase)
+        End Function
+
+        Public Shared Function IsPlaceholderField(field As String) As Boolean
+            Return IsBlankLinePlaceholder(field) OrElse IsDividerPlaceholder(field)
+        End Function
+
+        ''' <summary>
+        ''' The number inside a placeholder token, which becomes the suffix of the divider's
+        ''' control name. Zero when there is none, which cannot happen through the grid.
+        ''' </summary>
+        Public Shared Function PlaceholderNumber(field As String) As Integer
+            Dim digits = New String(If(field, String.Empty).Where(AddressOf Char.IsDigit).ToArray())
+            Dim number As Integer
+            Return If(Integer.TryParse(digits, number), number, 0)
         End Function
 
         Private Shared Function ParseFields(value As String) As List(Of String)

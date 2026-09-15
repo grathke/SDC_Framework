@@ -18,7 +18,7 @@ Namespace SDC.Framework
         Private ReadOnly tableName As String = "FW_Employees"
         Private ReadOnly primaryKey As String = "EmployeeID"
         Private ReadOnly computedFields As New HashSet(Of String)(StringComparer.OrdinalIgnoreCase)
-        Protected ReadOnly GeneratedFieldsBottom As Integer = 482
+        Protected ReadOnly GeneratedFieldsBottom As Integer = 524
         Private record As DataRow
         Private ReadOnly formBindingSource As New BindingSource()
         Private originalRowVersion As Byte()
@@ -49,7 +49,7 @@ Namespace SDC.Framework
         ''' Every control on the page, laid out. Called from the constructor in FW_Employees_U.vb.
         ''' </summary>
         Private Sub BuildGeneratedFields()
-            ClientSize = New Size(1060, 703)
+            ClientSize = New Size(1060, 745)
             okButton.Location = New Point(ClientSize.Width - 270, ClientSize.Height - 46)
             cancelActionButton.Location = New Point(ClientSize.Width - 135, ClientSize.Height - 46)
             firstNameTextBox = AddField("FirstName", 20, False, True, 20)
@@ -59,19 +59,29 @@ Namespace SDC.Framework
             cityTextBox = AddField("City", 188, False, False, 20)
             stateTextBox = AddField("State", 230, False, False, 20)
             zipTextBox = AddField("Zip", 272, False, False, 20)
-            userNameTextBox = AddField("UserName", 314, False, True, 20)
-            passwordTextBox = AddField("Password", 356, False, True, 20)
-            genderIDComboBox = AddComboField("GenderID", 398, False, 20, 320)
-            emailTextBox = AddField("Email", 440, False, False, 20)
+            ' (blank line 1) - vertical space, no control
+            userNameTextBox = AddField("UserName", 356, False, True, 20)
+            passwordTextBox = AddField("Password", 398, False, True, 20)
+            genderIDComboBox = AddComboField("GenderID", 440, False, 20, 320)
+            emailTextBox = AddField("Email", 482, False, False, 20)
             isActiveCheckBox = AddCheckField("IsActive", 20, 580)
             birthDateDateTimePicker = AddDateField("BirthDate", 62, False, 580, True, False)
             hireDateDateTimePicker = AddDateField("HireDate", 104, False, 580, True, False)
             terminationDateDateTimePicker = AddDateField("TerminationDate", 146, False, 580, True, False)
-            homePhoneTextBox = AddField("HomePhone", 188, False, False, 580)
-            cellPhoneTextBox = AddField("CellPhone", 230, False, False, 580)
-            workPhoneTextBox = AddField("WorkPhone", 272, False, False, 580)
-            extensionTextBox = AddField("Extension", 314, False, False, 580)
-            assignedManagerIDComboBox = AddComboField("AssignedManagerID", 356, False, 580, 320)
+            Controls.Add(New Label() With {
+                .Name = "Label_Divider1",
+                .AutoSize = False,
+                .Text = String.Empty,
+                .Location = New Point(580, 188),
+                .Size = New Size(450, 2),
+                .BackColor = SystemColors.ControlDark
+            })
+            DeclareUnboundField("Label_Divider1", "A dividing line between groups of fields. It names no column.")
+            homePhoneTextBox = AddField("HomePhone", 230, False, False, 580)
+            cellPhoneTextBox = AddField("CellPhone", 272, False, False, 580)
+            workPhoneTextBox = AddField("WorkPhone", 314, False, False, 580)
+            extensionTextBox = AddField("Extension", 356, False, False, 580)
+            assignedManagerIDComboBox = AddComboField("AssignedManagerID", 398, False, 580, 320)
             SetManualTabOrder(firstNameTextBox, lastNameTextBox, address1TextBox, address2TextBox, cityTextBox, stateTextBox, zipTextBox, userNameTextBox, passwordTextBox, genderIDComboBox, emailTextBox, isActiveCheckBox, birthDateDateTimePicker, hireDateDateTimePicker, terminationDateDateTimePicker, homePhoneTextBox, cellPhoneTextBox, workPhoneTextBox, extensionTextBox, assignedManagerIDComboBox, okButton, cancelActionButton)
             BindToForm()
             ApplyMode()
