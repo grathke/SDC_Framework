@@ -116,6 +116,13 @@ Namespace SDC.Framework
 
 
             AddHandler registrationComboBox.SelectedIndexChanged, AddressOf RegistrationComboBox_SelectedIndexChanged
+
+            ' The caption follows the combo rather than being placed beside where it used to be.
+            ' This page moves the combo on every resize and now narrows it to its content as well,
+            ' so a fixed x for the label lands on top of the combo.
+            AddHandler registrationLabel.TextChanged, Sub(sender, e) SeatRegistrationLabel()
+            AddHandler registrationComboBox.SizeChanged, Sub(sender, e) SeatRegistrationLabel()
+            AddHandler registrationComboBox.LocationChanged, Sub(sender, e) SeatRegistrationLabel()
             AddHandler newButton.Click, AddressOf NewButton_Click
             AddHandler modifyButton.Click, AddressOf ModifyButton_Click
             AddHandler deleteButton.Click, AddressOf DeleteButton_Click
@@ -200,6 +207,10 @@ Namespace SDC.Framework
             End Try
         End Sub
 
+
+        Private Sub SeatRegistrationLabel()
+            RegistrationComboHelper.SeatLabel(registrationLabel, registrationComboBox)
+        End Sub
         Private Sub RolesForm_Resize(sender As Object, e As EventArgs)
             Dim gridRightEdge As Integer = Me.ClientSize.Width - 20
 
@@ -518,6 +529,7 @@ Namespace SDC.Framework
             For Each tableData In tablesWithAliases
                 combo.Items.Add(tableData.TableName)
             Next
+            ComboWidth.FitToContent(combo)
             
             If combo.Items.Count > 0 Then
                 combo.SelectedIndex = 0

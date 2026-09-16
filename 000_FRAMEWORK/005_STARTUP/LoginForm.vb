@@ -503,7 +503,6 @@ Namespace SDC.Framework
             Dim registrationTimeZone = If(registrationRecord Is Nothing, String.Empty, If(registrationRecord.TimeZoneName, String.Empty))
             Dim employeeTimeZone = DataAccess.GetEmployeeTimeZoneName(user.UserId)
             If employeeTimeZone <> String.Empty Then registrationTimeZone = employeeTimeZone
-            Dim businessRuleType = DataAccess.GetRegistrationBusinessRuleType(sessionRegistrationId)
             Dim maxRecordsNoQBE = DataAccess.GetMaxRecordsNoQBE(sessionRegistrationId)
             Dim registrationDatePattern As String = String.Empty
             Dim registrationTimePattern As String = String.Empty
@@ -524,7 +523,6 @@ Namespace SDC.Framework
                                       smartyAuthToken,
                                       smartyEmbeddedKey,
                                       smartyUseEmbeddedKey,
-                                      businessRuleType,
                                       selectedRole.RoleID,
                                       companyAdminRoleId,
                                       companyAdminUserId,

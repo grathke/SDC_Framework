@@ -281,6 +281,7 @@ Namespace SDC.Framework
             Try
                 databaseComboBox.Items.Clear()
                 databaseComboBox.Items.AddRange(names.Cast(Of Object)().ToArray())
+                ComboWidth.FitToContent(databaseComboBox)
                 databaseComboBox.Text = currentName
             Finally
                 AddHandler databaseComboBox.TextChanged, AddressOf Setting_Changed

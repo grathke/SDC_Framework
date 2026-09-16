@@ -4782,12 +4782,12 @@ Namespace SDC.Framework
             Using conn As New SqlConnection(ConnectionString)
                 conn.Open()
                 Using cmd As New SqlCommand(
-                    "SELECT TOP 1 RegistrationID, RegName, Smarty_AuthID, Smarty_AuthToken, Smarty_EmbeddedKey, ISNULL(Smarty_UseEmbeddedKey, 0) AS Smarty_UseEmbeddedKey, ISNULL(LTRIM(RTRIM(BusinessRuleType)), '') AS BusinessRuleType, RegistrationTypeID, FormatDateID, FormatTimeID, r.TimeZoneID, Address1, Address2, City, State, Zip, MainFax, MainPhone, MainEMail, WebLandingPage, " &
+                    "SELECT TOP 1 RegistrationID, RegName, Smarty_AuthID, Smarty_AuthToken, Smarty_EmbeddedKey, ISNULL(Smarty_UseEmbeddedKey, 0) AS Smarty_UseEmbeddedKey, RegistrationTypeID, FormatDateID, FormatTimeID, r.TimeZoneID, Address1, Address2, City, State, Zip, MainFax, MainPhone, MainEMail, WebLandingPage, " &
                     "ISNULL(AllowMultipleRoles, 0) AS AllowMultipleRoles, " &
                     "ISNULL(AllowPasswordChangeAtLogin, 0) AS AllowPasswordChangeAtLogin, " &
                     "ISNULL(AllowUpdateMyProfile, 0) AS AllowUpdateMyProfile, " &
                     "ISNULL(AllowUpdateMyProfileEmail, 0) AS AllowUpdateMyProfileEmail, " &
-                    "ISNULL(LTRIM(RTRIM(HomeGraphic)), '') AS HomeGraphic, " &
+                    "ISNULL(LTRIM(RTRIM(HomeGraphic)), '') AS HomeGraphic, LicenseExpiration_Date, " &
                     "ISNULL(TwoFactorAuthentication, 0) AS TwoFactorAuthentication, " &
                     "ISNULL(HDUserSupport, 0) AS HDUserSupport, " &
                     "ISNULL(HDApplicationSupport, 0) AS HDApplicationSupport, " &
@@ -4808,7 +4808,6 @@ Namespace SDC.Framework
                             .Smarty_AuthToken = SafeString(reader("Smarty_AuthToken")),
                             .Smarty_EmbeddedKey = SafeString(reader("Smarty_EmbeddedKey")),
                             .Smarty_UseEmbeddedKey = Convert.ToBoolean(reader("Smarty_UseEmbeddedKey"), CultureInfo.InvariantCulture),
-                            .BusinessRuleType = NormalizeBusinessRuleType(SafeString(reader("BusinessRuleType"))),
                             .RegistrationTypeID = If(IsDBNull(reader("RegistrationTypeID")), 0, Convert.ToInt32(reader("RegistrationTypeID"), CultureInfo.InvariantCulture)),
                             .FormatDateID = If(IsDBNull(reader("FormatDateID")), 0, Convert.ToInt32(reader("FormatDateID"), CultureInfo.InvariantCulture)),
                             .FormatTimeID = If(IsDBNull(reader("FormatTimeID")), 0, Convert.ToInt32(reader("FormatTimeID"), CultureInfo.InvariantCulture)),
@@ -4828,6 +4827,7 @@ Namespace SDC.Framework
                             .AllowUpdateMyProfile = Convert.ToBoolean(reader("AllowUpdateMyProfile"), CultureInfo.InvariantCulture),
                             .AllowUpdateMyProfileEmail = Convert.ToBoolean(reader("AllowUpdateMyProfileEmail"), CultureInfo.InvariantCulture),
                             .HomeGraphic = SafeString(reader("HomeGraphic")),
+                            .LicenseExpiration = If(IsDBNull(reader("LicenseExpiration_Date")), CType(Nothing, Date?), CType(Convert.ToDateTime(reader("LicenseExpiration_Date"), CultureInfo.InvariantCulture), Date?)),
                             .TwoFactorAuthentication = Convert.ToBoolean(reader("TwoFactorAuthentication"), CultureInfo.InvariantCulture),
                             .HDUserSupport = Convert.ToInt32(reader("HDUserSupport"), CultureInfo.InvariantCulture),
                             .HDApplicationSupport = Convert.ToInt32(reader("HDApplicationSupport"), CultureInfo.InvariantCulture),
@@ -4860,19 +4860,137 @@ Namespace SDC.Framework
             End Using
         End Function
 
-        Public Shared Function CreateRegistration(record As RegistrationRecord, currentUserId As Integer) As Integer
+        ''' <summary>
+        ''' Creates a registration, and with it the roles and the first administrator that make it
+        ''' reachable.
+        '''
+        ''' One transaction. A registration that exists with no roles and nobody in it cannot be
+        ''' signed into and has to be finished by hand in SQL, which is how Saraland was built.
+        ''' </summary>
+        Public Shared Function CreateRegistration(record As RegistrationRecord,
+                                                  currentUserId As Integer,
+                                                  Optional administrator As RegistrationAdminRequest = Nothing) As Integer
             Using conn As New SqlConnection(ConnectionString)
                 conn.Open()
-                Dim normalizedBusinessRuleType = NormalizeBusinessRuleType(record.BusinessRuleType)
-                Using cmd As New SqlCommand(
+                Using tx = conn.BeginTransaction()
+                    Try
+                        Dim newId = InsertRegistrationRow(conn, tx, record, currentUserId)
+                        If newId > 0 AndAlso administrator IsNot Nothing AndAlso administrator.IsComplete Then
+                            SeedRolesFromTemplate(conn, tx, newId, currentUserId)
+                            CreateRegistrationAdministrator(conn, tx, newId, administrator, currentUserId)
+                        End If
+
+                        tx.Commit()
+                        Return newId
+                    Catch
+                        tx.Rollback()
+                        Throw
+                    End Try
+                End Using
+            End Using
+        End Function
+
+        ''' <summary>
+        ''' The roles a new registration starts with, copied from FW_RoleTemplate. Does nothing
+        ''' when the registration already has roles, so it cannot double them.
+        ''' </summary>
+        Private Shared Sub SeedRolesFromTemplate(conn As SqlConnection, tx As SqlTransaction,
+                                                 registrationId As Integer, currentUserId As Integer)
+            If OBJECT_IDMissing(conn, tx, "dbo.FW_RoleTemplate") Then Return
+
+            Using check As New SqlCommand("SELECT COUNT(*) FROM dbo.FW_Roles WHERE RegistrationID = @ID", conn, tx)
+                check.Parameters.Add("@ID", SqlDbType.Int).Value = registrationId
+                If Convert.ToInt32(check.ExecuteScalar(), CultureInfo.InvariantCulture) > 0 Then Return
+            End Using
+
+            Using cmd As New SqlCommand(
+                "INSERT INTO dbo.FW_Roles (RegistrationID, RoleName, CA_CanChange, " &
+                "Can_Create, Can_Read, Can_Update, Can_Delete, Can_Export, Can_Import, " &
+                "Can_UseQBE, Can_ViewAllRecords, Can_ViewOnlyMyRecords, DisplayOrder, IsActive, " &
+                "Typ_AppAdmin, Typ_CompanyAdmin, Typ_RW, Typ_RO, Typ_User, Typ_OnlyMyRecords, " &
+                "CreatedBy, CreatedOn, UpdatedBy, UpdatedOn) " &
+                "SELECT @ID, t.RoleName, t.CA_CanChange, " &
+                "t.Can_Create, t.Can_Read, t.Can_Update, t.Can_Delete, t.Can_Export, t.Can_Import, " &
+                "t.Can_UseQBE, t.Can_ViewAllRecords, t.Can_ViewOnlyMyRecords, t.DisplayOrder, 1, " &
+                "t.Typ_AppAdmin, t.Typ_CompanyAdmin, t.Typ_RW, t.Typ_RO, t.Typ_User, t.Typ_OnlyMyRecords, " &
+                "@By, GETUTCDATE(), @By, GETUTCDATE() " &
+                "FROM dbo.FW_RoleTemplate t ORDER BY t.ID", conn, tx)
+                cmd.Parameters.Add("@ID", SqlDbType.Int).Value = registrationId
+                cmd.Parameters.Add("@By", SqlDbType.Int).Value = currentUserId
+                cmd.ExecuteNonQuery()
+            End Using
+        End Sub
+
+        Private Shared Function OBJECT_IDMissing(conn As SqlConnection, tx As SqlTransaction, name As String) As Boolean
+            Using cmd As New SqlCommand("SELECT CASE WHEN OBJECT_ID(@N, 'U') IS NULL THEN 1 ELSE 0 END", conn, tx)
+                cmd.Parameters.Add("@N", SqlDbType.VarChar, 200).Value = name
+                Return Convert.ToInt32(cmd.ExecuteScalar(), CultureInfo.InvariantCulture) = 1
+            End Using
+        End Function
+
+        ''' <summary>
+        ''' The registration's first person: a login, its password, an employee, and the Company
+        ''' Admin role.
+        '''
+        ''' The role is found by its Typ_CompanyAdmin flag rather than by name - a registration may
+        ''' well call it City Admin, and the flag is what the application actually tests.
+        ''' </summary>
+        Private Shared Sub CreateRegistrationAdministrator(conn As SqlConnection, tx As SqlTransaction,
+                                                           registrationId As Integer,
+                                                           administrator As RegistrationAdminRequest,
+                                                           currentUserId As Integer)
+            Dim newUserId = CreateLoginForEmployee(conn, tx,
+                                                   administrator.UserName,
+                                                   administrator.FirstName,
+                                                   administrator.LastName,
+                                                   registrationId,
+                                                   currentUserId)
+            If newUserId <= 0 Then Throw New InvalidOperationException("The sign-in for the new registration could not be created.")
+
+            If Not WritePasswordHash(conn, tx, newUserId, administrator.TemporaryPassword, currentUserId) Then
+                Throw New InvalidOperationException("The temporary password could not be stored.")
+            End If
+
+            Dim employeeId As Integer
+            Using cmd As New SqlCommand(
+                "INSERT INTO dbo.FW_Employees (RegistrationID, UserId, FirstName, LastName, UserName, " &
+                "IsActive, DeletedFlag, CreatedBy, CreatedOn, UpdatedBy, UpdatedOn) " &
+                "VALUES (@Reg, @User, @First, @Last, @Name, 1, 0, @By, GETUTCDATE(), @By, GETUTCDATE()); " &
+                "SELECT CAST(SCOPE_IDENTITY() AS INT);", conn, tx)
+                cmd.Parameters.Add("@Reg", SqlDbType.Int).Value = registrationId
+                cmd.Parameters.Add("@User", SqlDbType.Int).Value = newUserId
+                cmd.Parameters.Add("@First", SqlDbType.VarChar, 100).Value = administrator.FirstName.Trim()
+                cmd.Parameters.Add("@Last", SqlDbType.VarChar, 100).Value = administrator.LastName.Trim()
+                cmd.Parameters.Add("@Name", SqlDbType.VarChar, 50).Value = administrator.UserName.Trim()
+                cmd.Parameters.Add("@By", SqlDbType.Int).Value = currentUserId
+                employeeId = Convert.ToInt32(cmd.ExecuteScalar(), CultureInfo.InvariantCulture)
+            End Using
+
+            Using cmd As New SqlCommand(
+                "INSERT INTO dbo.FW_EmployeeRoles (RegistrationID, EmployeeID, RoleID, DisplayOrder, " &
+                "IsActive, DeletedFlag, CreatedBy, CreatedOn, UpdatedBy, UpdatedOn) " &
+                "SELECT TOP 1 @Reg, @Emp, r.ID, r.DisplayOrder, 1, 0, @By, GETUTCDATE(), @By, GETUTCDATE() " &
+                "FROM dbo.FW_Roles r WHERE r.RegistrationID = @Reg AND ISNULL(r.Typ_CompanyAdmin, 0) = 1 " &
+                "ORDER BY r.DisplayOrder, r.ID", conn, tx)
+                cmd.Parameters.Add("@Reg", SqlDbType.Int).Value = registrationId
+                cmd.Parameters.Add("@Emp", SqlDbType.Int).Value = employeeId
+                cmd.Parameters.Add("@By", SqlDbType.Int).Value = currentUserId
+                If cmd.ExecuteNonQuery() = 0 Then
+                    Throw New InvalidOperationException("No Company Admin role exists for the new registration, so nobody could be put in charge of it.")
+                End If
+            End Using
+        End Sub
+
+        Private Shared Function InsertRegistrationRow(conn As SqlConnection, tx As SqlTransaction,
+                                                      record As RegistrationRecord, currentUserId As Integer) As Integer
+            Using cmd As New SqlCommand(
                     "INSERT INTO dbo.FW_Registration " &
-                    "(RegName, BusinessRuleType, RegistrationTypeID, FormatDateID, FormatTimeID, TimeZoneID, Address1, Address2, City, State, Zip, MainFax, MainPhone, MainEMail, WebLandingPage, Smarty_AuthID, Smarty_AuthToken, Smarty_EmbeddedKey, Smarty_UseEmbeddedKey, AllowMultipleRoles, AllowPasswordChangeAtLogin, AllowUpdateMyProfile, AllowUpdateMyProfileEmail, HomeGraphic, TwoFactorAuthentication, IsActive, CreatedBy, CreatedOn, UpdatedBy, UpdatedOn) " &
+                    "(RegName, RegistrationTypeID, FormatDateID, FormatTimeID, TimeZoneID, Address1, Address2, City, State, Zip, MainFax, MainPhone, MainEMail, WebLandingPage, Smarty_AuthID, Smarty_AuthToken, Smarty_EmbeddedKey, Smarty_UseEmbeddedKey, AllowMultipleRoles, AllowPasswordChangeAtLogin, AllowUpdateMyProfile, AllowUpdateMyProfileEmail, HomeGraphic, LicenseExpiration_Date, TwoFactorAuthentication, IsActive, CreatedBy, CreatedOn, UpdatedBy, UpdatedOn) " &
                     "VALUES " &
-                    "(@RegName, @BusinessRuleType, @RegistrationTypeID, @FormatDateID, @FormatTimeID, @TimeZoneID, @Address1, @Address2, @City, @State, @Zip, @MainFax, @MainPhone, @MainEMail, @WebLandingPage, @Smarty_AuthID, @Smarty_AuthToken, @Smarty_EmbeddedKey, @Smarty_UseEmbeddedKey, @AllowMultipleRoles, @AllowPasswordChangeAtLogin, @AllowUpdateMyProfile, @AllowUpdateMyProfileEmail, @HomeGraphic, @TwoFactorAuthentication, @IsActive, @CurrentUserId, GETDATE(), @CurrentUserId, GETDATE()); " &
-                    "SELECT CAST(SCOPE_IDENTITY() AS INT);", conn)
+                    "(@RegName, @RegistrationTypeID, @FormatDateID, @FormatTimeID, @TimeZoneID, @Address1, @Address2, @City, @State, @Zip, @MainFax, @MainPhone, @MainEMail, @WebLandingPage, @Smarty_AuthID, @Smarty_AuthToken, @Smarty_EmbeddedKey, @Smarty_UseEmbeddedKey, @AllowMultipleRoles, @AllowPasswordChangeAtLogin, @AllowUpdateMyProfile, @AllowUpdateMyProfileEmail, @HomeGraphic, @LicenseExpiration_Date, @TwoFactorAuthentication, @IsActive, @CurrentUserId, GETDATE(), @CurrentUserId, GETDATE()); " &
+                    "SELECT CAST(SCOPE_IDENTITY() AS INT);", conn, tx)
 
                     cmd.Parameters.AddWithValue("@RegName", DbValue(record.RegName))
-                    cmd.Parameters.AddWithValue("@BusinessRuleType", normalizedBusinessRuleType)
                     cmd.Parameters.AddWithValue("@RegistrationTypeID", If(record.RegistrationTypeID > 0, CType(record.RegistrationTypeID, Object), DBNull.Value))
                     ' Zero means nothing was chosen, which the foreign key can only accept as NULL,
                     ' and DisplayFormats reads a missing choice as the framework default. The page
@@ -4899,12 +5017,12 @@ Namespace SDC.Framework
                     cmd.Parameters.AddWithValue("@AllowUpdateMyProfile", record.AllowUpdateMyProfile)
                     cmd.Parameters.AddWithValue("@AllowUpdateMyProfileEmail", record.AllowUpdateMyProfileEmail)
                     cmd.Parameters.AddWithValue("@HomeGraphic", If(String.IsNullOrWhiteSpace(record.HomeGraphic), CType(DBNull.Value, Object), record.HomeGraphic.Trim()))
+                    cmd.Parameters.AddWithValue("@LicenseExpiration_Date", If(record.LicenseExpiration.HasValue, CType(record.LicenseExpiration.Value.Date, Object), DBNull.Value))
                     cmd.Parameters.AddWithValue("@TwoFactorAuthentication", record.TwoFactorAuthentication)
                     cmd.Parameters.AddWithValue("@IsActive", record.IsActive)
                     cmd.Parameters.AddWithValue("@CurrentUserId", currentUserId)
 
-                    Return Convert.ToInt32(cmd.ExecuteScalar(), CultureInfo.InvariantCulture)
-                End Using
+                Return Convert.ToInt32(cmd.ExecuteScalar(), CultureInfo.InvariantCulture)
             End Using
         End Function
 
@@ -4915,11 +5033,9 @@ Namespace SDC.Framework
 
             Using conn As New SqlConnection(ConnectionString)
                 conn.Open()
-                Dim normalizedBusinessRuleType = NormalizeBusinessRuleType(record.BusinessRuleType)
                 Using cmd As New SqlCommand(
                     "UPDATE dbo.FW_Registration SET " &
                     "RegName = @RegName, " &
-                    "BusinessRuleType = @BusinessRuleType, " &
                     "RegistrationTypeID = @RegistrationTypeID, " &
                     "FormatDateID = @FormatDateID, " &
                     "FormatTimeID = @FormatTimeID, " &
@@ -4942,6 +5058,7 @@ Namespace SDC.Framework
                     "AllowUpdateMyProfile = @AllowUpdateMyProfile, " &
                     "AllowUpdateMyProfileEmail = @AllowUpdateMyProfileEmail, " &
                     "HomeGraphic = @HomeGraphic, " &
+                    "LicenseExpiration_Date = @LicenseExpiration_Date, " &
                     "TwoFactorAuthentication = @TwoFactorAuthentication, " &
                     "IsActive = @IsActive, " &
                     "UpdatedBy = @CurrentUserId, " &
@@ -4950,7 +5067,6 @@ Namespace SDC.Framework
 
                     cmd.Parameters.AddWithValue("@ID", record.ID)
                     cmd.Parameters.AddWithValue("@RegName", DbValue(record.RegName))
-                    cmd.Parameters.AddWithValue("@BusinessRuleType", normalizedBusinessRuleType)
                     cmd.Parameters.AddWithValue("@RegistrationTypeID", If(record.RegistrationTypeID > 0, CType(record.RegistrationTypeID, Object), DBNull.Value))
                     ' Zero means nothing was chosen, which the foreign key can only accept as NULL,
                     ' and DisplayFormats reads a missing choice as the framework default. The page
@@ -4977,6 +5093,7 @@ Namespace SDC.Framework
                     cmd.Parameters.AddWithValue("@AllowUpdateMyProfile", record.AllowUpdateMyProfile)
                     cmd.Parameters.AddWithValue("@AllowUpdateMyProfileEmail", record.AllowUpdateMyProfileEmail)
                     cmd.Parameters.AddWithValue("@HomeGraphic", If(String.IsNullOrWhiteSpace(record.HomeGraphic), CType(DBNull.Value, Object), record.HomeGraphic.Trim()))
+                    cmd.Parameters.AddWithValue("@LicenseExpiration_Date", If(record.LicenseExpiration.HasValue, CType(record.LicenseExpiration.Value.Date, Object), DBNull.Value))
                     cmd.Parameters.AddWithValue("@TwoFactorAuthentication", record.TwoFactorAuthentication)
                     cmd.Parameters.AddWithValue("@IsActive", record.IsActive)
                     cmd.Parameters.AddWithValue("@CurrentUserId", currentUserId)
@@ -5025,59 +5142,7 @@ Namespace SDC.Framework
             Return table
         End Function
 
-        Public Shared Function GetRegistrationBusinessRuleType(registrationId As Integer) As String
-            If registrationId <= 0 Then
-                LogFallbackUsage("BusinessRuleType_Fallback_DefaultLegacy",
-                                 "RegistrationID <= 0. Returning BR_Legacy.",
-                                 "GetRegistrationBusinessRuleType",
-                                 registrationId)
-                Return BR_Legacy
-            End If
 
-            Try
-                Using conn As New SqlConnection(ConnectionString)
-                    conn.Open()
-                    Using cmd As New SqlCommand(
-                        "SELECT TOP 1 ISNULL(LTRIM(RTRIM(BusinessRuleType)), '') FROM dbo.FW_Registration WHERE RegistrationID = @ID", conn)
-                        cmd.Parameters.AddWithValue("@ID", registrationId)
-                        Dim result = cmd.ExecuteScalar()
-                        Dim rawValue = If(result Is Nothing OrElse IsDBNull(result), String.Empty, result.ToString())
-                        Return NormalizeBusinessRuleType(rawValue)
-                    End Using
-                End Using
-            Catch
-                LogFallbackUsage("BusinessRuleType_Fallback_DefaultLegacy",
-                                 "Exception while reading BusinessRuleType. Returning BR_Legacy.",
-                                 "GetRegistrationBusinessRuleType",
-                                 registrationId)
-                Return BR_Legacy
-            End Try
-        End Function
-
-        Public Shared Function UpdateRegistrationBusinessRuleType(registrationId As Integer, rawBusinessRuleType As String, updatedBy As Integer) As Boolean
-            If registrationId <= 0 Then
-                Return False
-            End If
-
-            Dim normalized = NormalizeBusinessRuleType(rawBusinessRuleType)
-
-            Try
-                Using conn As New SqlConnection(ConnectionString)
-                    conn.Open()
-                    Using cmd As New SqlCommand(
-                        "UPDATE dbo.FW_Registration " &
-                        "SET BusinessRuleType = @BusinessRuleType, UpdatedBy = @UpdatedBy, UpdatedOn = GETDATE() " &
-                        "WHERE RegistrationID = @ID", conn)
-                        cmd.Parameters.AddWithValue("@BusinessRuleType", normalized)
-                        cmd.Parameters.AddWithValue("@UpdatedBy", updatedBy)
-                        cmd.Parameters.AddWithValue("@ID", registrationId)
-                        Return cmd.ExecuteNonQuery() > 0
-                    End Using
-                End Using
-            Catch
-                Return False
-            End Try
-        End Function
 
         Public Shared Sub LogFallbackUsage(fallbackType As String,
                                            Optional details As String = "",
@@ -8941,7 +9006,9 @@ Namespace SDC.Framework
                                 isEmpty = nud.Value = nud.Minimum
                             Case GetType(System.Windows.Forms.DateTimePicker)
                                 Dim dtp = CType(ctrl, System.Windows.Forms.DateTimePicker)
-                                isEmpty = dtp.Value = dtp.MinDate
+                                ' A nullable picker says "no date" by unticking its own check box,
+                                ' never by reaching MinDate, so the tick is what required reads.
+                                isEmpty = If(dtp.ShowCheckBox, Not dtp.Checked, dtp.Value = dtp.MinDate)
                         End Select
 
                         If isEmpty Then
@@ -9327,10 +9394,13 @@ Namespace SDC.Framework
             roleId As Integer,
             updatedBy As Integer,
             ByRef insertedCount As Integer,
-            ByRef deletedCount As Integer) As Boolean
+            ByRef deletedCount As Integer,
+            ByRef repairedCount As Integer,
+            Optional writeDebugLog As Boolean = True) As Boolean
             
             Try
                 insertedCount = 0
+                repairedCount = 0
                 deletedCount = 0
                 
                 Dim debugLog As New List(Of String)
@@ -9338,7 +9408,7 @@ Namespace SDC.Framework
                 
                 ' Write initial log to confirm function was called
                 Dim logPath = System.IO.Path.Combine(System.IO.Path.GetTempPath(), "sync_debug.log")
-                System.IO.File.WriteAllLines(logPath, debugLog)
+                If writeDebugLog Then System.IO.File.WriteAllLines(logPath, debugLog)
                 
                 Using conn As New SqlConnection(ConnectionString)
                     conn.Open()
@@ -9397,21 +9467,18 @@ Namespace SDC.Framework
                     End Using
                     debugLog.Add($"[QUERY3] Schema columns in table: {schemaColumns.Count} ({String.Join(", ", schemaColumns.Take(5))}...)")
                     
-                    ' 3. Soft delete obsolete fields (in FW_RoleFields but NOT in schema) for this
-                    ' role. This used to be a physical DELETE, which meant a renamed column silently
-                    ' discarded whatever had been configured for it - required, hidden, captions,
-                    ' the lot - with no way back. The shared soft-delete policy applies here as
-                    ' everywhere else, and the insert below revives a soft-deleted row rather than
-                    ' creating a second one, so renaming a column away and back restores its
-                    ' settings instead of resetting them.
+                    ' 3. Delete obsolete fields (in FW_RoleFields but NOT in schema) for this role.
+                    ' Physically, because the row governs a column that no longer exists: a soft
+                    ' delete leaves a permission nothing can grant, and the sweep that looks for
+                    ' role rows pointing at nothing then reports it forever. The cost is that a
+                    ' renamed column loses whatever was configured for it - required, hidden,
+                    ' caption - and comes back as a fresh row with IsActive = 0.
                     For Each fieldToDelete In currentFields
                         If Not schemaColumns.Contains(fieldToDelete) Then
                             Using cmd As New SqlCommand(
-                                "UPDATE dbo.FW_RoleFields " &
-                                "SET DeletedFlag = 1, DeletedBy = @UpdatedBy, DeletedOn = GETDATE() " &
+                                "DELETE FROM dbo.FW_RoleFields " &
                                 "WHERE SchemaID = @SchemaID AND RegistrationID = @RegistrationID AND RoleID = @RoleID " &
-                                "AND UPPER(FieldName) = @FieldName AND ISNULL(DeletedFlag, 0) = 0", conn)
-                                cmd.Parameters.AddWithValue("@UpdatedBy", updatedBy)
+                                "AND UPPER(FieldName) = @FieldName", conn)
                                 cmd.Parameters.AddWithValue("@SchemaID", schemaId)
                                 cmd.Parameters.AddWithValue("@RegistrationID", registrationId)
                                 cmd.Parameters.AddWithValue("@RoleID", roleId)
@@ -9421,6 +9488,32 @@ Namespace SDC.Framework
                         End If
                     Next
                     debugLog.Add($"[DELETE] Deleted {deletedCount} obsolete fields")
+
+                    ' 3b. Repair the two columns that decide whether a row reaches a control at all.
+                    ' GetControlUpdates pre-filters on TableName in SQL, then matches the stored
+                    ' FileLink against "Table.Column" composed from the live form. Either one being
+                    ' wrong drops the row in silence: no hide, no read-only, no required border,
+                    ' and IsUnique never runs.
+                    '
+                    ' FW_RoleSchema.DB_Table is the authority for both, which is how the drift is
+                    ' detectable at all. FW_PageGeneration_B_U was found stored as the TableName on
+                    ' 17 rows whose table is FW_GeneratedPages - a page name written where a table
+                    ' name belongs - and every field permission on that page had been inert since.
+                    ' Roles_U shows neither column, so nothing but this puts them right.
+                    Using cmd As New SqlCommand(
+                        "UPDATE dbo.FW_RoleFields " &
+                        "SET TableName = @TableName, FileLink = @TableName + '.' + FieldName, " &
+                        "    UpdatedBy = @UpdatedBy, UpdatedOn = GETDATE() " &
+                        "WHERE SchemaID = @SchemaID AND RegistrationID = @RegistrationID AND RoleID = @RoleID " &
+                        "AND (ISNULL(TableName, '') <> @TableName " &
+                        "     OR ISNULL(FileLink, '') <> @TableName + '.' + FieldName)", conn)
+                        cmd.Parameters.AddWithValue("@TableName", tableName)
+                        cmd.Parameters.AddWithValue("@UpdatedBy", updatedBy)
+                        cmd.Parameters.AddWithValue("@SchemaID", schemaId)
+                        cmd.Parameters.AddWithValue("@RegistrationID", registrationId)
+                        cmd.Parameters.AddWithValue("@RoleID", roleId)
+                        repairedCount = cmd.ExecuteNonQuery()
+                    End Using
                     
                     ' 4. INSERT new fields (in schema but NOT in FW_RoleFields) for this role
                     For Each fieldToInsert In schemaColumns
@@ -9447,8 +9540,10 @@ Namespace SDC.Framework
                                 End If
                             End Using
                             
-                            ' A soft-deleted row for this field is revived rather than replaced, so
-                            ' a column that comes back brings its configuration with it.
+                            ' A soft-deleted row for this field is revived rather than replaced.
+                            ' Since step 3 removes an obsolete field physically, the only rows this
+                            ' can find are ones a role soft-delete flagged - reviving those keeps a
+                            ' restored role's configuration instead of resetting it.
                             Dim revived As Integer
                             Using reviveCmd As New SqlCommand(
                                 "UPDATE dbo.FW_RoleFields " &
@@ -9496,13 +9591,17 @@ Namespace SDC.Framework
                     debugLog.Add($"[INSERT] Inserted {insertedCount} new fields")
                     debugLog.Add($"[SUCCESS] SyncRoleFieldsWithSchema completed at {DateTime.Now:yyyy-MM-dd HH:mm:ss}")
                     
-                    ' Write final debug log to both Temp and project folder
-                    System.IO.File.WriteAllLines(logPath, debugLog)
-                    Try
-                        Dim projectLogPath = System.IO.Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "sync_debug.log")
-                        System.IO.File.WriteAllLines(projectLogPath, debugLog)
-                    Catch
-                    End Try
+                    ' Written for one sync a user asked for. The sweep across every role turns it
+                    ' off: it rewrites the same file once per role and the last one would be the
+                    ' only one left anyway.
+                    If writeDebugLog Then
+                        System.IO.File.WriteAllLines(logPath, debugLog)
+                        Try
+                            Dim projectLogPath = System.IO.Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "sync_debug.log")
+                            System.IO.File.WriteAllLines(projectLogPath, debugLog)
+                        Catch
+                        End Try
+                    End If
                     
                 End Using
                 
@@ -9522,6 +9621,136 @@ Namespace SDC.Framework
                 End Try
                 Return False
             End Try
+        End Function
+
+        ''' <summary>
+        ''' The result of a whole-database schema sweep: what changed, and where.
+        ''' </summary>
+        Public Class SchemaSweepResult
+            Public Property RolesVisited As Integer
+            Public Property Inserted As Integer
+            Public Property Deleted As Integer
+            Public Property Repaired As Integer
+            Public Property Failures As New List(Of String)
+
+            Public ReadOnly Property ChangedAnything As Boolean
+                Get
+                    Return Inserted > 0 OrElse Deleted > 0 OrElse Repaired > 0
+                End Get
+            End Property
+        End Class
+
+
+        ''' <summary>
+        ''' Whether anything about the schema has moved away from what the role fields record.
+        '''
+        ''' One round trip, answering only "is there work to do". The three counts are the three
+        ''' things the sweep fixes, asked the way it decides them: FW_RoleSchema.DB_Table is the
+        ''' authority for a table's name, and the columns the sync leaves alone - the audit stamps
+        ''' and the primary key - are excluded here too. Counting a column the sweep would not add
+        ''' would report drift that surviving a sweep cannot clear, and every startup would find it
+        ''' again.
+        ''' </summary>
+        Public Shared Function HasSchemaDrifted() As Boolean
+            Const sql As String =
+                "SELECT " &
+                " (SELECT COUNT(*) FROM dbo.FW_RoleFields rf " &
+                "   JOIN dbo.FW_RoleSchema s ON s.ID = rf.SchemaID " &
+                "  WHERE ISNULL(rf.DeletedFlag, 0) = 0 " &
+                "    AND OBJECT_ID('dbo.' + s.DB_Table) IS NOT NULL " &
+                "    AND COL_LENGTH('dbo.' + s.DB_Table, rf.FieldName) IS NULL) " &
+                "+ (SELECT COUNT(*) FROM dbo.FW_RoleFields rf " &
+                "   JOIN dbo.FW_RoleSchema s ON s.ID = rf.SchemaID " &
+                "  WHERE OBJECT_ID('dbo.' + s.DB_Table) IS NOT NULL " &
+                "    AND (ISNULL(rf.TableName, '') <> s.DB_Table " &
+                "         OR ISNULL(rf.FileLink, '') <> s.DB_Table + '.' + rf.FieldName)) " &
+                "+ (SELECT COUNT(*) FROM dbo.FW_RoleDetails rd " &
+                "   JOIN dbo.FW_RoleSchema s ON s.ID = rd.SchemaID " &
+                "   JOIN dbo.FW_Roles r ON r.ID = rd.RoleID " &
+                "   CROSS APPLY (SELECT c.name FROM sys.columns c " &
+                "                 WHERE c.object_id = OBJECT_ID('dbo.' + s.DB_Table)) c " &
+                "  WHERE ISNULL(rd.DeletedFlag, 0) = 0 AND ISNULL(r.DeletedFlag, 0) = 0 " &
+                "    AND OBJECT_ID('dbo.' + s.DB_Table) IS NOT NULL " &
+                "    AND c.name NOT IN ('CreatedBy', 'CreatedOn', 'UpdatedBy', 'UpdatedOn') " &
+                "    AND NOT EXISTS (SELECT 1 FROM sys.index_columns ic " &
+                "                      JOIN sys.indexes i ON i.object_id = ic.object_id AND i.index_id = ic.index_id " &
+                "                      JOIN sys.columns pc ON pc.object_id = ic.object_id AND pc.column_id = ic.column_id " &
+                "                     WHERE i.is_primary_key = 1 " &
+                "                       AND ic.object_id = OBJECT_ID('dbo.' + s.DB_Table) " &
+                "                       AND pc.name = c.name) " &
+                "    AND NOT EXISTS (SELECT 1 FROM dbo.FW_RoleFields rf " &
+                "                     WHERE rf.RoleID = rd.RoleID AND rf.SchemaID = rd.SchemaID " &
+                "                       AND rf.FieldName = c.name AND ISNULL(rf.DeletedFlag, 0) = 0))"
+
+            Using conn As New SqlConnection(ConnectionString)
+                conn.Open()
+                Using cmd As New SqlCommand(sql, conn)
+                    cmd.CommandTimeout = 30
+                    Dim value = cmd.ExecuteScalar()
+                    If value Is Nothing OrElse Convert.IsDBNull(value) Then Return False
+                    Return Convert.ToInt32(value, CultureInfo.InvariantCulture) > 0
+                End Using
+            End Using
+        End Function
+        ''' <summary>
+        ''' Brings every role's field permissions back in line with the database, for every table
+        ''' in every registration.
+        '''
+        ''' The per-role sync is the owner of what "in line" means - add the columns that appeared,
+        ''' physically remove the rows for columns that went, repair a FileLink that drifted. This
+        ''' only decides who it runs for, so the button and the Add button in Roles_U can never
+        ''' disagree about the rules.
+        '''
+        ''' One pass per FW_RoleDetails row, which is the role-and-table pair the permissions are
+        ''' actually keyed on. A table missing from the database is skipped rather than failing the
+        ''' sweep - FW_RoleSchema keeps rows for tables that have been dropped, and one of those
+        ''' must not stop the other four hundred from being repaired.
+        ''' </summary>
+        Public Shared Function SyncAllRoleFieldsWithSchema(updatedBy As Integer) As SchemaSweepResult
+            Dim result As New SchemaSweepResult()
+            Dim work As New List(Of (SchemaId As Integer, TableName As String, RegistrationId As Integer, RoleId As Integer))()
+
+            ' Read the whole worklist first, so the sweep is not holding a reader open while it
+            ' writes through the same connection.
+            Using conn As New SqlConnection(ConnectionString)
+                conn.Open()
+                Using cmd As New SqlCommand(
+                    "SELECT rd.SchemaID, s.DB_Table, r.RegistrationID, rd.RoleID " &
+                    "FROM dbo.FW_RoleDetails rd " &
+                    "JOIN dbo.FW_RoleSchema s ON s.ID = rd.SchemaID " &
+                    "JOIN dbo.FW_Roles r ON r.ID = rd.RoleID " &
+                    "WHERE ISNULL(rd.DeletedFlag, 0) = 0 AND ISNULL(r.DeletedFlag, 0) = 0 " &
+                    "AND OBJECT_ID('dbo.' + s.DB_Table) IS NOT NULL " &
+                    "ORDER BY r.RegistrationID, rd.RoleID, s.DB_Table", conn)
+                    Using reader = cmd.ExecuteReader()
+                        While reader.Read()
+                            work.Add((Convert.ToInt32(reader("SchemaID"), CultureInfo.InvariantCulture),
+                                      SafeString(reader("DB_Table")),
+                                      Convert.ToInt32(reader("RegistrationID"), CultureInfo.InvariantCulture),
+                                      Convert.ToInt32(reader("RoleID"), CultureInfo.InvariantCulture)))
+                        End While
+                    End Using
+                End Using
+            End Using
+
+            For Each item In work
+                Dim inserted As Integer = 0
+                Dim deleted As Integer = 0
+                Dim repaired As Integer = 0
+
+                If SyncRoleFieldsWithSchema(item.SchemaId, item.TableName, item.RegistrationId,
+                                            item.RoleId, updatedBy, inserted, deleted, repaired, False) Then
+                    result.Inserted += inserted
+                    result.Deleted += deleted
+                    result.Repaired += repaired
+                Else
+                    result.Failures.Add($"Role {item.RoleId} / {item.TableName} (registration {item.RegistrationId})")
+                End If
+
+                result.RolesVisited += 1
+            Next
+
+            Return result
         End Function
 
         ''' <summary>

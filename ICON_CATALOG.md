@@ -320,3 +320,21 @@ anywhere and no caller — see Gaps.
   the same action looked different depending on which dashboard it was opened from. The User Admin
   icon that shared this treatment (`Color_Favorites.png`) went from both dashboards on 2026-09-08,
   along with the `UserX` icon on the Application dashboard, which this catalog never recorded.
+
+## ActionKey_UpdateSchema
+
+- placement: `Dashboard_Application` only, grid cell (3, 3)
+- ActionType: Command - the one catalogued icon that opens no page
+- target: `DataAccess.SyncAllRoleFieldsWithSchema`
+- caption source: fixed (`Update Schema`)
+- icon file: `Color_Refresh.png`
+- visibility rule: none of its own. The admin dashboard is the gate, reached through
+  `application-settings` and shown only to an App Admin.
+- click behavior: confirms first, naming the three things it does and saying it cannot be undone,
+  then sweeps every role and table in every registration and reports the counts it actually got
+  back. Deliberately not on `Dashboard_Company`: it writes across every registration, which is not
+  a company administrator's to do.
+- note: the rules it applies live in `DataAccess.SyncRoleFieldsWithSchema`, the same function the
+  Add button in `Roles_U` calls for one role and one table. A stored procedure of that name was
+  written in `sql/004` and never installed; `sql/123` retires it, because a second copy of these
+  rules in T-SQL is one that can disagree with the first.

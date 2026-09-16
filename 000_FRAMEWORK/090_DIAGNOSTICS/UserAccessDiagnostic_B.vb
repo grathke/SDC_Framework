@@ -173,6 +173,7 @@ Namespace SDC.Framework
                 roleComboBox.DisplayMember = "RoleDisplayName"
                 roleComboBox.ValueMember = "RoleID"
                 roleComboBox.DataSource = roles
+                ComboWidth.FitToContent(roleComboBox)
                 Dim assignedRows = roles.AsEnumerable().Where(Function(row) Convert.ToInt32(row("IsAssigned")) = 1).ToList()
                 roleComboBox.SelectedIndex = If(assignedRows.Count = 1, roles.Rows.IndexOf(assignedRows(0)), -1)
             Finally
@@ -303,6 +304,7 @@ Namespace SDC.Framework
             tableComboBox.DisplayMember = "Table_Alias"
             tableComboBox.ValueMember = "ID"
             tableComboBox.DataSource = choices
+            ComboWidth.FitToContent(tableComboBox)
             tableComboBox.SelectedIndex = 0
         End Sub
 

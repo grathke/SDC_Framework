@@ -13,7 +13,7 @@ Namespace SDC.Framework
     Friend Module Program
         Private ReadOnly logPath As String = Path.Combine(AppContext.BaseDirectory, "startup.log")
 
-        Private Sub Log(message As String)
+        Friend Sub Log(message As String)
             File.AppendAllText(logPath, DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss") & " - " & message & Environment.NewLine)
         End Sub
 
@@ -363,8 +363,14 @@ Namespace SDC.Framework
                     Return
                 End If
 
+                ' Field permissions are brought back in line with the database while the login
+                ' screen is up, on a development run only. Nothing waits for it, and it reports
+                ' through the login window because that is the first thing on screen.
+                SchemaDriftWatch.StartInBackground(args)
+
                 Log("Creating LoginForm")
                 Dim loginForm = New LoginForm()
+                SchemaDriftWatch.ReportThrough(loginForm)
                 Log("Showing LoginForm")
                 Application.Run(loginForm)
 

@@ -86,6 +86,21 @@ Namespace SDC.Framework
                            ForcedRegistrationTypeForTesting) & ":"
         End Sub
 
+
+        ''' <summary>
+        ''' Puts the caption immediately left of the combo, at whatever width the combo now is.
+        '''
+        ''' Two pages draw this pair - FW_Base_B for every browse page, and Roles_B, which builds
+        ''' its own - and both move the combo when the window resizes. Seating the label at a fixed
+        ''' x is what put the caption on top of the combo, repeatedly: the combo's width changes
+        ''' when it is filled and narrowed to its content, and its left changes on every resize, so
+        ''' any position worked out in advance is wrong by the time it is seen.
+        ''' </summary>
+        Public Shared Sub SeatLabel(label As Label, combo As ComboBox, Optional gap As Integer = 8)
+            If label Is Nothing OrElse combo Is Nothing Then Return
+
+            label.Left = Math.Max(0, combo.Left - label.PreferredWidth - gap)
+        End Sub
         Public Shared Function TryGetSelectedId(combo As ComboBox, ByRef registrationId As Integer) As Boolean
             registrationId = 0
             If combo Is Nothing OrElse combo.SelectedValue Is Nothing OrElse Convert.IsDBNull(combo.SelectedValue) Then

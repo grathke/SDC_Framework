@@ -3,6 +3,7 @@ Option Explicit On
 
 Imports System.Drawing
 Imports System.IO
+Imports System.Linq
 Imports System.Windows.Forms
 
 Namespace SDC.Framework
@@ -22,6 +23,7 @@ Namespace SDC.Framework
         Private ReadOnly newPageRequestsButton As DashboardIconButton
         Private ReadOnly databaseConfigButton As DashboardIconButton
         Private ReadOnly companyDashboardButton As DashboardIconButton
+        Private ReadOnly updateSchemaButton As DashboardIconButton
         Private ReadOnly closeIconButton As Button
         Private ReadOnly generatedFW_Employees_BButton As DashboardIconButton
         Private ReadOnly generatedFW_UserAccessDiagnostic_BButton As DashboardIconButton
@@ -273,6 +275,25 @@ Namespace SDC.Framework
             generatedFW_Employees_BButton.FlatAppearance.BorderSize = 0
             generatedFW_Employees_BButton.FlatAppearance.MouseOverBackColor = Color.Transparent
             generatedFW_Employees_BButton.FlatAppearance.MouseDownBackColor = Color.Transparent
+
+            updateSchemaButton = New DashboardIconButton() With {
+                .Name = "ActionKey_UpdateSchema",
+                .Text = "Update Schema",
+                .Location = DashboardGridLayout.CellLocation(3, 3),
+                .Size = New Size(DashboardGridLayout.IconWidth, DashboardGridLayout.IconHeight),
+                .BackColor = Color.Transparent,
+                .UseVisualStyleBackColor = False,
+                .FlatStyle = FlatStyle.Flat,
+                .Font = New Font("Segoe UI", 13.0F, FontStyle.Regular),
+                .Image = IconScaler.Load("Color_Refresh.png", DashboardIconSize, SystemIcons.Application.ToBitmap()),
+                .TextImageRelation = TextImageRelation.ImageAboveText,
+                .ImageAlign = ContentAlignment.TopCenter,
+                .TextAlign = ContentAlignment.BottomCenter,
+                .TabStop = False
+            }
+            updateSchemaButton.FlatAppearance.BorderSize = 0
+            updateSchemaButton.FlatAppearance.MouseOverBackColor = Color.Transparent
+            updateSchemaButton.FlatAppearance.MouseDownBackColor = Color.Transparent
             AddHandler Me.Load, AddressOf Dashboard_Application_Load
             AddHandler Me.Resize, AddressOf Dashboard_Application_Resize
             AddHandler rolesButton.MouseEnter, AddressOf IconButton_MouseEnter
@@ -296,6 +317,9 @@ Namespace SDC.Framework
             AddHandler helpDeskSupportButton.MouseEnter, AddressOf IconButton_MouseEnter
             AddHandler helpDeskSupportButton.MouseLeave, AddressOf IconButton_MouseLeave
             AddHandler helpDeskSupportButton.Click, AddressOf HelpDeskSupportButton_Click
+            AddHandler updateSchemaButton.MouseEnter, AddressOf IconButton_MouseEnter
+            AddHandler updateSchemaButton.MouseLeave, AddressOf IconButton_MouseLeave
+            AddHandler updateSchemaButton.Click, AddressOf UpdateSchemaButton_Click
             AddHandler newPageRequestsButton.MouseEnter, AddressOf IconButton_MouseEnter
             AddHandler newPageRequestsButton.MouseLeave, AddressOf IconButton_MouseLeave
             AddHandler newPageRequestsButton.Click, AddressOf NewPageRequestsButton_Click
@@ -319,6 +343,7 @@ Namespace SDC.Framework
             Me.Controls.Add(helpDeskButton)
             Me.Controls.Add(helpDeskSupportButton)
             Me.Controls.Add(newPageRequestsButton)
+            Me.Controls.Add(updateSchemaButton)
         End Sub
 
         Private Sub Dashboard_Application_Load(sender As Object, e As EventArgs)
@@ -436,6 +461,61 @@ Namespace SDC.Framework
             End Using
         End Sub
 
+
+        ''' <summary>
+        ''' Brings every role's field permissions back in line with the database.
+        '''
+        ''' Confirmed first, because a row for a column that no longer exists is physically
+        ''' removed and there is nothing to restore it from. The counts come back afterwards
+        ''' rather than being predicted, so the message says what happened rather than what was
+        ''' expected to.
+        ''' </summary>
+        Private Sub UpdateSchemaButton_Click(sender As Object, e As EventArgs)
+            ResetIconButtonVisuals()
+
+            Dim warning = "Update field permissions for every role, in every registration, against the current database?" &
+                          Environment.NewLine & Environment.NewLine &
+                          "Columns that have been added get a new permission row, set inactive." & Environment.NewLine &
+                          "Rows for columns that no longer exist are permanently deleted." & Environment.NewLine &
+                          "Links that no longer match their column are repaired." & Environment.NewLine & Environment.NewLine &
+                          "This cannot be undone."
+
+            If MessageBox.Show(Me, warning, "Update Schema",
+                               MessageBoxButtons.YesNo, MessageBoxIcon.Warning,
+                               MessageBoxDefaultButton.Button2) <> DialogResult.Yes Then
+                Return
+            End If
+
+            Dim updatedBy = If(SessionState.Current.HasValue, SessionState.Current.Value.UserID, 0)
+            Dim result As DataAccess.SchemaSweepResult
+
+            Dim previousCursor = Me.Cursor
+            Me.Cursor = Cursors.WaitCursor
+            Try
+                result = DataAccess.SyncAllRoleFieldsWithSchema(updatedBy)
+            Catch ex As Exception
+                Me.Cursor = previousCursor
+                MessageBox.Show(Me, "The schema update did not finish." & Environment.NewLine & Environment.NewLine & ex.Message,
+                                "Update Schema", MessageBoxButtons.OK, MessageBoxIcon.Error)
+                Return
+            Finally
+                Me.Cursor = previousCursor
+            End Try
+
+            Dim summary = $"Roles and tables visited: {result.RolesVisited}" & Environment.NewLine &
+                          $"Fields added:             {result.Inserted}" & Environment.NewLine &
+                          $"Fields deleted:           {result.Deleted}" & Environment.NewLine &
+                          $"Links repaired:           {result.Repaired}"
+
+            If result.Failures.Count > 0 Then
+                summary &= Environment.NewLine & Environment.NewLine &
+                           $"Could not be updated ({result.Failures.Count}):" & Environment.NewLine &
+                           String.Join(Environment.NewLine, result.Failures.Take(10))
+            End If
+
+            MessageBox.Show(Me, summary, "Update Schema", MessageBoxButtons.OK,
+                            If(result.Failures.Count > 0, MessageBoxIcon.Warning, MessageBoxIcon.Information))
+        End Sub
         Private Sub DatabaseConfigButton_Click(sender As Object, e As EventArgs)
             ResetIconButtonVisuals()
 

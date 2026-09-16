@@ -38,6 +38,30 @@ Namespace SDC.Framework
                 Next
             End Using
 
+            Narrow(combo, widest)
+        End Sub
+
+        ''' <summary>
+        ''' The same, for a combo whose entries are already in place: Items filled by hand, or a
+        ''' data source whose display text only GetItemText knows how to resolve. Call it after
+        ''' the combo is populated, and after DisplayMember is set.
+        ''' </summary>
+        Public Shared Sub FitToContent(combo As ComboBox)
+            If combo Is Nothing OrElse combo.Items.Count = 0 Then Return
+
+            Dim widest = 0
+            Using g = combo.CreateGraphics()
+                For Each item In combo.Items
+                    Dim text = combo.GetItemText(item)
+                    If String.IsNullOrEmpty(text) Then Continue For
+                    widest = Math.Max(widest, CInt(Math.Ceiling(g.MeasureString(text, combo.Font).Width)))
+                Next
+            End Using
+
+            Narrow(combo, widest)
+        End Sub
+
+        Private Shared Sub Narrow(combo As ComboBox, widest As Integer)
             If widest = 0 Then Return
 
             ' The drop-down arrow and the text inset, which MeasureString knows nothing about.

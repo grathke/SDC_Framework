@@ -312,6 +312,7 @@ Namespace SDC.Framework
                 Next
             End If
 
+            ComboWidth.FitToContent(combo)
             combo.SelectedIndex = 0
         End Sub
 
@@ -340,6 +341,7 @@ Namespace SDC.Framework
                 Next
             End If
 
+            ComboWidth.FitToContent(combo)
             combo.SelectedIndex = 0
         End Sub
 
@@ -370,6 +372,7 @@ Namespace SDC.Framework
                 Next
             End If
 
+            ComboWidth.FitToContent(combo)
             combo.SelectedIndex = 0
         End Sub
 

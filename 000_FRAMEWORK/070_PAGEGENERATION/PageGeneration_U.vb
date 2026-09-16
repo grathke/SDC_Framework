@@ -324,6 +324,7 @@ Namespace SDC.Framework
             For Each callerOption In GetDashboardCallerOptions()
                 menuCallerComboBox.Items.Add(callerOption)
             Next
+            ComboWidth.FitToContent(menuCallerComboBox)
             menuCallerComboBox.SelectedIndex = 0
             AddHandler menuCallerComboBox.SelectedIndexChanged, AddressOf MenuCallerComboBox_SelectedIndexChanged
             AddQuestionRow(fields, "MenuCaller", "7. Menu Caller", menuCallerComboBox, 46)

@@ -23,7 +23,7 @@ Namespace SDC.Framework
         End Function
 
         Protected Overrides Function HandleDefaultCreateAction() As Boolean
-            Using page As New FW_Registration_U()
+            Using page As New FW_Registration_U(0, True)
                 If ShouldRefreshAfterMaintenance(page.ShowDialog(Me)) Then
                     RefreshGridForCustomAction()
                 End If

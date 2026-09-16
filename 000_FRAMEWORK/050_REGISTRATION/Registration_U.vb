@@ -11,7 +11,6 @@ Namespace SDC.Framework
         Inherits FW_Base_U
 
         Private registrationTextBox As TextBox
-        Private businessRuleTypeComboBox As ComboBox
         Private registrationTypeComboBox As ComboBox
         Private addressTextBox As TextBox
         Private address2TextBox As TextBox
@@ -36,6 +35,7 @@ Namespace SDC.Framework
         Private dateFormatComboBox As ComboBox
         Private timeFormatComboBox As ComboBox
         Private timeZoneComboBox As ComboBox
+        Private licenseExpirationPicker As DateTimePicker
         Private activeRegistrationId As Integer
         Private currentRecord As RegistrationRecord
 
@@ -43,9 +43,9 @@ Namespace SDC.Framework
             Return "Registration Maintenance"
         End Function
 
-        Public Sub New(Optional registrationId As Integer = 0)
+        Public Sub New(Optional registrationId As Integer = 0, Optional createNew As Boolean = False)
             Me.ClientSize = New Size(980, 720)
-            activeRegistrationId = ResolveInitialRegistrationId(registrationId)
+            activeRegistrationId = ResolveInitialRegistrationId(registrationId, createNew)
 
             BuildLayout()
 
@@ -78,7 +78,6 @@ Namespace SDC.Framework
         End Function
 
         Protected Overrides Sub BindToFormInternal()
-            BindBusinessRuleTypes()
             BindRegistrationTypes()
             stateTextBox.MaxLength = 2
             zipTextBox.MaxLength = 10
@@ -111,12 +110,6 @@ Namespace SDC.Framework
         End Sub
 
         Protected Overrides Function TryBuildRecord() As Boolean
-            If businessRuleTypeComboBox.SelectedValue Is Nothing OrElse String.IsNullOrWhiteSpace(businessRuleTypeComboBox.SelectedValue.ToString()) Then
-                MessageBox.Show("Business Rule Type is required.", "Validation", MessageBoxButtons.OK, MessageBoxIcon.Warning)
-                businessRuleTypeComboBox.Focus()
-                Return False
-            End If
-
             currentRecord = BuildRecordFromForm()
             Return True
         End Function
@@ -164,7 +157,12 @@ Namespace SDC.Framework
                     End If
                     activeRegistrationId = currentRecord.ID
                 Else
-                    Dim newId = DataAccess.CreateRegistration(currentRecord, currentUserId)
+                    ' Asked before the write, and cancelling cancels the save. A registration with
+                    ' no roles and nobody in it cannot be signed into.
+                    Dim administrator = RegistrationAdminPrompt.Ask(Me, currentRecord.RegName)
+                    If administrator Is Nothing Then Return False
+
+                    Dim newId = DataAccess.CreateRegistration(currentRecord, currentUserId, administrator)
                     currentRecord.ID = newId
                     activeRegistrationId = newId
                 End If
@@ -200,47 +198,59 @@ Namespace SDC.Framework
             Return "Create"
         End Function
 
+        ''' <summary>
+        ''' Two columns that advance independently.
+        '''
+        ''' They shared one y until 2026-09-16, which meant removing a field from either column
+        ''' left a hole in the other - the Business Rule Type combo came out of the left column
+        ''' and the row below it kept its check box, so the left column had a blank row nothing
+        ''' explained.
+        ''' </summary>
         Private Sub BuildLayout()
             Dim y As Integer = 20
+            Dim optionsY As Integer = 20
             Dim rowGap As Integer = 42
             Dim optionsX As Integer = 500
 
-            registrationTextBox = AddField("RegName", y, False, False)
-            SetFieldLabelText("RegName", "Registration")
+            registrationTextBox = AddField("RegName", y, False, True, labelText:="Registration Name")
+            allowMultipleRolesCheckBox = AddOptionCheckBox("CheckBox_AllowMultipleRoles", "Allow Multiple Roles per User", optionsX, optionsY + 2)
 
             y += rowGap
-            businessRuleTypeComboBox = AddLabeledComboBoxSharedStyle("BusinessRuleType", "Business Rule Type", y)
-            allowMultipleRolesCheckBox = AddOptionCheckBox("CheckBox_AllowMultipleRoles", "Allow Multiple Roles per User", optionsX, y + 2)
+            optionsY += rowGap
+            registrationTypeComboBox = AddComboField("RegistrationTypeID", y, True, labelText:="Registration Type")
+            allowPasswordChangeCheckBox = AddOptionCheckBox("CheckBox_AllowPasswordChangeAtLogin", "Allow Password Change At Login", optionsX, optionsY + 2)
 
             y += rowGap
-            registrationTypeComboBox = AddLabeledComboBoxSharedStyle("RegistrationTypeID", "Registration Type", y)
-            allowPasswordChangeCheckBox = AddOptionCheckBox("CheckBox_AllowPasswordChangeAtLogin", "Allow Password Change At Login", optionsX, y + 2)
-
-            y += rowGap
+            optionsY += rowGap
             addressTextBox = AddField("Address1", y, False, False)
-            allowUpdateProfileCheckBox = AddOptionCheckBox("CheckBox_AllowUpdateMyProfile", "Allow Update My Profile at Main Menu", optionsX, y + 2)
+            allowUpdateProfileCheckBox = AddOptionCheckBox("CheckBox_AllowUpdateMyProfile", "Allow Update My Profile at Main Menu", optionsX, optionsY + 2)
 
             y += rowGap
+            optionsY += rowGap
             address2TextBox = AddField("Address2", y, False, False)
             ' Allow Update My Email sat here and was removed on 2026-09-14. Nothing read it - the
-            ' column existed, the box was ticked, and no page ever asked. The rows below closed
-            ' up rather than leaving the gap, which would have read as a setting that failed to
-            ' draw.
-            twoFactorCheckBox = AddOptionCheckBox("CheckBox_TwoFactorAuthentication", "Two-Factor Authentication (2FA)", optionsX, y + 2)
+            ' column existed, the box was ticked, and no page ever asked.
+            twoFactorCheckBox = AddOptionCheckBox("CheckBox_TwoFactorAuthentication", "Two-Factor Authentication (2FA)", optionsX, optionsY + 2)
 
             y += rowGap
+            optionsY += rowGap
             cityTextBox = AddField("City", y, False, False)
-            dateFormatComboBox = AddOptionComboBox("ComboBox_FormatDateID", "Date Format", optionsX, y)
+            dateFormatComboBox = AddComboField("FormatDateID", optionsY, False, optionsX, 290, "Date Format")
 
             y += rowGap
+            optionsY += rowGap
             stateTextBox = AddField("State", y, False, False)
             stateTextBox.Width = 80
-            timeFormatComboBox = AddOptionComboBox("ComboBox_FormatTimeID", "Time Format", optionsX, y)
+            timeFormatComboBox = AddComboField("FormatTimeID", optionsY, False, optionsX, 290, "Time Format")
 
             y += rowGap
+            optionsY += rowGap
             zipTextBox = AddField("Zip", y, False, False)
             zipTextBox.Width = 100
-            timeZoneComboBox = AddOptionComboBox("ComboBox_TimeZoneID", "Time Zone", optionsX, y)
+            timeZoneComboBox = AddComboField("TimeZoneID", optionsY, True, optionsX, 290, "Time Zone")
+
+            optionsY += rowGap
+            licenseExpirationPicker = AddDateField("LicenseExpiration_Date", optionsY, True, optionsX, True, False, "License Expiration")
 
             y += rowGap
             mainFaxTextBox = AddField("MainFax", y, False, False)
@@ -257,6 +267,7 @@ Namespace SDC.Framework
 
             y += rowGap
             webLandingPageTextBox = AddField("WebLandingPage", y, False, False)
+
             y += rowGap
             smartyAuthIdTextBox = AddField("Smarty_AuthID", y, False, False)
             SetFieldLabelText("Smarty_AuthID", "Smarty Auth ID")
@@ -271,64 +282,9 @@ Namespace SDC.Framework
 
             smartyUseEmbeddedKeyCheckBox = AddOptionCheckBox("CheckBox_Smarty_UseEmbeddedKey",
                                                              "Use Smarty Embedded Key",
-                                                             500,
+                                                             optionsX,
                                                              y + 2)
         End Sub
-
-        Private Function AddLabeledComboBoxSharedStyle(fieldName As String,
-                                                       labelText As String,
-                                                       y As Integer) As ComboBox
-            Dim lbl As New Label() With {
-                .Name = "Label_" & fieldName,
-                .Text = labelText,
-                .Location = New Point(20, y),
-                .Size = New Size(120, 26),
-                .TextAlign = ContentAlignment.MiddleLeft
-            }
-            Me.Controls.Add(lbl)
-
-            Dim combo As New ComboBox() With {
-                .Name = "ComboBox_" & fieldName,
-                .Location = New Point(150, y),
-                .Size = New Size(320, 26),
-                .DropDownStyle = ComboBoxStyle.DropDownList,
-                .BackColor = SystemColors.Window
-            }
-            Me.Controls.Add(combo)
-            Return combo
-        End Function
-
-        ''' <summary>
-        ''' A labelled combo in the right-hand options column, laid out like the check boxes it
-        ''' sits among rather than like the fields on the left.
-        '''
-        ''' Named ComboBox_&lt;Field&gt; so the framework can still map it to its column - that
-        ''' convention is what field permissions and the tab order manager read, and it does not
-        ''' care which column of the form the control is in.
-        ''' </summary>
-        Private Function AddOptionComboBox(name As String,
-                                           labelText As String,
-                                           x As Integer,
-                                           y As Integer) As ComboBox
-            Dim lbl As New Label() With {
-                .Name = "Label_" & name.Replace("ComboBox_", String.Empty, StringComparison.Ordinal),
-                .Text = labelText,
-                .Location = New Point(x, y + 4),
-                .Size = New Size(90, 22),
-                .TextAlign = ContentAlignment.MiddleLeft
-            }
-            Me.Controls.Add(lbl)
-
-            Dim combo As New ComboBox() With {
-                .Name = name,
-                .Location = New Point(x + 95, y),
-                .Size = New Size(290, 26),
-                .DropDownStyle = ComboBoxStyle.DropDownList,
-                .BackColor = SystemColors.Window
-            }
-            Me.Controls.Add(combo)
-            Return combo
-        End Function
 
         ''' <summary>
         ''' Fills a format combo, showing each pattern as what it produces.
@@ -353,6 +309,7 @@ Namespace SDC.Framework
             combo.DataSource = options
             combo.DisplayMember = "Choice"
             combo.ValueMember = "FormatID"
+            ComboWidth.FitToContent(combo, options, "Choice")
 
             If selectedId > 0 Then
                 combo.SelectedValue = selectedId
@@ -432,21 +389,8 @@ Namespace SDC.Framework
             registrationTypeComboBox.DisplayMember = "Display"
             registrationTypeComboBox.ValueMember = "Value"
             registrationTypeComboBox.SelectedIndex = 0
-        End Sub
 
-        Private Sub BindBusinessRuleTypes()
-            Dim bindTable As New DataTable("BusinessRuleTypes")
-            bindTable.Columns.Add("Value", GetType(String))
-            bindTable.Columns.Add("Display", GetType(String))
-
-            bindTable.Rows.Add(String.Empty, "Make a Selection")
-            bindTable.Rows.Add(BR_RegIDBased, "Registration-Based (Legacy)")
-            bindTable.Rows.Add(BR_RoleBased, "Role-Based")
-
-            businessRuleTypeComboBox.DataSource = bindTable
-            businessRuleTypeComboBox.DisplayMember = "Display"
-            businessRuleTypeComboBox.ValueMember = "Value"
-            businessRuleTypeComboBox.SelectedIndex = 0
+            ComboWidth.FitToContent(registrationTypeComboBox, bindTable, "Display")
         End Sub
 
         Private Sub ApplyRecordToForm(record As RegistrationRecord)
@@ -464,17 +408,6 @@ Namespace SDC.Framework
             smartyAuthTokenTextBox.Text = SafeText(record.Smarty_AuthToken)
             smartyEmbeddedKeyTextBox.Text = SafeText(record.Smarty_EmbeddedKey)
             smartyUseEmbeddedKeyCheckBox.Checked = record.Smarty_UseEmbeddedKey
-
-            Dim normalizedBrType = NormalizeBusinessRuleType(record.BusinessRuleType)
-            If String.IsNullOrWhiteSpace(record.BusinessRuleType) Then
-                businessRuleTypeComboBox.SelectedIndex = 0
-            Else
-                businessRuleTypeComboBox.SelectedValue = normalizedBrType
-            End If
-
-            If businessRuleTypeComboBox.SelectedIndex < 0 Then
-                businessRuleTypeComboBox.SelectedIndex = 0
-            End If
 
             allowMultipleRolesCheckBox.Checked = record.AllowMultipleRoles
             allowPasswordChangeCheckBox.Checked = record.AllowPasswordChangeAtLogin
@@ -494,6 +427,13 @@ Namespace SDC.Framework
                                  "TimeZoneID",
                                  "DisplayName",
                                  record.TimeZoneID)
+
+            ' Unticked means no expiry is stored. The picker cannot hold a null, so the tick is
+            ' the value: RefreshDateFieldDisplay blanks the date while it is off.
+            licenseExpirationPicker.Checked = record.LicenseExpiration.HasValue
+            If record.LicenseExpiration.HasValue Then
+                licenseExpirationPicker.Value = record.LicenseExpiration.Value
+            End If
 
             smartyAuthIdTextBox.DataBindings.Clear()
             smartyAuthIdTextBox.DataBindings.Add("Text", record, "Smarty_AuthID", True)
@@ -538,14 +478,6 @@ Namespace SDC.Framework
                 Integer.TryParse(registrationTypeComboBox.SelectedValue.ToString(), regTypeId)
             End If
 
-            Dim businessRuleType = String.Empty
-            If businessRuleTypeComboBox.SelectedValue IsNot Nothing Then
-                Dim selectedBrType = businessRuleTypeComboBox.SelectedValue.ToString().Trim()
-                If selectedBrType <> String.Empty Then
-                    businessRuleType = NormalizeBusinessRuleType(selectedBrType)
-                End If
-            End If
-
             Dim recordId = activeRegistrationId
             If currentRecord IsNot Nothing AndAlso currentRecord.ID > 0 Then
                 recordId = currentRecord.ID
@@ -554,7 +486,6 @@ Namespace SDC.Framework
             Return New RegistrationRecord With {
                 .ID = recordId,
                 .RegName = registrationTextBox.Text.Trim(),
-                .BusinessRuleType = businessRuleType,
                 .RegistrationTypeID = regTypeId,
                 .Address1 = addressTextBox.Text.Trim(),
                 .Address2 = address2TextBox.Text.Trim(),
@@ -578,6 +509,7 @@ Namespace SDC.Framework
                 .FormatDateID = GetComboSelectedIdOrZero(dateFormatComboBox),
                 .FormatTimeID = GetComboSelectedIdOrZero(timeFormatComboBox),
                 .TimeZoneID = GetComboSelectedIdOrZero(timeZoneComboBox),
+                .LicenseExpiration = If(licenseExpirationPicker.Checked, CType(licenseExpirationPicker.Value.Date, Date?), Nothing),
                 .IsActive = True,
                 .RowVersion = CopyOriginalRowVersion()
             }
@@ -587,7 +519,6 @@ Namespace SDC.Framework
             Return New RegistrationRecord With {
                 .ID = 0,
                 .RegName = String.Empty,
-                .BusinessRuleType = String.Empty,
                 .RegistrationTypeID = 0,
                 .Address1 = String.Empty,
                 .Address2 = String.Empty,
@@ -615,7 +546,17 @@ Namespace SDC.Framework
             Return If(value, String.Empty)
         End Function
 
-        Private Shared Function ResolveInitialRegistrationId(requestedRegistrationId As Integer) As Integer
+        ''' <summary>
+        ''' Which registration the page opens on.
+        '''
+        ''' The fallback to the session's is for the callers that mean "mine" - the standalone
+        ''' entry point and the page picker. Create must not take it, or Add silently edits the
+        ''' registration the user signed in under.
+        ''' </summary>
+        Private Shared Function ResolveInitialRegistrationId(requestedRegistrationId As Integer,
+                                                             createNew As Boolean) As Integer
+            If createNew Then Return 0
+
             If requestedRegistrationId > 0 Then
                 Return requestedRegistrationId
             End If

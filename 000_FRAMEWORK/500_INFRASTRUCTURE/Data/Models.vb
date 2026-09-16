@@ -88,6 +88,28 @@ Namespace SDC.Framework
         End Function
     End Class
 
+    ''' <summary>
+    ''' The first administrator of a new registration, asked for just before it is saved.
+    '''
+    ''' A registration with no roles and nobody in it cannot be signed into, so creating one
+    ''' without this leaves something nobody can reach.
+    ''' </summary>
+    Public Class RegistrationAdminRequest
+        Public Property FirstName As String = String.Empty
+        Public Property LastName As String = String.Empty
+        Public Property UserName As String = String.Empty
+        Public Property TemporaryPassword As String = String.Empty
+
+        Public ReadOnly Property IsComplete As Boolean
+            Get
+                Return FirstName.Trim() <> String.Empty AndAlso
+                       LastName.Trim() <> String.Empty AndAlso
+                       UserName.Trim() <> String.Empty AndAlso
+                       TemporaryPassword.Trim() <> String.Empty
+            End Get
+        End Property
+    End Class
+
     Public Enum SaveResult
         Succeeded
         RecordChanged
@@ -121,7 +143,6 @@ Namespace SDC.Framework
         Public Property Smarty_AuthToken As String
         Public Property Smarty_EmbeddedKey As String
         Public Property Smarty_UseEmbeddedKey As Boolean
-        Public Property BusinessRuleType As String
         Public Property RoleID As Integer
         Public Property CompanyAdminRoleID As Integer
         Public Property CompanyAdminUserID As Integer
@@ -213,7 +234,6 @@ Namespace SDC.Framework
                                 Optional smartyAuthToken As String = "",
                                 Optional smartyEmbeddedKey As String = "",
                                 Optional smartyUseEmbeddedKey As Boolean = False,
-                                Optional businessRuleType As String = "",
                                 Optional roleId As Integer = 0,
                                 Optional companyAdminRoleId As Integer = 0,
                                 Optional companyAdminUserId As Integer = 0,
@@ -254,7 +274,6 @@ Namespace SDC.Framework
                 .Smarty_AuthToken = If(smartyAuthToken, String.Empty).Trim(),
                 .Smarty_EmbeddedKey = If(smartyEmbeddedKey, String.Empty).Trim(),
                 .Smarty_UseEmbeddedKey = smartyUseEmbeddedKey,
-                .BusinessRuleType = NormalizeBusinessRuleType(businessRuleType),
                 .RoleID = roleId,
                 .CompanyAdminRoleID = companyAdminRoleId,
                 .CompanyAdminUserID = companyAdminUserId,
@@ -436,7 +455,6 @@ Namespace SDC.Framework
         Public Property Smarty_AuthToken As String
         Public Property Smarty_EmbeddedKey As String
         Public Property Smarty_UseEmbeddedKey As Boolean
-        Public Property BusinessRuleType As String
         Public Property RegistrationTypeID As Integer
         Public Property Address1 As String
         Public Property Address2 As String
@@ -454,6 +472,12 @@ Namespace SDC.Framework
 
         ''' <summary>File name in assets\images for the main menu's Home Region. Never a path.</summary>
         Public Property HomeGraphic As String = String.Empty
+
+        ''' <summary>
+        ''' When the registration's licence runs out. Null means no expiry has been set; the login
+        ''' licence check reads a null as no limit.
+        ''' </summary>
+        Public Property LicenseExpiration As Date?
 
         Public Property TwoFactorAuthentication As Boolean
 

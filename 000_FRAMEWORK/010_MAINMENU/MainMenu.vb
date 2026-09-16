@@ -1659,6 +1659,7 @@ Namespace SDC.Framework
             timeZoneOverrideCombo.DisplayMember = "DisplayName"
             timeZoneOverrideCombo.ValueMember = "IanaId"
             timeZoneOverrideCombo.DataSource = zones
+            ComboWidth.FitToContent(timeZoneOverrideCombo)
 
             Dim current = If(SessionState.IsActive AndAlso SessionState.Current.HasValue,
                              If(SessionState.Current.Value.TimeZoneName, String.Empty), String.Empty)
@@ -1999,7 +2000,6 @@ Namespace SDC.Framework
                                               activeSession.Value.Smarty_AuthToken,
                                               activeSession.Value.Smarty_EmbeddedKey,
                                               activeSession.Value.Smarty_UseEmbeddedKey,
-                                              activeSession.Value.BusinessRuleType,
                                               selectedRole.RoleID,
                                               companyAdminRoleId,
                                               companyAdminUserId,

@@ -205,6 +205,7 @@ Namespace SDC.Framework
             categoryComboBox = AddComboField("CategoryID", 20, True, 20, 300, "Category")
             priorityComboBox = AddComboField("Priority", 60, True, 20, 300)
             priorityComboBox.Items.AddRange(New Object() {"Low", "Normal", "High", "Critical"})
+            ComboWidth.FitToContent(priorityComboBox)
 
             ' Status is the documented exception. The combo is never shown - it holds the value while
             ' statusValueLabel displays it and a chooser dialog sets it - so the required border has

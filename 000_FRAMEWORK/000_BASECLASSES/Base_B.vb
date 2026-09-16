@@ -289,15 +289,6 @@ Namespace SDC.Framework
             Return IsAppAdminSession() OrElse IsCompanyAdminSession()
         End Function
 
-        Protected Function GetSessionBusinessRuleType() As String
-            Dim activeSession = SessionState.Current
-            If activeSession.HasValue Then
-                Return NormalizeBusinessRuleType(activeSession.Value.BusinessRuleType)
-            End If
-
-            Return BR_Legacy
-        End Function
-
         Public Sub New(user As UserContext,
                        Optional profile As AccessProfile = Nothing,
                        Optional tableName As String = Nothing,
@@ -711,6 +702,14 @@ Namespace SDC.Framework
             Me.Controls.Add(sqlTextBox)
             Me.Controls.Add(registrationIdLabel)
             Me.Controls.Add(registrationComboBox)
+
+            ' The label seats itself against the combo whenever either changes, rather than only
+            ' when the layout happens to run. Its caption comes from the registration type and its
+            ' width from the text, and both are settled after the combo is filled - placing it once
+            ' during layout left "Registration:" drawn over the combo three times over.
+            AddHandler registrationIdLabel.TextChanged, Sub(sender, e) SeatRegistrationLabel()
+            AddHandler registrationComboBox.SizeChanged, Sub(sender, e) SeatRegistrationLabel()
+            AddHandler registrationComboBox.LocationChanged, Sub(sender, e) SeatRegistrationLabel()
             Me.Controls.Add(applySqlButton)
             Me.Controls.Add(createButton)
             Me.Controls.Add(restoreButton)
@@ -1495,6 +1494,7 @@ Namespace SDC.Framework
             For Each tableData In tablesWithAliases
                 combo.Items.Add(tableData.TableName)
             Next
+            ComboWidth.FitToContent(combo)
             
             If combo.Items.Count > 0 Then
                 combo.SelectedIndex = 0
@@ -1672,8 +1672,8 @@ Namespace SDC.Framework
 
             registrationComboBox.Left = topRowRight - registrationComboBox.Width - HelpDeskLauncher.ReservedWidth
             registrationComboBox.Top = Math.Max(0, headerCenterY - (registrationComboBox.Height \ 2))
-            registrationIdLabel.Left = registrationComboBox.Left - registrationIdLabel.PreferredWidth - 8
             registrationIdLabel.Top = Math.Max(0, headerCenterY - (registrationIdLabel.Height \ 2))
+            SeatRegistrationLabel()
 
             Dim sqlRight = applySqlButton.Left - 8
             sqlTextBox.Left = sqlBaseLeft
@@ -2081,6 +2081,7 @@ Namespace SDC.Framework
             layoutComboBox.DisplayMember = "DisplayName"
             layoutComboBox.ValueMember = Nothing
             layoutComboBox.DataSource = items
+            ComboWidth.FitToContent(layoutComboBox)
             suppressLayoutSelectionChanged = False
             UpdateDeleteLayoutButtonState()
         End Sub
@@ -3993,6 +3994,11 @@ Namespace SDC.Framework
             ClearQbeFilters()
             RefreshGrid(Nothing, True)
             UpdateRegistrationSelectorVisibility(IsAppAdminSession())
+        End Sub
+
+        ''' <summary>Puts the caption immediately left of the combo, at whatever width it now is.</summary>
+        Private Sub SeatRegistrationLabel()
+            RegistrationComboHelper.SeatLabel(registrationIdLabel, registrationComboBox)
         End Sub
 
         Private Sub UpdateRegistrationSelectorVisibility(adminControlsVisible As Boolean)

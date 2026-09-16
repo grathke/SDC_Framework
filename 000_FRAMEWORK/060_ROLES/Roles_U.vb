@@ -725,7 +725,7 @@ Namespace SDC.Framework
                     ' Refresh schema to sync any new columns (does LoadRoleFieldsGrid internally)
                     Dim syncCounts = RefreshSelectedRowSchema()
                     
-                    MessageBox.Show($"Table Synced:{vbCrLf}{vbCrLf}Added:   {syncCounts.Item1}{vbCrLf}Deleted: {syncCounts.Item2}", "Success")
+                    MessageBox.Show($"Table Synced:{vbCrLf}{vbCrLf}Added:    {syncCounts.Item1}{vbCrLf}Deleted:  {syncCounts.Item2}{vbCrLf}Repaired: {syncCounts.Item3}", "Success")
                 End If
             Catch ex As Exception
                 MessageBox.Show("Error adding table permission: " & ex.Message, "Error")
@@ -912,23 +912,23 @@ Namespace SDC.Framework
             End Try
         End Sub
 
-        Private Function RefreshSelectedRowSchema() As Tuple(Of Integer, Integer)
+        Private Function RefreshSelectedRowSchema() As Tuple(Of Integer, Integer, Integer)
             If rightGrid.SelectedRows.Count = 0 Then
-                Return New Tuple(Of Integer, Integer)(0, 0)  ' Return zeros if no row selected
+                Return New Tuple(Of Integer, Integer, Integer)(0, 0, 0)  ' Return zeros if no row selected
             End If
 
             Try
                 Dim selectedRowIndex = rightGrid.SelectedRows(0).Index
                 Dim dt = TryCast(rightGrid.DataSource, DataTable)
                 If dt Is Nothing OrElse selectedRowIndex >= dt.Rows.Count Then
-                    Return New Tuple(Of Integer, Integer)(0, 0)
+                    Return New Tuple(Of Integer, Integer, Integer)(0, 0, 0)
                 End If
 
                 Dim schemaId = CInt(dt.Rows(selectedRowIndex)("SchemaID"))
                 Dim dbTable = dt.Rows(selectedRowIndex)("DB_Table").ToString()
                 Dim updatedBy = If(SessionState.Current.HasValue, SessionState.Current.Value.UserID, 0)
 
-                Dim inserted, deleted As Integer
+                Dim inserted, deleted, repaired As Integer
 
                 ' A sync inserts and deletes FW_RoleFields rows in bulk, so what is worth recording
                 ' is how many of each, not the state of any one row.
@@ -940,13 +940,14 @@ Namespace SDC.Framework
 
                 Dim syncResult = False
                 Try
-                    syncResult = DataAccess.SyncRoleFieldsWithSchema(schemaId, dbTable, _registrationId, _roleId, updatedBy, inserted, deleted)
+                    syncResult = DataAccess.SyncRoleFieldsWithSchema(schemaId, dbTable, _registrationId, _roleId, updatedBy, inserted, deleted, repaired)
                 Finally
                     Dim syncAfter As New Dictionary(Of String, String)(StringComparer.OrdinalIgnoreCase)
                     syncAfter("DB_Table") = dbTable
                     syncAfter("SchemaID") = syncKey
                     syncAfter("FieldsInserted") = inserted.ToString(Globalization.CultureInfo.InvariantCulture)
                     syncAfter("FieldsDeleted") = deleted.ToString(Globalization.CultureInfo.InvariantCulture)
+                    syncAfter("LinksRepaired") = repaired.ToString(Globalization.CultureInfo.InvariantCulture)
                     LogRoleAudit(RoleFieldsTableName, "Sync", "AfterSave", syncKey, BuildAuditSnapshot(syncAfter), syncResult)
                 End Try
 
@@ -960,10 +961,10 @@ Namespace SDC.Framework
                     rightGrid.FirstDisplayedScrollingRowIndex = selectedRowIndex
                 End If
                 
-                Return New Tuple(Of Integer, Integer)(inserted, deleted)
+                Return New Tuple(Of Integer, Integer, Integer)(inserted, deleted, repaired)
             Catch ex As Exception
                 ' Silent catch - don't show errors during Add flow
-                Return New Tuple(Of Integer, Integer)(0, 0)
+                Return New Tuple(Of Integer, Integer, Integer)(0, 0, 0)
             End Try
         End Function
 
@@ -974,6 +975,7 @@ Namespace SDC.Framework
                 roleNameComboBox.DataSource = roles
                 roleNameComboBox.DisplayMember = "RoleName"
                 roleNameComboBox.ValueMember = "ID"
+                ComboWidth.FitToContent(roleNameComboBox)
 
                 If roles.Rows.Count > 0 Then
                     For i = 0 To roles.Rows.Count - 1
