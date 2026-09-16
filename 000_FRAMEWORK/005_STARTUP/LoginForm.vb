@@ -179,10 +179,14 @@ Namespace SDC.Framework
                 .ForeColor = Color.Firebrick
             }
 
+            ' Seventy-two square rather than forty-eight. A click travelling over the network to a
+            ' small corner target is easy to miss, and a miss costs nothing visible - there is no
+            ' cursor change and no hover to say the pointer is in the right place. The count needs
+            ' three clicks but no timer, so neither speed nor pauses between them matter.
             devHotspotPanel = New Panel() With {
                 .Name = "DEV_REVEAL_HOTSPOT",
-                .Location = New Point(card.Width - 54, card.Height - 54),
-                .Size = New Size(48, 48),
+                .Location = New Point(card.Width - 78, card.Height - 78),
+                .Size = New Size(72, 72),
                 .BackColor = Color.White,
                 .BorderStyle = BorderStyle.None,
                 .Anchor = AnchorStyles.Right Or AnchorStyles.Bottom,
@@ -515,6 +519,9 @@ Namespace SDC.Framework
             If hdApplicationSupport <= 0 Then
                 loginWarnings.Add("HELP DESK APPLICATION SUPPORT IS NOT CONFIGURED FOR THIS REGISTRATION.")
             End If
+
+            ' Every page zoom this person has chosen, in one round trip, before any page opens.
+            PageZoomStore.LoadForUser(user.UserId)
 
             SessionState.StartSession(user,
                                       sessionRegistrationId,

@@ -239,6 +239,17 @@ Namespace SDC.Framework
         ''' Exposed read only, and only to derived pages. Visibility stays the widget's own business:
         ''' UpdateVisibility shows the button to an application administrator and nobody else.
         ''' </remarks>
+
+        ''' <summary>
+        ''' Remembered zoom, applied before the first paint.
+        '''
+        ''' On Load rather than Shown: a zoom applied after the window is up is seen to jump. The
+        ''' factor comes from the session cache, so this costs no database round trip.
+        ''' </summary>
+        Protected Overrides Sub OnLoad(e As EventArgs)
+            MyBase.OnLoad(e)
+            PageZoom.Attach(Me)
+        End Sub
         ''' <summary>
         ''' Repaints the page in its stored colour once the form is built and on screen.
         ''' </summary>

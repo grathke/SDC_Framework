@@ -2517,6 +2517,66 @@ Namespace SDC.Framework
         End Function
 
 
+
+        ''' <summary>
+        ''' One login's page zooms, in one round trip.
+        '''
+        ''' Keyed on the user rather than the employee: not everybody who signs in is an employee,
+        ''' and a contractor with a login and no employee row would otherwise have nowhere to store
+        ''' anything.
+        ''' </summary>
+        Public Shared Function GetPageZooms(userId As Integer) As Dictionary(Of String, Single)
+            Dim zooms As New Dictionary(Of String, Single)(StringComparer.OrdinalIgnoreCase)
+            If userId <= 0 Then Return zooms
+
+            Using conn As New SqlConnection(ConnectionString)
+                conn.Open()
+                Using cmd As New SqlCommand(
+                    "SELECT PageName, ZoomFactor FROM dbo.FW_PageZooms " &
+                    "WHERE UserID = @UserID AND ISNULL(DeletedFlag, 0) = 0", conn)
+                    cmd.Parameters.AddWithValue("@UserID", userId)
+
+                    Using reader = cmd.ExecuteReader()
+                        While reader.Read()
+                            zooms(SafeString(reader("PageName"))) =
+                                Convert.ToSingle(reader("ZoomFactor"), CultureInfo.InvariantCulture)
+                        End While
+                    End Using
+                End Using
+            End Using
+
+            Return zooms
+        End Function
+
+        ''' <summary>
+        ''' Writes one page zoom. The unique index on employee and page is what lets this upsert
+        ''' without reading first.
+        ''' </summary>
+        Public Shared Sub SavePageZoom(userId As Integer, pageName As String, factor As Single,
+                                       registrationId As Integer)
+            If userId <= 0 OrElse String.IsNullOrWhiteSpace(pageName) Then Return
+
+            Using conn As New SqlConnection(ConnectionString)
+                conn.Open()
+                Using cmd As New SqlCommand(
+                    "UPDATE dbo.FW_PageZooms " &
+                    "   SET ZoomFactor = @Factor, DeletedFlag = 0, DeletedBy = NULL, DeletedOn = NULL, " &
+                    "       UpdatedBy = @UpdatedBy, UpdatedOn = GETDATE() " &
+                    " WHERE UserID = @UserID AND PageName = @PageName; " &
+                    "IF @@ROWCOUNT = 0 " &
+                    "  INSERT INTO dbo.FW_PageZooms (RegistrationID, UserID, PageName, ZoomFactor, CreatedBy, CreatedOn) " &
+                    "  VALUES (@RegistrationID, @UserID, @PageName, @Factor, @UpdatedBy, GETDATE());", conn)
+
+                    cmd.Parameters.AddWithValue("@Factor", CDec(Math.Round(factor, 2)))
+                    cmd.Parameters.AddWithValue("@UserID", userId)
+                    cmd.Parameters.AddWithValue("@PageName", pageName.Trim())
+                    cmd.Parameters.AddWithValue("@UpdatedBy", userId)
+                    cmd.Parameters.AddWithValue("@RegistrationID",
+                                                If(registrationId > 0, CType(registrationId, Object), DBNull.Value))
+                    cmd.ExecuteNonQuery()
+                End Using
+            End Using
+        End Sub
         ''' <summary>
         ''' The licence terms, with the offset that defines them.
         '''

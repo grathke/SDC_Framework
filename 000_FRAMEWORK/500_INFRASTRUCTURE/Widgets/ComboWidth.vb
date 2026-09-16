@@ -61,6 +61,39 @@ Namespace SDC.Framework
             Narrow(combo, widest)
         End Sub
 
+
+        ''' <summary>
+        ''' Fits the box, and the list with it, to the entries that matter.
+        '''
+        ''' For a combo whose list is mostly long tail: the session time zone offers the nine US
+        ''' zones first and then the rest of the world, and sizing the box to
+        ''' "America/Argentina/Buenos_Aires" makes it permanently wide for a name nobody picks.
+        ''' The box takes the first few and the list matches the box.
+        ''' </summary>
+        Public Shared Sub FitToLeadingItems(combo As ComboBox, leadingCount As Integer)
+            If combo Is Nothing OrElse combo.Items.Count = 0 Then Return
+            If leadingCount <= 0 Then leadingCount = combo.Items.Count
+
+            Dim leadingWidest = 0
+
+            Using g = combo.CreateGraphics()
+                For index = 0 To combo.Items.Count - 1
+                    Dim text = combo.GetItemText(combo.Items(index))
+                    If String.IsNullOrEmpty(text) Then Continue For
+
+                    If index >= leadingCount Then Exit For
+                    leadingWidest = Math.Max(leadingWidest, CInt(Math.Ceiling(g.MeasureString(text, combo.Font).Width)))
+                Next
+            End Using
+
+            Narrow(combo, leadingWidest)
+
+            ' The list matches the box. Letting it open to the widest entry in the world put a
+            ' thirteen hundred pixel list under a two hundred pixel box, which reads as a fault
+            ' rather than as helpfulness; a long name truncates instead.
+            combo.DropDownWidth = combo.Width
+        End Sub
+
         Private Shared Sub Narrow(combo As ComboBox, widest As Integer)
             If widest = 0 Then Return
 

@@ -54,6 +54,17 @@ Namespace SDC.Framework
         Protected ReadOnly cancelActionButton As Button
         Private tabOrderToggleButton As Button
 
+
+        ''' <summary>
+        ''' Remembered zoom, applied before the first paint.
+        '''
+        ''' On Load rather than Shown: a zoom applied after the window is up is seen to jump. The
+        ''' factor comes from the session cache, so this costs no database round trip.
+        ''' </summary>
+        Protected Overrides Sub OnLoad(e As EventArgs)
+            MyBase.OnLoad(e)
+            PageZoom.Attach(Me)
+        End Sub
         ''' <summary>
         ''' Lines the header buttons up with Cancel, so the page has one right-hand edge.
         ''' </summary>

@@ -182,6 +182,15 @@ Namespace SDC.Framework
             userDiagnosticButton.Enabled = True
         End Sub
 
+        ''' <summary>
+        ''' Deliberately not zoomed by PageZoom, and this handler is why: it recomputes every tile
+        ''' from the DashboardGridLayout constants on any resize, so a scaled layout is put straight
+        ''' back on the unscaled grid the moment the window grows. The icons are fixed-size bitmaps
+        ''' besides, and a larger button around the same picture is not a zoom.
+        '''
+        ''' A dashboard wanting one needs its own path - scaled grid metrics and icons reloaded at
+        ''' the new size through IconScaler - not the generic snapshot.
+        ''' </summary>
         Private Sub Dashboard_Company_Resize(sender As Object, e As EventArgs)
             rolesButton.Top = DashboardGridLayout.CellTop(1)
             generatedFW_Employees_BButton.Left = DashboardGridLayout.CellLeft(3)

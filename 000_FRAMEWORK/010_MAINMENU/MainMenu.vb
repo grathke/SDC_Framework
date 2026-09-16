@@ -112,6 +112,7 @@ Namespace SDC.Framework
         Private ReadOnly rightPinnedActionsPanel As FlowLayoutPanel
         Private ReadOnly headingLabel As Label
         Private ReadOnly timeZoneOverrideCombo As ComboBox
+        Private ReadOnly timeZoneOverrideCaption As Label
         Private ReadOnly newMessageMarker As Label
         Private ReadOnly welcomeLabel As Label
         ''' <summary>
@@ -482,13 +483,24 @@ Namespace SDC.Framework
             '
             ' The whole list, unlike the registration and employee settings. Those name a business
             ' location and are kept to the US; this one answers "where am I today".
+            timeZoneOverrideCaption = New Label() With {
+                .Name = "Label_SessionTimeZone",
+                .Text = "Time Zone:",
+                .AutoSize = True,
+                .Anchor = AnchorStyles.Top Or AnchorStyles.Right,
+                .ForeColor = Color.DimGray,
+                .Font = New Font("Segoe UI", 9.0F, FontStyle.Regular),
+                .Location = New Point(Me.ClientSize.Width - 380, 162 + LayoutShift)
+            }
+
             timeZoneOverrideCombo = New ComboBox() With {
                 .Name = "ComboBox_SessionTimeZone",
                 .DropDownStyle = ComboBoxStyle.DropDownList,
                 .Size = New Size(260, 26),
                 .Location = New Point(Me.ClientSize.Width - 300, 158 + LayoutShift),
                 .Anchor = AnchorStyles.Top Or AnchorStyles.Right,
-                .Font = New Font("Segoe UI", 9.0F, FontStyle.Regular)
+                .Font = New Font("Segoe UI", 9.0F, FontStyle.Regular),
+                .TabStop = False
             }
 
             ' Left of the registration name, and big enough to be seen without being looked for -
@@ -664,7 +676,9 @@ Namespace SDC.Framework
 
             Me.Controls.Add(ribbonPanel)
             Me.Controls.Add(headingLabel)
+            Me.Controls.Add(timeZoneOverrideCaption)
             Me.Controls.Add(timeZoneOverrideCombo)
+            timeZoneOverrideCaption.BringToFront()
             Me.Controls.Add(newMessageMarker)
             Me.Controls.Add(welcomeLabel)
             Me.Controls.Add(contentHost)
@@ -683,6 +697,23 @@ Namespace SDC.Framework
             End If
 
             UpdateRoleSelectionTile()
+
+            ' Seated again once the form has been laid out. Doing it only during construction put
+            ' the caption where the combo was going to be rather than where it ended up.
+            ' F9 larger, F10 smaller, F8 back to normal. On Load rather than Shown: a zoom applied
+            ' after the window is up is seen to jump, and a remembered one has to be what the page
+            ' opens as.
+            AddHandler Me.Load, Sub(sender, e) PageZoom.Attach(Me)
+
+            AddHandler Me.Shown,
+                Sub(sender, e)
+                    SeatTimeZoneCaption()
+
+                    ' Nothing on this screen asks for the keyboard. Without this the time zone
+                    ' combo took focus simply by being the only control that could, and a focused
+                    ' combo paints its box highlighted - which read as a choice made here.
+                    Me.ActiveControl = Nothing
+                End Sub
         End Sub
 
         Private Sub UpdateRoleSelectionTile()
@@ -1637,15 +1668,37 @@ Namespace SDC.Framework
             End Select
         End Function
 
+
+        ''' <summary>
+        ''' Puts the caption immediately left of the combo, on its baseline.
+        '''
+        ''' Seated from the combo rather than placed at a fixed x, for the same reason the
+        ''' registration caption is: the combo is right-anchored and narrows to its content, so any
+        ''' position worked out in advance is wrong by the time it is seen.
+        ''' </summary>
+        Private Sub SeatTimeZoneCaption()
+            If timeZoneOverrideCaption Is Nothing OrElse timeZoneOverrideCombo Is Nothing Then Return
+
+            RegistrationComboHelper.SeatLabel(timeZoneOverrideCaption, timeZoneOverrideCombo)
+            timeZoneOverrideCaption.Top = timeZoneOverrideCombo.Top + 4
+            timeZoneOverrideCaption.Visible = timeZoneOverrideCombo.Visible
+        End Sub
         ''' <summary>
         ''' Fills the session time zone combo and selects the one login resolved.
         ''' </summary>
+        ''' <summary>
+        ''' How many entries the US block runs to. GetLookupTable puts TimeZoneID 1 to 9 first, and
+        ''' the rule and the box width are both measured against that block.
+        ''' </summary>
+        Private Const UsTimeZoneCount As Integer = 9
+
         Private Sub LoadTimeZoneOverride()
             If timeZoneOverrideCombo Is Nothing Then Return
 
             Dim zones = DataAccess.GetLookupTable("FW_TimeZones", "TimeZoneID", "DisplayName", False, 0, True)
             If zones Is Nothing OrElse zones.Rows.Count = 0 Then
                 timeZoneOverrideCombo.Visible = False
+                timeZoneOverrideCaption.Visible = False
                 Return
             End If
 
@@ -1659,13 +1712,22 @@ Namespace SDC.Framework
             timeZoneOverrideCombo.DisplayMember = "DisplayName"
             timeZoneOverrideCombo.ValueMember = "IanaId"
             timeZoneOverrideCombo.DataSource = zones
-            ComboWidth.FitToContent(timeZoneOverrideCombo)
+            ' The US zones lead the list and are what anybody here picks; the rest of the world
+            ' follows and is what makes the widest entry wide. The box takes the prompt and the US
+            ' ones, and the rule falls where the world begins.
+            ComboWidth.FitToLeadingItems(timeZoneOverrideCombo, UsTimeZoneCount)
+            ComboSeparator.After(timeZoneOverrideCombo, UsTimeZoneCount - 1)
+            SeatTimeZoneCaption()
 
+            ' The zone the session is actually on - the employee's where they have one, otherwise the
+            ' registration's.
             Dim current = If(SessionState.IsActive AndAlso SessionState.Current.HasValue,
                              If(SessionState.Current.Value.TimeZoneName, String.Empty), String.Empty)
             If current <> String.Empty Then timeZoneOverrideCombo.SelectedValue = current
 
             AddHandler timeZoneOverrideCombo.SelectedIndexChanged, AddressOf TimeZoneOverride_Changed
+            AddHandler timeZoneOverrideCombo.SizeChanged, Sub(sender, e) SeatTimeZoneCaption()
+            AddHandler timeZoneOverrideCombo.LocationChanged, Sub(sender, e) SeatTimeZoneCaption()
         End Sub
 
         Private Sub TimeZoneOverride_Changed(sender As Object, e As EventArgs)
