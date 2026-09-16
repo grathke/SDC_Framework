@@ -537,9 +537,12 @@ Namespace SDC.Framework
             ' The host carries the position and the anchoring that contentLayout used to. Every
             ' layout inside it docks to fill, which is what keeps them all the same size as each
             ' other without any of them repeating the arithmetic.
+            ' Left and right edges square with the ribbon above it - x 8 to Width - 8. It sat 16px
+            ' further in on each side, which cost every region 32px of width for no reason anybody
+            ' recorded, and showed up as white down both sides of the Home banner.
             contentHost = New Panel() With {
-                .Location = New Point(24, 236 + LayoutShift),
-                .Size = New Size(Me.ClientSize.Width - 48, Me.ClientSize.Height - 260 - LayoutShift),
+                .Location = New Point(8, 236 + LayoutShift),
+                .Size = New Size(Me.ClientSize.Width - 16, Me.ClientSize.Height - 260 - LayoutShift),
                 .Anchor = AnchorStyles.Top Or AnchorStyles.Left Or AnchorStyles.Right Or AnchorStyles.Bottom,
                 .BackColor = Color.White,
                 .Padding = New Padding(0),
