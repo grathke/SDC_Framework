@@ -3,6 +3,7 @@ Option Explicit On
 
 Imports System.Collections.Generic
 Imports System.Drawing
+Imports System.Linq
 Imports System.Windows.Forms
 
 Namespace SDC.Framework
@@ -63,6 +64,10 @@ Namespace SDC.Framework
         ''' explicit Location and Size in the constructor - the numbers are already final. Anything
         ''' that needs the form actually laid out, like seating a caption against a control that
         ''' has been narrowed to its content, still belongs in Shown.
+        '''
+        ''' The exception is a page that re-lays itself out after Load. FW_Base_U collapses hidden
+        ''' field rows once it is shown, and snapshots taken before that are of a taller page than
+        ''' the real one; it attaches after the collapse and keeps the window invisible until then.
         ''' </summary>
         Public Shared Sub Attach(form As Form, Optional startingFactor As Single = -1.0F)
             If form Is Nothing OrElse states.ContainsKey(form) Then Return
@@ -109,6 +114,7 @@ Namespace SDC.Framework
                 form.StartPosition = FormStartPosition.Manual
                 Apply(form, startingFactor)
             End If
+
         End Sub
 
         ''' <summary>The zoom a form is on, for whatever will eventually remember it.</summary>
