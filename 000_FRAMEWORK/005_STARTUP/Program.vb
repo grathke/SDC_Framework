@@ -368,6 +368,9 @@ Namespace SDC.Framework
                 ' through the login window because that is the first thing on screen.
                 SchemaDriftWatch.StartInBackground(args)
 
+                ' What is on the other end. A probe only - nothing acts on the answer yet.
+                ClientDevice.Probe()
+
                 Log("Creating LoginForm")
                 Dim loginForm = New LoginForm()
                 SchemaDriftWatch.ReportThrough(loginForm)
