@@ -73,6 +73,13 @@ Namespace SDC.Framework
             openMenu = menu
             openTile = tile
 
+            ' The same font as the tile's caption. The menu took the system's 9pt default, which read
+            ' as a footnote under a 12pt caption. Set on every opening rather than once when the menu
+            ' is built, because the menu is kept and reused, and F9 changes the tile's font in between.
+            If tile.Font IsNot Nothing AndAlso Not Equals(menu.Font, tile.Font) Then
+                menu.Font = tile.Font
+            End If
+
             ' Anchored to the tile's bottom-left corner.
             menu.Show(tile, New Point(0, tile.Height))
             StartPointerWatcher()

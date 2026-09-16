@@ -335,22 +335,18 @@ Namespace SDC.Framework
             ' in the browser rather than on a desktop that is not there. It centres vertically too,
             ' which is wanted for the same reason.
             Me.StartPosition = FormStartPosition.CenterScreen
-            Me.FormBorderStyle = FormBorderStyle.Sizable
-            Me.MaximizeBox = True
+            ' Not resizable by dragging, on the desktop as well as in a session. It was Sizable here
+            ' and pinned to one size only inside VirtualUI; nothing in this application wants the
+            ' shell dragged larger, and the zoom sizes the window itself.
+            Me.FormBorderStyle = FormBorderStyle.FixedDialog
+            Me.MaximizeBox = False
 
             ' No minimise box in a browser. Minimising puts the window somewhere the session has no
             ' taskbar to bring it back from, so the button is a way to lose the application inside
-            ' its own tab. Windows will not hide one box on its own - a form with a maximise box
-            ' and no minimise box draws the minimise button greyed rather than absent - so the
-            ' maximise box goes with it, and maximising stays available by double-clicking the
-            ' caption or dragging the window to the top of the session.
-            If Program.InBrowserSession Then
-                Me.MinimizeBox = False
-                Me.MaximizeBox = False
-            Else
-                Me.MinimizeBox = True
-                Me.MaximizeBox = True
-            End If
+            ' its own tab. On the desktop minimising is harmless and stays. Maximising is off in both,
+            ' with the border above: nothing grows this window except the zoom.
+            Me.MinimizeBox = Not Program.InBrowserSession
+            Me.MaximizeBox = False
 
             ' No grip in the corner. The default is Auto, which draws one whenever a form is shown
             ' as a dialog - and the menu is, through LoginForm's ShowDialog - so the shell carried a

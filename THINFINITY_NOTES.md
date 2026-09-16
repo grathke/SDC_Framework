@@ -646,10 +646,16 @@ double-clicking the caption or dragging the window to the top of the session als
 Minimising is the one to be rid of: inside a tab there is no taskbar to bring the window back
 from.
 
-Pages are a different question and were left alone. A browse grid genuinely wants more width, so
-`_B` and `_U` are better resizable than scaled.
+**Superseded 2026-09-16: nothing is resizable by dragging any more, anywhere.** This section used to
+end "pages are a different question and were left alone - a browse grid genuinely wants more width,
+so `_B` and `_U` are better resizable than scaled", and the desktop was left sizable. Both reversed:
+nearly every run is a session, and a window dragged wider fights both its own layout and the zoom.
 
-On the desktop none of this applies: sizable, both boxes, no maximum.
+Every form is now `FixedDialog` with no maximise box, the menu included and on the desktop too. Size
+changes come from code only: F9/F10/F8 through `PageZoom`, and Hot Fields widening a browse page.
+A browse page zooms by pausing `LayoutQbeSection` while the factor is not 1.0 and scaling a snapshot
+of its settled layout instead - the two cannot run together, or the right-anchored buttons walk off
+to the right on every press. The desktop keeps a minimise box, which is harmless there.
 
 ## 11.6 The console account — **planned, not applied** — 2026-09-12
 

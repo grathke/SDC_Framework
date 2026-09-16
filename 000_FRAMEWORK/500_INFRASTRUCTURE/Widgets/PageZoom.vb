@@ -36,11 +36,34 @@ Namespace SDC.Framework
         Public Const Maximum As Single = 2.0F
         Public Const Increment As Single = 0.1F
 
-        ''' <summary>A control as it was laid out, before anybody zoomed.</summary>
+        ''' <summary>
+        ''' A page that has something to settle before its zoom changes.
+        '''
+        ''' Called before anything is scaled, every time the factor actually changes. A browse page
+        ''' closes Hot Fields here: the strip widens the window by a fixed amount the snapshot knows
+        ''' nothing about, and the two cannot both decide how wide the page is.
+        ''' </summary>
+        Public Interface IZoomAware
+            Sub BeforeZoom(newFactor As Single)
+        End Interface
+
+        ''' <summary>
+        ''' A control as it was laid out, before anybody zoomed.
+        '''
+        ''' Bounds and font are enough for most controls. A grid and a split container also carry
+        ''' measurements that are not bounds at all - header height, row height, the header's own
+        ''' font, where the splitter sits - and scaling a grid's box without them gives bigger text
+        ''' in rows too short to hold it.
+        ''' </summary>
         Private Structure Original
             Public Bounds As Rectangle
             Public FontSize As Single
             Public Anchoring As AnchorStyles
+            Public GridHeaderHeight As Integer
+            Public GridRowHeight As Integer
+            Public GridHeaderFontSize As Single
+            Public GridFixedColumns As Dictionary(Of String, (Width As Integer, MinimumWidth As Integer))
+            Public SplitterDistance As Integer
         End Structure
 
         Private NotInheritable Class State
@@ -49,6 +72,7 @@ Namespace SDC.Framework
             Public DesignSize As Size
             Public DesignMaximum As Size
             Public DesignMinimum As Size
+            Public Indicator As Label
         End Class
 
         Private Shared ReadOnly states As New Dictionary(Of Form, State)()
@@ -100,6 +124,9 @@ Namespace SDC.Framework
                     e.SuppressKeyPress = True
                 End Sub
 
+            ' Added after the snapshot, so the zoom never scales its own read-out.
+            AddIndicator(form, state)
+
             AddHandler form.FormClosed,
                 Sub(sender As Object, e As FormClosedEventArgs)
                     ' On close, and only when it changed. The store decides that - a page opened
@@ -132,6 +159,9 @@ Namespace SDC.Framework
             factor = Math.Max(Minimum, Math.Min(Maximum, factor))
             If Math.Abs(factor - state.Factor) < 0.001F Then Return
 
+            Dim aware = TryCast(form, IZoomAware)
+            If aware IsNot Nothing Then aware.BeforeZoom(factor)
+
             state.Factor = factor
             form.SuspendLayout()
 
@@ -162,6 +192,9 @@ Namespace SDC.Framework
                             control.Font = New Font(control.Font.FontFamily, wanted, control.Font.Style)
                         End If
                     End If
+
+                    ScaleGridInterior(TryCast(control, DataGridView), was, factor)
+                    ScaleSplitter(TryCast(control, SplitContainer), was, factor)
                 Next
 
             Finally
@@ -172,6 +205,9 @@ Namespace SDC.Framework
             ' every anchored control back to the edge it was measured against, which silently undid
             ' the centring on every press.
             Centre(form, state)
+
+            ' After the centring, which moves every top-level control - this one included.
+            PlaceIndicator(form, state)
         End Sub
 
 
@@ -252,14 +288,181 @@ Namespace SDC.Framework
             Next
         End Sub
 
+        ''' <summary>
+        ''' The parts of a grid that are not its box: header height, row height, the header's own
+        ''' font, and the height of every row already on it.
+        '''
+        ''' Rows added later - a Find, a refresh - take RowTemplate.Height, so scaling the template
+        ''' covers them. The rows already there do not read the template again, so they are set
+        ''' one by one.
+        ''' </summary>
+        Private Shared Sub ScaleGridInterior(grid As DataGridView, was As Original, factor As Single)
+            If grid Is Nothing Then Return
+
+            Try
+                If was.GridHeaderHeight > 0 Then grid.ColumnHeadersHeight = Math.Max(4, CInt(was.GridHeaderHeight * factor))
+
+                If was.GridRowHeight > 0 Then
+                    Dim rowHeight = Math.Max(4, CInt(was.GridRowHeight * factor))
+                    grid.RowTemplate.Height = rowHeight
+                    For Each row As DataGridViewRow In grid.Rows
+                        If row.Height <> rowHeight Then row.Height = rowHeight
+                    Next
+                End If
+
+                ' Fixed-width columns only. A Fill column already stretches with the grid - the
+                ' browse grid shows more of itself as it grows - but a fixed one stays put inside a
+                ' wider box, and the QBE grid's three 160px columns left the extra width sitting
+                ' empty to the right of the last one.
+                '
+                ' Minimum before width, whichever way the zoom is going: a smaller minimum is always
+                ' accepted, and a larger one raises the width itself before the exact width is set.
+                If was.GridFixedColumns IsNot Nothing Then
+                    For Each fixedColumn In was.GridFixedColumns
+                        If Not grid.Columns.Contains(fixedColumn.Key) Then Continue For
+
+                        Dim column = grid.Columns(fixedColumn.Key)
+                        column.MinimumWidth = Math.Max(2, CInt(fixedColumn.Value.MinimumWidth * factor))
+                        column.Width = Math.Max(column.MinimumWidth, CInt(fixedColumn.Value.Width * factor))
+                    Next
+                End If
+
+                Dim headerFont = grid.ColumnHeadersDefaultCellStyle.Font
+                If headerFont IsNot Nothing AndAlso was.GridHeaderFontSize > 0 Then
+                    Dim wanted = was.GridHeaderFontSize * factor
+                    If Math.Abs(headerFont.Size - wanted) > 0.01F Then
+                        grid.ColumnHeadersDefaultCellStyle.Font = New Font(headerFont.FontFamily, wanted, headerFont.Style)
+                    End If
+                End If
+            Catch
+                ' A grid mid-rebind can refuse a row height. The next zoom sets it again.
+            End Try
+        End Sub
+
+        ''' <summary>
+        ''' Where a split container divides. Not a bound, so the snapshot's box scaling leaves it
+        ''' where it was - and a QBE panel whose contents grew 30% inside a divider that did not
+        ''' move is cut off at the bottom.
+        ''' </summary>
+        Private Shared Sub ScaleSplitter(split As SplitContainer, was As Original, factor As Single)
+            If split Is Nothing OrElse was.SplitterDistance <= 0 OrElse split.Panel1Collapsed Then Return
+
+            Try
+                split.SplitterDistance = CInt(was.SplitterDistance * factor)
+            Catch
+                ' Outside the panels' minimum sizes. Leaving the splitter where it is beats failing.
+            End Try
+        End Sub
+
+        ''' <summary>
+        ''' Parks a page off-screen when a remembered zoom is waiting for it.
+        '''
+        ''' For a page that lays itself out after it is shown, so the zoom cannot attach at Load:
+        ''' the page waits out of sight rather than being seen at normal size and then jumping.
+        ''' Off-screen, not Opacity - Opacity makes a layered window, and in a VirtualUI session that
+        ''' page did not come back, which from the chair looks like the application closing.
+        '''
+        ''' Pair it with AttachAndReveal. A page parked and never revealed is open, modal and
+        ''' unreachable.
+        ''' </summary>
+        Public Shared Sub ParkIfZoomPending(form As Form)
+            If form Is Nothing Then Return
+            If Math.Abs(PageZoomStore.FactorFor(form.GetType().Name) - 1.0F) < 0.001F Then Return
+
+            form.StartPosition = FormStartPosition.Manual
+            form.Location = New Point(ParkedOffscreen, ParkedOffscreen)
+        End Sub
+
+        ''' <summary>
+        ''' Attaches the zoom once a page has finished laying itself out, and brings it on screen.
+        '''
+        ''' The zoom centres the window as it applies. The Finally covers every case where it did
+        ''' not - an exception, or a factor that clamped back to 1.0 and made Apply do nothing.
+        ''' </summary>
+        Public Shared Sub AttachAndReveal(form As Form)
+            If form Is Nothing OrElse form.IsDisposed Then Return
+
+            Try
+                Attach(form)
+            Finally
+                If form.Left <= ParkedOffscreen \ 2 Then
+                    Dim room = Screen.FromControl(form).WorkingArea
+                    form.Location = New Point(room.Left + ((room.Width - form.Width) \ 2),
+                                              room.Top + ((room.Height - form.Height) \ 2))
+                End If
+            End Try
+        End Sub
+
+        Private Const ParkedOffscreen As Integer = -32000
+
+        ''' <summary>
+        ''' A small read-out of the zoom, tucked into the bottom-left corner.
+        '''
+        ''' Bottom-left because the other bottom corner is taken: Save and Cancel sit there on a
+        ''' maintenance page. Shown at 100% too, so the reader can see the page has a zoom at all
+        ''' rather than only finding out once it has been changed.
+        '''
+        ''' A fixed small font that does not scale. It is a note about the page, not part of it.
+        ''' </summary>
+        Private Shared Sub AddIndicator(form As Form, state As State)
+            state.Indicator = New Label() With {
+                .Name = "Label_ZoomLevel",
+                .AutoSize = True,
+                .Font = New Font("Segoe UI", 8.0F, FontStyle.Regular),
+                .ForeColor = Color.Gray,
+                .BackColor = Color.Transparent,
+                .TabStop = False,
+                .Anchor = AnchorStyles.Bottom Or AnchorStyles.Left
+            }
+
+            form.Controls.Add(state.Indicator)
+            PlaceIndicator(form, state)
+
+            ' A page that re-lays itself out, or Hot Fields widening one, moves the corner.
+            AddHandler form.ClientSizeChanged, Sub(sender As Object, e As EventArgs) PlaceIndicator(form, state)
+        End Sub
+
+        Private Shared Sub PlaceIndicator(form As Form, state As State)
+            Dim indicator = state.Indicator
+            If indicator Is Nothing OrElse indicator.IsDisposed Then Return
+
+            indicator.Text = CInt(Math.Round(state.Factor * 100)).ToString(Globalization.CultureInfo.InvariantCulture) & "%"
+            indicator.Location = New Point(4, Math.Max(0, form.ClientSize.Height - indicator.Height - 3))
+            indicator.BringToFront()
+        End Sub
+
         ''' <summary>Records the whole tree, so a control nested three deep scales with the rest.</summary>
         Private Shared Sub Capture(parent As Control, into As Dictionary(Of Control, Original))
             For Each control As Control In parent.Controls
-                into(control) = New Original With {
+                Dim entry As New Original With {
                     .Bounds = control.Bounds,
                     .FontSize = If(control.Font Is Nothing, 0.0F, control.Font.Size),
                     .Anchoring = control.Anchor
                 }
+
+                Dim grid = TryCast(control, DataGridView)
+                If grid IsNot Nothing Then
+                    entry.GridHeaderHeight = grid.ColumnHeadersHeight
+                    entry.GridRowHeight = grid.RowTemplate.Height
+                    entry.GridHeaderFontSize = If(grid.ColumnHeadersDefaultCellStyle.Font Is Nothing, 0.0F,
+                                                  grid.ColumnHeadersDefaultCellStyle.Font.Size)
+
+                    ' The resolved mode, so a column inheriting Fill from its grid counts as Fill.
+                    entry.GridFixedColumns = New Dictionary(Of String, (Width As Integer, MinimumWidth As Integer))(StringComparer.OrdinalIgnoreCase)
+                    For Each column As DataGridViewColumn In grid.Columns
+                        If String.IsNullOrEmpty(column.Name) Then Continue For
+                        If column.InheritedAutoSizeMode <> DataGridViewAutoSizeColumnMode.None Then Continue For
+
+                        entry.GridFixedColumns(column.Name) = (column.Width, column.MinimumWidth)
+                    Next
+                End If
+
+                Dim split = TryCast(control, SplitContainer)
+                If split IsNot Nothing AndAlso Not split.Panel1Collapsed Then
+                    entry.SplitterDistance = split.SplitterDistance
+                End If
+
+                into(control) = entry
 
                 If control.Controls.Count > 0 Then Capture(control, into)
             Next

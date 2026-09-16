@@ -72,7 +72,10 @@ Namespace SDC.Framework
             ' defect cannot be reported without the page it happened on.
             reportingPage = If(reportedFromPage, String.Empty).Trim()
 
-            Me.FormBorderStyle = FormBorderStyle.Sizable
+            ' Fixed, like every other page. This one used to set itself back to Sizable over
+            ' FW_Base_U's fixed border; the application sizes it, nobody drags it.
+            Me.FormBorderStyle = FormBorderStyle.FixedDialog
+            Me.MaximizeBox = False
             Me.MinimumSize = New Size(920, 900)
             Me.ClientSize = New Size(900, 880)
             BuildLayout()

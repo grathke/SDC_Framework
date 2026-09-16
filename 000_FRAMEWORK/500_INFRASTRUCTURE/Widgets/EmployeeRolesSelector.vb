@@ -64,6 +64,15 @@ Namespace SDC.Framework
         Private ReadOnly available As New List(Of Integer)()
 
         ''' <summary>
+        ''' Each role's DisplayOrder, for every role on either side.
+        '''
+        ''' The actual value rather than the role's position in the offered list. The offered list
+        ''' leaves out App Admin roles, so a held Application Admin - DisplayOrder 1 - had no
+        ''' position at all, and moving it back put the first role in the order at the bottom.
+        ''' </summary>
+        Private ReadOnly roleDisplayOrder As New Dictionary(Of Integer, Integer)()
+
+        ''' <summary>
         ''' Builds the panel and loads it.
         ''' </summary>
         ''' <param name="employeeId">The employee being edited, or zero when creating one.</param>
@@ -152,21 +161,24 @@ Namespace SDC.Framework
             roleNames.Clear()
             assigned.Clear()
             available.Clear()
+            roleDisplayOrder.Clear()
 
             Dim offered = DataAccess.GetSelectableRolesByRegistration(registrationId)
             If offered IsNot Nothing Then
                 For Each row As DataRow In offered.Rows
                     Dim id = Convert.ToInt32(row("ID"))
                     roleNames(id) = Convert.ToString(row("RoleName"))
+                    roleDisplayOrder(id) = Convert.ToInt32(row("DisplayOrder"))
                     available.Add(id)
                 Next
             End If
 
             If employeeId > 0 Then
                 For Each held In DataAccess.GetEmployeeRoleIds(employeeId)
-                    If Not roleNames.ContainsKey(held.Key) Then roleNames(held.Key) = held.Value
-                    available.Remove(held.Key)
-                    If Not assigned.Contains(held.Key) Then assigned.Add(held.Key)
+                    If Not roleNames.ContainsKey(held.RoleId) Then roleNames(held.RoleId) = held.RoleName
+                    roleDisplayOrder(held.RoleId) = held.DisplayOrder
+                    available.Remove(held.RoleId)
+                    If Not assigned.Contains(held.RoleId) Then assigned.Add(held.RoleId)
                 Next
             End If
 
@@ -181,8 +193,33 @@ Namespace SDC.Framework
 
             fromList.Remove(roleId)
             If Not toList.Contains(roleId) Then toList.Add(roleId)
+
+            ' Back on the left, a role takes its DisplayOrder place again. Appending put every role
+            ' taken off an employee at the bottom, whatever its order. Ordered the way the database
+            ' orders roles - unset last, then DisplayOrder, then name - so the list reads the same
+            ' as when it first opened. The right-hand list keeps the order roles were given.
+            If toList Is available Then
+                Dim ordered = available.
+                    OrderBy(Function(id) If(OrderOf(id) = 0, 1, 0)).
+                    ThenBy(Function(id) OrderOf(id)).
+                    ThenBy(Function(id) NameOf_(id), StringComparer.OrdinalIgnoreCase).
+                    ToList()
+                available.Clear()
+                available.AddRange(ordered)
+            End If
+
             Refill()
         End Sub
+
+        Private Function OrderOf(roleId As Integer) As Integer
+            Dim order As Integer
+            Return If(roleDisplayOrder.TryGetValue(roleId, order), order, 0)
+        End Function
+
+        Private Function NameOf_(roleId As Integer) As String
+            Dim name As String = Nothing
+            Return If(roleNames.TryGetValue(roleId, name), name, String.Empty)
+        End Function
 
         Private Sub Refill()
             Fill(availableGrid, available)
@@ -219,7 +256,7 @@ Namespace SDC.Framework
                 Return True
             End If
 
-            reason = "Assign at least one role. Without one this person can sign in and reach nothing."
+            reason = "ASSIGN AT LEAST ONE ROLE"
             Return False
         End Function
 

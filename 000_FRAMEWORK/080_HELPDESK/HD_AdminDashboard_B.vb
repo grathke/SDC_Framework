@@ -37,6 +37,13 @@ Namespace SDC.Framework
 
             Text = "Admin Help Desk Dashboard"
             StartPosition = FormStartPosition.CenterParent
+            ' Not resizable by dragging. Nearly every run of this application is a VirtualUI
+            ' session, where a window has no business growing past the canvas it is drawn on, and
+            ' a page that can be dragged wider fights both the zoom and its own layout. The
+            ' application still sizes the window itself - F9, and Hot Fields widening a browse page -
+            ' because a fixed border only stops the drag handles, not code.
+            FormBorderStyle = FormBorderStyle.FixedDialog
+            MaximizeBox = False
             MinimumSize = New Size(1100, 700)
             ClientSize = New Size(1250, 820)
             BackColor = Color.White

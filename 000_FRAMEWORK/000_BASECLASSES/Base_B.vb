@@ -12,6 +12,7 @@ Imports System.Windows.Forms
 Namespace SDC.Framework
     Public Class FW_Base_B
         Inherits Form
+        Implements PageZoom.IZoomAware
 
         Private ReadOnly currentUser As UserContext
         Private ReadOnly accessProfile As AccessProfile
@@ -241,15 +242,29 @@ Namespace SDC.Framework
         ''' </remarks>
 
         ''' <summary>
-        ''' Remembered zoom, applied before the first paint.
+        ''' Parks the page off-screen while a remembered zoom waits to be applied.
         '''
-        ''' On Load rather than Shown: a zoom applied after the window is up is seen to jump. The
-        ''' factor comes from the session cache, so this costs no database round trip.
+        ''' The zoom attaches from Shown, not here, for the same reason FW_Base_U's does: the page is
+        ''' not in its final shape at Load, and a snapshot taken early scales the wrong layout.
         ''' </summary>
         Protected Overrides Sub OnLoad(e As EventArgs)
             MyBase.OnLoad(e)
-            PageZoom.Attach(Me)
+            PageZoom.ParkIfZoomPending(Me)
         End Sub
+
+        ''' <summary>
+        ''' Hot Fields closes before the zoom changes.
+        '''
+        ''' The strip widens the window by a fixed 330px that the zoom's snapshot knows nothing
+        ''' about, and closing it takes the same amount back. With both deciding how wide the page
+        ''' is, a zoomed page with the strip open ends up neither size.
+        ''' </summary>
+        Private Sub BeforeZoom(newFactor As Single) Implements PageZoom.IZoomAware.BeforeZoom
+            If hotFieldsPanel IsNot Nothing AndAlso hotFieldsPanel.IsOpen Then
+                hotFieldsPanel.ClosePanel()
+            End If
+        End Sub
+
         ''' <summary>
         ''' Repaints the page in its stored colour once the form is built and on screen.
         ''' </summary>
@@ -269,6 +284,10 @@ Namespace SDC.Framework
             If backgroundColorPicker IsNot Nothing Then
                 backgroundColorPicker.Reapply()
             End If
+
+            ' Queued behind whatever the page's own Shown work queued, so the snapshot is of the
+            ' page as it settled rather than as it was first drawn.
+            BeginInvoke(New Action(Sub() PageZoom.AttachAndReveal(Me)))
         End Sub
 
         Protected ReadOnly Property PageColorPicker As PageBackgroundColorPicker
@@ -336,6 +355,13 @@ Namespace SDC.Framework
             Me.Text = "Browse Listing"
             Me.StartPosition = FormStartPosition.CenterScreen
             Me.MinimumSize = New Size(920, 620)
+            ' Not resizable by dragging. Nearly every run of this application is a VirtualUI
+            ' session, where a window has no business growing past the canvas it is drawn on, and
+            ' a page that can be dragged wider fights both the zoom and its own layout. The
+            ' application still sizes the window itself - F9, and Hot Fields widening a browse page -
+            ' because a fixed border only stops the drag handles, not code.
+            Me.FormBorderStyle = FormBorderStyle.FixedDialog
+            Me.MaximizeBox = False
             Me.ClientSize = New Size(980, 680)
             Me.BackColor = Color.White
 
@@ -708,7 +734,17 @@ Namespace SDC.Framework
 
             ' Every browse page can raise a report against itself, in the same screen position as
             ' the one on a maintenance page.
-            HelpDeskLauncher.Attach(Me, Me.GetType().Name)
+            Dim helpDeskButton = HelpDeskLauncher.Attach(Me, Me.GetType().Name)
+
+            ' As wide as Close, the button beneath it, with its right edge where it was. Browse pages
+            ' only: on a maintenance page it lines up with Cancel, which is 120, and keeps the
+            ' launcher's own 110. The caption and icon measure 78px, so 90 fits with a few to spare.
+            If helpDeskButton IsNot Nothing AndAlso closeButton IsNot Nothing Then
+                Dim rightEdge = helpDeskButton.Right
+                helpDeskButton.Width = closeButton.Width
+                helpDeskButton.Left = rightEdge - helpDeskButton.Width
+            End If
+
             Me.Controls.Add(sqlLabel)
             Me.Controls.Add(sqlTextBox)
             Me.Controls.Add(registrationIdLabel)
@@ -1205,6 +1241,12 @@ Namespace SDC.Framework
         ''' Saying so is shorter than showing nothing.
         ''' </remarks>
         Private Sub HotFields_Opening(sender As Object, e As System.ComponentModel.CancelEventArgs)
+            ' Back to normal size first. The strip widens the window by a fixed amount the zoom knows
+            ' nothing about; opened on a zoomed page, neither would be the right width.
+            If Math.Abs(PageZoom.CurrentFactor(Me) - 1.0F) > 0.001F Then
+                PageZoom.Apply(Me, 1.0F)
+            End If
+
             If browseGrid IsNot Nothing AndAlso browseGrid.SelectedRows.Count > 0 Then
                 Return
             End If
@@ -1635,6 +1677,19 @@ Namespace SDC.Framework
         ''' </remarks>
         Private Sub LayoutQbeSection()
             If qbeSplitContainer Is Nothing OrElse layoutToolbarPanel Is Nothing Then
+                Return
+            End If
+
+            ' Not while zoomed. This routine places everything from the window's width, backwards from
+            ' right-hand edges, with fixed numbers - and PageZoom places everything from a snapshot
+            ' scaled by the factor. Run both and they disagree further on every F9: the QBE buttons
+            ' and the layout toolbar walked off to the right. While zoomed the page is a scaled copy of
+            ' this layout at 1.0, which is exactly right because the window is exactly 1.0 x factor.
+            ' F8 goes back to 1.0 and this runs again.
+            '
+            ' Here rather than only in the Resize handler, because it is called directly as well -
+            ' registration visibility, toggling QBE, applying a saved layout.
+            If Math.Abs(PageZoom.CurrentFactor(Me) - 1.0F) > 0.001F Then
                 Return
             End If
 

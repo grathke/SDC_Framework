@@ -122,8 +122,13 @@ Assert-Pattern -Path ".\000_FRAMEWORK\020_DASHBOARDS\Dashboard_Company.vb" -Patt
 # at click time. The check follows the destination rather than being dropped: what it is really
 # asserting is the Action Icon Guardrail - a tile passes the live user and profile to whatever it
 # opens, and never constructs it bare.
-Assert-Pattern -Path ".\100_PROJECTS\SDC\MenuFormInitializer.vb" -Pattern "New Dashboard_Application(user, profile)" -Description "Main menu Admin tile passes access context to the application dashboard"
-Assert-Pattern -Path ".\100_PROJECTS\SDC\MenuFormInitializer.vb" -Pattern "New Dashboard_Company(user, profile)" -Description "Main menu Admin tile passes access context to the company dashboard"
+#
+# The Admin tile itself was removed on 2026-09-15 and the dashboards now open from the menu's
+# application-settings tile. These two checks still named the old tile's code and failed - and
+# because a failed assertion throws, the script stopped here, at line 125 of 278, and every check
+# after it went unrun without anybody noticing. Followed to where the dashboards are opened now.
+Assert-Pattern -Path ".\000_FRAMEWORK\010_MAINMENU\MainMenu.vb" -Pattern "New Dashboard_Application(currentUser, activeAccessProfile)" -Description "Main menu settings tile passes access context to the application dashboard"
+Assert-Pattern -Path ".\000_FRAMEWORK\010_MAINMENU\MainMenu.vb" -Pattern "New Dashboard_Company(currentUser, activeAccessProfile)" -Description "Main menu settings tile passes access context to the company dashboard"
 Assert-Pattern -Path ".\000_FRAMEWORK\090_DIAGNOSTICS\UserAccessDiagnostic_B.vb" -Pattern "Optional profile As AccessProfile = Nothing" -Description "A page opened by an action icon accepts the access profile"
 
 Write-Step "Shared concurrency contract"
@@ -184,7 +189,14 @@ if ($standardUpdatePages.Count -eq 0) { throw "No standard _U pages found - the 
 Write-Host "PASS: Registration_U.vb is an approved legacy model-backed maintenance-page exception" -ForegroundColor Yellow
 
 foreach ($page in $standardUpdatePages) {
+    # A generated page is split into a hand-written half and a generated partial beside it, and the
+    # bindings live in the partial. Reading only the first half reported Employees_U as having no
+    # bindings at all - never seen, because the script used to stop before it got this far.
     $pageText = Get-Content -Path $page.FullName -Raw
+    $generatedHalf = Join-Path $page.DirectoryName ($page.BaseName + ".Generated.vb")
+    if (Test-Path $generatedHalf) {
+        $pageText += [Environment]::NewLine + (Get-Content -Path $generatedHalf -Raw)
+    }
     if ($pageText -match "New\s+SqlCommand|\b(INSERT\s+INTO|UPDATE\s+dbo\.|DELETE\s+FROM)\b") {
         throw "Standard _U page $($page.Name) contains page-local SQL/DML. Use the shared schema/data-access contract."
     }

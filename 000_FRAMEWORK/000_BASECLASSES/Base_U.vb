@@ -62,44 +62,17 @@ Namespace SDC.Framework
         ''' rows up and shrinks the window, so a snapshot taken at Load is of a taller page than the
         ''' one anybody sees - and a saved 1.3 applied to it came back looking like 1.4. The snapshot
         ''' has to wait for the collapse, and the page waits off-screen until then rather than being
-        ''' seen at normal size and then jumping.
-        '''
-        ''' Off-screen, not Opacity. Opacity makes the page a layered window, and in a VirtualUI
-        ''' session that page never came back: invisible, modal over the menu, and not in any browser
-        ''' tab, which from the chair is indistinguishable from the application closing. A window
-        ''' positioned outside the canvas is an ordinary window VirtualUI has no reason to mishandle.
-        '''
-        ''' Only when a zoom is actually pending. A page at 1.0 has nothing to hide.
+        ''' seen at normal size and then jumping. PageZoom owns how the parking and the reveal are
+        ''' done, since FW_Base_B needs the same thing for the same reason.
         ''' </summary>
         Protected Overrides Sub OnLoad(e As EventArgs)
             MyBase.OnLoad(e)
-
-            If Math.Abs(PageZoomStore.FactorFor(Me.GetType().Name) - 1.0F) > 0.001F Then
-                StartPosition = FormStartPosition.Manual
-                Location = New Point(ParkedOffscreen, ParkedOffscreen)
-            End If
+            PageZoom.ParkIfZoomPending(Me)
         End Sub
 
-        Private Const ParkedOffscreen As Integer = -32000
-
-        ''' <summary>
-        ''' Attaches the zoom once the page has finished laying itself out, and shows it.
-        '''
-        ''' The zoom centres the window as part of applying itself. The Finally is for every case where
-        ''' it did not - an exception, or a stored factor that clamped back to 1.0 and made Apply do
-        ''' nothing: a page left parked off-screen is open, modal and unreachable, which is worse than
-        ''' any zoom problem and is exactly what the Opacity version did.
-        ''' </summary>
+        ''' <summary>Attaches the zoom once the page has finished laying itself out.</summary>
         Private Sub AttachZoomAfterLayout()
-            Try
-                PageZoom.Attach(Me)
-            Finally
-                If Left <= ParkedOffscreen \ 2 Then
-                    Dim room = Screen.FromControl(Me).WorkingArea
-                    Location = New Point(room.Left + ((room.Width - Width) \ 2),
-                                         room.Top + ((room.Height - Height) \ 2))
-                End If
-            End Try
+            PageZoom.AttachAndReveal(Me)
         End Sub
 
         ''' <summary>

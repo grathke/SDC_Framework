@@ -3582,24 +3582,24 @@ Namespace SDC.Framework
         ''' Looking it up from the offered list would leave it blank, or drop it, and a role
         ''' that cannot be seen cannot be taken away.
         ''' </summary>
-        Public Shared Function GetEmployeeRoleIds(employeeId As Integer) As List(Of KeyValuePair(Of Integer, String))
-            Dim held As New List(Of KeyValuePair(Of Integer, String))()
+        Public Shared Function GetEmployeeRoleIds(employeeId As Integer) As List(Of (RoleId As Integer, RoleName As String, DisplayOrder As Integer))
+            Dim held As New List(Of (RoleId As Integer, RoleName As String, DisplayOrder As Integer))()
             If employeeId <= 0 Then Return held
 
             Try
                 Using conn As New SqlConnection(ConnectionString)
                     conn.Open()
                     Using cmd As New SqlCommand(
-                        "SELECT er.RoleID, ISNULL(r.RoleName, '') AS RoleName FROM dbo.FW_EmployeeRoles er " &
+                        "SELECT er.RoleID, ISNULL(r.RoleName, '') AS RoleName, ISNULL(r.DisplayOrder, 0) AS DisplayOrder FROM dbo.FW_EmployeeRoles er " &
                         "INNER JOIN dbo.FW_Roles r ON r.ID = er.RoleID " &
                         "WHERE er.EmployeeID = @ID AND ISNULL(er.IsActive, 1) = 1 AND ISNULL(er.DeletedFlag, 0) = 0 " &
                         "ORDER BY CASE WHEN ISNULL(r.DisplayOrder, 0) = 0 THEN 1 ELSE 0 END, ISNULL(r.DisplayOrder, 255), r.RoleName", conn)
                         cmd.Parameters.Add("@ID", SqlDbType.Int).Value = employeeId
                         Using reader = cmd.ExecuteReader()
                             While reader.Read()
-                                held.Add(New KeyValuePair(Of Integer, String)(
-                                    Convert.ToInt32(reader("RoleID"), CultureInfo.InvariantCulture),
-                                    Convert.ToString(reader("RoleName"))))
+                                held.Add((Convert.ToInt32(reader("RoleID"), CultureInfo.InvariantCulture),
+                                          Convert.ToString(reader("RoleName")),
+                                          Convert.ToInt32(reader("DisplayOrder"), CultureInfo.InvariantCulture)))
                             End While
                         End Using
                     End Using
