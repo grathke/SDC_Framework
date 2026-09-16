@@ -2496,6 +2496,42 @@ Namespace SDC.Framework
         ''' somebody picks from is then what they will actually see, and no stored sample can
         ''' drift from the pattern beside it.
         ''' </summary>
+        ''' <summary>A registration's time zone, or 0 when it has none.</summary>
+        Public Shared Function GetRegistrationTimeZoneId(registrationId As Integer) As Integer
+            If registrationId <= 0 Then Return 0
+
+            Try
+                Using conn As New SqlConnection(ConnectionString)
+                    conn.Open()
+                    Using cmd As New SqlCommand(
+                        "SELECT TOP 1 ISNULL(TimeZoneID, 0) FROM dbo.FW_Registration WHERE RegistrationID = @ID", conn)
+                        cmd.Parameters.Add("@ID", SqlDbType.Int).Value = registrationId
+                        Dim result = cmd.ExecuteScalar()
+                        If result Is Nothing OrElse Convert.IsDBNull(result) Then Return 0
+                        Return Convert.ToInt32(result, CultureInfo.InvariantCulture)
+                    End Using
+                End Using
+            Catch
+                Return 0
+            End Try
+        End Function
+
+        ''' <summary>Every time zone's IANA id, keyed by TimeZoneID. One read, for the whole list.</summary>
+        Public Shared Function GetTimeZoneIanaIds() As Dictionary(Of Integer, String)
+            Dim result As New Dictionary(Of Integer, String)()
+            Using conn As New SqlConnection(ConnectionString)
+                conn.Open()
+                Using cmd As New SqlCommand("SELECT TimeZoneID, ISNULL(TimeZoneName, '') FROM dbo.FW_TimeZones", conn)
+                    Using reader = cmd.ExecuteReader()
+                        While reader.Read()
+                            result(Convert.ToInt32(reader.GetValue(0), CultureInfo.InvariantCulture)) = reader.GetString(1)
+                        End While
+                    End Using
+                End Using
+            End Using
+            Return result
+        End Function
+
         Public Shared Function GetFormatOptions(tableName As String, keyColumn As String) As DataTable
             Dim table As New DataTable(tableName)
             Using conn As New SqlConnection(ConnectionString)
@@ -2517,7 +2553,8 @@ Namespace SDC.Framework
                                               valueColumn As String,
                                               displayColumn As String,
                                               Optional filterByRegistration As Boolean = True,
-                                              Optional keepValue As Integer = 0) As DataTable
+                                              Optional keepValue As Integer = 0,
+                                              Optional allTimeZones As Boolean = False) As DataTable
             Dim result As New DataTable()
             Dim normalizedTable = NormalizeTableName(tableName)
 
@@ -2528,6 +2565,30 @@ Namespace SDC.Framework
             End If
             If TableHasColumn(normalizedTable, "DeletedFlag") Then
                 filters.Add("ISNULL([DeletedFlag], 0) = 0")
+            End If
+
+            ' Rows 1 to 9 are the US zones anyone picks from; the rest of FW_TimeZones is the full
+            ' IANA list, several hundred rows deep. Here rather than at each call site, so a
+            ' generated page gets the same list without the generator knowing anything about it.
+            ' The whole list, US zones first. Sorted here rather than by the caller, so the one
+            ' place that knows this table is odd is the one place that orders it.
+            If allTimeZones AndAlso String.Equals(normalizedTable, "FW_TimeZones", StringComparison.OrdinalIgnoreCase) Then
+                Dim everyZone As New DataTable()
+                Using conn As New SqlConnection(ConnectionString)
+                    conn.Open()
+                    Using cmd As New SqlCommand(
+                        "SELECT TimeZoneID, DisplayName FROM dbo.FW_TimeZones " &
+                        "ORDER BY CASE WHEN TimeZoneID BETWEEN 1 AND 9 THEN 0 ELSE 1 END, DisplayName", conn)
+                        Using da As New SqlDataAdapter(cmd)
+                            da.Fill(everyZone)
+                        End Using
+                    End Using
+                End Using
+                Return everyZone
+            End If
+
+            If String.Equals(normalizedTable, "FW_TimeZones", StringComparison.OrdinalIgnoreCase) Then
+                filters.Add("[TimeZoneID] BETWEEN 1 AND 9")
             End If
 
             ' Deleted rows are gone from the list outright; inactive ones survive only as the
@@ -2866,7 +2927,10 @@ Namespace SDC.Framework
                         Dim explicitRegistrationId As Integer
                         If registrationValue Is Nothing OrElse Not Integer.TryParse(Convert.ToString(registrationValue, CultureInfo.InvariantCulture), explicitRegistrationId) OrElse explicitRegistrationId <= 0 Then
                             writableValues.RemoveAll(Function(pair) String.Equals(pair.Key, "RegistrationID", StringComparison.OrdinalIgnoreCase))
-                            writableValues.Add(New KeyValuePair(Of String, Object)("RegistrationID", SessionState.Current.Value.RegistrationID))
+                            ' The registration being looked at, not the one the user signs in
+                            ' under - an App Admin adding a record while a browse page shows
+                            ' Saraland means it to be Saraland's.
+                            writableValues.Add(New KeyValuePair(Of String, Object)("RegistrationID", SessionState.WorkingRegistrationID()))
                         End If
                     End If
                     ' The login first. FW_Employees.UserId is NOT NULL, so the employee row
@@ -2881,7 +2945,15 @@ Namespace SDC.Framework
                             employeeRegistration = If(SessionState.IsActive AndAlso SessionState.Current.HasValue, SessionState.Current.Value.RegistrationID, 0)
                         End If
 
-                        Dim createdUserId = CreateLoginForEmployee(conn, tx, employeeUserName, employeeRegistration, userId)
+                        ' The name is carried onto the login as well as the employee. Nothing reads
+                        ' it there except login itself, but a FW_Users row with no name is
+                        ' unreadable to anyone looking at the table.
+                        Dim createdUserId = CreateLoginForEmployee(conn, tx,
+                                                                   employeeUserName,
+                                                                   GetGeneratedValueText(values, "FirstName"),
+                                                                   GetGeneratedValueText(values, "LastName"),
+                                                                   employeeRegistration,
+                                                                   userId)
 
                         ' The hash is keyed on the UserId that has just been issued. It could not
                         ' have been computed any earlier.
@@ -3211,6 +3283,8 @@ Namespace SDC.Framework
         Private Shared Function CreateLoginForEmployee(conn As SqlConnection,
                                                        tx As SqlTransaction,
                                                        userName As String,
+                                                       firstName As String,
+                                                       lastName As String,
                                                        registrationId As Integer,
                                                        createdBy As Integer) As Integer
             Dim name = If(userName, String.Empty).Trim()
@@ -3230,12 +3304,16 @@ Namespace SDC.Framework
             End Using
 
             Using cmd As New SqlCommand(
-                "INSERT INTO dbo.FW_Users (RegistrationID, UserName, IsActive, CreatedBy, CreatedOn) " &
-                "VALUES (@RegistrationID, @UserName, 1, @CreatedBy, GETDATE()); " &
+                "INSERT INTO dbo.FW_Users (RegistrationID, UserName, FirstName, LastName, IsActive, CreatedBy, CreatedOn) " &
+                "VALUES (@RegistrationID, @UserName, @FirstName, @LastName, 1, @CreatedBy, GETDATE()); " &
                 "SELECT CAST(SCOPE_IDENTITY() AS INT);", conn, tx)
                 cmd.Parameters.Add("@RegistrationID", SqlDbType.Int).Value =
                     If(registrationId > 0, CType(registrationId, Object), DBNull.Value)
                 cmd.Parameters.Add("@UserName", SqlDbType.VarChar, 50).Value = name
+                cmd.Parameters.Add("@FirstName", SqlDbType.VarChar, 100).Value =
+                    If(String.IsNullOrWhiteSpace(firstName), CType(DBNull.Value, Object), firstName.Trim())
+                cmd.Parameters.Add("@LastName", SqlDbType.VarChar, 100).Value =
+                    If(String.IsNullOrWhiteSpace(lastName), CType(DBNull.Value, Object), lastName.Trim())
                 cmd.Parameters.Add("@CreatedBy", SqlDbType.Int).Value = createdBy
                 Return Convert.ToInt32(cmd.ExecuteScalar(), CultureInfo.InvariantCulture)
             End Using
@@ -3475,6 +3553,33 @@ Namespace SDC.Framework
         ''' knows who they are signed in as and wants their own record. Deleted employees are
         ''' excluded - a deleted record is not a profile to edit.
         ''' </summary>
+        ''' <summary>
+        ''' This person's IANA time zone, or empty for the registration's.
+        '''
+        ''' Null on the employee is the normal case and means "use the registration's" - it is not
+        ''' a missing value to default.
+        ''' </summary>
+        Public Shared Function GetEmployeeTimeZoneName(userId As Integer) As String
+            If userId <= 0 Then Return String.Empty
+
+            Try
+                Using conn As New SqlConnection(ConnectionString)
+                    conn.Open()
+                    Using cmd As New SqlCommand(
+                        "SELECT TOP 1 ISNULL(z.TimeZoneName, '') FROM dbo.FW_Employees e " &
+                        "JOIN dbo.FW_TimeZones z ON z.TimeZoneID = e.TimeZoneID " &
+                        "WHERE e.UserId = @UserID AND ISNULL(e.DeletedFlag, 0) = 0 ORDER BY e.EmployeeID", conn)
+                        cmd.Parameters.Add("@UserID", SqlDbType.Int).Value = userId
+                        Dim result = cmd.ExecuteScalar()
+                        If result Is Nothing OrElse Convert.IsDBNull(result) Then Return String.Empty
+                        Return Convert.ToString(result, CultureInfo.InvariantCulture)
+                    End Using
+                End Using
+            Catch
+                Return String.Empty
+            End Try
+        End Function
+
         Public Shared Function GetEmployeeIdForUser(userId As Integer) As Integer
             If userId <= 0 Then Return 0
 
@@ -4677,9 +4782,7 @@ Namespace SDC.Framework
             Using conn As New SqlConnection(ConnectionString)
                 conn.Open()
                 Using cmd As New SqlCommand(
-                    "SELECT TOP 1 RegistrationID, RegName, Smarty_AuthID, Smarty_AuthToken, Smarty_EmbeddedKey, ISNULL(Smarty_UseEmbeddedKey, 0) AS Smarty_UseEmbeddedKey, ISNULL(LTRIM(RTRIM(BusinessRuleType)), '') AS BusinessRuleType, RegistrationTypeID, FormatDateID, FormatTimeID, Address1, Address2, City, State, Zip, MainFax, MainPhone, MainEMail, WebLandingPage, " &
-                    "ISNULL(DisplayDashboardOnStartUp, 0) AS DisplayDashboardOnStartUp, " &
-                    "ISNULL(AllowMessaging, 0) AS AllowMessaging, " &
+                    "SELECT TOP 1 RegistrationID, RegName, Smarty_AuthID, Smarty_AuthToken, Smarty_EmbeddedKey, ISNULL(Smarty_UseEmbeddedKey, 0) AS Smarty_UseEmbeddedKey, ISNULL(LTRIM(RTRIM(BusinessRuleType)), '') AS BusinessRuleType, RegistrationTypeID, FormatDateID, FormatTimeID, r.TimeZoneID, Address1, Address2, City, State, Zip, MainFax, MainPhone, MainEMail, WebLandingPage, " &
                     "ISNULL(AllowMultipleRoles, 0) AS AllowMultipleRoles, " &
                     "ISNULL(AllowPasswordChangeAtLogin, 0) AS AllowPasswordChangeAtLogin, " &
                     "ISNULL(AllowUpdateMyProfile, 0) AS AllowUpdateMyProfile, " &
@@ -4688,8 +4791,8 @@ Namespace SDC.Framework
                     "ISNULL(TwoFactorAuthentication, 0) AS TwoFactorAuthentication, " &
                     "ISNULL(HDUserSupport, 0) AS HDUserSupport, " &
                     "ISNULL(HDApplicationSupport, 0) AS HDApplicationSupport, " &
-                    "ISNULL(IsActive, 1) AS IsActive, RowVersion " &
-                    "FROM dbo.FW_Registration WHERE RegistrationID = @ID", conn)
+                    "ISNULL(IsActive, 1) AS IsActive, r.RowVersion, ISNULL(z.TimeZoneName, '') AS TimeZoneName " &
+                    "FROM dbo.FW_Registration r LEFT JOIN dbo.FW_TimeZones z ON z.TimeZoneID = r.TimeZoneID WHERE r.RegistrationID = @ID", conn)
 
                     cmd.Parameters.AddWithValue("@ID", registrationId)
 
@@ -4709,6 +4812,8 @@ Namespace SDC.Framework
                             .RegistrationTypeID = If(IsDBNull(reader("RegistrationTypeID")), 0, Convert.ToInt32(reader("RegistrationTypeID"), CultureInfo.InvariantCulture)),
                             .FormatDateID = If(IsDBNull(reader("FormatDateID")), 0, Convert.ToInt32(reader("FormatDateID"), CultureInfo.InvariantCulture)),
                             .FormatTimeID = If(IsDBNull(reader("FormatTimeID")), 0, Convert.ToInt32(reader("FormatTimeID"), CultureInfo.InvariantCulture)),
+                            .TimeZoneID = If(IsDBNull(reader("TimeZoneID")), 0, Convert.ToInt32(reader("TimeZoneID"), CultureInfo.InvariantCulture)),
+                            .TimeZoneName = SafeString(reader("TimeZoneName")),
                             .Address1 = SafeString(reader("Address1")),
                             .Address2 = SafeString(reader("Address2")),
                             .City = SafeString(reader("City")),
@@ -4718,8 +4823,6 @@ Namespace SDC.Framework
                             .MainPhone = SafeString(reader("MainPhone")),
                             .MainEMail = SafeString(reader("MainEMail")),
                             .WebLandingPage = SafeString(reader("WebLandingPage")),
-                            .DisplayDashboardOnStartUp = Convert.ToBoolean(reader("DisplayDashboardOnStartUp"), CultureInfo.InvariantCulture),
-                            .AllowMessaging = Convert.ToBoolean(reader("AllowMessaging"), CultureInfo.InvariantCulture),
                             .AllowMultipleRoles = Convert.ToBoolean(reader("AllowMultipleRoles"), CultureInfo.InvariantCulture),
                             .AllowPasswordChangeAtLogin = Convert.ToBoolean(reader("AllowPasswordChangeAtLogin"), CultureInfo.InvariantCulture),
                             .AllowUpdateMyProfile = Convert.ToBoolean(reader("AllowUpdateMyProfile"), CultureInfo.InvariantCulture),
@@ -4763,9 +4866,9 @@ Namespace SDC.Framework
                 Dim normalizedBusinessRuleType = NormalizeBusinessRuleType(record.BusinessRuleType)
                 Using cmd As New SqlCommand(
                     "INSERT INTO dbo.FW_Registration " &
-                    "(RegName, BusinessRuleType, RegistrationTypeID, FormatDateID, FormatTimeID, Address1, Address2, City, State, Zip, MainFax, MainPhone, MainEMail, WebLandingPage, Smarty_AuthID, Smarty_AuthToken, Smarty_EmbeddedKey, Smarty_UseEmbeddedKey, DisplayDashboardOnStartUp, AllowMessaging, AllowMultipleRoles, AllowPasswordChangeAtLogin, AllowUpdateMyProfile, AllowUpdateMyProfileEmail, HomeGraphic, TwoFactorAuthentication, IsActive, CreatedBy, CreatedOn, UpdatedBy, UpdatedOn) " &
+                    "(RegName, BusinessRuleType, RegistrationTypeID, FormatDateID, FormatTimeID, TimeZoneID, Address1, Address2, City, State, Zip, MainFax, MainPhone, MainEMail, WebLandingPage, Smarty_AuthID, Smarty_AuthToken, Smarty_EmbeddedKey, Smarty_UseEmbeddedKey, AllowMultipleRoles, AllowPasswordChangeAtLogin, AllowUpdateMyProfile, AllowUpdateMyProfileEmail, HomeGraphic, TwoFactorAuthentication, IsActive, CreatedBy, CreatedOn, UpdatedBy, UpdatedOn) " &
                     "VALUES " &
-                    "(@RegName, @BusinessRuleType, @RegistrationTypeID, @FormatDateID, @FormatTimeID, @Address1, @Address2, @City, @State, @Zip, @MainFax, @MainPhone, @MainEMail, @WebLandingPage, @Smarty_AuthID, @Smarty_AuthToken, @Smarty_EmbeddedKey, @Smarty_UseEmbeddedKey, @DisplayDashboardOnStartUp, @AllowMessaging, @AllowMultipleRoles, @AllowPasswordChangeAtLogin, @AllowUpdateMyProfile, @AllowUpdateMyProfileEmail, @HomeGraphic, @TwoFactorAuthentication, @IsActive, @CurrentUserId, GETDATE(), @CurrentUserId, GETDATE()); " &
+                    "(@RegName, @BusinessRuleType, @RegistrationTypeID, @FormatDateID, @FormatTimeID, @TimeZoneID, @Address1, @Address2, @City, @State, @Zip, @MainFax, @MainPhone, @MainEMail, @WebLandingPage, @Smarty_AuthID, @Smarty_AuthToken, @Smarty_EmbeddedKey, @Smarty_UseEmbeddedKey, @AllowMultipleRoles, @AllowPasswordChangeAtLogin, @AllowUpdateMyProfile, @AllowUpdateMyProfileEmail, @HomeGraphic, @TwoFactorAuthentication, @IsActive, @CurrentUserId, GETDATE(), @CurrentUserId, GETDATE()); " &
                     "SELECT CAST(SCOPE_IDENTITY() AS INT);", conn)
 
                     cmd.Parameters.AddWithValue("@RegName", DbValue(record.RegName))
@@ -4777,6 +4880,7 @@ Namespace SDC.Framework
                     ' created before the combos existed.
                     cmd.Parameters.AddWithValue("@FormatDateID", If(record.FormatDateID > 0, CType(record.FormatDateID, Object), DBNull.Value))
                     cmd.Parameters.AddWithValue("@FormatTimeID", If(record.FormatTimeID > 0, CType(record.FormatTimeID, Object), DBNull.Value))
+                    cmd.Parameters.AddWithValue("@TimeZoneID", If(record.TimeZoneID > 0, CType(record.TimeZoneID, Object), DBNull.Value))
                     cmd.Parameters.AddWithValue("@Address1", DbValue(record.Address1))
                     cmd.Parameters.AddWithValue("@Address2", DbValue(record.Address2))
                     cmd.Parameters.AddWithValue("@City", DbValue(record.City))
@@ -4790,8 +4894,6 @@ Namespace SDC.Framework
                     cmd.Parameters.AddWithValue("@Smarty_AuthToken", DbValue(record.Smarty_AuthToken))
                     cmd.Parameters.AddWithValue("@Smarty_EmbeddedKey", DbValue(record.Smarty_EmbeddedKey))
                     cmd.Parameters.AddWithValue("@Smarty_UseEmbeddedKey", record.Smarty_UseEmbeddedKey)
-                    cmd.Parameters.AddWithValue("@DisplayDashboardOnStartUp", record.DisplayDashboardOnStartUp)
-                    cmd.Parameters.AddWithValue("@AllowMessaging", record.AllowMessaging)
                     cmd.Parameters.AddWithValue("@AllowMultipleRoles", record.AllowMultipleRoles)
                     cmd.Parameters.AddWithValue("@AllowPasswordChangeAtLogin", record.AllowPasswordChangeAtLogin)
                     cmd.Parameters.AddWithValue("@AllowUpdateMyProfile", record.AllowUpdateMyProfile)
@@ -4821,6 +4923,7 @@ Namespace SDC.Framework
                     "RegistrationTypeID = @RegistrationTypeID, " &
                     "FormatDateID = @FormatDateID, " &
                     "FormatTimeID = @FormatTimeID, " &
+                    "TimeZoneID = @TimeZoneID, " &
                     "Address1 = @Address1, " &
                     "Address2 = @Address2, " &
                     "City = @City, " &
@@ -4834,8 +4937,6 @@ Namespace SDC.Framework
                     "Smarty_AuthToken = @Smarty_AuthToken, " &
                     "Smarty_EmbeddedKey = @Smarty_EmbeddedKey, " &
                     "Smarty_UseEmbeddedKey = @Smarty_UseEmbeddedKey, " &
-                    "DisplayDashboardOnStartUp = @DisplayDashboardOnStartUp, " &
-                    "AllowMessaging = @AllowMessaging, " &
                     "AllowMultipleRoles = @AllowMultipleRoles, " &
                     "AllowPasswordChangeAtLogin = @AllowPasswordChangeAtLogin, " &
                     "AllowUpdateMyProfile = @AllowUpdateMyProfile, " &
@@ -4857,6 +4958,7 @@ Namespace SDC.Framework
                     ' created before the combos existed.
                     cmd.Parameters.AddWithValue("@FormatDateID", If(record.FormatDateID > 0, CType(record.FormatDateID, Object), DBNull.Value))
                     cmd.Parameters.AddWithValue("@FormatTimeID", If(record.FormatTimeID > 0, CType(record.FormatTimeID, Object), DBNull.Value))
+                    cmd.Parameters.AddWithValue("@TimeZoneID", If(record.TimeZoneID > 0, CType(record.TimeZoneID, Object), DBNull.Value))
                     cmd.Parameters.AddWithValue("@Address1", DbValue(record.Address1))
                     cmd.Parameters.AddWithValue("@Address2", DbValue(record.Address2))
                     cmd.Parameters.AddWithValue("@City", DbValue(record.City))
@@ -4870,8 +4972,6 @@ Namespace SDC.Framework
                     cmd.Parameters.AddWithValue("@Smarty_AuthToken", DbValue(record.Smarty_AuthToken))
                     cmd.Parameters.AddWithValue("@Smarty_EmbeddedKey", DbValue(record.Smarty_EmbeddedKey))
                     cmd.Parameters.AddWithValue("@Smarty_UseEmbeddedKey", record.Smarty_UseEmbeddedKey)
-                    cmd.Parameters.AddWithValue("@DisplayDashboardOnStartUp", record.DisplayDashboardOnStartUp)
-                    cmd.Parameters.AddWithValue("@AllowMessaging", record.AllowMessaging)
                     cmd.Parameters.AddWithValue("@AllowMultipleRoles", record.AllowMultipleRoles)
                     cmd.Parameters.AddWithValue("@AllowPasswordChangeAtLogin", record.AllowPasswordChangeAtLogin)
                     cmd.Parameters.AddWithValue("@AllowUpdateMyProfile", record.AllowUpdateMyProfile)
@@ -5456,7 +5556,7 @@ Namespace SDC.Framework
                             "ISNULL(LTRIM(RTRIM(BTN_Read_Caption)), '') AS BTN_Read_Caption, " &
                             "ISNULL(LTRIM(RTRIM(BTN_Update_Caption)), '') AS BTN_Update_Caption, " &
                             "ISNULL(LTRIM(RTRIM(BTN_Delete_Caption)), '') AS BTN_Delete_Caption " &
-                            "FROM dbo.FW_Registration WHERE RegistrationID = @ID", conn)
+                            "FROM dbo.FW_Registration r LEFT JOIN dbo.FW_TimeZones z ON z.TimeZoneID = r.TimeZoneID WHERE r.RegistrationID = @ID", conn)
                             cmd.Parameters.AddWithValue("@ID", registrationId)
 
                             Using reader = cmd.ExecuteReader()
@@ -5561,7 +5661,7 @@ Namespace SDC.Framework
                     conn.Open()
                     Using cmd As New SqlCommand(
                         "SELECT TOP 1 ISNULL(MaxRecordsNoQBE, 10) AS MaxRecords " &
-                        "FROM dbo.FW_Registration WHERE RegistrationID = @ID", conn)
+                        "FROM dbo.FW_Registration r LEFT JOIN dbo.FW_TimeZones z ON z.TimeZoneID = r.TimeZoneID WHERE r.RegistrationID = @ID", conn)
                         cmd.Parameters.AddWithValue("@ID", registrationId)
 
                         Dim result = cmd.ExecuteScalar()

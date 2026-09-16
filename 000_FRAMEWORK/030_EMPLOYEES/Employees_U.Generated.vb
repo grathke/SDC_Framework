@@ -44,6 +44,7 @@ Namespace SDC.Framework
         Private workPhoneTextBox As TextBox
         Private extensionTextBox As TextBox
         Private assignedManagerIDComboBox As ComboBox
+        Private timeZoneIDComboBox As ComboBox
 
         ''' <summary>
         ''' Every control on the page, laid out. Called from the constructor in FW_Employees_U.vb.
@@ -82,7 +83,8 @@ Namespace SDC.Framework
             workPhoneTextBox = AddField("WorkPhone", 314, False, False, 580)
             extensionTextBox = AddField("Extension", 356, False, False, 580)
             assignedManagerIDComboBox = AddComboField("AssignedManagerID", 398, False, 580, 320)
-            SetManualTabOrder(firstNameTextBox, lastNameTextBox, address1TextBox, address2TextBox, cityTextBox, stateTextBox, zipTextBox, userNameTextBox, passwordTextBox, genderIDComboBox, emailTextBox, isActiveCheckBox, birthDateDateTimePicker, hireDateDateTimePicker, terminationDateDateTimePicker, homePhoneTextBox, cellPhoneTextBox, workPhoneTextBox, extensionTextBox, assignedManagerIDComboBox, okButton, cancelActionButton)
+            timeZoneIDComboBox = AddComboField("TimeZoneID", 440, False, 580, 320)
+            SetManualTabOrder(firstNameTextBox, lastNameTextBox, address1TextBox, address2TextBox, cityTextBox, stateTextBox, zipTextBox, userNameTextBox, passwordTextBox, genderIDComboBox, emailTextBox, isActiveCheckBox, birthDateDateTimePicker, hireDateDateTimePicker, terminationDateDateTimePicker, homePhoneTextBox, cellPhoneTextBox, workPhoneTextBox, extensionTextBox, assignedManagerIDComboBox, timeZoneIDComboBox, okButton, cancelActionButton)
             BindToForm()
             ApplyMode()
             smartyAddressLookupController = New SmartyAddressLookupController(
@@ -125,6 +127,7 @@ Namespace SDC.Framework
             If record.Table.Columns.Contains("IsActive") Then SetCheckField(isActiveCheckBox, record("IsActive"))
             ConfigureLookupCombo(genderIDComboBox, DataAccess.GetLookupTable("FW_Gender", "GenderID", "GenderDescription", True, CurrentLookupId("GenderID")), "GenderID", "GenderDescription", CurrentLookupId("GenderID"))
             ConfigureLookupCombo(assignedManagerIDComboBox, DataAccess.GetLookupTable("FW_Employees", "EmployeeID", "FirstLast", True, CurrentLookupId("AssignedManagerID")), "EmployeeID", "FirstLast", CurrentLookupId("AssignedManagerID"))
+            ConfigureLookupCombo(timeZoneIDComboBox, DataAccess.GetLookupTable("FW_TimeZones", "TimeZoneID", "DisplayName", False, CurrentLookupId("TimeZoneID")), "TimeZoneID", "DisplayName", CurrentLookupId("TimeZoneID"))
             If record.Table.Columns.Contains("RowVersion") AndAlso Not record.IsNull("RowVersion") Then originalRowVersion = CType(DirectCast(record("RowVersion"), Byte()).Clone(), Byte())
             CaptureOriginalRowVersion(originalRowVersion)
 
@@ -191,6 +194,7 @@ Namespace SDC.Framework
             values("WorkPhone") = workPhoneTextBox.Text
             values("Extension") = extensionTextBox.Text
             values("AssignedManagerID") = GetComboSelectedIdOrNull(assignedManagerIDComboBox)
+            values("TimeZoneID") = GetComboSelectedIdOrNull(timeZoneIDComboBox)
 
             OnBeforeSave(values)
 

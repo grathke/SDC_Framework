@@ -117,7 +117,7 @@ Namespace SDC.Framework
                 .Name = "ActionKey_FW_Employees_B",
                 .PageName = "FW_Employees_B",
                 .Text = "FW_Employees",
-                .Location = DashboardGridLayout.CellLocation(1, 2),
+                .Location = DashboardGridLayout.CellLocation(1, 3),
                 .Size = New Size(DashboardGridLayout.IconWidth, DashboardGridLayout.IconHeight),
                 .BackColor = Color.Transparent,
                 .UseVisualStyleBackColor = False,
@@ -184,7 +184,7 @@ Namespace SDC.Framework
 
         Private Sub Dashboard_Company_Resize(sender As Object, e As EventArgs)
             rolesButton.Top = DashboardGridLayout.CellTop(1)
-            generatedFW_Employees_BButton.Left = DashboardGridLayout.CellLeft(2)
+            generatedFW_Employees_BButton.Left = DashboardGridLayout.CellLeft(3)
             generatedFW_Employees_BButton.Top = DashboardGridLayout.CellTop(1)
             userDiagnosticButton.Top = rolesButton.Top
 

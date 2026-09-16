@@ -743,3 +743,23 @@ Get-Process Thinfinity.VirtualUI.Server -IncludeUserName | Select-Object Id, Use
 ```
 
 then `http://localhost:6580/` for a 200, then the tile, then `startup.log` in the `Start in` folder.
+
+## 13. Combo drop-downs appear on the desktop in dev mode — 2026-09-15
+
+A combo's list is not part of the form. Windows creates it as its own **top-level popup window**,
+owned by the desktop rather than parented to the form that opened it.
+
+In `--tf-dev` the application really is running on the development machine's desktop, so that popup
+is drawn there — it "bleeds through", landing at a corner of the screen instead of under the combo
+that opened it. The form behind it is being streamed; the popup is not part of that surface.
+
+**It is only combos**, and the reason is worth keeping: every other drop-down in this application
+was built as a panel parented to the form. `TileDropDownController` opens the ribbon tile menus
+that way, which is why TEST_CASES MENU-18 records the menu overlaying the regions rather than being
+clipped at the ribbon's edge. The combo is the one control where the OS still owns the list.
+
+Not diagnosed against a real browser session. If it misplaces there too, the fix already has a
+working precedent in this repository: a `ListBox` in a panel, shown and hidden by hand, inside the
+form's own window. That would want to be a shared control rather than a change per page - combos
+are everywhere, and `COMBO_CHECKLIST.md` asks for binding and validation to stay in shared
+patterns.

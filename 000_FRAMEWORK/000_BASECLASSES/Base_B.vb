@@ -1335,6 +1335,13 @@ Namespace SDC.Framework
         ''' knows which row it opened.
         ''' </summary>
         Private Function OpenMaintenancePageForRecord(recordId As Integer) As Boolean
+            ' Told before the page opens, so a new record belongs to the registration on screen
+            ' rather than to the one the user signed in under.
+            Dim openRegistrationId As Integer = 0
+            If TryGetActiveRegistrationId(openRegistrationId) Then
+                SessionState.SetWorkingRegistration(openRegistrationId)
+            End If
+
             Dim maintenancePage = CreateMaintenancePage(recordId)
             If maintenancePage Is Nothing Then Return False
 
@@ -4000,6 +4007,11 @@ Namespace SDC.Framework
             If showRegistrationSelector AndAlso registrationComboBox.Items.Count = 0 Then
                 LoadRegistrationCombo()
             End If
+
+            ' Last, and unconditionally. Filling the combo sets its caption and narrows it to its
+            ' content, and both change where the label belongs - the label ran into the combo when
+            ' it was placed for a width and a word that no longer applied.
+            LayoutQbeSection()
         End Sub
 
         Private Sub LoadRegistrationCombo()
@@ -4011,6 +4023,7 @@ Namespace SDC.Framework
                     registrationComboBox.SelectedValue = sessionRegistrationId
                 End If
                 RegistrationComboHelper.UpdateLabelForSelection(registrationIdLabel, registrationComboBox)
+                LayoutQbeSection()
                 lastSelectedRegistrationId = sessionRegistrationId
             Finally
                 suppressRegistrationSelectionChanged = False
@@ -4025,6 +4038,7 @@ Namespace SDC.Framework
             Dim registrationId As Integer = 0
             RegistrationComboHelper.TryGetSelectedId(registrationComboBox, registrationId)
             RegistrationComboHelper.UpdateLabelForSelection(registrationIdLabel, registrationComboBox)
+            LayoutQbeSection()
             If registrationId = lastSelectedRegistrationId Then
                 Return
             End If

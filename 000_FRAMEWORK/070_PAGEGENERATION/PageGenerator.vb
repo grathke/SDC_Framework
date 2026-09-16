@@ -1929,7 +1929,7 @@ Namespace SDC.Framework
             Next
             If fields.Any(Function(field) String.Equals(field, "RegistrationID", StringComparison.OrdinalIgnoreCase)) Then
                 output.AppendLine("            If recordId <= 0 AndAlso record.Table.Columns.Contains(""RegistrationID"") AndAlso SessionState.IsActive AndAlso SessionState.Current.HasValue Then")
-                output.AppendLine("                Dim sessionRegistrationId = SessionState.Current.Value.RegistrationID")
+                output.AppendLine("                Dim sessionRegistrationId = SessionState.WorkingRegistrationID()")
                 output.AppendLine("                If sessionRegistrationId > 0 AndAlso String.IsNullOrWhiteSpace(registrationIDTextBox.Text) Then registrationIDTextBox.Text = sessionRegistrationId.ToString(Globalization.CultureInfo.InvariantCulture)")
                 output.AppendLine("            End If")
             End If

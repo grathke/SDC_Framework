@@ -31,12 +31,19 @@ Namespace SDC.Framework
         Private Const DevRowOneTop As Integer = 276
         Private Const DevRowTwoTop As Integer = 306
 
+        ''' The Saraland row holds four, so it is laid out on its own pitch. 16 + 4 x 106 ends at
+        ''' 434 inside a 440 card.
+        Private Const SarRowLeft As Integer = 16
+        Private Const SarButtonWidth As Integer = 100
+        Private Const SarButtonPitch As Integer = 106
+
         Private ReadOnly btnSLitaker As Button
         Private ReadOnly btnGRathke As Button
         Private ReadOnly btnASawyer As Button
-        Private ReadOnly btnSarSLitaker As Button
-        Private ReadOnly btnSarGRathke As Button
-        Private ReadOnly btnSarASawyer As Button
+        Private ReadOnly btnSarCompanyAdmin As Button
+        Private ReadOnly btnSarUser1 As Button
+        Private ReadOnly btnSarUser2 As Button
+        Private ReadOnly btnSarUser3 As Button
         Private ReadOnly devHotspotPanel As Panel
         Private hiddenRevealClickCount As Integer = 0
         Private failedAttempts As Integer = 0
@@ -85,27 +92,38 @@ Namespace SDC.Framework
                 .Visible = False
             }
 
-            btnSarSLitaker = New Button() With {
-                .Name = "BTN_SAR_SLitaker",
-                .Text = "s S Litaker",
-                .Location = New Point(16, DevRowTwoTop),
-                .Size = New Size(130, 26),
+            ' Four to a row rather than three, so they are narrower and set on their own pitch.
+            ' Captioned for the login - CA, user1, User2, User3 - each of which holds exactly one
+            ' Saraland role.
+            btnSarCompanyAdmin = New Button() With {
+                .Name = "BTN_SAR_CompanyAdmin",
+                .Text = "s Cty Admin",
+                .Location = New Point(SarRowLeft, DevRowTwoTop),
+                .Size = New Size(SarButtonWidth, 26),
                 .Visible = False
             }
 
-            btnSarGRathke = New Button() With {
-                .Name = "BTN_SAR_GRathke",
-                .Text = "s G Rathke",
-                .Location = New Point(154, DevRowTwoTop),
-                .Size = New Size(130, 26),
+            btnSarUser1 = New Button() With {
+                .Name = "BTN_SAR_User1",
+                .Text = "s User 1",
+                .Location = New Point(SarRowLeft + SarButtonPitch, DevRowTwoTop),
+                .Size = New Size(SarButtonWidth, 26),
                 .Visible = False
             }
 
-            btnSarASawyer = New Button() With {
-                .Name = "BTN_SAR_ASawyer",
-                .Text = "s A Sawyer",
-                .Location = New Point(292, DevRowTwoTop),
-                .Size = New Size(130, 26),
+            btnSarUser2 = New Button() With {
+                .Name = "BTN_SAR_User2",
+                .Text = "s User 2",
+                .Location = New Point(SarRowLeft + SarButtonPitch * 2, DevRowTwoTop),
+                .Size = New Size(SarButtonWidth, 26),
+                .Visible = False
+            }
+
+            btnSarUser3 = New Button() With {
+                .Name = "BTN_SAR_User3",
+                .Text = "s User 3",
+                .Location = New Point(SarRowLeft + SarButtonPitch * 3, DevRowTwoTop),
+                .Size = New Size(SarButtonWidth, 26),
                 .Visible = False
             }
 
@@ -179,9 +197,10 @@ Namespace SDC.Framework
             AddHandler btnSLitaker.Click, AddressOf BtnSLitaker_Click
             AddHandler btnGRathke.Click, AddressOf BtnGRathke_Click
             AddHandler btnASawyer.Click, AddressOf BtnASawyer_Click
-            AddHandler btnSarSLitaker.Click, AddressOf BtnSarSLitaker_Click
-            AddHandler btnSarGRathke.Click, AddressOf BtnSarGRathke_Click
-            AddHandler btnSarASawyer.Click, AddressOf BtnSarASawyer_Click
+            AddHandler btnSarCompanyAdmin.Click, AddressOf BtnSarCompanyAdmin_Click
+            AddHandler btnSarUser1.Click, AddressOf BtnSarUser1_Click
+            AddHandler btnSarUser2.Click, AddressOf BtnSarUser2_Click
+            AddHandler btnSarUser3.Click, AddressOf BtnSarUser3_Click
             AddHandler devHotspotPanel.Click, AddressOf DevHotspotPanel_Click
 
             ' Onto the card, not the form. Anything added to the form would land behind the card
@@ -189,9 +208,10 @@ Namespace SDC.Framework
             card.Controls.Add(btnSLitaker)
             card.Controls.Add(btnGRathke)
             card.Controls.Add(btnASawyer)
-            card.Controls.Add(btnSarSLitaker)
-            card.Controls.Add(btnSarGRathke)
-            card.Controls.Add(btnSarASawyer)
+            card.Controls.Add(btnSarCompanyAdmin)
+            card.Controls.Add(btnSarUser1)
+            card.Controls.Add(btnSarUser2)
+            card.Controls.Add(btnSarUser3)
             card.Controls.Add(emailLabel)
             card.Controls.Add(emailTextBox)
             card.Controls.Add(passwordLabel)
@@ -210,21 +230,25 @@ Namespace SDC.Framework
             card.Height = CardRevealedHeight
 
             For Each quickLogin As Button In New Button() {btnSLitaker, btnGRathke, btnASawyer,
-                                                           btnSarSLitaker, btnSarGRathke, btnSarASawyer}
+                                                           btnSarCompanyAdmin, btnSarUser1, btnSarUser2, btnSarUser3}
                 quickLogin.Visible = True
             Next
         End Sub
 
-        Private Sub BtnSarSLitaker_Click(sender As Object, e As EventArgs)
-            QuickFillAndLogin("sandy@saraland.org", "1234")
+        Private Sub BtnSarCompanyAdmin_Click(sender As Object, e As EventArgs)
+            QuickFillAndLogin("CA", "1234")
         End Sub
 
-        Private Sub BtnSarGRathke_Click(sender As Object, e As EventArgs)
-            QuickFillAndLogin("glenn@saraland.org", "1234")
+        Private Sub BtnSarUser1_Click(sender As Object, e As EventArgs)
+            QuickFillAndLogin("user1", "1234")
         End Sub
 
-        Private Sub BtnSarASawyer_Click(sender As Object, e As EventArgs)
-            QuickFillAndLogin("alan@saraland.org", "1234")
+        Private Sub BtnSarUser2_Click(sender As Object, e As EventArgs)
+            QuickFillAndLogin("User2", "1234")
+        End Sub
+
+        Private Sub BtnSarUser3_Click(sender As Object, e As EventArgs)
+            QuickFillAndLogin("User3", "1234")
         End Sub
 
         Private Sub BtnSLitaker_Click(sender As Object, e As EventArgs)
@@ -475,6 +499,10 @@ Namespace SDC.Framework
             ' own. Login makes six registration round trips already.
             Dim allowUpdateMyProfile = registrationRecord IsNot Nothing AndAlso registrationRecord.AllowUpdateMyProfile
             Dim homeGraphic = If(registrationRecord Is Nothing, String.Empty, If(registrationRecord.HomeGraphic, String.Empty))
+            ' The employee's zone wins where they have one; otherwise the registration's.
+            Dim registrationTimeZone = If(registrationRecord Is Nothing, String.Empty, If(registrationRecord.TimeZoneName, String.Empty))
+            Dim employeeTimeZone = DataAccess.GetEmployeeTimeZoneName(user.UserId)
+            If employeeTimeZone <> String.Empty Then registrationTimeZone = employeeTimeZone
             Dim businessRuleType = DataAccess.GetRegistrationBusinessRuleType(sessionRegistrationId)
             Dim maxRecordsNoQBE = DataAccess.GetMaxRecordsNoQBE(sessionRegistrationId)
             Dim registrationDatePattern As String = String.Empty
@@ -510,7 +538,8 @@ Namespace SDC.Framework
                                       registrationDatePattern,
                                       registrationTimePattern,
                                       allowUpdateMyProfile,
-                                      homeGraphic)
+                                      homeGraphic,
+                                      registrationTimeZone)
 
             If loginWarnings.Count > 0 Then
                 MessageBox.Show(String.Join(vbCrLf & vbCrLf, loginWarnings).ToUpperInvariant(),

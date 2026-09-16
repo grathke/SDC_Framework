@@ -162,6 +162,9 @@ Namespace SDC.Framework
 
         ''' <summary>This registration's Home Region picture, a file name in assets\images.</summary>
         Public Property HomeGraphic As String
+
+        ''' <summary>The registration's IANA time zone id, or empty. Applied to dates through TimeZones.</summary>
+        Public Property TimeZoneName As String
     End Structure
 
     Public Module SessionState
@@ -224,7 +227,8 @@ Namespace SDC.Framework
                                 Optional dateFormat As String = "",
                                 Optional timeFormat As String = "",
                                 Optional allowUpdateMyProfile As Boolean = False,
-                                Optional homeGraphic As String = "")
+                                Optional homeGraphic As String = "",
+                                Optional timeZoneName As String = "")
             If user Is Nothing Then
                 ClearSession()
                 Return
@@ -272,7 +276,8 @@ Namespace SDC.Framework
                 .DateFormat = If(dateFormat, String.Empty).Trim(),
                 .TimeFormat = If(timeFormat, String.Empty).Trim(),
                 .AllowUpdateMyProfile = allowUpdateMyProfile,
-                .HomeGraphic = If(homeGraphic, String.Empty).Trim()
+                .HomeGraphic = If(homeGraphic, String.Empty).Trim(),
+                .TimeZoneName = If(timeZoneName, String.Empty).Trim()
             }
 
             seenUiHints = New HashSet(Of String)(StringComparer.OrdinalIgnoreCase)
@@ -348,6 +353,37 @@ Namespace SDC.Framework
             currentSession = session
         End Sub
 
+        ''' <summary>
+        ''' The registration the user is currently looking at, which is the session's own unless an
+        ''' App Admin has chosen another in a browse page's selector.
+        '''
+        ''' Separate from RegistrationID, which decides permissions and must not follow a combo.
+        ''' This only defaults a new record, so one created while looking at Saraland belongs to
+        ''' Saraland rather than to whoever created it.
+        ''' </summary>
+        Private activeWorkingRegistration As Integer
+
+        Public Sub SetWorkingRegistration(registrationId As Integer)
+            activeWorkingRegistration = Math.Max(0, registrationId)
+        End Sub
+
+        Public Function WorkingRegistrationID() As Integer
+            If activeWorkingRegistration > 0 Then Return activeWorkingRegistration
+            If currentSession.HasValue Then Return currentSession.Value.RegistrationID
+            Return 0
+        End Function
+
+        ''' <summary>
+        ''' Overrides the time zone for this session only. Nothing is stored - signing in again
+        ''' returns to the employee's zone, or the registration's.
+        ''' </summary>
+        Public Sub OverrideTimeZone(ianaId As String)
+            If Not currentSession.HasValue Then Return
+            Dim session = currentSession.Value
+            session.TimeZoneName = If(ianaId, String.Empty).Trim()
+            currentSession = session
+        End Sub
+
         Private Function NormalizeCrudCaption(value As String, fallbackValue As String) As String
             Dim trimmed = If(value, String.Empty).Trim()
             If trimmed = String.Empty Then
@@ -411,8 +447,6 @@ Namespace SDC.Framework
         Public Property MainPhone As String
         Public Property MainEMail As String
         Public Property WebLandingPage As String
-        Public Property DisplayDashboardOnStartUp As Boolean
-        Public Property AllowMessaging As Boolean
         Public Property AllowMultipleRoles As Boolean
         Public Property AllowPasswordChangeAtLogin As Boolean
         Public Property AllowUpdateMyProfile As Boolean
@@ -431,6 +465,10 @@ Namespace SDC.Framework
         ''' </summary>
         Public Property FormatDateID As Integer
         Public Property FormatTimeID As Integer
+        Public Property TimeZoneID As Integer
+
+        ''' <summary>The IANA id from FW_TimeZones, for TimeZoneInfo. Read only - never saved back.</summary>
+        Public Property TimeZoneName As String = String.Empty
 
         ''' <summary>
         ''' The role a new employee is given when their record is created, or zero for none.

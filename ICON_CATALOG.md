@@ -97,23 +97,22 @@ The flow panel holds `close`, `dashboard`, `application-settings`, `users`, and
 - visibility rule: always visible
 - click behavior: closes the menu session
 
-## dashboard
+## dashboard — REMOVED 2026-09-15
 
-- placement: main ribbon, flow panel, anchored second — after `close`, before `application-settings`
-- ActionType: Command (**placeholder — not wired up**)
-- target: none yet. It will load an internal page into one of the `MenuRegion` panels below rather
-  than opening a dialog, which would make it the first region-loading ribbon action. Which region
-  and what content are undecided.
-- caption source: fixed (`Dashboard`)
-- icon file: `dashboard.png`
-- visibility rule: `ConfigureActionVisibility("dashboard", True, True)` in `MenuFormInitializer.vb`
-- click behavior: shows a message saying it is not wired up yet
+Gone from the ribbon. It was a placeholder throughout: its handler showed a message saying it was
+not wired up, and the region-loading action it was meant to become was never decided. The Home
+layout now occupies the idea of an arrangement the ribbon switches to, which is what this tile was
+a stand-in for.
 
-History, so the gap is not rediscovered: this tile was absent for some time. It survived only in
-`project-backup/MenuForm.vb`, where it opened `HelloWorldPageForm` — a form with no source left
-anywhere in the repository. The `ConfigureActionVisibility` call above outlived it and did nothing,
-because that method returns early for a key with no tile. Re-added 2026-09-02 as a placeholder so it
-holds its anchored place in the row; the old target is gone and is not what it will do.
+`FW_Perm_Dashboard` gated it and now gates nothing. The table and its `FW_RoleSchema` row survive,
+so Roles still offers the permission — one an administrator can grant that changes nothing.
+Removing it is the eight-table procedure in `CLAUDE.md`.
+
+History, so the gap is not rediscovered twice: the tile was absent for some time before this. It
+survived only in `project-backup/MenuForm.vb`, where it opened `HelloWorldPageForm` — a form with no
+source left anywhere in the repository. The `ConfigureActionVisibility` call outlived it and did
+nothing, because that method returns early for a key with no tile. Re-added 2026-09-02 as a
+placeholder, removed 2026-09-15 without ever having been wired up.
 
 ## application-settings
 
@@ -147,16 +146,17 @@ holds its anchored place in the row; the old target is gone and is not what it w
 - visibility rule: `MenuFormInitializer.vb:120`, always visible and enabled
 - click behavior: opens the `Roles_B` dialog
 
-## user-admin
+## user-admin — REMOVED 2026-09-15
 
-- placement: main ribbon (left)
-- ActionType: Page
-- target: `Dashboard_Application` for an App Admin, otherwise `Dashboard_Company`
-- caption source: fixed (`Admin`)
-- icon file: `users.png`
-- visibility rule: `MenuFormInitializer.vb:196`; always visible
-- click behavior: reads the role **when clicked**, not when built, and opens the dashboard that
-  matches it
+Gone from the ribbon. It opened `Dashboard_Application` for an App Admin and `Dashboard_Company` for
+everybody else, reading the role when clicked — which is exactly what `application-settings` already
+does. Two tiles, one destination, and the other one is the tile that carries the drop-down menu.
+
+The dashboards are unaffected: Application Settings remains the way in, so everything on them —
+Roles, Help Desk admin, the audit trail, the Employees icon added the same day — is still reachable.
+
+`users.png` is now unused by any catalogued action.
+
 - note: this entry said `Users_AppAdmin_B` until 2026-09-08, which had not been true since the tile
   was pointed at the dashboards. That page has now been deleted with the rest of the `FW_Users`
   pages.

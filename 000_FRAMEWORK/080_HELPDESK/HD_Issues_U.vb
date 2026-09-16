@@ -491,6 +491,32 @@ Namespace SDC.Framework
         ''' entry, or MinValue if this entry does not carry one - older entries, or text a user
         ''' pasted in.
         ''' </summary>
+        ''' <summary>
+        ''' Rewrites an entry's "[yyyy-MM-dd HH:mm UTC]" header in the session's zone.
+        '''
+        ''' The stored text stays UTC - only what is drawn changes. An entry whose header does not
+        ''' parse is left exactly as it is, which is what happens to anything written before the
+        ''' header carried its zone.
+        ''' </summary>
+        Private Shared Function ShowStampInSessionZone(entryText As String) As String
+            If String.IsNullOrEmpty(entryText) Then Return entryText
+
+            Dim opened = entryText.IndexOf("["c)
+            If opened < 0 Then Return entryText
+
+            Dim closed = entryText.IndexOf("]"c, opened + 1)
+            If closed < 0 Then Return entryText
+
+            Dim stamp = StampFromEntry(entryText)
+            If stamp = DateTime.MinValue Then Return entryText
+
+            Dim zone = SessionTime.ZoneAbbreviation()
+            If zone = String.Empty Then Return entryText
+
+            Dim shown = SessionTime.ToSessionZone(stamp).ToString("yyyy-MM-dd HH:mm", CultureInfo.InvariantCulture)
+            Return entryText.Substring(0, opened) & "[" & shown & " " & zone & "]" & entryText.Substring(closed + 1)
+        End Function
+
         Private Shared Function StampFromEntry(entryText As String) As DateTime
             Dim opened = If(entryText, String.Empty).IndexOf("["c)
             If opened < 0 Then Return DateTime.MinValue
@@ -553,7 +579,7 @@ Namespace SDC.Framework
             Next
 
             For entryIndex = 0 To entries.Length - 1
-                Dim entryText = entries(entryIndex).Trim()
+                Dim entryText = ShowStampInSessionZone(entries(entryIndex).Trim())
                 If entryText.Length = 0 Then Continue For
 
                 Dim entryPanel As New Panel() With {

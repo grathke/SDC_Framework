@@ -111,11 +111,9 @@ Namespace SDC.Framework
         Private ReadOnly leftActionsFlow As FlowLayoutPanel
         Private ReadOnly rightPinnedActionsPanel As FlowLayoutPanel
         Private ReadOnly headingLabel As Label
+        Private ReadOnly timeZoneOverrideCombo As ComboBox
         Private ReadOnly newMessageMarker As Label
         Private ReadOnly welcomeLabel As Label
-        Private ReadOnly userBadgeLabel As Label
-        Private ReadOnly eodLabel As Label
-        Private ReadOnly rfrLabel As Label
         ''' <summary>
         ''' The area under the ribbon. It holds every layout, one of which is showing.
         '''
@@ -478,15 +476,28 @@ Namespace SDC.Framework
                 .ForeColor = Color.FromArgb(24, 45, 78)
             }
 
+            ' A session-only time zone, on the registration name's baseline and under the pinned
+            ' row. Nothing is stored: it exists for somebody working away from their usual zone,
+            ' and signing in again returns to the employee's or the registration's.
+            '
+            ' The whole list, unlike the registration and employee settings. Those name a business
+            ' location and are kept to the US; this one answers "where am I today".
+            timeZoneOverrideCombo = New ComboBox() With {
+                .Name = "ComboBox_SessionTimeZone",
+                .DropDownStyle = ComboBoxStyle.DropDownList,
+                .Size = New Size(260, 26),
+                .Location = New Point(Me.ClientSize.Width - 300, 158 + LayoutShift),
+                .Anchor = AnchorStyles.Top Or AnchorStyles.Right,
+                .Font = New Font("Segoe UI", 9.0F, FontStyle.Regular)
+            }
+
             ' Left of the registration name, and big enough to be seen without being looked for -
             ' 26pt against the name's 20. Red is unused elsewhere on this part of the page, so it
             ' means one thing here.
             '
-            ' Hidden until something sets it. What that something is has not been decided: the
-            ' candidates are a FW_RoleDetails permission on the messages table, the registration's
-            ' AllowMessaging flag, or which application is running - and until one is chosen there
-            ' is nothing to poll and nothing to turn it on. SetNewMessageIndicator is the whole
-            ' switch, so wiring it up later touches one call site.
+            ' Decided since: a FW_RoleDetails permission on FW_Messages. The registration's
+            ' AllowMessaging flag was the other candidate and was removed on 2026-09-15 - nothing
+            ' ever read it, and two switches for one question is how they end up disagreeing.
             ' Horizontal position unchanged - x = 18, where it has always been. Only the vertical
             ' moves: an asterisk is drawn in the upper part of its em box, being a superscript
             ' glyph by design, so sitting it level with the registration name's top put the mark
@@ -510,39 +521,6 @@ Namespace SDC.Framework
                 .Text = "Welcome " & welcomeName & " (" & welcomeUserId.ToString() & ")"
             }
 
-            userBadgeLabel = New Label() With {
-                .AutoSize = False,
-                .Location = New Point(Me.ClientSize.Width - 320, 182 + LayoutShift),
-                .Size = New Size(180, 34),
-                .Anchor = AnchorStyles.Top Or AnchorStyles.Right,
-                .Text = currentUser.Email,
-                .TextAlign = ContentAlignment.MiddleLeft,
-                .BackColor = Color.FromArgb(144, 244, 251),
-                .ForeColor = Color.FromArgb(27, 76, 110),
-                .Font = New Font("Segoe UI", 12.0F, FontStyle.Regular)
-            }
-
-            eodLabel = New Label() With {
-                .AutoSize = False,
-                .Location = New Point(Me.ClientSize.Width - 132, 184 + LayoutShift),
-                .Size = New Size(120, 20),
-                .Anchor = AnchorStyles.Top Or AnchorStyles.Right,
-                .Text = "EOD: 10:51 AM",
-                .TextAlign = ContentAlignment.MiddleLeft,
-                .Font = New Font("Segoe UI", 10.0F, FontStyle.Regular),
-                .ForeColor = Color.FromArgb(52, 60, 70)
-            }
-
-            rfrLabel = New Label() With {
-                .AutoSize = False,
-                .Location = New Point(Me.ClientSize.Width - 132, 206 + LayoutShift),
-                .Size = New Size(120, 20),
-                .Anchor = AnchorStyles.Top Or AnchorStyles.Right,
-                .Text = "RFR: 1 min",
-                .TextAlign = ContentAlignment.MiddleLeft,
-                .Font = New Font("Segoe UI", 10.0F, FontStyle.Regular),
-                .ForeColor = Color.FromArgb(52, 60, 70)
-            }
 
             ' The host carries the position and the anchoring that contentLayout used to. Every
             ' layout inside it docks to fill, which is what keeps them all the same size as each
@@ -647,7 +625,6 @@ Namespace SDC.Framework
             ' means Home is the only tile whose whole job is the arrangement rather than an
             ' occupant of one.
             AddActionTile("layout-home", "Home", AddressOf ShowHomeLayout_Click, LoadMenuIcon("Color_Home.png", SystemIcons.Application.ToBitmap()))
-            AddActionTile("dashboard", "Dashboard", AddressOf Dashboard_Click, LoadMenuIcon("dashboard.png", SystemIcons.Application.ToBitmap()))
 
             ' Messages sits here and nowhere else. It is a fixed position, not a movable tile the
             ' user arranges - when messaging is not permitted the tile is absent and the flow
@@ -687,11 +664,9 @@ Namespace SDC.Framework
 
             Me.Controls.Add(ribbonPanel)
             Me.Controls.Add(headingLabel)
+            Me.Controls.Add(timeZoneOverrideCombo)
             Me.Controls.Add(newMessageMarker)
             Me.Controls.Add(welcomeLabel)
-            Me.Controls.Add(userBadgeLabel)
-            Me.Controls.Add(eodLabel)
-            Me.Controls.Add(rfrLabel)
             Me.Controls.Add(contentHost)
 
             ConfigureActionVisibility("application-settings", True, True)
@@ -699,6 +674,7 @@ Namespace SDC.Framework
             ConfigureActionVisibility("select-role", True, True)
 
             SetTimezoneControlsVisible(False)
+            LoadTimeZoneOverride()
             LoadSamplePlaceholders()
             UpdateRibbonLayout()
 
@@ -1661,6 +1637,41 @@ Namespace SDC.Framework
             End Select
         End Function
 
+        ''' <summary>
+        ''' Fills the session time zone combo and selects the one login resolved.
+        ''' </summary>
+        Private Sub LoadTimeZoneOverride()
+            If timeZoneOverrideCombo Is Nothing Then Return
+
+            Dim zones = DataAccess.GetLookupTable("FW_TimeZones", "TimeZoneID", "DisplayName", False, 0, True)
+            If zones Is Nothing OrElse zones.Rows.Count = 0 Then
+                timeZoneOverrideCombo.Visible = False
+                Return
+            End If
+
+            zones.Columns.Add("IanaId", GetType(String))
+            Dim names = DataAccess.GetTimeZoneIanaIds()
+            For Each row As Data.DataRow In zones.Rows
+                Dim id = Convert.ToInt32(row("TimeZoneID"), Globalization.CultureInfo.InvariantCulture)
+                row("IanaId") = If(names.ContainsKey(id), names(id), String.Empty)
+            Next
+
+            timeZoneOverrideCombo.DisplayMember = "DisplayName"
+            timeZoneOverrideCombo.ValueMember = "IanaId"
+            timeZoneOverrideCombo.DataSource = zones
+
+            Dim current = If(SessionState.IsActive AndAlso SessionState.Current.HasValue,
+                             If(SessionState.Current.Value.TimeZoneName, String.Empty), String.Empty)
+            If current <> String.Empty Then timeZoneOverrideCombo.SelectedValue = current
+
+            AddHandler timeZoneOverrideCombo.SelectedIndexChanged, AddressOf TimeZoneOverride_Changed
+        End Sub
+
+        Private Sub TimeZoneOverride_Changed(sender As Object, e As EventArgs)
+            If timeZoneOverrideCombo.SelectedValue Is Nothing Then Return
+            SessionState.OverrideTimeZone(Convert.ToString(timeZoneOverrideCombo.SelectedValue))
+        End Sub
+
         Private Sub LoadSamplePlaceholders()
             LoadRegionControl(MenuRegion.RegionLeft, New MessagesWindowControl())
             LoadRegionControl(MenuRegion.GeneralDashboard, New GeneralDashboardWindowControl())
@@ -1878,14 +1889,6 @@ Namespace SDC.Framework
             SetRegionHeader(MenuRegion.RegionLeft, "QDesk")
             SetRegionChrome(MenuRegion.RegionLeft, False)
             LoadRegionControl(MenuRegion.RegionLeft, New QDeskWindowControl())
-        End Sub
-
-        Private Sub Dashboard_Click(sender As Object, e As EventArgs)
-            MessageBox.Show(Me,
-                            "The Dashboard is not wired up yet. It will display an internal page in the panels below.",
-                            "Dashboard",
-                            MessageBoxButtons.OK,
-                            MessageBoxIcon.Information)
         End Sub
 
         ''' <summary>

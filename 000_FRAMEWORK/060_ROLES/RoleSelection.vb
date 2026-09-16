@@ -67,11 +67,13 @@ Namespace SDC.Framework
             }
             ApplyLightBlueHeaderStyle(rolesGrid)
 
+            ' A count down the list, not the role's DisplayOrder. That value is a sort key - sparse,
+            ' and shared by roles that were never given one - so it read as a number that meant
+            ' something when it did not. The list arrives already sorted by it.
             Dim displayOrderColumn As New DataGridViewTextBoxColumn() With {
                 .Name = "DisplayOrder",
-                .HeaderText = "Order",
-                .DataPropertyName = "DisplayOrder",
-                .Width = 90,
+                .HeaderText = "#",
+                .Width = 60,
                 .AutoSizeMode = DataGridViewAutoSizeColumnMode.None
             }
 
@@ -86,8 +88,10 @@ Namespace SDC.Framework
             rolesGrid.Columns.Add(displayOrderColumn)
             rolesGrid.Columns.Add(roleNameColumn)
 
+            Dim sequence = 0
             For Each role In roleList
-                Dim rowIndex = rolesGrid.Rows.Add(role.DisplayOrder, role.RoleName)
+                sequence += 1
+                Dim rowIndex = rolesGrid.Rows.Add(sequence, role.RoleName)
                 rolesGrid.Rows(rowIndex).Tag = role
             Next
 

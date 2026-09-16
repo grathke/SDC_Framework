@@ -9,6 +9,11 @@
          is the whole name: SDC.Framework. -->
     <RootNamespace></RootNamespace>
     <AssemblyName>SDC.Framework</AssemblyName>
+
+    <!-- What the shell shows on the login card, role selection and the menu's title band.
+         ShellChrome.ApplicationTitle reads Application.ProductName rather than a literal, so this
+         is the one place the name is set. The assembly keeps its own name. -->
+    <Product>City Nexus</Product>
   </PropertyGroup>
   <ItemGroup>
     <PackageReference Include="Microsoft.Data.SqlClient" Version="7.0.2" />

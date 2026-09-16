@@ -21,11 +21,12 @@ Namespace SDC.Framework
         Private Const TableMessaging As String = "FW_Messages"
 
         ''' <summary>
-        ''' A permission with no data behind it, in the FW_Perm_ family CLAUDE.md describes: the
-        ''' Dashboard tile has no table of its own, so one exists purely to be granted or withheld.
+        ''' A permission with no data behind it, in the FW_Perm_ family CLAUDE.md describes.
         '''
-        ''' A real table rather than an invented name, so it resolves in the
-        ''' OBJECT_ID('dbo.' + DB_Table) IS NULL sweep like every other permission.
+        ''' **It gates nothing since 2026-09-15**, when the Dashboard tile it was made for was
+        ''' removed. Kept because the table and its FW_RoleSchema row still exist and Roles_U still
+        ''' offers it - a permission an administrator can grant that changes nothing. Removing it is
+        ''' the eight-table procedure in CLAUDE.md, not a constant delete.
         ''' </summary>
         Private Const TableDashboard As String = "FW_Perm_Dashboard"
         Private Const TableFrameworkDashboard As String = "FRAMEWORK DASHBOARD"
@@ -72,7 +73,7 @@ Namespace SDC.Framework
         ''' layout-home leads the row because it is where the menu opens. Anchored for the same
         ''' reason region-messages is: it has one home and is not a tile a user arranges. Unranked
         ''' it would sort last, behind the generated tiles, which is the wrong end for the way back.
-        Private ReadOnly AnchoredMenuKeys As String() = {"layout-home", "dashboard", "region-messages", "application-settings", "region-overview"}
+        Private ReadOnly AnchoredMenuKeys As String() = {"layout-home", "region-messages", "application-settings", "region-overview"}
 
         ''' <summary>
         ''' The picture the Home Region shows until a registration names its own.
@@ -202,13 +203,6 @@ Namespace SDC.Framework
             menu.ConfigureActionVisibility("application-settings", canAccessApplicationSettings, canAccessApplicationSettings)
             menu.SetActionCaption("application-settings", applicationSettingsCaption)
             ConfigureApplicationSettingsTile(menu, applicationSettingsCaption, canAccessApplicationSettings)
-            ' Gated the same way as Messages, on a table that holds no data and exists only to be
-            ' permitted - FW_Perm_Dashboard. Until 2026-09-10 this was unconditionally True, so
-            ' every role saw the tile whether or not the dashboard meant anything to them.
-            Dim canUseDashboard = profile IsNot Nothing AndAlso
-                                  profile.Can(TableDashboard, AccessCapability.Read)
-            menu.ConfigureActionVisibility("dashboard", canUseDashboard, canUseDashboard)
-
             ' Messaging is on when the role can read FW_Messages, and off otherwise - one rule, in
             ' the place every other table permission is already decided. The tile's absence is the
             ' whole signal: no button, no messages, and the flow closes up behind it because a
@@ -239,32 +233,8 @@ Namespace SDC.Framework
 
             menu.ConfigureActionVisibility("select-role", True, True)
 
-            ' One caption, two destinations. An App Admin gets the application dashboard, everybody
-            ' else the company one - the same word for the same idea, and the role decides which
-            ' administration they are being given.
-            '
-            ' The role is read when the tile is clicked rather than here, matching Application
-            ' Settings. Selecting a role rebuilds the menu so reading it here would work too, but it
-            ' would leave a handler behind that is right only until the next role change.
-            menu.UpsertActionTile(
-                actionKey:="user-admin",
-                caption:="Admin",
-                onClick:=Sub(sender, e)
-                             Dim clickSession = SessionState.Current
-                             If clickSession.HasValue AndAlso clickSession.Value.IsApplicationAdminRole Then
-                                 Using frm As New Dashboard_Application(user, profile)
-                                     frm.ShowDialog(menu)
-                                 End Using
-                             Else
-                                 Using frm As New Dashboard_Company(user, profile)
-                                     frm.ShowDialog(menu)
-                                 End Using
-                             End If
-                         End Sub,
-                iconFileName:="users.png",
-                fallbackIcon:=SystemIcons.WinLogo.ToBitmap(),
-                isVisible:=True,
-                isEnabled:=True)
+            ' The Admin tile was removed on 2026-09-15. It opened the two dashboards on the role,
+            ' which is exactly what Application Settings already does - two tiles, one destination.
 
             ' The page each generated tile opens, so its caption can follow that page. Written by the
             ' generator, and resolved from caches held for the session rather than per tile.

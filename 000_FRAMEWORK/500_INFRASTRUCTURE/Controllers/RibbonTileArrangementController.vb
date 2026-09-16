@@ -391,7 +391,13 @@ Namespace SDC.Framework
                 If firstMovable Is Nothing AndAlso Not IsAnchored(child) Then firstMovable = child
             Next
 
-            If firstMovable Is Nothing OrElse lastVisible Is Nothing Then Return
+            If lastVisible Is Nothing Then Return
+
+            ' Where the free room starts. Normally the first movable tile - but a row can be all
+            ' anchored, as this one became when Admin and the generated Employees tile were removed
+            ' on 2026-09-15, and the space after them is still where a tile lands. Returning here
+            ' left an App Admin with no slots drawn at all.
+            Dim spanLeft = If(firstMovable IsNot Nothing, firstMovable.Left, lastVisible.Right + lastVisible.Margin.Right)
 
             ' To the last whole slot, not to the end of the tiles and not to the end of the panel.
             '
@@ -419,15 +425,15 @@ Namespace SDC.Framework
 
                 spanRight = Math.Max(spanRight, slots * pitch)
             End If
-            If spanRight <= firstMovable.Left Then Return
+            If spanRight <= spanLeft Then Return
 
             If showingDragBounds Then
                 Dim top = panel.ClientSize.Height - DragBarThickness
                 Using bar As New SolidBrush(DragBarColor)
                     e.Graphics.FillRectangle(bar,
-                                             firstMovable.Left,
+                                             spanLeft,
                                              top,
-                                             spanRight - firstMovable.Left,
+                                             spanRight - spanLeft,
                                              DragBarThickness)
                 End Using
             End If

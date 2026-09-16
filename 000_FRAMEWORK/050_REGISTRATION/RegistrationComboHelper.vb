@@ -8,7 +8,10 @@ Imports System.Windows.Forms
 
 Namespace SDC.Framework
     Public NotInheritable Class RegistrationComboHelper
-        Private Const ForcedRegistrationTypeForTesting As String = "Branch"
+        ''' Forces every registration label to this word, whatever the registration's real type.
+        ''' Empty means off, which is how it should stay - it was left set to "Branch" and made the
+        ''' label lie on every page that shows the combo.
+        Private Const ForcedRegistrationTypeForTesting As String = ""
 
         Private Sub New()
         End Sub
@@ -61,6 +64,8 @@ Namespace SDC.Framework
             ElseIf includePlaceholder Then
                 combo.SelectedIndex = 0
             End If
+
+            ComboWidth.FitToContent(combo, registrations, "RegName")
         End Sub
 
         Public Shared Sub UpdateLabelForSelection(label As Label,

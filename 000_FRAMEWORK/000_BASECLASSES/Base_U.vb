@@ -2989,6 +2989,8 @@ Namespace SDC.Framework
                     combo.Text = placeholderText
                 End If
             End If
+
+            ComboWidth.FitToContent(combo, table, displayMember)
         End Sub
 
         Protected Function GetComboSelectedIdOrZero(combo As ComboBox) As Integer

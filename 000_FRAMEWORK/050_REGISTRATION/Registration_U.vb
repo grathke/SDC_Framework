@@ -29,14 +29,13 @@ Namespace SDC.Framework
         Private smartyAddressLookupController As SmartyAddressLookupController
         Private zipCoderController As ZipCoderController
 
-        Private displayDashboardCheckBox As CheckBox
-        Private allowMessagingCheckBox As CheckBox
         Private allowMultipleRolesCheckBox As CheckBox
         Private allowPasswordChangeCheckBox As CheckBox
         Private allowUpdateProfileCheckBox As CheckBox
         Private twoFactorCheckBox As CheckBox
         Private dateFormatComboBox As ComboBox
         Private timeFormatComboBox As ComboBox
+        Private timeZoneComboBox As ComboBox
         Private activeRegistrationId As Integer
         Private currentRecord As RegistrationRecord
 
@@ -208,8 +207,6 @@ Namespace SDC.Framework
 
             registrationTextBox = AddField("RegName", y, False, False)
             SetFieldLabelText("RegName", "Registration")
-            displayDashboardCheckBox = AddOptionCheckBox("CheckBox_DisplayDashboardOnStartup", "Display Dashboard on Startup", optionsX, y + 2)
-            allowMessagingCheckBox = AddOptionCheckBox("CheckBox_AllowMessaging", "Allow Messaging", optionsX + 250, y + 2)
 
             y += rowGap
             businessRuleTypeComboBox = AddLabeledComboBoxSharedStyle("BusinessRuleType", "Business Rule Type", y)
@@ -243,6 +240,7 @@ Namespace SDC.Framework
             y += rowGap
             zipTextBox = AddField("Zip", y, False, False)
             zipTextBox.Width = 100
+            timeZoneComboBox = AddOptionComboBox("ComboBox_TimeZoneID", "Time Zone", optionsX, y)
 
             y += rowGap
             mainFaxTextBox = AddField("MainFax", y, False, False)
@@ -478,8 +476,6 @@ Namespace SDC.Framework
                 businessRuleTypeComboBox.SelectedIndex = 0
             End If
 
-            displayDashboardCheckBox.Checked = record.DisplayDashboardOnStartUp
-            allowMessagingCheckBox.Checked = record.AllowMessaging
             allowMultipleRolesCheckBox.Checked = record.AllowMultipleRoles
             allowPasswordChangeCheckBox.Checked = record.AllowPasswordChangeAtLogin
             allowUpdateProfileCheckBox.Checked = record.AllowUpdateMyProfile
@@ -492,6 +488,12 @@ Namespace SDC.Framework
                             DataAccess.GetFormatOptions("FW_Format_Time", "FormatTimeID"),
                             record.FormatTimeID,
                             DisplayFormats.DefaultTimePattern)
+
+            ConfigureLookupCombo(timeZoneComboBox,
+                                 DataAccess.GetLookupTable("FW_TimeZones", "TimeZoneID", "DisplayName", False, record.TimeZoneID),
+                                 "TimeZoneID",
+                                 "DisplayName",
+                                 record.TimeZoneID)
 
             smartyAuthIdTextBox.DataBindings.Clear()
             smartyAuthIdTextBox.DataBindings.Add("Text", record, "Smarty_AuthID", True)
@@ -567,8 +569,6 @@ Namespace SDC.Framework
                 .Smarty_AuthToken = smartyAuthTokenTextBox.Text.Trim(),
                 .Smarty_EmbeddedKey = smartyEmbeddedKeyTextBox.Text.Trim(),
                 .Smarty_UseEmbeddedKey = smartyUseEmbeddedKeyCheckBox.Checked,
-                .DisplayDashboardOnStartUp = displayDashboardCheckBox.Checked,
-                .AllowMessaging = allowMessagingCheckBox.Checked,
                 .AllowMultipleRoles = allowMultipleRolesCheckBox.Checked,
                 .AllowPasswordChangeAtLogin = allowPasswordChangeCheckBox.Checked,
                 .AllowUpdateMyProfile = allowUpdateProfileCheckBox.Checked,
@@ -577,6 +577,7 @@ Namespace SDC.Framework
                 .TwoFactorAuthentication = twoFactorCheckBox.Checked,
                 .FormatDateID = GetComboSelectedIdOrZero(dateFormatComboBox),
                 .FormatTimeID = GetComboSelectedIdOrZero(timeFormatComboBox),
+                .TimeZoneID = GetComboSelectedIdOrZero(timeZoneComboBox),
                 .IsActive = True,
                 .RowVersion = CopyOriginalRowVersion()
             }
@@ -601,8 +602,6 @@ Namespace SDC.Framework
                 .Smarty_AuthToken = String.Empty,
                 .Smarty_EmbeddedKey = String.Empty,
                 .Smarty_UseEmbeddedKey = False,
-                .DisplayDashboardOnStartUp = True,
-                .AllowMessaging = True,
                 .AllowMultipleRoles = True,
                 .AllowPasswordChangeAtLogin = True,
                 .AllowUpdateMyProfile = True,

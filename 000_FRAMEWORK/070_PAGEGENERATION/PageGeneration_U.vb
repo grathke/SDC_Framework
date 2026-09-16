@@ -392,6 +392,35 @@ Namespace SDC.Framework
                 .Margin = New Padding(0, 4, 0, 0)
             }
             AddFieldControl(fields, useRegistrationIdCheckBox, "10. Use RegistrationID from selected table")
+
+            ' Nothing on screen said what this does, and unticked it produces a page that lists
+            ' every registration's rows - which reads as the registration combo being broken rather
+            ' than as a setting nobody made. FW_Employees_B shipped that way.
+            Dim registrationNote As New Label With {
+                .Name = "Note_UseRegistrationID",
+                .Text = "Tick for a table whose rows belong to one registration." & Environment.NewLine &
+                        "Without it the page lists every registration's rows.",
+                .AutoSize = False,
+                .Size = New Size(330, 32),
+                .Anchor = AnchorStyles.Left Or AnchorStyles.Top,
+                .Margin = New Padding(12, 2, 0, 0),
+                .ForeColor = Color.DimGray,
+                .TextAlign = ContentAlignment.MiddleLeft
+            }
+            AddControlBesideField(fields, useRegistrationIdCheckBox, registrationNote)
+
+            Dim registrationTip As New ToolTip()
+            Dim registrationTipText =
+                "Adds WHERE <alias>.[RegistrationID] = @RegistrationID to the browse SQL." & Environment.NewLine &
+                Environment.NewLine &
+                "The registration combo on the page fills in the value: an App Admin can change it," & Environment.NewLine &
+                "everybody else gets their own registration." & Environment.NewLine &
+                Environment.NewLine &
+                "Leave it off only for a table genuinely shared across registrations - a lookup list," & Environment.NewLine &
+                "or one with no RegistrationID column at all."
+            registrationTip.SetToolTip(useRegistrationIdCheckBox, registrationTipText)
+            registrationTip.SetToolTip(registrationNote, registrationTipText)
+
             UpdateRegistrationOptionState()
             AddHandler useRegistrationIdCheckBox.CheckedChanged, AddressOf UseRegistrationIdCheckBox_CheckedChanged
             AddHandler useRegistrationIdCheckBox.CheckedChanged, AddressOf MarkDirty

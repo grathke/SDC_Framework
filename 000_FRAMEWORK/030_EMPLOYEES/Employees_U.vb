@@ -86,13 +86,30 @@ Namespace SDC.Framework
                 Return
             End If
 
-            Dim registrationId = If(SessionState.IsActive AndAlso SessionState.Current.HasValue,
-                                    SessionState.Current.Value.RegistrationID, 0)
+            ' The registration being worked in, not the one signed in under. An App Admin editing a
+            ' Saraland employee from registration 1 was offered registration 1's roles, which the
+            ' employee cannot hold.
+            Dim registrationId = SessionState.WorkingRegistrationID()
             roleSelector = New EmployeeRolesSelector(Me,
                                                      EmployeeRolesSelector.CenteredLeft(ClientSize.Width),
                                                      GeneratedFieldsBottom + 8,
                                                      registrationId,
                                                      recordId)
+        End Sub
+
+        ''' <summary>
+        ''' A new employee starts in their registration's time zone. Null on the employee means
+        ''' "use the registration's", so this is a suggestion rather than a rule - it can be
+        ''' changed before saving, and left alone it records what the registration already implies.
+        ''' </summary>
+        Private Sub OnRecordBound()
+            If recordId > 0 Then Return
+
+            Dim combo = TryCast(Controls.Find("ComboBox_TimeZoneID", True).FirstOrDefault(), ComboBox)
+            If combo Is Nothing OrElse GetComboSelectedIdOrZero(combo) > 0 Then Return
+
+            Dim zoneId = DataAccess.GetRegistrationTimeZoneId(SessionState.WorkingRegistrationID())
+            If zoneId > 0 Then combo.SelectedValue = zoneId
         End Sub
 
         ''' <summary>
