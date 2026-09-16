@@ -2516,6 +2516,31 @@ Namespace SDC.Framework
             End Try
         End Function
 
+
+        ''' <summary>
+        ''' The licence terms, with the offset that defines them.
+        '''
+        ''' Not GetLookupTable: that returns the value and the caption and nothing else, and a term
+        ''' without its OffsetDays cannot set a date or be checked against one. Ordered by
+        ''' DisplayOrder so the list climbs, with Custom last.
+        ''' </summary>
+        Public Shared Function GetLicenseTerms() As DataTable
+            Dim table As New DataTable("FW_LicenseTerms")
+
+            Using conn As New SqlConnection(ConnectionString)
+                conn.Open()
+                Using cmd As New SqlCommand(
+                    "SELECT LicenseTermID, TermName, OffsetDays FROM dbo.FW_LicenseTerms " &
+                    "WHERE ISNULL(DeletedFlag, 0) = 0 AND ISNULL(IsActive, 1) = 1 " &
+                    "ORDER BY DisplayOrder, LicenseTermID", conn)
+                    Using adapter As New SqlDataAdapter(cmd)
+                        adapter.Fill(table)
+                    End Using
+                End Using
+            End Using
+
+            Return table
+        End Function
         ''' <summary>Every time zone's IANA id, keyed by TimeZoneID. One read, for the whole list.</summary>
         Public Shared Function GetTimeZoneIanaIds() As Dictionary(Of Integer, String)
             Dim result As New Dictionary(Of Integer, String)()
@@ -2610,13 +2635,22 @@ Namespace SDC.Framework
                                 QuoteGeneratedIdentifier(displayColumn)
             End If
 
+            ' A lookup that carries DisplayOrder is saying the rows have an intended sequence, and
+            ' alphabetical is not it: the licence terms read 1 Year, 10 Days, 2 Years, 30 Days
+            ' sorted by name. The display column still breaks ties, so a table that has the column
+            ' but never set it is ordered exactly as before.
+            Dim orderClause = " ORDER BY " & QuoteGeneratedIdentifier(displayColumn)
+            If TableHasColumn(normalizedTable, "DisplayOrder") Then
+                orderClause = " ORDER BY [DisplayOrder], " & QuoteGeneratedIdentifier(displayColumn)
+            End If
+
             Using conn As New SqlConnection(ConnectionString)
                 conn.Open()
                 Using cmd As New SqlCommand("SELECT " & QuoteGeneratedIdentifier(valueColumn) & " AS " & QuoteGeneratedIdentifier(valueColumn) &
                                             ", " & displaySelect &
                                             " FROM dbo." & QuoteGeneratedIdentifier(normalizedTable) &
                                             whereClause &
-                                            " ORDER BY " & QuoteGeneratedIdentifier(displayColumn), conn)
+                                            orderClause, conn)
                     If honourIsActive Then
                         cmd.Parameters.Add("@KeepValue", SqlDbType.Int).Value = keepValue
                     End If
@@ -4787,7 +4821,7 @@ Namespace SDC.Framework
                     "ISNULL(AllowPasswordChangeAtLogin, 0) AS AllowPasswordChangeAtLogin, " &
                     "ISNULL(AllowUpdateMyProfile, 0) AS AllowUpdateMyProfile, " &
                     "ISNULL(AllowUpdateMyProfileEmail, 0) AS AllowUpdateMyProfileEmail, " &
-                    "ISNULL(LTRIM(RTRIM(HomeGraphic)), '') AS HomeGraphic, LicenseExpiration_Date, " &
+                    "ISNULL(LTRIM(RTRIM(HomeGraphic)), '') AS HomeGraphic, LicenseExpiration_Date, LicenseStart_Date, LicenseTermID, " &
                     "ISNULL(TwoFactorAuthentication, 0) AS TwoFactorAuthentication, " &
                     "ISNULL(HDUserSupport, 0) AS HDUserSupport, " &
                     "ISNULL(HDApplicationSupport, 0) AS HDApplicationSupport, " &
@@ -4828,6 +4862,8 @@ Namespace SDC.Framework
                             .AllowUpdateMyProfileEmail = Convert.ToBoolean(reader("AllowUpdateMyProfileEmail"), CultureInfo.InvariantCulture),
                             .HomeGraphic = SafeString(reader("HomeGraphic")),
                             .LicenseExpiration = If(IsDBNull(reader("LicenseExpiration_Date")), CType(Nothing, Date?), CType(Convert.ToDateTime(reader("LicenseExpiration_Date"), CultureInfo.InvariantCulture), Date?)),
+                            .LicenseStart = If(IsDBNull(reader("LicenseStart_Date")), CType(Nothing, Date?), CType(Convert.ToDateTime(reader("LicenseStart_Date"), CultureInfo.InvariantCulture), Date?)),
+                            .LicenseTermID = If(IsDBNull(reader("LicenseTermID")), 0, Convert.ToInt32(reader("LicenseTermID"), CultureInfo.InvariantCulture)),
                             .TwoFactorAuthentication = Convert.ToBoolean(reader("TwoFactorAuthentication"), CultureInfo.InvariantCulture),
                             .HDUserSupport = Convert.ToInt32(reader("HDUserSupport"), CultureInfo.InvariantCulture),
                             .HDApplicationSupport = Convert.ToInt32(reader("HDApplicationSupport"), CultureInfo.InvariantCulture),
@@ -4985,9 +5021,9 @@ Namespace SDC.Framework
                                                       record As RegistrationRecord, currentUserId As Integer) As Integer
             Using cmd As New SqlCommand(
                     "INSERT INTO dbo.FW_Registration " &
-                    "(RegName, RegistrationTypeID, FormatDateID, FormatTimeID, TimeZoneID, Address1, Address2, City, State, Zip, MainFax, MainPhone, MainEMail, WebLandingPage, Smarty_AuthID, Smarty_AuthToken, Smarty_EmbeddedKey, Smarty_UseEmbeddedKey, AllowMultipleRoles, AllowPasswordChangeAtLogin, AllowUpdateMyProfile, AllowUpdateMyProfileEmail, HomeGraphic, LicenseExpiration_Date, TwoFactorAuthentication, IsActive, CreatedBy, CreatedOn, UpdatedBy, UpdatedOn) " &
+                    "(RegName, RegistrationTypeID, FormatDateID, FormatTimeID, TimeZoneID, Address1, Address2, City, State, Zip, MainFax, MainPhone, MainEMail, WebLandingPage, Smarty_AuthID, Smarty_AuthToken, Smarty_EmbeddedKey, Smarty_UseEmbeddedKey, AllowMultipleRoles, AllowPasswordChangeAtLogin, AllowUpdateMyProfile, AllowUpdateMyProfileEmail, HomeGraphic, LicenseExpiration_Date, LicenseStart_Date, LicenseTermID, TwoFactorAuthentication, IsActive, CreatedBy, CreatedOn, UpdatedBy, UpdatedOn) " &
                     "VALUES " &
-                    "(@RegName, @RegistrationTypeID, @FormatDateID, @FormatTimeID, @TimeZoneID, @Address1, @Address2, @City, @State, @Zip, @MainFax, @MainPhone, @MainEMail, @WebLandingPage, @Smarty_AuthID, @Smarty_AuthToken, @Smarty_EmbeddedKey, @Smarty_UseEmbeddedKey, @AllowMultipleRoles, @AllowPasswordChangeAtLogin, @AllowUpdateMyProfile, @AllowUpdateMyProfileEmail, @HomeGraphic, @LicenseExpiration_Date, @TwoFactorAuthentication, @IsActive, @CurrentUserId, GETDATE(), @CurrentUserId, GETDATE()); " &
+                    "(@RegName, @RegistrationTypeID, @FormatDateID, @FormatTimeID, @TimeZoneID, @Address1, @Address2, @City, @State, @Zip, @MainFax, @MainPhone, @MainEMail, @WebLandingPage, @Smarty_AuthID, @Smarty_AuthToken, @Smarty_EmbeddedKey, @Smarty_UseEmbeddedKey, @AllowMultipleRoles, @AllowPasswordChangeAtLogin, @AllowUpdateMyProfile, @AllowUpdateMyProfileEmail, @HomeGraphic, @LicenseExpiration_Date, @LicenseStart_Date, @LicenseTermID, @TwoFactorAuthentication, @IsActive, @CurrentUserId, GETDATE(), @CurrentUserId, GETDATE()); " &
                     "SELECT CAST(SCOPE_IDENTITY() AS INT);", conn, tx)
 
                     cmd.Parameters.AddWithValue("@RegName", DbValue(record.RegName))
@@ -5018,6 +5054,8 @@ Namespace SDC.Framework
                     cmd.Parameters.AddWithValue("@AllowUpdateMyProfileEmail", record.AllowUpdateMyProfileEmail)
                     cmd.Parameters.AddWithValue("@HomeGraphic", If(String.IsNullOrWhiteSpace(record.HomeGraphic), CType(DBNull.Value, Object), record.HomeGraphic.Trim()))
                     cmd.Parameters.AddWithValue("@LicenseExpiration_Date", If(record.LicenseExpiration.HasValue, CType(record.LicenseExpiration.Value.Date, Object), DBNull.Value))
+                    cmd.Parameters.AddWithValue("@LicenseStart_Date", If(record.LicenseStart.HasValue, CType(record.LicenseStart.Value.Date, Object), DBNull.Value))
+                    cmd.Parameters.AddWithValue("@LicenseTermID", If(record.LicenseTermID > 0, CType(record.LicenseTermID, Object), DBNull.Value))
                     cmd.Parameters.AddWithValue("@TwoFactorAuthentication", record.TwoFactorAuthentication)
                     cmd.Parameters.AddWithValue("@IsActive", record.IsActive)
                     cmd.Parameters.AddWithValue("@CurrentUserId", currentUserId)
@@ -5059,6 +5097,8 @@ Namespace SDC.Framework
                     "AllowUpdateMyProfileEmail = @AllowUpdateMyProfileEmail, " &
                     "HomeGraphic = @HomeGraphic, " &
                     "LicenseExpiration_Date = @LicenseExpiration_Date, " &
+                    "LicenseStart_Date = @LicenseStart_Date, " &
+                    "LicenseTermID = @LicenseTermID, " &
                     "TwoFactorAuthentication = @TwoFactorAuthentication, " &
                     "IsActive = @IsActive, " &
                     "UpdatedBy = @CurrentUserId, " &
@@ -5094,6 +5134,8 @@ Namespace SDC.Framework
                     cmd.Parameters.AddWithValue("@AllowUpdateMyProfileEmail", record.AllowUpdateMyProfileEmail)
                     cmd.Parameters.AddWithValue("@HomeGraphic", If(String.IsNullOrWhiteSpace(record.HomeGraphic), CType(DBNull.Value, Object), record.HomeGraphic.Trim()))
                     cmd.Parameters.AddWithValue("@LicenseExpiration_Date", If(record.LicenseExpiration.HasValue, CType(record.LicenseExpiration.Value.Date, Object), DBNull.Value))
+                    cmd.Parameters.AddWithValue("@LicenseStart_Date", If(record.LicenseStart.HasValue, CType(record.LicenseStart.Value.Date, Object), DBNull.Value))
+                    cmd.Parameters.AddWithValue("@LicenseTermID", If(record.LicenseTermID > 0, CType(record.LicenseTermID, Object), DBNull.Value))
                     cmd.Parameters.AddWithValue("@TwoFactorAuthentication", record.TwoFactorAuthentication)
                     cmd.Parameters.AddWithValue("@IsActive", record.IsActive)
                     cmd.Parameters.AddWithValue("@CurrentUserId", currentUserId)
@@ -6419,15 +6461,32 @@ Namespace SDC.Framework
             Return SaveResult.Succeeded
         End Function
 
+        ''' <summary>
+        ''' Refreshes the table list Roles_U offers, and the caption shown against each table.
+        '''
+        ''' Adds what is new and re-derives every alias, but never removes: this runs on a page
+        ''' load, and a page load is not the place to discover that a dropped table has taken every
+        ''' role's permission for it with it. The sweep behind Update Schema does that half, where
+        ''' it is asked for and reported.
+        ''' </summary>
         Public Shared Sub SyncRoleSchemaWithDatabase()
+            Dim syncUserId = If(SessionState.IsActive AndAlso SessionState.Current.HasValue,
+                                SessionState.Current.Value.UserID,
+                                0)
+
             Using conn As New SqlConnection(ConnectionString)
                 conn.Open()
 
+                Dim added As Integer = 0
+                Dim removed As Integer = 0
+                SyncRoleSchemaTables(conn, syncUserId, added, removed, False)
+
+                ' The alias is derived from the table name, so a formatting change reaches every
+                ' row rather than only the ones added since.
                 Dim tableNames As New List(Of String)()
-                Dim syncUserId = If(SessionState.IsActive AndAlso SessionState.Current.HasValue,
-                                    SessionState.Current.Value.UserID,
-                                    0)
-                Using tableCmd As New SqlCommand("SELECT name FROM sys.tables WHERE schema_id = SCHEMA_ID('dbo') AND (name LIKE 'FW[_]%' OR name LIKE 'AS[_]%') ORDER BY name", conn)
+                Using tableCmd As New SqlCommand(
+                    "SELECT name FROM sys.tables WHERE schema_id = SCHEMA_ID('dbo') " &
+                    "AND (name LIKE 'FW[_]%' OR name LIKE 'AS[_]%') ORDER BY name", conn)
                     Using reader = tableCmd.ExecuteReader()
                         While reader.Read()
                             tableNames.Add(reader.GetString(0))
@@ -6436,14 +6495,10 @@ Namespace SDC.Framework
                 End Using
 
                 For Each tableName In tableNames
-                    Dim tableAlias = FormatTableNameAsAlias(tableName)
                     Using cmd As New SqlCommand(
-                        "IF EXISTS (SELECT 1 FROM dbo.FW_RoleSchema WHERE DB_Table = @DBTable) " &
-                        "UPDATE dbo.FW_RoleSchema SET Table_Alias = @TableAlias WHERE DB_Table = @DBTable " &
-                        "ELSE INSERT INTO dbo.FW_RoleSchema (DB_Table, Table_Alias, IsActive, CreatedBy, CreatedOn) VALUES (@DBTable, @TableAlias, 1, @CreatedBy, GETDATE())", conn)
+                        "UPDATE dbo.FW_RoleSchema SET Table_Alias = @TableAlias WHERE DB_Table = @DBTable", conn)
                         cmd.Parameters.AddWithValue("@DBTable", tableName)
-                        cmd.Parameters.AddWithValue("@TableAlias", tableAlias)
-                        cmd.Parameters.AddWithValue("@CreatedBy", syncUserId)
+                        cmd.Parameters.AddWithValue("@TableAlias", FormatTableNameAsAlias(tableName))
                         cmd.ExecuteNonQuery()
                     End Using
                 Next
@@ -9006,9 +9061,17 @@ Namespace SDC.Framework
                                 isEmpty = nud.Value = nud.Minimum
                             Case GetType(System.Windows.Forms.DateTimePicker)
                                 Dim dtp = CType(ctrl, System.Windows.Forms.DateTimePicker)
-                                ' A nullable picker says "no date" by unticking its own check box,
-                                ' never by reaching MinDate, so the tick is what required reads.
-                                isEmpty = If(dtp.ShowCheckBox, Not dtp.Checked, dtp.Value = dtp.MinDate)
+                                ' A picker never reaches MinDate, so that alone tests nothing. It
+                                ' says "no date" one of two ways: by unticking its own check box,
+                                ' or - where a required field cannot offer a tick that contradicts
+                                ' it - by showing nothing at all.
+                                If dtp.ShowCheckBox Then
+                                    isEmpty = Not dtp.Checked
+                                Else
+                                    isEmpty = dtp.Value = dtp.MinDate OrElse
+                                              (dtp.Format = System.Windows.Forms.DateTimePickerFormat.Custom AndAlso
+                                               String.IsNullOrWhiteSpace(dtp.CustomFormat))
+                                End If
                         End Select
 
                         If isEmpty Then
@@ -9387,6 +9450,12 @@ Namespace SDC.Framework
             End Try
         End Function
 
+        ''' <summary>
+        ''' Brings one role and table back in line with the database.
+        '''
+        ''' The single-pair entry point, for the Add button in Roles_U. It opens a connection and
+        ''' hands straight to the core, which is the only place the rules live.
+        ''' </summary>
         Public Shared Function SyncRoleFieldsWithSchema(
             schemaId As Integer,
             tableName As String,
@@ -9397,230 +9466,251 @@ Namespace SDC.Framework
             ByRef deletedCount As Integer,
             ByRef repairedCount As Integer,
             Optional writeDebugLog As Boolean = True) As Boolean
-            
+
+            insertedCount = 0
+            deletedCount = 0
+            repairedCount = 0
+
             Try
-                insertedCount = 0
-                repairedCount = 0
-                deletedCount = 0
-                
-                Dim debugLog As New List(Of String)
-                debugLog.Add($"[{DateTime.Now:yyyy-MM-dd HH:mm:ss}] SyncRoleFieldsWithSchema started: SchemaId={schemaId}, Table={tableName}, RegId={registrationId}, RoleId={roleId}")
-                
-                ' Write initial log to confirm function was called
-                Dim logPath = System.IO.Path.Combine(System.IO.Path.GetTempPath(), "sync_debug.log")
-                If writeDebugLog Then System.IO.File.WriteAllLines(logPath, debugLog)
-                
                 Using conn As New SqlConnection(ConnectionString)
                     conn.Open()
-                    debugLog.Add("[CONN] Connected to database")
-                    
-                    ' 1. Get all current FW_RoleFields for this SchemaID, RegistrationID, and RoleID
-                    Dim currentFields As New HashSet(Of String)()
-                    Using cmd As New SqlCommand(
-                        "SELECT DISTINCT FieldName FROM dbo.FW_RoleFields WHERE SchemaID = @SchemaID AND RegistrationID = @RegistrationID AND RoleID = @RoleID AND ISNULL(DeletedFlag, 0) = 0", conn)
-                        cmd.Parameters.AddWithValue("@SchemaID", schemaId)
-                        cmd.Parameters.AddWithValue("@RegistrationID", registrationId)
-                        cmd.Parameters.AddWithValue("@RoleID", roleId)
-                        Using reader = cmd.ExecuteReader()
-                            While reader.Read()
-                                currentFields.Add(reader("FieldName").ToString().ToUpper())
-                            End While
-                        End Using
-                    End Using
-                    debugLog.Add($"[QUERY1] Current fields in FW_RoleFields for this role: {currentFields.Count} ({String.Join(", ", currentFields.Take(5))}...)")
-                    
-                    ' 2. Get all columns from INFORMATION_SCHEMA for this table
-                    Dim schemaColumns As New HashSet(Of String)()
-                    Dim excludeFields As New HashSet(Of String) From {"CREATEDBY", "CREATEDON", "UPDATEDBY", "UPDATEDON"}
-                    
-                    ' Get Primary Keys to exclude
-                    Using cmd As New SqlCommand(
-                        "SELECT COLUMN_NAME FROM INFORMATION_SCHEMA.KEY_COLUMN_USAGE " &
-                        "WHERE TABLE_NAME = @TableName AND CONSTRAINT_NAME LIKE 'PK%'", conn)
-                        cmd.Parameters.AddWithValue("@TableName", tableName)
-                        Using reader = cmd.ExecuteReader()
-                            While reader.Read()
-                                excludeFields.Add(reader("COLUMN_NAME").ToString().ToUpper())
-                            End While
-                        End Using
-                    End Using
-                    debugLog.Add($"[QUERY2] Primary keys excluded: {String.Join(", ", excludeFields)}")
-                    
-                    ' Get all schema columns with proper casing from sys.columns
-                    ' Build a dictionary of column names (uppercase key for comparison, actual casing as value)
-                    Dim schemaColumnMap As New Dictionary(Of String, String)()
-                    Dim excludeFieldsUpper = excludeFields.Select(Function(f) f.ToUpper()).ToHashSet()
-                    
-                    Using cmd As New SqlCommand(
-                        "SELECT name FROM sys.columns WHERE object_id = OBJECT_ID(@TableName) ORDER BY column_id", conn)
-                        cmd.Parameters.AddWithValue("@TableName", tableName)
-                        Using reader = cmd.ExecuteReader()
-                            While reader.Read()
-                                Dim colName = reader("name").ToString()
-                                Dim colNameUpper = colName.ToUpper()
-                                If Not excludeFieldsUpper.Contains(colNameUpper) Then
-                                    schemaColumnMap(colNameUpper) = colName  ' Store with proper casing
-                                    schemaColumns.Add(colNameUpper)  ' Add uppercase for comparison
-                                End If
-                            End While
-                        End Using
-                    End Using
-                    debugLog.Add($"[QUERY3] Schema columns in table: {schemaColumns.Count} ({String.Join(", ", schemaColumns.Take(5))}...)")
-                    
-                    ' 3. Delete obsolete fields (in FW_RoleFields but NOT in schema) for this role.
-                    ' Physically, because the row governs a column that no longer exists: a soft
-                    ' delete leaves a permission nothing can grant, and the sweep that looks for
-                    ' role rows pointing at nothing then reports it forever. The cost is that a
-                    ' renamed column loses whatever was configured for it - required, hidden,
-                    ' caption - and comes back as a fresh row with IsActive = 0.
-                    For Each fieldToDelete In currentFields
-                        If Not schemaColumns.Contains(fieldToDelete) Then
-                            Using cmd As New SqlCommand(
-                                "DELETE FROM dbo.FW_RoleFields " &
-                                "WHERE SchemaID = @SchemaID AND RegistrationID = @RegistrationID AND RoleID = @RoleID " &
-                                "AND UPPER(FieldName) = @FieldName", conn)
-                                cmd.Parameters.AddWithValue("@SchemaID", schemaId)
-                                cmd.Parameters.AddWithValue("@RegistrationID", registrationId)
-                                cmd.Parameters.AddWithValue("@RoleID", roleId)
-                                cmd.Parameters.AddWithValue("@FieldName", fieldToDelete)
-                                deletedCount += cmd.ExecuteNonQuery()
-                            End Using
-                        End If
-                    Next
-                    debugLog.Add($"[DELETE] Deleted {deletedCount} obsolete fields")
-
-                    ' 3b. Repair the two columns that decide whether a row reaches a control at all.
-                    ' GetControlUpdates pre-filters on TableName in SQL, then matches the stored
-                    ' FileLink against "Table.Column" composed from the live form. Either one being
-                    ' wrong drops the row in silence: no hide, no read-only, no required border,
-                    ' and IsUnique never runs.
-                    '
-                    ' FW_RoleSchema.DB_Table is the authority for both, which is how the drift is
-                    ' detectable at all. FW_PageGeneration_B_U was found stored as the TableName on
-                    ' 17 rows whose table is FW_GeneratedPages - a page name written where a table
-                    ' name belongs - and every field permission on that page had been inert since.
-                    ' Roles_U shows neither column, so nothing but this puts them right.
-                    Using cmd As New SqlCommand(
-                        "UPDATE dbo.FW_RoleFields " &
-                        "SET TableName = @TableName, FileLink = @TableName + '.' + FieldName, " &
-                        "    UpdatedBy = @UpdatedBy, UpdatedOn = GETDATE() " &
-                        "WHERE SchemaID = @SchemaID AND RegistrationID = @RegistrationID AND RoleID = @RoleID " &
-                        "AND (ISNULL(TableName, '') <> @TableName " &
-                        "     OR ISNULL(FileLink, '') <> @TableName + '.' + FieldName)", conn)
-                        cmd.Parameters.AddWithValue("@TableName", tableName)
-                        cmd.Parameters.AddWithValue("@UpdatedBy", updatedBy)
-                        cmd.Parameters.AddWithValue("@SchemaID", schemaId)
-                        cmd.Parameters.AddWithValue("@RegistrationID", registrationId)
-                        cmd.Parameters.AddWithValue("@RoleID", roleId)
-                        repairedCount = cmd.ExecuteNonQuery()
-                    End Using
-                    
-                    ' 4. INSERT new fields (in schema but NOT in FW_RoleFields) for this role
-                    For Each fieldToInsert In schemaColumns
-                        If Not currentFields.Contains(fieldToInsert) Then
-                            ' Get the properly cased field name from the map
-                            Dim properCasedField = schemaColumnMap(fieldToInsert)
-                            debugLog.Add($"[INSERT] Will insert new field: {properCasedField}")
-                            
-                            Dim friendlyName = FormatFieldName(properCasedField)
-                            Dim FileLink = tableName & "." & properCasedField
-                            
-                            ' Get RoleDetailsID from FW_RoleDetails for this (RoleID, SchemaID) pair
-                            Dim roleDetailsId As Integer = 0
-                            Using detailCmd As New SqlCommand(
-                                "SELECT ID FROM dbo.FW_RoleDetails WHERE RoleID = @RoleID AND SchemaID = @SchemaID", conn)
-                                detailCmd.Parameters.AddWithValue("@RoleID", roleId)
-                                detailCmd.Parameters.AddWithValue("@SchemaID", schemaId)
-                                Dim result = detailCmd.ExecuteScalar()
-                                If result IsNot Nothing AndAlso Not IsDBNull(result) Then
-                                    roleDetailsId = CInt(result)
-                                    debugLog.Add($"[INSERT] Found RoleDetailsID={roleDetailsId} for RoleID={roleId}, SchemaID={schemaId}")
-                                Else
-                                    debugLog.Add($"[INSERT] ERROR: No RoleDetailsID found for RoleID={roleId}, SchemaID={schemaId}")
-                                End If
-                            End Using
-                            
-                            ' A soft-deleted row for this field is revived rather than replaced.
-                            ' Since step 3 removes an obsolete field physically, the only rows this
-                            ' can find are ones a role soft-delete flagged - reviving those keeps a
-                            ' restored role's configuration instead of resetting it.
-                            Dim revived As Integer
-                            Using reviveCmd As New SqlCommand(
-                                "UPDATE dbo.FW_RoleFields " &
-                                "SET DeletedFlag = 0, DeletedBy = NULL, DeletedOn = NULL, " &
-                                "    FileLink = @FileLink, TableName = @TableName, " &
-                                "    UpdatedBy = @UpdatedBy, UpdatedOn = GETDATE() " &
-                                "WHERE SchemaID = @SchemaID AND RegistrationID = @RegistrationID AND RoleID = @RoleID " &
-                                "AND UPPER(FieldName) = @FieldNameUpper AND ISNULL(DeletedFlag, 0) = 1", conn)
-                                reviveCmd.Parameters.AddWithValue("@FileLink", FileLink)
-                                reviveCmd.Parameters.AddWithValue("@TableName", tableName)
-                                reviveCmd.Parameters.AddWithValue("@UpdatedBy", updatedBy)
-                                reviveCmd.Parameters.AddWithValue("@SchemaID", schemaId)
-                                reviveCmd.Parameters.AddWithValue("@RegistrationID", registrationId)
-                                reviveCmd.Parameters.AddWithValue("@RoleID", roleId)
-                                reviveCmd.Parameters.AddWithValue("@FieldNameUpper", fieldToInsert)
-                                revived = reviveCmd.ExecuteNonQuery()
-                            End Using
-
-                            If revived > 0 Then
-                                debugLog.Add($"[INSERT] Revived soft-deleted field: {properCasedField}")
-                                insertedCount += revived
-                                Continue For
-                            End If
-
-                            Using cmd As New SqlCommand(
-                                "INSERT INTO dbo.FW_RoleFields " &
-                                "(RegistrationID, RoleID, RoleDetailID, SchemaID, TableName, FieldName, FileLink, FriendlyFieldName, OverrideCaption, " &
-                                "Can_Create, Can_Read, Can_Update, IsActive, CreatedBy, CreatedOn) " &
-                                "VALUES (@RegistrationID, @RoleID, @RoleDetailID, @SchemaID, @TableName, @FieldName, @FileLink, @FriendlyFieldName, " &
-                                "(SELECT TOP 1 OverrideCaption FROM dbo.FW_RoleFields WHERE RegistrationID = @RegistrationID AND SchemaID = @SchemaID AND TableName = @TableName AND FieldName = @FieldName AND OverrideCaption IS NOT NULL ORDER BY UpdatedOn DESC, ID DESC), " &
-                                "1, 1, 1, 0, @UpdatedBy, GETDATE())", conn)
-                                cmd.Parameters.AddWithValue("@RegistrationID", registrationId)
-                                cmd.Parameters.AddWithValue("@RoleID", roleId)
-                                cmd.Parameters.AddWithValue("@RoleDetailID", roleDetailsId)
-                                cmd.Parameters.AddWithValue("@SchemaID", schemaId)
-                                cmd.Parameters.AddWithValue("@TableName", tableName)
-                                cmd.Parameters.AddWithValue("@FieldName", properCasedField)
-                                cmd.Parameters.AddWithValue("@FileLink", FileLink)
-                                cmd.Parameters.AddWithValue("@FriendlyFieldName", friendlyName)
-                                cmd.Parameters.AddWithValue("@UpdatedBy", updatedBy)
-                                insertedCount += cmd.ExecuteNonQuery()
-                            End Using
-                        End If
-                    Next
-                    debugLog.Add($"[INSERT] Inserted {insertedCount} new fields")
-                    debugLog.Add($"[SUCCESS] SyncRoleFieldsWithSchema completed at {DateTime.Now:yyyy-MM-dd HH:mm:ss}")
-                    
-                    ' Written for one sync a user asked for. The sweep across every role turns it
-                    ' off: it rewrites the same file once per role and the last one would be the
-                    ' only one left anyway.
-                    If writeDebugLog Then
-                        System.IO.File.WriteAllLines(logPath, debugLog)
-                        Try
-                            Dim projectLogPath = System.IO.Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "sync_debug.log")
-                            System.IO.File.WriteAllLines(projectLogPath, debugLog)
-                        Catch
-                        End Try
-                    End If
-                    
+                    SyncRoleFieldsCore(conn, updatedBy, schemaId, roleId,
+                                       insertedCount, deletedCount, repairedCount)
                 End Using
-                
+
                 Return True
             Catch ex As Exception
-                ' Write error log on failure
-                Dim errorLog As New List(Of String)
-                errorLog.Add($"[ERROR] SyncRoleFieldsWithSchema FAILED at {DateTime.Now:yyyy-MM-dd HH:mm:ss}")
-                errorLog.Add($"Message: {ex.Message}")
-                errorLog.Add($"StackTrace: {ex.StackTrace}")
-                Try
-                    Dim logPath = System.IO.Path.Combine(System.IO.Path.GetTempPath(), "sync_debug.log")
-                    System.IO.File.WriteAllLines(logPath, errorLog)
-                    Dim projectLogPath = System.IO.Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "sync_debug.log")
-                    System.IO.File.WriteAllLines(projectLogPath, errorLog)
-                Catch
-                End Try
+                If writeDebugLog Then
+                    Try
+                        System.IO.File.AppendAllText(
+                            System.IO.Path.Combine(System.IO.Path.GetTempPath(), "sync_debug.log"),
+                            DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss") &
+                            " SyncRoleFieldsWithSchema failed for schema " & schemaId.ToString(CultureInfo.InvariantCulture) &
+                            ", role " & roleId.ToString(CultureInfo.InvariantCulture) & ": " & ex.Message & Environment.NewLine)
+                    Catch
+                    End Try
+                End If
+
                 Return False
             End Try
+        End Function
+
+        ''' <summary>
+        ''' The rules, in four statements and one pass.
+        '''
+        ''' Scope is optional: zero for both means every role and every table, which is what the
+        ''' Update Schema tile and the startup drift watch ask for. This was written per role until
+        ''' 2026-09-16, opening its own connection and running a statement per field - forty-one
+        ''' connections and several hundred round trips to establish that nothing had changed. The
+        ''' work is identical; the difference is whether the server is asked once or once per field.
+        '''
+        ''' The order matters. Obsolete rows go first, so the repair does not bother with rows that
+        ''' are about to disappear. The revive runs before the insert, so a column that comes back
+        ''' brings its old configuration rather than arriving as a fresh inactive row. Only then is
+        ''' what is genuinely missing added.
+        '''
+        ''' FriendlyFieldName is the one thing SQL cannot produce - it comes from
+        ''' DisplayNameFormatter - so missing rows are read back, named here, and written in
+        ''' batches rather than one statement each.
+        ''' </summary>
+        Private Shared Sub SyncRoleFieldsCore(conn As SqlConnection,
+                                              updatedBy As Integer,
+                                              scopeSchemaId As Integer,
+                                              scopeRoleId As Integer,
+                                              ByRef insertedCount As Integer,
+                                              ByRef deletedCount As Integer,
+                                              ByRef repairedCount As Integer)
+
+            Dim scoped = scopeSchemaId > 0 AndAlso scopeRoleId > 0
+            Dim fieldScope = If(scoped, " AND rf.SchemaID = @ScopeSchemaID AND rf.RoleID = @ScopeRoleID ", String.Empty)
+
+            ' 1. Rows whose column is gone. Physically, including any already flagged deleted: the
+            ' row governs a column that no longer exists, so there is nothing left for it to say.
+            deletedCount = ExecuteScoped(conn,
+                "DELETE rf FROM dbo.FW_RoleFields rf " &
+                "JOIN dbo.FW_RoleSchema s ON s.ID = rf.SchemaID " &
+                "WHERE OBJECT_ID('dbo.' + s.DB_Table) IS NOT NULL " &
+                "  AND COL_LENGTH('dbo.' + s.DB_Table, rf.FieldName) IS NULL " & fieldScope,
+                scopeSchemaId, scopeRoleId)
+
+            ' 2. TableName and FileLink, the two columns that decide whether a row ever reaches a
+            ' control. FW_RoleSchema.DB_Table is the authority for both.
+            repairedCount = ExecuteScoped(conn,
+                "UPDATE rf SET rf.TableName = s.DB_Table, " &
+                "              rf.FileLink = s.DB_Table + '.' + rf.FieldName, " &
+                "              rf.UpdatedBy = @UpdatedBy, rf.UpdatedOn = GETDATE() " &
+                "FROM dbo.FW_RoleFields rf " &
+                "JOIN dbo.FW_RoleSchema s ON s.ID = rf.SchemaID " &
+                "WHERE OBJECT_ID('dbo.' + s.DB_Table) IS NOT NULL " &
+                "  AND (ISNULL(rf.TableName, '') <> s.DB_Table " &
+                "       OR ISNULL(rf.FileLink, '') <> s.DB_Table + '.' + rf.FieldName) " & fieldScope,
+                scopeSchemaId, scopeRoleId, updatedBy)
+
+            ' 3. A soft-deleted row whose column exists again comes back with its settings. Only a
+            ' role soft-delete can leave one, now that step 1 removes obsolete rows outright.
+            insertedCount = ExecuteScoped(conn,
+                "UPDATE rf SET rf.DeletedFlag = 0, rf.DeletedBy = NULL, rf.DeletedOn = NULL, " &
+                "              rf.TableName = s.DB_Table, " &
+                "              rf.FileLink = s.DB_Table + '.' + rf.FieldName, " &
+                "              rf.UpdatedBy = @UpdatedBy, rf.UpdatedOn = GETDATE() " &
+                "FROM dbo.FW_RoleFields rf " &
+                "JOIN dbo.FW_RoleSchema s ON s.ID = rf.SchemaID " &
+                "WHERE ISNULL(rf.DeletedFlag, 0) = 1 " &
+                "  AND OBJECT_ID('dbo.' + s.DB_Table) IS NOT NULL " &
+                "  AND COL_LENGTH('dbo.' + s.DB_Table, rf.FieldName) IS NOT NULL " & fieldScope,
+                scopeSchemaId, scopeRoleId, updatedBy)
+
+            ' 4. What is missing, read in one pass and written in batches.
+            insertedCount += InsertMissingRoleFields(conn, ReadMissingRoleFields(conn, scopeSchemaId, scopeRoleId), updatedBy)
+        End Sub
+
+        ''' <summary>
+        ''' Every column a role should have a permission row for and does not.
+        '''
+        ''' The audit stamps and the primary key are left out, as they always have been: nobody is
+        ''' asked whether a role may read CreatedOn, and a key is not a field anybody grants. The
+        ''' same exclusions appear in HasSchemaDrifted, which must agree with this or the drift it
+        ''' reports would survive a sweep and be found again on the next startup.
+        ''' </summary>
+        Private Shared Function ReadMissingRoleFields(conn As SqlConnection,
+                                                      scopeSchemaId As Integer,
+                                                      scopeRoleId As Integer) As List(Of MissingRoleField)
+            Dim missing As New List(Of MissingRoleField)()
+            Dim scoped = scopeSchemaId > 0 AndAlso scopeRoleId > 0
+            Dim detailScope = If(scoped, " AND rd.SchemaID = @ScopeSchemaID AND rd.RoleID = @ScopeRoleID ", String.Empty)
+
+            Using cmd As New SqlCommand(
+                "SELECT rd.RoleID, rd.SchemaID, r.RegistrationID, rd.ID AS RoleDetailID, s.DB_Table, c.name AS ColumnName " &
+                "FROM dbo.FW_RoleDetails rd " &
+                "JOIN dbo.FW_RoleSchema s ON s.ID = rd.SchemaID " &
+                "JOIN dbo.FW_Roles r ON r.ID = rd.RoleID " &
+                "CROSS APPLY (SELECT c2.name FROM sys.columns c2 " &
+                "              WHERE c2.object_id = OBJECT_ID('dbo.' + s.DB_Table)) c " &
+                "WHERE ISNULL(rd.DeletedFlag, 0) = 0 AND ISNULL(r.DeletedFlag, 0) = 0 " &
+                "  AND OBJECT_ID('dbo.' + s.DB_Table) IS NOT NULL " &
+                "  AND c.name NOT IN ('CreatedBy', 'CreatedOn', 'UpdatedBy', 'UpdatedOn') " &
+                "  AND NOT EXISTS (SELECT 1 FROM sys.index_columns ic " &
+                "                    JOIN sys.indexes i ON i.object_id = ic.object_id AND i.index_id = ic.index_id " &
+                "                    JOIN sys.columns pc ON pc.object_id = ic.object_id AND pc.column_id = ic.column_id " &
+                "                   WHERE i.is_primary_key = 1 " &
+                "                     AND ic.object_id = OBJECT_ID('dbo.' + s.DB_Table) " &
+                "                     AND pc.name = c.name) " &
+                "  AND NOT EXISTS (SELECT 1 FROM dbo.FW_RoleFields rf " &
+                "                   WHERE rf.RoleID = rd.RoleID AND rf.SchemaID = rd.SchemaID " &
+                "                     AND rf.FieldName = c.name AND ISNULL(rf.DeletedFlag, 0) = 0) " &
+                detailScope &
+                "ORDER BY r.RegistrationID, rd.RoleID, s.DB_Table, c.name", conn)
+
+                If scoped Then
+                    cmd.Parameters.AddWithValue("@ScopeSchemaID", scopeSchemaId)
+                    cmd.Parameters.AddWithValue("@ScopeRoleID", scopeRoleId)
+                End If
+
+                Using reader = cmd.ExecuteReader()
+                    While reader.Read()
+                        missing.Add(New MissingRoleField With {
+                            .RoleId = Convert.ToInt32(reader("RoleID"), CultureInfo.InvariantCulture),
+                            .SchemaId = Convert.ToInt32(reader("SchemaID"), CultureInfo.InvariantCulture),
+                            .RegistrationId = Convert.ToInt32(reader("RegistrationID"), CultureInfo.InvariantCulture),
+                            .RoleDetailId = Convert.ToInt32(reader("RoleDetailID"), CultureInfo.InvariantCulture),
+                            .TableName = SafeString(reader("DB_Table")),
+                            .FieldName = SafeString(reader("ColumnName"))
+                        })
+                    End While
+                End Using
+            End Using
+
+            Return missing
+        End Function
+
+        ''' <summary>A permission row a role should have and does not.</summary>
+        Private Class MissingRoleField
+            Public Property RoleId As Integer
+            Public Property SchemaId As Integer
+            Public Property RegistrationId As Integer
+            Public Property RoleDetailId As Integer
+            Public Property TableName As String
+            Public Property FieldName As String
+        End Class
+
+        ''' <summary>One statement, carrying only the parameters it actually names.</summary>
+        Private Shared Function ExecuteScoped(conn As SqlConnection, sql As String,
+                                              scopeSchemaId As Integer, scopeRoleId As Integer,
+                                              Optional updatedBy As Integer = -1) As Integer
+            Using cmd As New SqlCommand(sql, conn)
+                If sql.Contains("@ScopeSchemaID") Then
+                    cmd.Parameters.AddWithValue("@ScopeSchemaID", scopeSchemaId)
+                    cmd.Parameters.AddWithValue("@ScopeRoleID", scopeRoleId)
+                End If
+                If sql.Contains("@UpdatedBy") Then
+                    cmd.Parameters.AddWithValue("@UpdatedBy", updatedBy)
+                End If
+
+                Return cmd.ExecuteNonQuery()
+            End Using
+        End Function
+
+        ''' <summary>
+        ''' Writes the new permission rows, a hundred at a time.
+        '''
+        ''' Batched rather than one statement per row because the friendly name is computed here,
+        ''' and batched rather than all at once because a parameterised statement is capped at 2100
+        ''' parameters - eight per row puts the ceiling near 260, and a hundred leaves room.
+        '''
+        ''' Every row arrives inactive. A column appearing in the database is not a decision to let
+        ''' anybody see it.
+        ''' </summary>
+        Private Shared Function InsertMissingRoleFields(conn As SqlConnection,
+                                                        missing As List(Of MissingRoleField),
+                                                        updatedBy As Integer) As Integer
+            If missing Is Nothing OrElse missing.Count = 0 Then Return 0
+
+            Const batchSize As Integer = 100
+            Dim written = 0
+            Dim index = 0
+
+            While index < missing.Count
+                Dim batch = missing.Skip(index).Take(batchSize).ToList()
+                Dim values As New List(Of String)()
+
+                Using cmd As New SqlCommand("", conn)
+                    cmd.Parameters.AddWithValue("@UpdatedBy", updatedBy)
+
+                    For position = 0 To batch.Count - 1
+                        Dim row = batch(position)
+                        Dim tag = position.ToString(CultureInfo.InvariantCulture)
+
+                        values.Add("(@Reg" & tag & ", @Role" & tag & ", @Detail" & tag & ", @Schema" & tag & ", " &
+                                   "@Table" & tag & ", @Field" & tag & ", @Link" & tag & ", @Friendly" & tag & ", " &
+                                   "(SELECT TOP 1 OverrideCaption FROM dbo.FW_RoleFields " &
+                                   " WHERE RegistrationID = @Reg" & tag & " AND SchemaID = @Schema" & tag &
+                                   "   AND TableName = @Table" & tag & " AND FieldName = @Field" & tag &
+                                   "   AND OverrideCaption IS NOT NULL ORDER BY UpdatedOn DESC, ID DESC), " &
+                                   "1, 1, 1, 0, @UpdatedBy, GETDATE())")
+
+                        cmd.Parameters.AddWithValue("@Reg" & tag, row.RegistrationId)
+                        cmd.Parameters.AddWithValue("@Role" & tag, row.RoleId)
+                        cmd.Parameters.AddWithValue("@Detail" & tag, row.RoleDetailId)
+                        cmd.Parameters.AddWithValue("@Schema" & tag, row.SchemaId)
+                        cmd.Parameters.AddWithValue("@Table" & tag, row.TableName)
+                        cmd.Parameters.AddWithValue("@Field" & tag, row.FieldName)
+                        cmd.Parameters.AddWithValue("@Link" & tag, row.TableName & "." & row.FieldName)
+                        cmd.Parameters.AddWithValue("@Friendly" & tag, FormatFieldName(row.FieldName))
+                    Next
+
+                    cmd.CommandText =
+                        "INSERT INTO dbo.FW_RoleFields " &
+                        "(RegistrationID, RoleID, RoleDetailID, SchemaID, TableName, FieldName, FileLink, " &
+                        " FriendlyFieldName, OverrideCaption, Can_Create, Can_Read, Can_Update, IsActive, CreatedBy, CreatedOn) " &
+                        "VALUES " & String.Join(", ", values)
+
+                    written += cmd.ExecuteNonQuery()
+                End Using
+
+                index += batchSize
+            End While
+
+            Return written
         End Function
 
         ''' <summary>
@@ -9631,11 +9721,14 @@ Namespace SDC.Framework
             Public Property Inserted As Integer
             Public Property Deleted As Integer
             Public Property Repaired As Integer
+            Public Property TablesAdded As Integer
+            Public Property TablesRemoved As Integer
             Public Property Failures As New List(Of String)
 
             Public ReadOnly Property ChangedAnything As Boolean
                 Get
-                    Return Inserted > 0 OrElse Deleted > 0 OrElse Repaired > 0
+                    Return Inserted > 0 OrElse Deleted > 0 OrElse Repaired > 0 OrElse
+                           TablesAdded > 0 OrElse TablesRemoved > 0
                 End Get
             End Property
         End Class
@@ -9654,7 +9747,12 @@ Namespace SDC.Framework
         Public Shared Function HasSchemaDrifted() As Boolean
             Const sql As String =
                 "SELECT " &
-                " (SELECT COUNT(*) FROM dbo.FW_RoleFields rf " &
+                " (SELECT COUNT(*) FROM sys.tables t " &
+                "  WHERE t.schema_id = SCHEMA_ID('dbo') AND (t.name LIKE 'FW[_]%' OR t.name LIKE 'AS[_]%') " &
+                "    AND NOT EXISTS (SELECT 1 FROM dbo.FW_RoleSchema s WHERE s.DB_Table = t.name)) " &
+                "+ (SELECT COUNT(*) FROM dbo.FW_RoleSchema s " &
+                "  WHERE OBJECT_ID('dbo.' + s.DB_Table) IS NULL) " &
+                "+ (SELECT COUNT(*) FROM dbo.FW_RoleFields rf " &
                 "   JOIN dbo.FW_RoleSchema s ON s.ID = rf.SchemaID " &
                 "  WHERE ISNULL(rf.DeletedFlag, 0) = 0 " &
                 "    AND OBJECT_ID('dbo.' + s.DB_Table) IS NOT NULL " &
@@ -9692,65 +9790,126 @@ Namespace SDC.Framework
                 End Using
             End Using
         End Function
-        ''' <summary>
-        ''' Brings every role's field permissions back in line with the database, for every table
-        ''' in every registration.
-        '''
-        ''' The per-role sync is the owner of what "in line" means - add the columns that appeared,
-        ''' physically remove the rows for columns that went, repair a FileLink that drifted. This
-        ''' only decides who it runs for, so the button and the Add button in Roles_U can never
-        ''' disagree about the rules.
-        '''
-        ''' One pass per FW_RoleDetails row, which is the role-and-table pair the permissions are
-        ''' actually keyed on. A table missing from the database is skipped rather than failing the
-        ''' sweep - FW_RoleSchema keeps rows for tables that have been dropped, and one of those
-        ''' must not stop the other four hundred from being repaired.
-        ''' </summary>
-        Public Shared Function SyncAllRoleFieldsWithSchema(updatedBy As Integer) As SchemaSweepResult
-            Dim result As New SchemaSweepResult()
-            Dim work As New List(Of (SchemaId As Integer, TableName As String, RegistrationId As Integer, RoleId As Integer))()
 
-            ' Read the whole worklist first, so the sweep is not holding a reader open while it
-            ' writes through the same connection.
-            Using conn As New SqlConnection(ConnectionString)
-                conn.Open()
-                Using cmd As New SqlCommand(
-                    "SELECT rd.SchemaID, s.DB_Table, r.RegistrationID, rd.RoleID " &
-                    "FROM dbo.FW_RoleDetails rd " &
-                    "JOIN dbo.FW_RoleSchema s ON s.ID = rd.SchemaID " &
-                    "JOIN dbo.FW_Roles r ON r.ID = rd.RoleID " &
-                    "WHERE ISNULL(rd.DeletedFlag, 0) = 0 AND ISNULL(r.DeletedFlag, 0) = 0 " &
-                    "AND OBJECT_ID('dbo.' + s.DB_Table) IS NOT NULL " &
-                    "ORDER BY r.RegistrationID, rd.RoleID, s.DB_Table", conn)
-                    Using reader = cmd.ExecuteReader()
-                        While reader.Read()
-                            work.Add((Convert.ToInt32(reader("SchemaID"), CultureInfo.InvariantCulture),
-                                      SafeString(reader("DB_Table")),
-                                      Convert.ToInt32(reader("RegistrationID"), CultureInfo.InvariantCulture),
-                                      Convert.ToInt32(reader("RoleID"), CultureInfo.InvariantCulture)))
-                        End While
-                    End Using
+        ''' <summary>
+        ''' Brings FW_RoleSchema - the list of tables a role can be given - in step with the
+        ''' database, and says how many appeared and how many went.
+        '''
+        ''' This ran only when Roles_U was opened, and only ever added. A new table was therefore
+        ''' invisible until somebody happened to open that page, and a dropped one left its row
+        ''' behind for good, along with every permission keyed to it - rows governing a table that
+        ''' no longer exists, which the removal sweep in CLAUDE.md has to be run by hand to find.
+        '''
+        ''' A dropped table takes its permissions with it, physically, for the same reason a
+        ''' dropped column does: what is left cannot be granted, cannot be revoked, and cannot be
+        ''' seen. FW_RoleFields goes first, then FW_RoleDetails, then the schema row itself.
+        ''' </summary>
+        Private Shared Sub SyncRoleSchemaTables(conn As SqlConnection, updatedBy As Integer,
+                                                ByRef addedCount As Integer, ByRef removedCount As Integer,
+                                                Optional removeMissing As Boolean = True)
+            addedCount = 0
+            removedCount = 0
+
+            Dim missing As New List(Of String)()
+            Using cmd As New SqlCommand(
+                "SELECT t.name FROM sys.tables t " &
+                "WHERE t.schema_id = SCHEMA_ID('dbo') AND (t.name LIKE 'FW[_]%' OR t.name LIKE 'AS[_]%') " &
+                "  AND NOT EXISTS (SELECT 1 FROM dbo.FW_RoleSchema s WHERE s.DB_Table = t.name) " &
+                "ORDER BY t.name", conn)
+                Using reader = cmd.ExecuteReader()
+                    While reader.Read()
+                        missing.Add(reader.GetString(0))
+                    End While
                 End Using
             End Using
 
-            For Each item In work
-                Dim inserted As Integer = 0
-                Dim deleted As Integer = 0
-                Dim repaired As Integer = 0
-
-                If SyncRoleFieldsWithSchema(item.SchemaId, item.TableName, item.RegistrationId,
-                                            item.RoleId, updatedBy, inserted, deleted, repaired, False) Then
-                    result.Inserted += inserted
-                    result.Deleted += deleted
-                    result.Repaired += repaired
-                Else
-                    result.Failures.Add($"Role {item.RoleId} / {item.TableName} (registration {item.RegistrationId})")
-                End If
-
-                result.RolesVisited += 1
+            For Each tableName In missing
+                Using cmd As New SqlCommand(
+                    "INSERT INTO dbo.FW_RoleSchema (DB_Table, Table_Alias, IsActive, CreatedBy, CreatedOn) " &
+                    "VALUES (@DBTable, @TableAlias, 1, @CreatedBy, GETDATE())", conn)
+                    cmd.Parameters.AddWithValue("@DBTable", tableName)
+                    cmd.Parameters.AddWithValue("@TableAlias", FormatTableNameAsAlias(tableName))
+                    cmd.Parameters.AddWithValue("@CreatedBy", updatedBy)
+                    addedCount += cmd.ExecuteNonQuery()
+                End Using
             Next
 
+            If Not removeMissing Then Return
+
+            Dim gone As New List(Of Integer)()
+            Using cmd As New SqlCommand(
+                "SELECT s.ID FROM dbo.FW_RoleSchema s WHERE OBJECT_ID('dbo.' + s.DB_Table) IS NULL", conn)
+                Using reader = cmd.ExecuteReader()
+                    While reader.Read()
+                        gone.Add(Convert.ToInt32(reader.GetValue(0), CultureInfo.InvariantCulture))
+                    End While
+                End Using
+            End Using
+
+            For Each schemaId In gone
+                For Each statement In {"DELETE FROM dbo.FW_RoleFields WHERE SchemaID = @SchemaID",
+                                       "DELETE FROM dbo.FW_RoleDetails WHERE SchemaID = @SchemaID",
+                                       "DELETE FROM dbo.FW_RoleSchema WHERE ID = @SchemaID"}
+                    Using cmd As New SqlCommand(statement, conn)
+                        cmd.Parameters.AddWithValue("@SchemaID", schemaId)
+                        cmd.ExecuteNonQuery()
+                    End Using
+                Next
+
+                removedCount += 1
+            Next
+        End Sub
+        ''' <summary>
+        ''' Brings every role's permissions back in line with the database, for every table in
+        ''' every registration.
+        '''
+        ''' One connection and a handful of statements. The tables come first - a table dropped
+        ''' since the last sweep takes its permissions with it, and the field pass must not then
+        ''' work from a schema row that has just gone.
+        '''
+        ''' RolesVisited is what the sweep covered rather than how many times it asked the server:
+        ''' the field pass is set-based and does not iterate roles at all.
+        ''' </summary>
+        Public Shared Function SyncAllRoleFieldsWithSchema(updatedBy As Integer) As SchemaSweepResult
+            Dim result As New SchemaSweepResult()
+
+            Try
+                Using conn As New SqlConnection(ConnectionString)
+                    conn.Open()
+
+                    Dim tablesAdded As Integer = 0
+                    Dim tablesRemoved As Integer = 0
+                    SyncRoleSchemaTables(conn, updatedBy, tablesAdded, tablesRemoved)
+                    result.TablesAdded = tablesAdded
+                    result.TablesRemoved = tablesRemoved
+
+                    Dim inserted As Integer = 0
+                    Dim deleted As Integer = 0
+                    Dim repaired As Integer = 0
+                    SyncRoleFieldsCore(conn, updatedBy, 0, 0, inserted, deleted, repaired)
+
+                    result.Inserted = inserted
+                    result.Deleted = deleted
+                    result.Repaired = repaired
+                    result.RolesVisited = CountRoleTablePairs(conn)
+                End Using
+            Catch ex As Exception
+                result.Failures.Add(ex.Message)
+            End Try
+
             Return result
+        End Function
+
+        ''' <summary>How many role and table pairs the sweep covers, for the report.</summary>
+        Private Shared Function CountRoleTablePairs(conn As SqlConnection) As Integer
+            Using cmd As New SqlCommand(
+                "SELECT COUNT(*) FROM dbo.FW_RoleDetails rd " &
+                "JOIN dbo.FW_RoleSchema s ON s.ID = rd.SchemaID " &
+                "JOIN dbo.FW_Roles r ON r.ID = rd.RoleID " &
+                "WHERE ISNULL(rd.DeletedFlag, 0) = 0 AND ISNULL(r.DeletedFlag, 0) = 0 " &
+                "  AND OBJECT_ID('dbo.' + s.DB_Table) IS NOT NULL", conn)
+                Return Convert.ToInt32(cmd.ExecuteScalar(), CultureInfo.InvariantCulture)
+            End Using
         End Function
 
         ''' <summary>

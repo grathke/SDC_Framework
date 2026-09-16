@@ -479,6 +479,16 @@ Namespace SDC.Framework
         ''' </summary>
         Public Property LicenseExpiration As Date?
 
+        ''' <summary>
+        ''' The term the expiry was set from, and the day that term was applied.
+        '''
+        ''' Intent, not truth. LicenseExpiration is what the licence check reads; these two only
+        ''' explain how it got there, and the page shows Custom whenever re-applying the term
+        ''' to the start no longer produces the expiry.
+        ''' </summary>
+        Public Property LicenseTermID As Integer
+        Public Property LicenseStart As Date?
+
         Public Property TwoFactorAuthentication As Boolean
 
         ''' <summary>

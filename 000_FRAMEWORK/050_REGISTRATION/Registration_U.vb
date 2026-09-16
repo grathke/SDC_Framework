@@ -36,6 +36,11 @@ Namespace SDC.Framework
         Private timeFormatComboBox As ComboBox
         Private timeZoneComboBox As ComboBox
         Private licenseExpirationPicker As DateTimePicker
+        Private licenseTermComboBox As ComboBox
+        Private licenseTerms As DataTable
+        Private suppressLicenseSync As Boolean
+        Private licenseDateFormat As String
+
         Private activeRegistrationId As Integer
         Private currentRecord As RegistrationRecord
 
@@ -250,7 +255,13 @@ Namespace SDC.Framework
             timeZoneComboBox = AddComboField("TimeZoneID", optionsY, True, optionsX, 290, "Time Zone")
 
             optionsY += rowGap
-            licenseExpirationPicker = AddDateField("LicenseExpiration_Date", optionsY, True, optionsX, True, False, "License Expiration")
+            licenseTermComboBox = AddComboField("LicenseTermID", optionsY, True, optionsX, 290, "License Term")
+
+            optionsY += rowGap
+            licenseExpirationPicker = AddDateField("LicenseExpiration_Date", optionsY, True, optionsX, False, False, "License Expiration")
+            licenseDateFormat = licenseExpirationPicker.CustomFormat
+            AddHandler licenseTermComboBox.SelectedIndexChanged, AddressOf LicenseTermComboBox_SelectedIndexChanged
+            AddHandler licenseExpirationPicker.ValueChanged, AddressOf LicenseExpirationPicker_ValueChanged
 
             y += rowGap
             mainFaxTextBox = AddField("MainFax", y, False, False)
@@ -428,12 +439,28 @@ Namespace SDC.Framework
                                  "DisplayName",
                                  record.TimeZoneID)
 
-            ' Unticked means no expiry is stored. The picker cannot hold a null, so the tick is
-            ' the value: RefreshDateFieldDisplay blanks the date while it is off.
-            licenseExpirationPicker.Checked = record.LicenseExpiration.HasValue
+            ' No check box: the expiry is required, and a tick that says "no date" contradicts
+            ' that. A registration with nothing stored opens on today and is corrected by picking
+            ' a term, which is required and sets the date.
             If record.LicenseExpiration.HasValue Then
                 licenseExpirationPicker.Value = record.LicenseExpiration.Value
             End If
+
+            ' The term is shown last, because what it should read depends on the date now in the
+            ' picker. Set while suppressed - assigning either control raises the handler that would
+            ' otherwise rewrite the other one from a half-loaded record.
+            suppressLicenseSync = True
+            Try
+                ConfigureLookupCombo(licenseTermComboBox,
+                                     LicenseTermTable().Copy(),
+                                     "LicenseTermID",
+                                     "TermName",
+                                     ResolveLicenseTermId(record))
+            Finally
+                suppressLicenseSync = False
+            End Try
+
+            ShowExpiry(record.LicenseExpiration.HasValue)
 
             smartyAuthIdTextBox.DataBindings.Clear()
             smartyAuthIdTextBox.DataBindings.Add("Text", record, "Smarty_AuthID", True)
@@ -509,16 +536,231 @@ Namespace SDC.Framework
                 .FormatDateID = GetComboSelectedIdOrZero(dateFormatComboBox),
                 .FormatTimeID = GetComboSelectedIdOrZero(timeFormatComboBox),
                 .TimeZoneID = GetComboSelectedIdOrZero(timeZoneComboBox),
-                .LicenseExpiration = If(licenseExpirationPicker.Checked, CType(licenseExpirationPicker.Value.Date, Date?), Nothing),
+                .LicenseExpiration = If(ExpiryIsSet(), CType(licenseExpirationPicker.Value.Date, Date?), Nothing),
+                .LicenseTermID = GetComboSelectedIdOrZero(licenseTermComboBox),
+                .LicenseStart = ResolveLicenseStart(),
                 .IsActive = True,
                 .RowVersion = CopyOriginalRowVersion()
             }
         End Function
 
-        Private Shared Function BuildDefaultRecord() As RegistrationRecord
+
+        ''' <summary>The licence terms, read once and kept for the life of the page.</summary>
+
+
+        ''' <summary>
+        ''' Whether the expiry shows a date at all.
+        '''
+        ''' A DateTimePicker cannot be empty, and the check box that used to say "no date" was
+        ''' removed because the field is required. So the display is emptied instead - the same
+        ''' trick FW_Base_U uses for a nullable date, driven here by whether a term has been
+        ''' chosen rather than by a tick. Until one is, both controls read as unanswered.
+        ''' </summary>
+        Private Sub ShowExpiry(hasDate As Boolean)
+            If licenseExpirationPicker Is Nothing Then Return
+
+            licenseExpirationPicker.CustomFormat = If(hasDate, licenseDateFormat, " ")
+        End Sub
+
+        ''' <summary>True while the picker is showing a date rather than nothing.</summary>
+        Private Function ExpiryIsSet() As Boolean
+            Return licenseExpirationPicker IsNot Nothing AndAlso
+                   String.Equals(licenseExpirationPicker.CustomFormat, licenseDateFormat, StringComparison.Ordinal)
+        End Function
+        ''' <summary>
+        ''' The day the licence started, which is what makes the term verifiable later.
+        '''
+        ''' A term that still explains the loaded record keeps the start it was given; anything else
+        ''' starts today, because today is when this expiry was decided. Custom keeps no start
+        ''' at all - there is no term for it to anchor.
+        ''' </summary>
+        Private Function ResolveLicenseStart() As Date?
+            ' Nothing to anchor when no term was chosen.
+            Dim chosenTerm = GetComboSelectedIdOrZero(licenseTermComboBox)
+            Dim offset = TermOffsetDays(chosenTerm)
+            If Not offset.HasValue Then Return Nothing
+
+            If currentRecord IsNot Nothing AndAlso
+               currentRecord.LicenseStart.HasValue AndAlso
+               currentRecord.LicenseTermID = chosenTerm AndAlso
+               currentRecord.LicenseStart.Value.Date.AddDays(offset.Value) = licenseExpirationPicker.Value.Date Then
+                Return currentRecord.LicenseStart.Value.Date
+            End If
+
+            Return licenseExpirationPicker.Value.Date.AddDays(-offset.Value)
+        End Function
+        Private Function LicenseTermTable() As DataTable
+            If licenseTerms Is Nothing Then
+                licenseTerms = DataAccess.GetLicenseTerms()
+            End If
+
+            Return licenseTerms
+        End Function
+
+        ''' <summary>
+        ''' Which term to show for a stored record.
+        '''
+        ''' The stored term is only believed while it still explains the dates. Re-applying its
+        ''' offset to the stored start has to produce the stored expiry; if it does not - the date
+        ''' was edited by hand, or changed in SQL behind the application - the honest answer is
+        ''' Custom rather than a term that is no longer true.
+        ''' </summary>
+        Private Function ResolveLicenseTermId(record As RegistrationRecord) As Integer
+            If record Is Nothing Then Return 0
+
+            ' Nothing stored at all is a question nobody has answered yet, not a custom date. A new
+            ' registration shows the placeholder, and License Term being required makes it answer.
+            If Not record.LicenseExpiration.HasValue AndAlso record.LicenseTermID <= 0 Then Return 0
+            If Not record.LicenseExpiration.HasValue Then Return CustomTermId()
+            If record.LicenseTermID <= 0 OrElse Not record.LicenseStart.HasValue Then Return CustomTermId()
+
+            Dim offset = TermOffsetDays(record.LicenseTermID)
+            If Not offset.HasValue Then Return CustomTermId()
+
+            If record.LicenseStart.Value.Date.AddDays(offset.Value) <> record.LicenseExpiration.Value.Date Then
+                Return CustomTermId()
+            End If
+
+            Return record.LicenseTermID
+        End Function
+
+        ''' <summary>The offset a term adds, or Nothing for Custom and for a term that has gone.</summary>
+        Private Function TermOffsetDays(licenseTermId As Integer) As Integer?
+            If licenseTermId <= 0 Then Return Nothing
+
+            Dim table = LicenseTermTable()
+            If table Is Nothing Then Return Nothing
+
+            For Each row As DataRow In table.Rows
+                If Not table.Columns.Contains("LicenseTermID") Then Exit For
+                If row.IsNull("LicenseTermID") Then Continue For
+                If Convert.ToInt32(row("LicenseTermID"), Globalization.CultureInfo.InvariantCulture) <> licenseTermId Then Continue For
+                If Not table.Columns.Contains("OffsetDays") OrElse row.IsNull("OffsetDays") Then Return Nothing
+
+                Return Convert.ToInt32(row("OffsetDays"), Globalization.CultureInfo.InvariantCulture)
+            Next
+
+            Return Nothing
+        End Function
+
+        ''' <summary>Custom is the term with no offset. Found by that, not by its name.</summary>
+
+        ''' <summary>The term that adds this many days, or Custom when no row does.</summary>
+        Private Function TermIdForOffset(offsetDays As Integer) As Integer
+            Dim table = LicenseTermTable()
+            If table Is Nothing OrElse Not table.Columns.Contains("OffsetDays") Then Return CustomTermId()
+
+            For Each row As DataRow In table.Rows
+                If row.IsNull("OffsetDays") OrElse row.IsNull("LicenseTermID") Then Continue For
+                If Convert.ToInt32(row("OffsetDays"), Globalization.CultureInfo.InvariantCulture) = offsetDays Then
+                    Return Convert.ToInt32(row("LicenseTermID"), Globalization.CultureInfo.InvariantCulture)
+                End If
+            Next
+
+            Return CustomTermId()
+        End Function
+        Private Function CustomTermId() As Integer
+            Dim table = LicenseTermTable()
+            If table Is Nothing OrElse Not table.Columns.Contains("OffsetDays") Then Return 0
+
+            For Each row As DataRow In table.Rows
+                If row.IsNull("OffsetDays") AndAlso Not row.IsNull("LicenseTermID") Then
+                    Dim candidate = Convert.ToInt32(row("LicenseTermID"), Globalization.CultureInfo.InvariantCulture)
+                    If candidate > 0 Then Return candidate
+                End If
+            Next
+
+            Return 0
+        End Function
+
+        ''' <summary>
+        ''' Picking a term sets the dates: the licence starts today and runs for that many days.
+        ''' Custom is the one choice that changes nothing - it says the date is being set by
+        ''' hand, so overwriting it would be the opposite of what was asked for.
+        ''' </summary>
+        Private Sub LicenseTermComboBox_SelectedIndexChanged(sender As Object, e As EventArgs)
+            If suppressLicenseSync Then Return
+
+            Dim chosen = GetComboSelectedIdOrZero(licenseTermComboBox)
+            Dim offset = TermOffsetDays(chosen)
+
+            If Not offset.HasValue Then
+                ' Custom sets no date, but it does mean one is being set by hand - so the picker
+                ' has to start showing something. Back to the placeholder if the term itself was
+                ' cleared.
+                ShowExpiry(chosen > 0)
+                Return
+            End If
+
+            suppressLicenseSync = True
+            Try
+                licenseExpirationPicker.Value = Date.Today.AddDays(offset.Value)
+                ShowExpiry(True)
+            Finally
+                suppressLicenseSync = False
+            End Try
+        End Sub
+
+        ''' <summary>
+        ''' A date set by hand names its own term where one fits, and Custom where none does.
+        ''' </summary>
+        Private Sub LicenseExpirationPicker_ValueChanged(sender As Object, e As EventArgs)
+            If suppressLicenseSync Then Return
+
+            ShowExpiry(True)
+
+            suppressLicenseSync = True
+            Try
+                licenseTermComboBox.SelectedValue = TermIdForDate(licenseExpirationPicker.Value.Date)
+            Finally
+                suppressLicenseSync = False
+            End Try
+        End Sub
+
+        ''' <summary>
+        ''' The term a hand-typed expiry turns out to be, or Custom if it is none of them.
+        '''
+        ''' Two anchors are tried, in the order that keeps the most truth. The registration's own
+        ''' start comes first, so nudging an expiry back to where it always was restores the term
+        ''' it always had rather than inventing a new one starting today. Then today, because a
+        ''' date typed now that happens to be exactly a year out is a year from now.
+        ''' </summary>
+        Private Function TermIdForDate(expiry As Date) As Integer
+            Dim table = LicenseTermTable()
+            If table Is Nothing OrElse Not table.Columns.Contains("OffsetDays") Then Return CustomTermId()
+
+            Dim storedStart = If(currentRecord Is Nothing, CType(Nothing, Date?), currentRecord.LicenseStart)
+
+            For Each anchorDate In {storedStart, CType(Date.Today, Date?)}
+                If Not anchorDate.HasValue Then Continue For
+
+                For Each row As DataRow In table.Rows
+                    If row.IsNull("OffsetDays") OrElse row.IsNull("LicenseTermID") Then Continue For
+
+                    Dim termId = Convert.ToInt32(row("LicenseTermID"), Globalization.CultureInfo.InvariantCulture)
+                    If termId <= 0 Then Continue For
+
+                    Dim offset = Convert.ToInt32(row("OffsetDays"), Globalization.CultureInfo.InvariantCulture)
+                    If anchorDate.Value.Date.AddDays(offset) = expiry Then Return termId
+                Next
+            Next
+
+            Return CustomTermId()
+        End Function
+
+        ''' <summary>
+        ''' A new registration with nothing assumed.
+        '''
+        ''' No licence term and no dates: License Term is App Admin required, so the answer is asked
+        ''' for rather than filled in. A prefilled year is a decision nobody made.
+        ''' </summary>
+        Private Function BuildDefaultRecord() As RegistrationRecord
             Return New RegistrationRecord With {
                 .ID = 0,
                 .RegName = String.Empty,
+                .LicenseExpiration = Nothing,
+                .LicenseStart = Nothing,
+                .LicenseTermID = 0,
                 .RegistrationTypeID = 0,
                 .Address1 = String.Empty,
                 .Address2 = String.Empty,

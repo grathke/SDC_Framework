@@ -67,11 +67,14 @@ Namespace SDC.Framework
                 If Not DataAccess.HasSchemaDrifted() Then Return
 
                 Dim result = DataAccess.SyncAllRoleFieldsWithSchema(SystemUserId)
-                Program.Log($"Schema drift corrected: {result.Inserted} added, {result.Deleted} deleted, " &
+                Program.Log($"Schema drift corrected: {result.TablesAdded} tables added, {result.TablesRemoved} tables removed, " &
+                            $"{result.Inserted} fields added, {result.Deleted} fields deleted, " &
                             $"{result.Repaired} repaired, across {result.RolesVisited} role and table pairs")
 
-                Dim message = "The database schema had changed, and field permissions have been brought back in line." &
+                Dim message = "The database schema had changed, and role permissions have been brought back in line." &
                               Environment.NewLine & Environment.NewLine &
+                              $"Tables added:    {result.TablesAdded}" & Environment.NewLine &
+                              $"Tables removed:  {result.TablesRemoved}" & Environment.NewLine &
                               $"Fields added:    {result.Inserted}" & Environment.NewLine &
                               $"Fields deleted:  {result.Deleted}" & Environment.NewLine &
                               $"Links repaired:  {result.Repaired}" & Environment.NewLine &

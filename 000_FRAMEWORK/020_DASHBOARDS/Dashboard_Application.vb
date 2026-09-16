@@ -475,8 +475,9 @@ Namespace SDC.Framework
 
             Dim warning = "Update field permissions for every role, in every registration, against the current database?" &
                           Environment.NewLine & Environment.NewLine &
+                          "Tables that have been added become available to grant in Roles." & Environment.NewLine &
                           "Columns that have been added get a new permission row, set inactive." & Environment.NewLine &
-                          "Rows for columns that no longer exist are permanently deleted." & Environment.NewLine &
+                          "Permissions for tables and columns that no longer exist are permanently deleted." & Environment.NewLine &
                           "Links that no longer match their column are repaired." & Environment.NewLine & Environment.NewLine &
                           "This cannot be undone."
 
@@ -502,10 +503,12 @@ Namespace SDC.Framework
                 Me.Cursor = previousCursor
             End Try
 
-            Dim summary = $"Roles and tables visited: {result.RolesVisited}" & Environment.NewLine &
+            Dim summary = $"Tables added:             {result.TablesAdded}" & Environment.NewLine &
+                          $"Tables removed:           {result.TablesRemoved}" & Environment.NewLine &
                           $"Fields added:             {result.Inserted}" & Environment.NewLine &
                           $"Fields deleted:           {result.Deleted}" & Environment.NewLine &
-                          $"Links repaired:           {result.Repaired}"
+                          $"Links repaired:           {result.Repaired}" & Environment.NewLine &
+                          $"Roles and tables visited: {result.RolesVisited}"
 
             If result.Failures.Count > 0 Then
                 summary &= Environment.NewLine & Environment.NewLine &
