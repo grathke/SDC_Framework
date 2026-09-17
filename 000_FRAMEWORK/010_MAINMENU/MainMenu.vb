@@ -57,6 +57,20 @@ Namespace SDC.Framework
             ''' withdrawn*. Without it, a role change that removes an override would have nothing to
             ''' put back and the previous role's wording would stick.
             Public Property DefaultCaption As String
+
+            ''' <summary>
+            ''' The tile's picture without a badge on it, kept for the same reason DefaultCaption is:
+            ''' the badge has to come off again, and what it came off to is not derivable from the
+            ''' badged picture. Nothing until a badge is first applied, and the picture on the button
+            ''' is the plain one until then - which may be one the user chose, not the one in code.
+            ''' </summary>
+            Public Property UnbadgedImage As Image
+
+            ''' <summary>
+            ''' What the badge currently shows, so an unchanged count composes no new picture. The
+            ''' check runs every minute and the answer is usually the same one.
+            ''' </summary>
+            Public Property BadgeCount As Integer
         End Class
 
         ''' <summary>
@@ -91,16 +105,41 @@ Namespace SDC.Framework
         Private Const DefaultMessageCheckMinutes As Integer = 5
 
         ''' <summary>
-        ''' The narrowest and widest a registration may set the check to. A minute is the floor
-        ''' because the query runs on the UI thread; an hour is the ceiling because beyond it the
-        ''' asterisk stops meaning "new mail" and starts meaning "mail at some point today".
+        ''' The narrowest and widest a registration may set the check to.
+        '''
+        ''' Five minutes is the floor. A minute was allowed until 2026-09-17 and cost five times
+        ''' the traffic for a difference nobody can see in mail: this is a message list, not a
+        ''' chat window. An hour is the ceiling, because beyond it the badge stops meaning "new
+        ''' mail" and starts meaning "mail at some point today".
+        '''
+        ''' The column is not constrained, and this clamps what it reads, so a registration set to
+        ''' 1 by hand behaves as 5 rather than as an argument. Registration_U offers a fixed list
+        ''' of choices, which is where anybody setting it will be.
         ''' </summary>
-        Private Const MinMessageCheckMinutes As Integer = 1
+        Private Const MinMessageCheckMinutes As Integer = 5
         Private Const MaxMessageCheckMinutes As Integer = 60
 
-        ''' How far below the registration name's top edge the asterisk sits. It used to be six
-        ''' pixels *above* that edge; +8 was tried and overshot, so this is half that move.
-        Private Const MessageMarkerDrop As Integer = 1
+        ''' <summary>
+        ''' The table the messaging permission is keyed on, named once. The same string decides
+        ''' three things - whether the tile exists, whether the check is polled, and whether a
+        ''' count may be shown - and three copies of it are how they come to disagree. It was
+        ''' `"MESSAGING"` until 2026-09-11, which matched no table and no FW_RoleSchema row, so the
+        ''' permission could never be granted by anybody.
+        ''' </summary>
+        Private Const MessagesTableName As String = "FW_Messages"
+
+        ''' <summary>
+        ''' What the badge last said, so it can be put back after the tile's picture is rewritten
+        ''' without asking the database again.
+        ''' </summary>
+        Private lastUnreadMessageCount As Integer
+
+        ''' <summary>
+        ''' The badge colour, which is the red the asterisk beside the registration name used
+        ''' until 2026-09-17. The asterisk said only that something had arrived, and said it away
+        ''' from the tile that opens the messages; the badge says how many, where they are.
+        ''' </summary>
+        Private Shared ReadOnly BadgeFillColor As Color = Color.FromArgb(196, 43, 43)
 
         ''' <summary>
         ''' The shortest gap between two checks, which only bites on Activated. Coming back to the
@@ -125,7 +164,6 @@ Namespace SDC.Framework
         Private ReadOnly headingLabel As Label
         Private ReadOnly timeZoneOverrideCombo As ComboBox
         Private ReadOnly timeZoneOverrideCaption As Label
-        Private ReadOnly newMessageMarker As Label
         Private ReadOnly welcomeLabel As Label
         ''' <summary>
         ''' The area under the ribbon. It holds every layout, one of which is showing.
@@ -511,27 +549,14 @@ Namespace SDC.Framework
                 .TabStop = False
             }
 
-            ' Left of the registration name, and big enough to be seen without being looked for -
-            ' 26pt against the name's 20. Red is unused elsewhere on this part of the page, so it
-            ' means one thing here.
+            ' A red asterisk sat left of the registration name until 2026-09-17, and the unread
+            ' count is now a badge on the Messages tile instead. It marked mail nowhere near the
+            ' tile that opens it, and said only that something had arrived.
             '
-            ' Decided since: a FW_RoleDetails permission on FW_Messages. The registration's
+            ' What the asterisk settled and the badge keeps: a FW_RoleDetails permission on
+            ' FW_Messages decides whether there is any marker at all. The registration's
             ' AllowMessaging flag was the other candidate and was removed on 2026-09-15 - nothing
             ' ever read it, and two switches for one question is how they end up disagreeing.
-            ' Horizontal position unchanged - x = 18, where it has always been. Only the vertical
-            ' moves: an asterisk is drawn in the upper part of its em box, being a superscript
-            ' glyph by design, so sitting it level with the registration name's top put the mark
-            ' up by the letter's cap height rather than beside its middle.
-            '
-            ' MessageMarkerDrop is the one number to change if it still looks off.
-            newMessageMarker = New Label() With {
-                .AutoSize = True,
-                .Location = New Point(18, headingLabel.Top + MessageMarkerDrop),
-                .Text = "*",
-                .Font = New Font("Segoe UI", 26.0F, FontStyle.Bold),
-                .ForeColor = Color.FromArgb(196, 43, 43),
-                .Visible = False
-            }
 
             welcomeLabel = New Label() With {
                 .AutoSize = False,
@@ -690,7 +715,6 @@ Namespace SDC.Framework
             Me.Controls.Add(timeZoneOverrideCaption)
             Me.Controls.Add(timeZoneOverrideCombo)
             timeZoneOverrideCaption.BringToFront()
-            Me.Controls.Add(newMessageMarker)
             Me.Controls.Add(welcomeLabel)
             Me.Controls.Add(contentHost)
 
@@ -795,7 +819,21 @@ Namespace SDC.Framework
             Return shell.ContentHost.Controls(0)
         End Function
 
-        Public Sub LoadRegionControl(region As MenuRegion, content As Control)
+        ''' <summary>
+        ''' Puts a control in a region, and gives it the session's access context on the way in.
+        '''
+        ''' The context is applied here rather than by each caller. It was the caller's job until
+        ''' 2026-09-17, and the Messages tile did not do it: clicking the tile built a fresh
+        ''' MessagesWindowControl with no user, which cleared its grid, wrote "Inbox (0)" and
+        ''' returned before asking the database anything. Every folder looked empty while the
+        ''' tile's own badge correctly said there were four unread. The sign-in path worked only
+        ''' because MenuFormInitializer happened to do it. Four controls implement
+        ''' IAccessControlledControl and the same trap was set for all of them.
+        '''
+        ''' A control that does not implement it, and a caller with no table to name, both pass
+        ''' through untouched - a denied-access panel and a hosted form among them.
+        ''' </summary>
+        Public Sub LoadRegionControl(region As MenuRegion, content As Control, Optional tableName As String = Nothing)
             If content Is Nothing Then
                 Return
             End If
@@ -807,6 +845,18 @@ Namespace SDC.Framework
             shell.ContentHost.Controls.Clear()
             shell.ContentHost.Controls.Add(content)
             shell.ContentHost.ResumeLayout()
+
+            ' After the control is in the region, not before. An occupant that reports something
+            ' back to the menu finds it through its own parent chain - MessagesWindowControl
+            ' publishes the unread count that way - and a control that has not been added yet has
+            ' no parent to find it through. Applying access first therefore left the Messages tile
+            ' with no badge at sign-in while the inbox itself showed three unread.
+            If Not String.IsNullOrWhiteSpace(tableName) Then
+                Dim accessControlled = TryCast(content, IAccessControlledControl)
+                If accessControlled IsNot Nothing AndAlso activeAccessProfile IsNot Nothing Then
+                    accessControlled.ApplyAccess(activeAccessProfile, tableName)
+                End If
+            End If
         End Sub
 
         Public Sub LoadRegionForm(region As MenuRegion, childForm As Form)
@@ -860,11 +910,11 @@ Namespace SDC.Framework
         ''' </summary>
         Private Sub StartMessageChecks()
             Dim canUseMessaging = activeAccessProfile IsNot Nothing AndAlso
-                                  activeAccessProfile.Can("FW_Messages", AccessCapability.Read)
+                                  activeAccessProfile.Can(MessagesTableName, AccessCapability.Read)
 
             If Not canUseMessaging Then
                 If messageCheckTimer IsNot Nothing Then messageCheckTimer.Stop()
-                SetNewMessageIndicator(False)
+                SetNewMessageIndicator(0)
                 Return
             End If
 
@@ -971,13 +1021,23 @@ Namespace SDC.Framework
                     messageCheckTimer.Start()
                 End If
 
-                Dim unread = MessagingDataAccess.CountUnread(session.RegistrationID, currentUser.UserId)
-                SetNewMessageIndicator(unread > 0)
-
+                ' One round trip either way. With the panel open its reload reads the rows and the
+                ' count together and hands the count back; with no panel open the count is all
+                ' there is to ask for. Counting here first and then reloading cost three.
                 Dim showing = TryCast(GetRegionContent(MenuRegion.RegionLeft), MessagesWindowControl)
-                If showing IsNot Nothing Then
-                    showing.ReloadCurrentFolder()
+
+                Dim unread = -1
+                If showing IsNot Nothing Then unread = showing.ReloadCurrentFolder()
+
+                ' The panel answers minus one while it is on screen but has not been told who it
+                ' is for, which is exactly where the menu's first check of a session lands. Its
+                ' zero used to be taken as gospel, and the badge was missing until something
+                ' counted again.
+                If unread < 0 Then
+                    unread = MessagingDataAccess.CountUnread(session.RegistrationID, currentUser.UserId)
                 End If
+
+                SetNewMessageIndicator(unread)
             Catch
             End Try
         End Sub
@@ -1031,7 +1091,33 @@ Namespace SDC.Framework
             ' from the row that can, so it carries the same "Fixed position" tooltip.
             arrangementController.MarkFixedElsewhere(PinnedTiles())
 
+            ' Off before the picture controller sees the tiles, back on afterwards. Attach records
+            ' each tile's picture as its default and then lays any chosen one over the top, so a
+            ' badge composed before this point would be remembered as the tile's own picture and
+            ' then painted over - which is why the Messages tile had no badge at sign-in and grew
+            ' one only when the inbox was opened.
+            StripMessageBadge()
             imageController.Attach(AllTiles())
+            SetNewMessageIndicator(lastUnreadMessageCount)
+        End Sub
+
+        ''' <summary>
+        ''' Puts the Messages tile back to its plain picture, forgetting the badge.
+        '''
+        ''' For the moments when something else is about to take the tile's picture as its own:
+        ''' what it takes should be the graphic, not the graphic with a number on it.
+        ''' </summary>
+        Private Sub StripMessageBadge()
+            Dim tile As ActionTile = Nothing
+            If actionTilesByKey Is Nothing OrElse Not actionTilesByKey.TryGetValue("region-messages", tile) Then Return
+            If tile.Button Is Nothing OrElse tile.UnbadgedImage Is Nothing Then Return
+
+            Dim badged = tile.Button.Image
+            tile.Button.Image = tile.UnbadgedImage
+            If badged IsNot Nothing AndAlso Not badged Is tile.UnbadgedImage Then badged.Dispose()
+
+            tile.UnbadgedImage = Nothing
+            tile.BadgeCount = 0
         End Sub
 
         ''' The tiles that can be rearranged: the ones in the flow panel, and only those. The pinned
@@ -1075,7 +1161,12 @@ Namespace SDC.Framework
                 Return
             End If
 
+            ' The pictures are about to be rewritten from scratch, so the badge goes off first and
+            ' is composed again onto whatever picture the tile now has - including one the user
+            ' has just chosen for itself.
+            StripMessageBadge()
             imageController.ApplySavedImages()
+            SetNewMessageIndicator(lastUnreadMessageCount)
         End Sub
 
         Public Sub UpsertActionTile(actionKey As String,
@@ -1235,23 +1326,118 @@ Namespace SDC.Framework
         End Sub
 
         ''' <summary>
-        ''' Shows or hides the unread marker beside the registration name.
+        ''' Puts the unread count on the Messages tile, or takes it off.
         '''
         ''' The only switch, and public because two things decide it: this form's own check, and
-        ''' MessagesWindowControl.RefreshMessages, which has the count in hand already.
+        ''' MessagesWindowControl.RefreshMessages, which has the count in hand already. It takes
+        ''' the number rather than a yes or no, because both callers counted before they called
+        ''' and a boolean threw the figure away.
         '''
         ''' The permission is checked here rather than only at the call sites, so nothing can put
-        ''' the marker on screen for a role that may not read messages - not a caller that forgets,
-        ''' and not the test scaffold. One guard, in the place that does the showing.
+        ''' a count on screen for a role that may not read messages - not a caller that forgets,
+        ''' and not the test scaffold. One guard, in the place that does the showing. A role
+        ''' without the permission has no Messages tile at all, and this is the second of the two
+        ''' answers agreeing.
         ''' </summary>
-        Public Sub SetNewMessageIndicator(hasUnread As Boolean)
-            If newMessageMarker Is Nothing Then Return
-
+        Public Sub SetNewMessageIndicator(unreadCount As Integer)
             Dim canUseMessaging = activeAccessProfile IsNot Nothing AndAlso
-                                  activeAccessProfile.Can("FW_Messages", AccessCapability.Read)
+                                  activeAccessProfile.Can(MessagesTableName, AccessCapability.Read)
 
-            newMessageMarker.Visible = hasUnread AndAlso canUseMessaging
+            Dim wanted = If(canUseMessaging AndAlso unreadCount > 0, unreadCount, 0)
+
+
+            ' Remembered first, before anything can return early. The first count of a session
+            ' arrives while the menu is still being built - the access profile is set, which starts
+            ' the checks, before the ribbon has its tiles - so the tile below does not exist yet.
+            ' Recording the number after that lookup threw the session's first answer away, and the
+            ' badge then appeared only when something else counted again, which is why it took
+            ' opening the inbox.
+            lastUnreadMessageCount = wanted
+
+            Dim tile As ActionTile = Nothing
+            If actionTilesByKey Is Nothing OrElse Not actionTilesByKey.TryGetValue("region-messages", tile) Then
+                Return
+            End If
+            If tile.Button Is Nothing Then
+                Return
+            End If
+
+            If wanted = tile.BadgeCount Then
+                Return
+            End If
+
+            ' The plain picture is whatever is on the button the first time a badge goes on, which
+            ' may be a graphic the user chose rather than the one named in AddActionTile.
+            If tile.UnbadgedImage Is Nothing Then tile.UnbadgedImage = tile.Button.Image
+
+            Dim previous = tile.Button.Image
+            If wanted = 0 Then
+                tile.Button.Image = tile.UnbadgedImage
+            Else
+                tile.Button.Image = ComposeBadgedIcon(tile.UnbadgedImage, wanted)
+            End If
+
+            ' The composed bitmaps are this method's own; the plain one belongs to the tile and is
+            ' never disposed here.
+            If previous IsNot Nothing AndAlso Not previous Is tile.UnbadgedImage Then previous.Dispose()
+
+            tile.BadgeCount = wanted
         End Sub
+
+        ''' <summary>
+        ''' A copy of the tile's picture with the count in its top-right corner.
+        '''
+        ''' Composed into the picture rather than painted over the tile. The tile's background is
+        ''' transparent, so painting the badge in the button's own paint step meant it was redrawn
+        ''' every time anything behind it was - and over Thinfinity every one of those repaints is
+        ''' pixels sent to a browser. Measured on 2026-09-17: the menu stopped taking clicks for
+        ''' seconds at a time, and the new number appeared only after it came back. This way the
+        ''' picture changes once per count change and nothing paints in between.
+        ''' </summary>
+        Private Shared Function ComposeBadgedIcon(source As Image, count As Integer) As Image
+            If source Is Nothing Then Return Nothing
+
+            ' Three digits do not fit, and the exact number stops being the point long before
+            ' then: past ninety-nine it is "a lot", and the list says how many.
+            Dim caption = If(count > 99, "99+", count.ToString(Globalization.CultureInfo.InvariantCulture))
+
+            Dim composed As New Bitmap(source.Width, source.Height)
+            Using g = Graphics.FromImage(composed)
+                g.Clear(Color.Transparent)
+                g.DrawImage(source, 0, 0, source.Width, source.Height)
+                g.SmoothingMode = Drawing2D.SmoothingMode.AntiAlias
+
+                Using badgeFont As New Font("Segoe UI", 7.5F, FontStyle.Bold)
+                    Dim textWidth = g.MeasureString(caption, badgeFont).Width
+                    Dim diameter = 17
+                    Dim width = CInt(Math.Max(diameter, Math.Ceiling(textWidth) + 7))
+                    Dim bounds As New Rectangle(composed.Width - width, 0, width, diameter)
+
+                    Using fill As New SolidBrush(BadgeFillColor)
+                        If width = diameter Then
+                            g.FillEllipse(fill, bounds)
+                        Else
+                            ' Two end caps and the bar between them, rather than a rounded path
+                            ' built for one shape used once.
+                            g.FillEllipse(fill, New Rectangle(bounds.Left, bounds.Top, diameter, diameter))
+                            g.FillEllipse(fill, New Rectangle(bounds.Right - diameter, bounds.Top, diameter, diameter))
+                            g.FillRectangle(fill, New Rectangle(bounds.Left + diameter \ 2, bounds.Top, bounds.Width - diameter, diameter))
+                        End If
+                    End Using
+
+                    Using textBrush As New SolidBrush(Color.White)
+                        Using format As New StringFormat() With {
+                            .Alignment = StringAlignment.Center,
+                            .LineAlignment = StringAlignment.Center
+                        }
+                            g.DrawString(caption, badgeFont, textBrush, New RectangleF(bounds.X, bounds.Y, bounds.Width, bounds.Height), format)
+                        End Using
+                    End Using
+                End Using
+            End Using
+
+            Return composed
+        End Function
 
         ''' <summary>
         ''' Whether a region shows its caption bar, and whether its content is inset.
@@ -1771,8 +1957,17 @@ Namespace SDC.Framework
             SessionState.OverrideTimeZone(Convert.ToString(timeZoneOverrideCombo.SelectedValue))
         End Sub
 
+        ''' <summary>
+        ''' The region occupants the menu starts with, every one of which MenuFormInitializer
+        ''' replaces moments later with the one the session's role is entitled to. The messages
+        ''' placeholder is given its table anyway: an occupant that is on screen, however briefly,
+        ''' should not be one with no user.
+        '''
+        ''' The other three name no table because those names belong to the application's
+        ''' initializer, not to the menu form, which serves more than one application.
+        ''' </summary>
         Private Sub LoadSamplePlaceholders()
-            LoadRegionControl(MenuRegion.RegionLeft, New MessagesWindowControl())
+            LoadRegionControl(MenuRegion.RegionLeft, New MessagesWindowControl(), MessagesTableName)
             LoadRegionControl(MenuRegion.GeneralDashboard, New GeneralDashboardWindowControl())
             LoadRegionControl(MenuRegion.AcmeDashboard, New AcmeDashboardWindowControl())
             LoadRegionControl(MenuRegion.UsersAndLists, New UsersListsWindowControl())
@@ -1972,7 +2167,7 @@ Namespace SDC.Framework
 
             SetRegionChrome(MenuRegion.RegionLeft, True)
             SetRegionHeader(MenuRegion.RegionLeft, "Messages")
-            LoadRegionControl(MenuRegion.RegionLeft, New MessagesWindowControl())
+            LoadRegionControl(MenuRegion.RegionLeft, New MessagesWindowControl(), MessagesTableName)
         End Sub
 
         Private Sub ShowOverviewRegion_Click(sender As Object, e As EventArgs)
@@ -2042,8 +2237,11 @@ Namespace SDC.Framework
                 Return
             End If
 
+            ' The picker is a browse page, so the search is QBE: any field it shows can be searched
+            ' on, including first and last names, which the dialog it replaced could not do. It
+            ' still only finds - the checks above, the session and the audit row all stay here.
             Dim target As UserContext = Nothing
-            Using picker As New SwitchUserDialog(currentUser.UserId)
+            Using picker As New FW_SwitchUser_B(currentUser, activeAccessProfile, currentUser.UserId)
                 If picker.ShowDialog(Me) <> DialogResult.OK OrElse picker.ChosenUser Is Nothing Then Return
                 target = picker.ChosenUser
             End Using
@@ -2123,6 +2321,62 @@ Namespace SDC.Framework
             RefreshIdentityLabels()
             ReselectSessionTimeZone()
             UpdateRoleSelectionTile()
+
+            ' Only while viewing as somebody. Coming back to yourself is the menu returning to
+            ' normal, and a flash there would announce the ordinary.
+            If SwitchedUser.IsActive Then StartSwitchNotice()
+        End Sub
+
+        ''' <summary>
+        ''' How many times the welcome line flashes red when a switch begins, and how long each
+        ''' state lasts.
+        '''
+        ''' Five flashes, then black and still. A marker that flashes forever is a marker people
+        ''' stop seeing, and one that never moves is missed on the way past - this is meant to
+        ''' catch the eye once, at the moment the menu becomes somebody else's.
+        ''' </summary>
+        Private Const SwitchNoticeFlashes As Integer = 5
+        Private Const SwitchNoticeFlashMs As Integer = 350
+
+        Private switchNoticeTimer As Timer
+        Private switchNoticeStepsLeft As Integer
+
+        ''' <summary>
+        ''' Flashes the welcome line red, then leaves it as it was.
+        '''
+        ''' The whole line, not a separate marker: the line already says who the menu belongs to
+        ''' and now says it is somebody else, so the thing that changed is the thing that flashes.
+        ''' </summary>
+        Private Sub StartSwitchNotice()
+            If welcomeLabel Is Nothing Then Return
+
+            If switchNoticeTimer Is Nothing Then
+                switchNoticeTimer = New Timer() With {.Interval = SwitchNoticeFlashMs}
+                AddHandler switchNoticeTimer.Tick, AddressOf SwitchNoticeTimer_Tick
+            End If
+
+            ' Two steps per flash: on, then off.
+            switchNoticeStepsLeft = SwitchNoticeFlashes * 2
+            welcomeLabel.ForeColor = SwitchNoticeColor
+            switchNoticeTimer.Stop()
+            switchNoticeTimer.Start()
+        End Sub
+
+        Private ReadOnly SwitchNoticeColor As Color = Color.FromArgb(196, 43, 43)
+
+        Private Sub SwitchNoticeTimer_Tick(sender As Object, e As EventArgs)
+            switchNoticeStepsLeft -= 1
+
+            If switchNoticeStepsLeft <= 0 Then
+                switchNoticeTimer.Stop()
+                ' Black and still, whatever the flashing left behind.
+                welcomeLabel.ForeColor = SystemColors.ControlText
+                Return
+            End If
+
+            welcomeLabel.ForeColor = If(welcomeLabel.ForeColor = SwitchNoticeColor,
+                                        SystemColors.ControlText,
+                                        SwitchNoticeColor)
         End Sub
 
         Private Sub RefreshIdentityLabels()
@@ -2137,7 +2391,7 @@ Namespace SDC.Framework
             If welcomeLabel IsNot Nothing Then
                 Dim welcomeName = If(String.IsNullOrWhiteSpace(session.Value.FirstLast), currentUser.DisplayName, session.Value.FirstLast)
                 welcomeLabel.Text = "Welcome " & welcomeName & " (" & session.Value.UserID.ToString() & ")" &
-                                    If(SwitchedUser.IsActive, "  -  viewing as this user", String.Empty)
+                                    If(SwitchedUser.IsActive, "  -  Viewing As This User", String.Empty)
             End If
         End Sub
 

@@ -114,6 +114,36 @@ source left anywhere in the repository. The `ConfigureActionVisibility` call out
 nothing, because that method returns early for a key with no tile. Re-added 2026-09-02 as a
 placeholder, removed 2026-09-15 without ever having been wired up.
 
+## region-messages
+
+- placement: main ribbon (left), fixed second position, not arrangeable
+- ActionType: region selector
+- target: `MessagesWindowControl` in `MenuRegion.RegionLeft`, via `ShowMessagesRegion_Click`
+- caption source: fixed (`Messages`)
+- icon file: `Color_Information.png`
+- visibility rule: added only when the role can read `FW_Messages`. Absent rather than disabled, so
+  the row closes up and messaging reads as a feature this company does not have.
+- click behavior: switches the Dashboards layout and shows messages in the left region. Pressed
+  while messages are already showing, it re-reads the current folder instead of toggling away.
+- badge: the unread count is composed into a copy of the tile picture by `ComposeBadgedIcon` and
+  set only through `FW_MainMenu.SetNewMessageIndicator`, which
+  re-checks the `FW_Messages` permission itself. Zero paints nothing; over 99 shows `99+`. It
+  replaced the red asterisk beside the registration name on 2026-09-17, which said that mail had
+  arrived but not how much, nowhere near the tile that opens it. Two callers supply the number,
+  both of which had already counted: the menu's own check and
+  `MessagesWindowControl.PublishUnreadCount`.
+- note: the badge went in twice on 2026-09-17. First painted in the button's own paint step, which
+  worked but not over Thinfinity: the tile's background is transparent, so it repainted whenever
+  anything behind it did, every repaint is pixels sent to a browser, and the menu stopped taking
+  clicks for seconds at a time - the new number arriving only once it came back. Composing it into
+  the picture instead means one bitmap per count change and no painting in between. A child control
+  was never an option: it would swallow clicks over the number and would have to be dragged and
+  re-laid out with the tile.
+- note: `UnbadgedImage` on the tile holds the plain picture, captured the first time a badge goes
+  on, so a picture the user chose is what the badge comes off to. Anything that rewrites this
+  tile's `Image` must clear `UnbadgedImage` with it, or the next badge will be composed onto the
+  old graphic.
+
 ## application-settings
 
 - placement: main ribbon (left), anchored third

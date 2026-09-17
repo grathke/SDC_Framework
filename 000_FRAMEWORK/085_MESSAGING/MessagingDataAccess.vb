@@ -22,6 +22,19 @@ Namespace SDC.Framework
             Public Property IsRead As Boolean
         End Class
 
+        ''' <summary>
+        ''' A folder's rows and the inbox's unread count, as one answer.
+        '''
+        ''' The two were read separately, which cost the poll three round trips whenever the panel
+        ''' was open: the menu counted, the panel read its rows, and the panel counted again. The
+        ''' count is included whichever folder was asked for, because a reload is a check for new
+        ''' mail and the user may be looking at Sent.
+        ''' </summary>
+        Public Class MessageFolderSnapshot
+            Public Property Rows As List(Of MessageListRow)
+            Public Property UnreadCount As Integer
+        End Class
+
         Public Class MessageRecipientOption
             Public Property UserID As Integer
             Public Property DisplayName As String
@@ -50,11 +63,67 @@ Namespace SDC.Framework
             Return result
         End Function
 
+        ''' <summary>
+        ''' One round trip for what a folder shows and what the inbox is owed: the rows, then the
+        ''' unread count, as two result sets from a single command.
+        '''
+        ''' Replaces GetFolderRows plus CountUnread as separate calls. The cost of asking is the
+        ''' round trip rather than the SQL, and the poll asked three times a minute with the panel
+        ''' open. One command also means the list and the count cannot come from two different
+        ''' moments and disagree.
+        ''' </summary>
+        Public Shared Function GetFolderSnapshot(registrationId As Integer, userId As Integer, folderName As String) As MessageFolderSnapshot
+            Dim snapshot As New MessageFolderSnapshot With {.Rows = New List(Of MessageListRow)(), .UnreadCount = 0}
+
+            Using conn As New SqlConnection(ConnectionString())
+                conn.Open()
+                Using cmd As New SqlCommand(FolderRowsSql & "; " & UnreadCountSql, conn)
+                    cmd.Parameters.AddWithValue("@RegistrationID", registrationId)
+                    cmd.Parameters.AddWithValue("@UserID", userId)
+                    cmd.Parameters.AddWithValue("@FolderName", folderName)
+                    Using reader = cmd.ExecuteReader()
+                        While reader.Read()
+                            snapshot.Rows.Add(ReadListRow(reader))
+                        End While
+
+                        If reader.NextResult() AndAlso reader.Read() Then
+                            snapshot.UnreadCount = Convert.ToInt32(reader.GetValue(0), CultureInfo.InvariantCulture)
+                        End If
+                    End Using
+                End Using
+            End Using
+
+            Return snapshot
+        End Function
+
+        Private Shared Function ReadListRow(reader As SqlDataReader) As MessageListRow
+            Return New MessageListRow With {
+                .RecipientID = Convert.ToInt32(reader("MessageRecipientID"), CultureInfo.InvariantCulture),
+                .MessageID = Convert.ToInt32(reader("MessageID"), CultureInfo.InvariantCulture),
+                .FromName = If(reader("FromName") Is DBNull.Value, String.Empty, reader("FromName").ToString()),
+                .ToName = If(reader("ToName") Is DBNull.Value, String.Empty, reader("ToName").ToString()),
+                .Subject = reader("Subject").ToString(),
+                .SentOn = Convert.ToDateTime(reader("SentOn"), CultureInfo.InvariantCulture),
+                .IsRead = Convert.ToBoolean(reader("IsRead"), CultureInfo.InvariantCulture)
+            }
+        End Function
+
+        ''' <summary>
+        ''' The two reads the panel and the menu live on, written once. GetFolderSnapshot sends
+        ''' both in one command; CountUnread sends the second alone, for the menu with no panel
+        ''' open.
+        ''' </summary>
+        Private Const FolderRowsSql As String =
+            "SELECT r.MessageRecipientID, r.MessageID, COALESCE(NULLIF(m.FromUserName, ''), ISNULL(sender.FirstLast, sender.Email)) AS FromName, CASE WHEN r.FolderName = 'Sent' THEN COALESCE(NULLIF(m.ToUserName, ''), ISNULL(recipient.FirstLast, recipient.Email)) ELSE ISNULL(currentUser.FirstLast, currentUser.Email) END AS ToName, thread.Subject, m.SentOn, r.IsRead FROM dbo.FW_MessageRecipients r INNER JOIN dbo.FW_Messages m ON m.MessageID = r.MessageID INNER JOIN dbo.FW_MessageThreads thread ON thread.ThreadID = r.ThreadID LEFT JOIN dbo.FW_Users sender ON sender.UserID = m.FromUserID LEFT JOIN dbo.FW_Users recipient ON recipient.UserID = m.ToUserID LEFT JOIN dbo.FW_Users currentUser ON currentUser.UserID = @UserID AND currentUser.RegistrationID = @RegistrationID WHERE r.RegistrationID = @RegistrationID AND r.FolderName = @FolderName AND ((r.FolderName = 'Sent' AND m.FromUserID = @UserID) OR (r.FolderName = 'Inbox' AND r.UserID = @UserID AND r.RecipientType = 'To') OR (r.FolderName NOT IN ('Sent', 'Inbox') AND r.UserID = @UserID)) ORDER BY m.SentOn DESC"
+
+        Private Const UnreadCountSql As String =
+            "SELECT COUNT(1) FROM dbo.FW_MessageRecipients WHERE RegistrationID = @RegistrationID AND UserID = @UserID AND RecipientType = 'To' AND FolderName = 'Inbox' AND IsRead = 0"
+
         Public Shared Function GetFolderRows(registrationId As Integer, userId As Integer, folderName As String) As List(Of MessageListRow)
             Dim result As New List(Of MessageListRow)()
             Using conn As New SqlConnection(ConnectionString())
                 conn.Open()
-                Using cmd As New SqlCommand("SELECT r.MessageRecipientID, r.MessageID, COALESCE(NULLIF(m.FromUserName, ''), ISNULL(sender.FirstLast, sender.Email)) AS FromName, CASE WHEN r.FolderName = 'Sent' THEN COALESCE(NULLIF(m.ToUserName, ''), ISNULL(recipient.FirstLast, recipient.Email)) ELSE ISNULL(currentUser.FirstLast, currentUser.Email) END AS ToName, thread.Subject, m.SentOn, r.IsRead FROM dbo.FW_MessageRecipients r INNER JOIN dbo.FW_Messages m ON m.MessageID = r.MessageID INNER JOIN dbo.FW_MessageThreads thread ON thread.ThreadID = r.ThreadID LEFT JOIN dbo.FW_Users sender ON sender.UserID = m.FromUserID LEFT JOIN dbo.FW_Users recipient ON recipient.UserID = m.ToUserID LEFT JOIN dbo.FW_Users currentUser ON currentUser.UserID = @UserID AND currentUser.RegistrationID = @RegistrationID WHERE r.RegistrationID = @RegistrationID AND r.FolderName = @FolderName AND ((r.FolderName = 'Sent' AND m.FromUserID = @UserID) OR (r.FolderName = 'Inbox' AND r.UserID = @UserID AND r.RecipientType = 'To') OR (r.FolderName NOT IN ('Sent', 'Inbox') AND r.UserID = @UserID)) ORDER BY m.SentOn DESC", conn)
+                Using cmd As New SqlCommand(FolderRowsSql, conn)
                     cmd.Parameters.AddWithValue("@RegistrationID", registrationId)
                     cmd.Parameters.AddWithValue("@UserID", userId)
                     cmd.Parameters.AddWithValue("@FolderName", folderName)
@@ -79,7 +148,7 @@ Namespace SDC.Framework
         Public Shared Function CountUnread(registrationId As Integer, userId As Integer) As Integer
             Using conn As New SqlConnection(ConnectionString())
                 conn.Open()
-                Using cmd As New SqlCommand("SELECT COUNT(1) FROM dbo.FW_MessageRecipients WHERE RegistrationID = @RegistrationID AND UserID = @UserID AND RecipientType = 'To' AND FolderName = 'Inbox' AND IsRead = 0", conn)
+                Using cmd As New SqlCommand(UnreadCountSql, conn)
                     cmd.Parameters.AddWithValue("@RegistrationID", registrationId)
                     cmd.Parameters.AddWithValue("@UserID", userId)
                     Return Convert.ToInt32(cmd.ExecuteScalar(), CultureInfo.InvariantCulture)

@@ -131,11 +131,11 @@ Namespace SDC.Framework
 
         End Sub
 
-        Public Sub InitializeForUser(user As UserContext)
-            currentUser = user
-            RefreshMessages()
-        End Sub
-
+        ''' <summary>
+        ''' Takes the session's user and loads the folder. The only way in: InitializeForUser sat
+        ''' beside this until 2026-09-17 doing the same job with no callers at all, which is one
+        ''' path too many for "the panel learns who it is for".
+        ''' </summary>
         Public Sub ApplyAccess(profile As AccessProfile, tableName As String) Implements IAccessControlledControl.ApplyAccess
             Dim session = SessionState.Current
             If session.HasValue Then
@@ -213,22 +213,37 @@ Namespace SDC.Framework
         ''' region and threw away the selection. A click that would otherwise do nothing is worth
         ''' more as "check for new mail".
         ''' </summary>
-        Public Sub ReloadCurrentFolder()
-            RefreshMessages()
-        End Sub
+        ''' <summary>
+        ''' Re-reads the folder and returns the inbox's unread count, so a caller that wanted the
+        ''' count does not ask for it again. The menu's check is exactly that caller: it used to
+        ''' count, then have this reload, which counted once more - three round trips for one
+        ''' answer.
+        ''' </summary>
+        Public Function ReloadCurrentFolder() As Integer
+            Return RefreshMessages()
+        End Function
 
-        Private Sub RefreshMessages()
+        Private Function RefreshMessages() As Integer
             messageGrid.Rows.Clear()
             previewTextBox.Clear()
             Try
                 If currentUser Is Nothing OrElse Not SessionState.Current.HasValue Then
                     inboxButton.Text = "Inbox (0)"
-                    Return
+
+                    ' Minus one is "I do not know yet", not "no unread mail". The panel is created
+                    ' and put in its region before it is told who it is for, and the menu's first
+                    ' check can arrive in that gap - it did, every sign-in, and a zero answered
+                    ' there left the Messages tile with no badge until something counted again.
+                    ' A caller that needs the number can count for itself.
+                    Return -1
                 End If
 
                 Dim session = SessionState.Current.Value
-                Dim rows = MessagingDataAccess.GetFolderRows(session.RegistrationID, currentUser.UserId, currentFolder)
-                For Each row In rows
+                ' One round trip for the rows and the count. The count comes from the database
+                ' rather than from the rows, because a reload is a check for new mail and the grid
+                ' may be showing Sent or Trash, which say nothing about the inbox.
+                Dim snapshot = MessagingDataAccess.GetFolderSnapshot(session.RegistrationID, currentUser.UserId, currentFolder)
+                For Each row In snapshot.Rows
                     Dim rowIndex = messageGrid.Rows.Add(row.RecipientID,
                                                         row.MessageID,
                                                         row.FromName,
@@ -245,22 +260,21 @@ Namespace SDC.Framework
                 ' arrived highlighted, with its body in the preview, looking read before it was.
                 messageGrid.CurrentCell = Nothing
                 messageGrid.ClearSelection()
-                ' From the database rather than from the rows, because a reload is a check for
-                ' new mail and the grid may be showing Sent or Trash, which say nothing about the
-                ' inbox.
-                PublishUnreadCount(MessagingDataAccess.CountUnread(session.RegistrationID, currentUser.UserId))
+                PublishUnreadCount(snapshot.UnreadCount)
                 UpdateTabVisuals()
                 moveButton.Enabled = True
                 deleteButton.Text = If(String.Equals(currentFolder, "Trash", StringComparison.OrdinalIgnoreCase), "Delete Forever", "Delete")
                 deleteButton.Enabled = True
+                Return snapshot.UnreadCount
             Catch ex As Microsoft.Data.SqlClient.SqlException
                 inboxButton.Text = "Inbox (setup)"
                 folderLabel.Text = "Messaging setup required"
                 moveButton.Enabled = False
                 deleteButton.Enabled = False
-                previewTextBox.Text = "Run sql\\011_messaging.sql to create or update the messaging tables."
+                previewTextBox.Text = "Run sql\011_messaging.sql to create or update the messaging tables."
+                Return 0
             End Try
-        End Sub
+        End Function
 
         Private Sub New_Click(sender As Object, e As EventArgs)
             Using compose As New MessageComposeForm(currentUser)
@@ -376,7 +390,7 @@ Namespace SDC.Framework
             inboxButton.Text = "Inbox (" & unread.ToString() & ")"
 
             Dim menu = TryCast(Me.FindForm(), FW_MainMenu)
-            If menu IsNot Nothing Then menu.SetNewMessageIndicator(unread > 0)
+            If menu IsNot Nothing Then menu.SetNewMessageIndicator(unread)
         End Sub
 
         Private Function UnreadRowsOnScreen() As Integer

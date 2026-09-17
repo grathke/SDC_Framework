@@ -24,7 +24,7 @@ Namespace SDC.Framework
         Private smartyAuthIdTextBox As TextBox
         Private smartyAuthTokenTextBox As TextBox
         Private smartyEmbeddedKeyTextBox As TextBox
-        Private messageFrequencyTextBox As TextBox
+        Private messageFrequencyComboBox As ComboBox
         Private smartyUseEmbeddedKeyCheckBox As CheckBox
         Private smartyAddressLookupController As SmartyAddressLookupController
         Private zipCoderController As ZipCoderController
@@ -116,32 +116,8 @@ Namespace SDC.Framework
         End Sub
 
         Protected Overrides Function TryBuildRecord() As Boolean
-            If Not MessageFrequencyIsUsable() Then Return False
-
             currentRecord = BuildRecordFromForm()
             Return True
-        End Function
-
-        ''' <summary>
-        ''' Whether the message check field holds something the menu can act on.
-        '''
-        ''' Said here rather than silently corrected on save: a 0 or a 500 typed by an
-        ''' administrator is a number they expect to see again, and the timer would quietly use
-        ''' neither. Blank is allowed and means the menu's own interval.
-        ''' </summary>
-        Private Function MessageFrequencyIsUsable() As Boolean
-            Dim typed = If(messageFrequencyTextBox Is Nothing, String.Empty, messageFrequencyTextBox.Text.Trim())
-            If typed = String.Empty Then Return True
-
-            Dim minutes As Integer
-            If Integer.TryParse(typed, minutes) AndAlso minutes >= 1 AndAlso minutes <= 60 Then Return True
-
-            MessageBox.Show(Me,
-                            "Message Check (minutes) must be a whole number from 1 to 60, or left blank to use the default of 5.",
-                            "Message Check", MessageBoxButtons.OK, MessageBoxIcon.Warning)
-            messageFrequencyTextBox.Focus()
-            messageFrequencyTextBox.SelectAll()
-            Return False
         End Function
 
         Protected Overrides Function SaveRecord() As Boolean
@@ -283,8 +259,7 @@ Namespace SDC.Framework
             licenseTermComboBox = AddComboField("LicenseTermID", optionsY, True, optionsX, 290, "License Term")
 
             optionsY += rowGap
-            messageFrequencyTextBox = AddField("MessageRetrievalFrequency", optionsY, False, False, optionsX, False, 60, 26, "Message Check (minutes)")
-            messageFrequencyTextBox.TextAlign = HorizontalAlignment.Right
+            messageFrequencyComboBox = AddComboField("MessageRetrievalFrequency", optionsY, False, optionsX, 290, "Message Check")
 
             optionsY += rowGap
             licenseExpirationPicker = AddDateField("LicenseExpiration_Date", optionsY, True, optionsX, False, False, "License Expiration")
@@ -448,11 +423,7 @@ Namespace SDC.Framework
             smartyAuthTokenTextBox.Text = SafeText(record.Smarty_AuthToken)
             smartyEmbeddedKeyTextBox.Text = SafeText(record.Smarty_EmbeddedKey)
             smartyUseEmbeddedKeyCheckBox.Checked = record.Smarty_UseEmbeddedKey
-            ' Blank where nothing has been chosen, rather than a 5 the registration never set. The
-            ' menu supplies its own default for an empty one.
-            messageFrequencyTextBox.Text = If(record.MessageRetrievalFrequency.HasValue,
-                                              record.MessageRetrievalFrequency.Value.ToString(Globalization.CultureInfo.InvariantCulture),
-                                              String.Empty)
+            FillMessageFrequencyCombo(record.MessageRetrievalFrequency)
 
             allowMultipleRolesCheckBox.Checked = record.AllowMultipleRoles
             allowPasswordChangeCheckBox.Checked = record.AllowPasswordChangeAtLogin
@@ -567,7 +538,7 @@ Namespace SDC.Framework
                 .AllowUpdateMyProfileEmail = If(currentRecord Is Nothing, False, currentRecord.AllowUpdateMyProfileEmail),
                 .HomeGraphic = If(currentRecord Is Nothing, String.Empty, currentRecord.HomeGraphic),
                 .TwoFactorAuthentication = twoFactorCheckBox.Checked,
-                .MessageRetrievalFrequency = ParsedMessageFrequency(),
+                .MessageRetrievalFrequency = GetComboSelectedIdOrZero(messageFrequencyComboBox),
                 .FormatDateID = GetComboSelectedIdOrZero(dateFormatComboBox),
                 .FormatTimeID = GetComboSelectedIdOrZero(timeFormatComboBox),
                 .TimeZoneID = GetComboSelectedIdOrZero(timeZoneComboBox),
@@ -581,21 +552,50 @@ Namespace SDC.Framework
 
 
         ''' <summary>
-        ''' The minutes typed into the message check field, or nothing where the box is empty.
+        ''' How often the menu looks for new mail, as a list of choices rather than a number to
+        ''' type.
         '''
-        ''' Validation refuses anything else before a save gets this far, so unparseable text here
-        ''' means the field was not reached - it is read as "nothing chosen" rather than as a zero,
-        ''' which the menu would have to treat as "never check".
+        ''' A typed number needed a validation message for 0, for 500 and for "soon", and none of
+        ''' those is a thing an administrator wants to be told twice. Five minutes is the shortest
+        ''' the menu will honour, and the choices above it are the ones anybody actually wants.
+        '''
+        ''' No "make a selection" row: every registration checks for mail at some interval, and a
+        ''' row saying nothing has been chosen would be a fourth way of saying five minutes. A
+        ''' registration that has never chosen shows 5, which is what it has been doing all along.
+        ''' A stored value that is not one of the choices - set by hand, or from when this was a
+        ''' typed field - is added as its own row, so the page says what the database says rather
+        ''' than silently rounding it.
         ''' </summary>
-        Private Function ParsedMessageFrequency() As Integer?
-            Dim typed = If(messageFrequencyTextBox Is Nothing, String.Empty, messageFrequencyTextBox.Text.Trim())
-            If typed = String.Empty Then Return Nothing
+        Private Sub FillMessageFrequencyCombo(storedMinutes As Integer?)
+            Dim choices As New DataTable("MessageFrequency")
+            choices.Columns.Add("Minutes", GetType(Integer))
+            choices.Columns.Add("Choice", GetType(String))
 
-            Dim minutes As Integer
-            If Not Integer.TryParse(typed, minutes) OrElse minutes <= 0 Then Return Nothing
+            Dim offered = New Integer() {5, 10, 15, 30, 60}
+            For Each minutes In offered
+                choices.Rows.Add(minutes, minutes.ToString(CultureInfo.InvariantCulture) & " minutes")
+            Next
 
-            Return minutes
-        End Function
+            Dim selected = If(storedMinutes.HasValue AndAlso storedMinutes.Value > 0, storedMinutes.Value, DefaultMessageCheckMinutes)
+            If Not offered.Contains(selected) Then
+                choices.Rows.Add(selected, selected.ToString(CultureInfo.InvariantCulture) & " minutes")
+            End If
+
+            choices.DefaultView.Sort = "Minutes ASC"
+
+            messageFrequencyComboBox.DataSource = choices.DefaultView
+            messageFrequencyComboBox.DisplayMember = "Choice"
+            messageFrequencyComboBox.ValueMember = "Minutes"
+            ComboWidth.FitToContent(messageFrequencyComboBox, choices, "Choice")
+            messageFrequencyComboBox.SelectedValue = selected
+        End Sub
+
+        ''' <summary>
+        ''' What the menu uses when a registration has chosen nothing. The same five minutes
+        ''' FW_MainMenu falls back to, named here so the combo's default and the timer's cannot
+        ''' drift apart.
+        ''' </summary>
+        Private Const DefaultMessageCheckMinutes As Integer = 5
 
         ''' <summary>The licence terms, read once and kept for the life of the page.</summary>
 
