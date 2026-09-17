@@ -75,7 +75,11 @@ Namespace SDC.Framework
             Public Property ContentHost As Panel
         End Class
 
-        Private ReadOnly currentUser As UserContext
+        ''' <summary>Whoever the menu is for. Changes when an administrator switches user, or returns.</summary>
+        Private currentUser As UserContext
+
+        ''' <summary>The role tile's drop-down while viewing as somebody.</summary>
+        Private ReadOnly roleDropDowns As New TileDropDownController()
         Private activeAccessProfile As AccessProfile
 
         ''' <summary>
@@ -1976,8 +1980,173 @@ Namespace SDC.Framework
             End Using
         End Sub
 
+        ''' <summary>
+        ''' Switch User: become another account, to see the application as they see it.
+        '''
+        ''' The App Admin check is here, at the action, and not only in who is offered the menu item.
+        ''' The item living in an App Admin-only drop-down is convenience; this is the control, since
+        ''' starting a session for somebody without their password is exactly what a hidden button
+        ''' must not be the only thing guarding.
+        '''
+        ''' Refused from inside a switch. Returning first is one click, and a chain of borrowed
+        ''' identities is how nobody can say who did what.
+        ''' </summary>
         Private Sub LoginAsSubstitute_Click(sender As Object, e As EventArgs)
-            MessageBox.Show("Hook your substitute user workflow here.", "Framework Menu", MessageBoxButtons.OK, MessageBoxIcon.Information)
+            Dim session = SessionState.Current
+            Dim isAppAdmin = session.HasValue AndAlso session.Value.IsApplicationAdminRole
+
+            If SwitchedUser.IsActive Then
+                MessageBox.Show(Me,
+                                ("YOU ARE ALREADY VIEWING AS " & currentUser.DisplayName & "." & vbCrLf & vbCrLf &
+                                 "RETURN TO YOURSELF FROM THE ROLE BUTTON FIRST.").ToUpperInvariant(),
+                                "Switch User", MessageBoxButtons.OK, MessageBoxIcon.Information)
+                Return
+            End If
+
+            If Not isAppAdmin Then
+                MessageBox.Show(Me, "ONLY AN APPLICATION ADMINISTRATOR CAN SWITCH USER.",
+                                "Switch User", MessageBoxButtons.OK, MessageBoxIcon.Warning)
+                Return
+            End If
+
+            Dim target As UserContext = Nothing
+            Using picker As New SwitchUserDialog(currentUser.UserId)
+                If picker.ShowDialog(Me) <> DialogResult.OK OrElse picker.ChosenUser Is Nothing Then Return
+                target = picker.ChosenUser
+            End Using
+
+            Dim administrator = currentUser
+            Dim administratorRoleId = session.Value.RoleID
+
+            Dim cancelled As Boolean
+            If Not SessionStarter.Begin(Me, target, SessionStarter.Purpose.SwitchUser, cancelled) Then
+                ' Refused or cancelled, the administrator's session is untouched - SessionStarter
+                ' changes nothing until every check has passed.
+                Return
+            End If
+
+            SwitchedUser.Start(administrator, administratorRoleId)
+            RecordSwitch("Start", administrator, target)
+            BecomeSessionUser(target)
+        End Sub
+
+        ''' <summary>
+        ''' Back to the administrator, in the role they were in.
+        '''
+        ''' Through SessionStarter like any other sign-in, so their own registration, licence and
+        ''' roles are read afresh rather than restored from a copy that may have changed. The role
+        ''' they left in is preferred, so they are not asked to choose it again.
+        ''' </summary>
+        ''' <summary>
+        ''' Ends a switch that nobody returned from, when the menu closes.
+        '''
+        ''' SwitchedUser outlives the menu - it is shared state - so signing out while viewing as
+        ''' somebody would leave the next person to sign in holding a Return that points at an account
+        ''' that is not theirs. The audit records it as ended by signing out, distinct from a Return,
+        ''' so the trail shows the switch did not simply trail off.
+        ''' </summary>
+        Protected Overrides Sub OnFormClosed(e As FormClosedEventArgs)
+            If SwitchedUser.IsActive Then
+                Try
+                    RecordSwitch("SignedOut", SwitchedUser.Original, currentUser)
+                Finally
+                    SwitchedUser.Finish()
+                End Try
+            End If
+
+            MyBase.OnFormClosed(e)
+        End Sub
+
+        Private Sub ReturnToOriginalUser()
+            If Not SwitchedUser.IsActive Then Return
+
+            Dim administrator = SwitchedUser.Original
+            Dim viewedAs = currentUser
+
+            Dim cancelled As Boolean
+            If Not SessionStarter.Begin(Me, administrator, SessionStarter.Purpose.SwitchUser, cancelled,
+                                        SwitchedUser.OriginalRoleId) Then
+                ' Still viewing as them, and still able to return - nothing was changed.
+                Return
+            End If
+
+            SwitchedUser.Finish()
+            RecordSwitch("Return", administrator, viewedAs)
+            BecomeSessionUser(administrator)
+        End Sub
+
+        ''' <summary>
+        ''' Rebuilds the menu, in place, for whoever the session now belongs to.
+        '''
+        ''' The same way a role change already does - the ribbon, permissions, messaging and the
+        ''' Home graphic all come from Configure. Three things are only set when the menu opens and
+        ''' would otherwise keep showing the previous person: the registration in the header, the
+        ''' welcome name, and the time zone.
+        ''' </summary>
+        Private Sub BecomeSessionUser(user As UserContext)
+            currentUser = user
+
+            MenuFormInitializer.Configure(Me, currentUser, True)
+            RefreshIdentityLabels()
+            ReselectSessionTimeZone()
+            UpdateRoleSelectionTile()
+        End Sub
+
+        Private Sub RefreshIdentityLabels()
+            Dim session = SessionState.Current
+            If Not session.HasValue Then Return
+
+            If headingLabel IsNot Nothing Then
+                Dim registrationName = If(String.IsNullOrWhiteSpace(session.Value.RegistrationName), "DEVELOPMENT TEAM", session.Value.RegistrationName)
+                headingLabel.Text = registrationName & " (" & session.Value.RegistrationID.ToString() & ")"
+            End If
+
+            If welcomeLabel IsNot Nothing Then
+                Dim welcomeName = If(String.IsNullOrWhiteSpace(session.Value.FirstLast), currentUser.DisplayName, session.Value.FirstLast)
+                welcomeLabel.Text = "Welcome " & welcomeName & " (" & session.Value.UserID.ToString() & ")" &
+                                    If(SwitchedUser.IsActive, "  -  viewing as this user", String.Empty)
+            End If
+        End Sub
+
+        ''' <summary>
+        ''' Puts the time zone combo on the new session's zone, without it announcing a choice.
+        ''' Selecting a value raises the handler that records an override, and nobody chose one.
+        ''' </summary>
+        Private Sub ReselectSessionTimeZone()
+            If timeZoneOverrideCombo Is Nothing OrElse timeZoneOverrideCombo.DataSource Is Nothing Then Return
+
+            Dim session = SessionState.Current
+            Dim zone = If(session.HasValue, If(session.Value.TimeZoneName, String.Empty), String.Empty)
+            If zone = String.Empty Then Return
+
+            RemoveHandler timeZoneOverrideCombo.SelectedIndexChanged, AddressOf TimeZoneOverride_Changed
+            Try
+                timeZoneOverrideCombo.SelectedValue = zone
+            Finally
+                AddHandler timeZoneOverrideCombo.SelectedIndexChanged, AddressOf TimeZoneOverride_Changed
+            End Try
+        End Sub
+
+        ''' <summary>
+        ''' Writes a switch to the audit trail, under the administrator.
+        '''
+        ''' The actor is passed explicitly. The session belongs to the viewed account at the moment a
+        ''' switch starts, and left to itself the audit would record that account as having done it.
+        ''' </summary>
+        Private Sub RecordSwitch(phase As String, administrator As UserContext, viewedAs As UserContext)
+            Dim snapshot = "{""AdministratorUserId"":" & administrator.UserId.ToString() &
+                           ",""AdministratorName"":""" & administrator.DisplayName.Replace("""", "'") & """" &
+                           ",""ViewedAsUserId"":" & viewedAs.UserId.ToString() &
+                           ",""ViewedAsName"":""" & viewedAs.DisplayName.Replace("""", "'") & """}"
+
+            DataAccess.LogUpdateAudit(pageName:=NameOf(FW_MainMenu),
+                                      tableName:="FW_Users",
+                                      operationType:="SwitchUser",
+                                      phase:=phase,
+                                      recordKey:=viewedAs.UserId.ToString(),
+                                      snapshotJson:=snapshot,
+                                      saveSucceeded:=True,
+                                      userId:=administrator.UserId)
         End Sub
 
         ''' <summary>
@@ -2017,6 +2186,14 @@ Namespace SDC.Framework
         End Sub
 
         Private Sub SelectRole_Click(sender As Object, e As EventArgs)
+            ' While viewing as somebody, the tile offers their roles and the way back, from one menu.
+            ' It is the one tile every account has, so it is always there to return from - the Admin
+            ' tile is not, since most of the accounts worth viewing as never see it.
+            If SwitchedUser.IsActive Then
+                roleDropDowns.Open(TryCast(sender, Control), AddressOf BuildSwitchedRoleItems, rebuildItems:=True)
+                Return
+            End If
+
             Dim roles = GetAvailableSessionRoles()
             If roles.Count <= 1 Then
                 UpdateRoleSelectionTile()
@@ -2035,46 +2212,91 @@ Namespace SDC.Framework
                     Return
                 End If
 
-                Dim selectedRole = selector.SelectedRole
-                activeSession = SessionState.Current
-                If activeSession.HasValue Then
-                    Dim companyAdminRoleId = activeSession.Value.CompanyAdminRoleID
-                    If companyAdminRoleId <= 0 Then
-                        companyAdminRoleId = DataAccess.GetCompanyAdminRoleId(activeSession.Value.RegistrationID)
-                    End If
-
-                    Dim companyAdminUserId = activeSession.Value.CompanyAdminUserID
-                    If companyAdminUserId <= 0 Then
-                        companyAdminUserId = DataAccess.GetCompanyAdminUserId(activeSession.Value.RegistrationID)
-                    End If
-
-                    Dim hdUserSupport = activeSession.Value.HDUserSupport
-                    Dim hdApplicationSupport = activeSession.Value.HDApplicationSupport
-                    If hdUserSupport <= 0 OrElse hdApplicationSupport <= 0 Then
-                        DataAccess.GetHelpDeskRouting(activeSession.Value.RegistrationID, hdUserSupport, hdApplicationSupport)
-                    End If
-
-                    SessionState.StartSession(currentUser,
-                                              activeSession.Value.RegistrationID,
-                                              activeSession.Value.RegistrationName,
-                                              activeSession.Value.Smarty_AuthID,
-                                              activeSession.Value.Smarty_AuthToken,
-                                              activeSession.Value.Smarty_EmbeddedKey,
-                                              activeSession.Value.Smarty_UseEmbeddedKey,
-                                              selectedRole.RoleID,
-                                              companyAdminRoleId,
-                                              companyAdminUserId,
-                                              hdUserSupport,
-                                              hdApplicationSupport,
-                                              selectedRole.RoleName,
-                                              selectedRole.RoleType,
-                                              selectedRole.IsApplicationAdmin,
-                                              selectedRole.IsCompanyAdmin)
-                    MenuFormInitializer.Configure(Me, currentUser, True)
-                    UpdateRoleSelectionTile()
-                End If
+                ApplyRole(selector.SelectedRole)
             End Using
         End Sub
+
+        ''' <summary>
+        ''' Changes the session's role and rebuilds the ribbon for it.
+        '''
+        ''' Taken out of SelectRole_Click so the role dialog and the switched-user drop-down change
+        ''' role the same way.
+        ''' </summary>
+        Private Sub ApplyRole(selectedRole As UserRoleOption)
+            If selectedRole Is Nothing Then Return
+
+            Dim activeSession = SessionState.Current
+            If Not activeSession.HasValue Then Return
+
+            Dim companyAdminRoleId = activeSession.Value.CompanyAdminRoleID
+            If companyAdminRoleId <= 0 Then
+                companyAdminRoleId = DataAccess.GetCompanyAdminRoleId(activeSession.Value.RegistrationID)
+            End If
+
+            Dim companyAdminUserId = activeSession.Value.CompanyAdminUserID
+            If companyAdminUserId <= 0 Then
+                companyAdminUserId = DataAccess.GetCompanyAdminUserId(activeSession.Value.RegistrationID)
+            End If
+
+            Dim hdUserSupport = activeSession.Value.HDUserSupport
+            Dim hdApplicationSupport = activeSession.Value.HDApplicationSupport
+            If hdUserSupport <= 0 OrElse hdApplicationSupport <= 0 Then
+                DataAccess.GetHelpDeskRouting(activeSession.Value.RegistrationID, hdUserSupport, hdApplicationSupport)
+            End If
+
+            SessionState.StartSession(currentUser,
+                                      activeSession.Value.RegistrationID,
+                                      activeSession.Value.RegistrationName,
+                                      activeSession.Value.Smarty_AuthID,
+                                      activeSession.Value.Smarty_AuthToken,
+                                      activeSession.Value.Smarty_EmbeddedKey,
+                                      activeSession.Value.Smarty_UseEmbeddedKey,
+                                      selectedRole.RoleID,
+                                      companyAdminRoleId,
+                                      companyAdminUserId,
+                                      hdUserSupport,
+                                      hdApplicationSupport,
+                                      selectedRole.RoleName,
+                                      selectedRole.RoleType,
+                                      selectedRole.IsApplicationAdmin,
+                                      selectedRole.IsCompanyAdmin)
+            MenuFormInitializer.Configure(Me, currentUser, True)
+            UpdateRoleSelectionTile()
+        End Sub
+
+        ''' <summary>
+        ''' The role tile's menu while viewing as somebody: their roles, then the way back.
+        '''
+        ''' Every role is listed, the current one ticked, even when there is only one - the list is
+        ''' the reminder of whose roles these are. Return names the administrator, so there is no
+        ''' doubt which of the two people it returns to.
+        ''' </summary>
+        Private Function BuildSwitchedRoleItems() As IEnumerable(Of ToolStripItem)
+            Dim items As New List(Of ToolStripItem)()
+            Dim session = SessionState.Current
+            Dim currentRoleId = If(session.HasValue, session.Value.RoleID, 0)
+
+            For Each role In GetAvailableSessionRoles()
+                Dim chosenRole = role
+                Dim roleItem As New ToolStripMenuItem(role.RoleName) With {
+                    .Checked = role.RoleID = currentRoleId
+                }
+                AddHandler roleItem.Click,
+                    Sub(sender, e)
+                        If chosenRole.RoleID <> currentRoleId Then ApplyRole(chosenRole)
+                    End Sub
+                items.Add(roleItem)
+            Next
+
+            items.Add(New ToolStripSeparator())
+
+            Dim returnName = If(SwitchedUser.Original Is Nothing, "me", SwitchedUser.Original.DisplayName)
+            Dim returnItem As New ToolStripMenuItem("Return to " & returnName)
+            AddHandler returnItem.Click, Sub(sender, e) ReturnToOriginalUser()
+            items.Add(returnItem)
+
+            Return items
+        End Function
 
         ''' <summary>
         ''' Leaves the menu, which returns to the login screen.

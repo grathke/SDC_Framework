@@ -716,6 +716,54 @@ Namespace SDC.Framework
         ''' returns. The view does not expose it, and a view is a protected contract - this needed
         ''' no change to it.
         ''' </summary>
+
+        ''' <summary>
+        ''' Signed-in accounts whose user name or email contains the text, for Switch User.
+        '''
+        ''' One box, so both are searched: the user name, the account's own email, and the email on
+        ''' the employee record - accounts created from an employee carry no email of their own, the
+        ''' address lives on FW_Employees. Contains rather than equals, because the person searching
+        ''' often remembers part of a name.
+        '''
+        ''' Active accounts only, through vw_FW_CurrentUser as login uses it: an account that could
+        ''' not sign in for itself is not one to become. Capped, because a single letter matches
+        ''' most of a registration.
+        ''' </summary>
+        Public Shared Function FindUsersForSwitch(searchText As String) As List(Of (User As UserContext, UserName As String, Email As String))
+            Dim found As New List(Of (User As UserContext, UserName As String, Email As String))()
+            Dim text = If(searchText, String.Empty).Trim()
+            If text = String.Empty Then Return found
+
+            Using conn As New SqlConnection(ConnectionString)
+                conn.Open()
+                Using cmd As New SqlCommand(
+                    "SELECT TOP 50 v.UserId, ISNULL(u.UserName, '') AS UserName, " &
+                    "       COALESCE(NULLIF(v.Email, ''), e.Email, '') AS Email, " &
+                    "       ISNULL(v.FirstName, '') AS FirstName, ISNULL(v.LastName, '') AS LastName " &
+                    "FROM dbo.vw_FW_CurrentUser v " &
+                    "INNER JOIN dbo.FW_Users u ON u.UserId = v.UserId " &
+                    "LEFT JOIN dbo.FW_Employees e ON e.UserId = v.UserId AND ISNULL(e.DeletedFlag, 0) = 0 " &
+                    "WHERE ISNULL(v.IsActive, 0) = 1 " &
+                    "  AND (u.UserName LIKE @Pattern OR v.Email LIKE @Pattern OR e.Email LIKE @Pattern) " &
+                    "ORDER BY ISNULL(v.LastName, ''), ISNULL(v.FirstName, ''), u.UserName", conn)
+                    cmd.Parameters.AddWithValue("@Pattern", "%" & text.Replace("[", "[[]").Replace("%", "[%]").Replace("_", "[_]") & "%")
+
+                    Using reader = cmd.ExecuteReader()
+                        While reader.Read()
+                            Dim account As New UserContext With {
+                                .UserId = Convert.ToInt32(reader("UserId"), CultureInfo.InvariantCulture),
+                                .Email = SafeString(reader("Email")),
+                                .FirstName = SafeString(reader("FirstName")),
+                                .LastName = SafeString(reader("LastName"))
+                            }
+                            found.Add((account, SafeString(reader("UserName")), account.Email))
+                        End While
+                    End Using
+                End Using
+            End Using
+
+            Return found
+        End Function
         Private Shared Function TryGetCurrentUserRecord(conn As SqlConnection, userNameLookup As String, ByRef userId As Integer, ByRef dbEmail As String, ByRef firstName As String, ByRef lastName As String, ByRef storedPasswordHash As String, ByRef isActive As Boolean) As Boolean
             ' Every column is null-guarded, Email included. It was the one that was not, from when
             ' an email was how people signed in and could not be missing. An account created from
@@ -2881,18 +2929,93 @@ Namespace SDC.Framework
             End Try
         End Function
 
+        ''' <summary>
+        ''' The table's columns, for a generated page, with the database's own defaults on them.
+        '''
+        ''' A new record is made from this with NewRow, and a DataTable filled from a query knows
+        ''' the columns but not their defaults - so every defaulted column started null. A check box
+        ''' shows null as unticked and saves it as False, which is how FW_Employees.IsActive,
+        ''' defaulting to 1 in the database, came out 0 for an employee created through the page:
+        ''' User 1, on 2026-09-15. Now that an inactive employee also switches off their login,
+        ''' the same slip would leave a new employee unable to sign in.
+        '''
+        ''' Constant defaults only - a number, a bit, a quoted string. A function such as getdate()
+        ''' is left to the database, where it belongs: evaluated when the page opens it would stamp
+        ''' the record with the wrong moment.
+        '''
+        ''' One round trip still: the columns and their defaults come back as two result sets.
+        ''' </summary>
         Public Shared Function GetGeneratedPageSchema(tableName As String) As DataTable
             Using conn As New SqlConnection(ConnectionString)
                 conn.Open()
-                Using cmd As New SqlCommand("SELECT TOP 0 * FROM dbo." & QuoteGeneratedIdentifier(tableName), conn)
+                Using cmd As New SqlCommand(
+                    "SELECT TOP 0 * FROM dbo." & QuoteGeneratedIdentifier(tableName) & "; " &
+                    "SELECT c.name, d.definition FROM sys.columns c " &
+                    "JOIN sys.default_constraints d ON d.object_id = c.default_object_id " &
+                    "WHERE c.object_id = OBJECT_ID(@QualifiedTable);", conn)
+                    cmd.Parameters.AddWithValue("@QualifiedTable", "dbo." & tableName)
+
+                    ' Fill, not DataTable.Load. Load applies the column metadata too - an identity
+                    ' column comes back read-only and auto-numbering - and this schema has only ever
+                    ' carried names and types. The one thing that should change is the defaults.
+                    Dim results As New DataSet()
                     Using adapter As New SqlDataAdapter(cmd)
-                        Dim table As New DataTable(tableName)
-                        adapter.Fill(table)
-                        Return table
+                        adapter.Fill(results)
                     End Using
+
+                    Dim table = results.Tables(0)
+                    If results.Tables.Count > 1 Then
+                        For Each defaultRow As DataRow In results.Tables(1).Rows
+                            ApplyColumnDefault(table, Convert.ToString(defaultRow(0)), Convert.ToString(defaultRow(1)))
+                        Next
+                    End If
+
+                    ' Handed back on its own, as it always was, rather than still inside a DataSet a
+                    ' caller might try to add it to another of.
+                    results.Tables.Remove(table)
+                    table.TableName = tableName
+                    Return table
                 End Using
             End Using
         End Function
+
+        ''' <summary>
+        ''' Puts a constant database default on a DataTable column, and ignores anything else.
+        '''
+        ''' SQL Server stores defaults wrapped in parentheses - ((1)), ('abc'), (N'abc') - so they
+        ''' are unwrapped first. What is left is used only if it is a literal the column's type can
+        ''' hold; a function call, or a value that will not convert, leaves the column as it was.
+        ''' </summary>
+        Private Shared Sub ApplyColumnDefault(table As DataTable, columnName As String, definition As String)
+            If table Is Nothing OrElse String.IsNullOrWhiteSpace(columnName) OrElse Not table.Columns.Contains(columnName) Then Return
+
+            Dim text = If(definition, String.Empty).Trim()
+            While text.Length >= 2 AndAlso text.StartsWith("(") AndAlso text.EndsWith(")")
+                text = text.Substring(1, text.Length - 2).Trim()
+            End While
+
+            If text.StartsWith("N'", StringComparison.Ordinal) Then text = text.Substring(1)
+
+            Dim column = table.Columns(columnName)
+            Try
+                If text.StartsWith("'") AndAlso text.EndsWith("'") AndAlso text.Length >= 2 Then
+                    If column.DataType IsNot GetType(String) Then Return
+                    column.DefaultValue = text.Substring(1, text.Length - 2).Replace("''", "'")
+                    Return
+                End If
+
+                ' Anything with a bracket or a letter left in it is an expression, not a value.
+                If text.Contains("(") OrElse text.Any(Function(ch) Char.IsLetter(ch)) Then Return
+
+                If column.DataType Is GetType(Boolean) Then
+                    column.DefaultValue = text <> "0"
+                Else
+                    column.DefaultValue = Convert.ChangeType(text, column.DataType, CultureInfo.InvariantCulture)
+                End If
+            Catch
+                ' Not a value this column can hold. The database will still apply it on insert.
+            End Try
+        End Sub
 
         Public Shared Function LoadGeneratedPageRecord(tableName As String, primaryKey As String, recordId As Integer) As DataRow
             If recordId <= 0 Then Return Nothing
@@ -3091,6 +3214,9 @@ Namespace SDC.Framework
                         ' login creation above.
                         If IsEmployeeLoginTable(tableName) Then
                             SetEmployeeRoles(conn, tx, insertedId, pendingRoleIds, userId)
+
+                            ' The login was created active; an employee saved inactive switches it off.
+                            SyncLoginActive(conn, tx, EmployeeLoginId(conn, tx, insertedId), values, userId)
                         End If
 
                         ' After the insert, never before: the hash is keyed on the UserId, and it
@@ -3115,6 +3241,7 @@ Namespace SDC.Framework
                         Dim existingUserId = EmployeeLoginId(conn, tx, recordId)
                         If existingUserId > 0 Then
                             SyncLoginUserName(conn, tx, existingUserId, GetGeneratedValueText(values, "UserName"), userId)
+                            SyncLoginActive(conn, tx, existingUserId, values, userId)
 
                             ' TakeGeneratedPasswordValue returns nothing for the mask, so an
                             ' untouched box re-hashes nothing. Only a genuinely new password gets
@@ -3412,6 +3539,49 @@ Namespace SDC.Framework
                 Return Convert.ToInt32(cmd.ExecuteScalar(), CultureInfo.InvariantCulture)
             End Using
         End Function
+
+        ''' <summary>
+        ''' Keeps the login's active flag in step with the employee's.
+        '''
+        ''' The employee is the authority. An employee and a user are the same person here, and a
+        ''' login left active behind an inactive employee is somebody who has been let go and can
+        ''' still sign in - which is what the data showed on 2026-09-16, User 1 inactive as an
+        ''' employee and active as a login. Both directions, so reactivating an employee lets them
+        ''' back in rather than leaving a login nobody thought to switch on.
+        '''
+        ''' Only when the page actually carried IsActive. A page that does not show the flag says
+        ''' nothing about it, and must not be read as having switched it off.
+        ''' </summary>
+        Private Shared Sub SyncLoginActive(conn As SqlConnection,
+                                           tx As SqlTransaction,
+                                           loginId As Integer,
+                                           values As Dictionary(Of String, Object),
+                                           updatedBy As Integer)
+            If loginId <= 0 OrElse values Is Nothing Then Return
+
+            Dim key = values.Keys.FirstOrDefault(Function(k) String.Equals(k, "IsActive", StringComparison.OrdinalIgnoreCase))
+            If key Is Nothing Then Return
+
+            Dim raw = values(key)
+            If raw Is Nothing OrElse IsDBNull(raw) Then Return
+
+            Dim active As Boolean
+            If TypeOf raw Is Boolean Then
+                active = CBool(raw)
+            Else
+                Dim text = raw.ToString().Trim()
+                active = text = "1" OrElse String.Equals(text, "true", StringComparison.OrdinalIgnoreCase)
+            End If
+
+            Using cmd As New SqlCommand(
+                "UPDATE dbo.FW_Users SET IsActive = @IsActive, UpdatedBy = @UpdatedBy, UpdatedOn = GETDATE() " &
+                "WHERE UserID = @UserID AND ISNULL(IsActive, 0) <> @IsActive", conn, tx)
+                cmd.Parameters.Add("@IsActive", SqlDbType.Bit).Value = active
+                cmd.Parameters.Add("@UpdatedBy", SqlDbType.Int).Value = updatedBy
+                cmd.Parameters.Add("@UserID", SqlDbType.Int).Value = loginId
+                cmd.ExecuteNonQuery()
+            End Using
+        End Sub
 
         ''' <summary>
         ''' Keeps the login's user name in step when an employee's is edited.

@@ -59,10 +59,23 @@ Namespace SDC.Framework
         ''' Call from the tile's own Click. The items are asked for once, the first time a given
         ''' tile is opened, so a caller may build them from state that does not exist yet when the
         ''' tile is created.
+        '''
+        ''' <paramref name="rebuildItems"/> asks for them again on every opening, for a menu whose
+        ''' contents follow the session - the role tile while viewing as somebody lists that
+        ''' person's roles, ticks the current one, and names who Return goes back to.
         ''' </summary>
-        Public Sub Open(tile As Control, buildItems As Func(Of IEnumerable(Of ToolStripItem)))
+        Public Sub Open(tile As Control, buildItems As Func(Of IEnumerable(Of ToolStripItem)),
+                        Optional rebuildItems As Boolean = False)
             If tile Is Nothing OrElse buildItems Is Nothing Then
                 Return
+            End If
+
+            If rebuildItems Then
+                Dim stale As ContextMenuStrip = Nothing
+                If menusByTile.TryGetValue(tile, stale) Then
+                    menusByTile.Remove(tile)
+                    stale.Dispose()
+                End If
             End If
 
             Dim menu = MenuFor(tile, buildItems)
