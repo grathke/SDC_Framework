@@ -127,7 +127,7 @@ Namespace SDC.Framework
                 Return
             End If
 
-            Dim results As List(Of (User As UserContext, UserName As String, Email As String))
+            Dim results As List(Of (User As UserContext, UserName As String, Email As String, IsActive As Boolean))
             Try
                 results = DataAccess.FindUsersForSwitch(searchBox.Text)
             Catch ex As Exception
@@ -135,22 +135,35 @@ Namespace SDC.Framework
                 Return
             End Try
 
-            Dim matches = results.
-                Where(Function(result) result.User.UserId <> excludeUserId).
+            Dim others = results.Where(Function(result) result.User.UserId <> excludeUserId).ToList()
+
+            Dim matches = others.
+                Where(Function(result) result.IsActive).
                 Select(Function(result) New Match With {.Account = result.User, .UserName = result.UserName, .Email = result.Email}).
                 ToList()
 
             ' The only match was the administrator themselves. Saying "no account matches" read as
             ' though their own account did not exist.
-            If matches.Count = 0 AndAlso results.Count > 0 Then
+            If matches.Count = 0 AndAlso others.Count = 0 AndAlso results.Count > 0 Then
                 statusLabel.Text = "That is your own account - you are already signed in as it."
                 searchBox.SelectAll()
                 searchBox.Focus()
                 Return
             End If
 
+            ' Found, and inactive. Said plainly, because "no account matches" sent people looking for
+            ' a typo in a name that was spelled correctly all along.
+            If matches.Count = 0 AndAlso others.Count > 0 Then
+                statusLabel.Text = If(others.Count = 1,
+                                      "The Employee " & others(0).User.DisplayName & " was found, but is inactive.",
+                                      others.Count.ToString() & " Employees were found, but all of them are inactive.")
+                searchBox.SelectAll()
+                searchBox.Focus()
+                Return
+            End If
+
             If matches.Count = 0 Then
-                statusLabel.Text = "No active account matches """ & searchBox.Text.Trim() & """."
+                statusLabel.Text = "No account matches """ & searchBox.Text.Trim() & """."
                 searchBox.SelectAll()
                 searchBox.Focus()
                 Return

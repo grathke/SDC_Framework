@@ -725,12 +725,20 @@ Namespace SDC.Framework
         ''' address lives on FW_Employees. Contains rather than equals, because the person searching
         ''' often remembers part of a name.
         '''
-        ''' Active accounts only, through vw_FW_CurrentUser as login uses it: an account that could
-        ''' not sign in for itself is not one to become. Capped, because a single letter matches
-        ''' most of a registration.
+        ''' Inactive accounts are returned too, flagged, so the dialog can say the person was found
+        ''' and is inactive rather than that nobody matched - which read as though the account did
+        ''' not exist. The dialog still refuses to switch to one: an account that could not sign in
+        ''' for itself is not one to become. Inactive means either the employee or the login is off;
+        ''' the two are kept in step, but a record changed outside the page can leave them apart.
+        '''
+        ''' Employees only. Contractors will have a login and no employee row, and their table will
+        ''' need searching here too once it exists.
+        '''
+        ''' Through vw_FW_CurrentUser as login uses it, which leaves out deleted accounts. Capped,
+        ''' because a single letter matches most of a registration.
         ''' </summary>
-        Public Shared Function FindUsersForSwitch(searchText As String) As List(Of (User As UserContext, UserName As String, Email As String))
-            Dim found As New List(Of (User As UserContext, UserName As String, Email As String))()
+        Public Shared Function FindUsersForSwitch(searchText As String) As List(Of (User As UserContext, UserName As String, Email As String, IsActive As Boolean))
+            Dim found As New List(Of (User As UserContext, UserName As String, Email As String, IsActive As Boolean))()
             Dim text = If(searchText, String.Empty).Trim()
             If text = String.Empty Then Return found
 
@@ -739,12 +747,12 @@ Namespace SDC.Framework
                 Using cmd As New SqlCommand(
                     "SELECT TOP 50 v.UserId, ISNULL(u.UserName, '') AS UserName, " &
                     "       COALESCE(NULLIF(v.Email, ''), e.Email, '') AS Email, " &
-                    "       ISNULL(v.FirstName, '') AS FirstName, ISNULL(v.LastName, '') AS LastName " &
+                    "       ISNULL(v.FirstName, '') AS FirstName, ISNULL(v.LastName, '') AS LastName, " &
+                    "       CASE WHEN ISNULL(v.IsActive, 0) = 1 AND ISNULL(e.IsActive, 1) = 1 THEN 1 ELSE 0 END AS IsActive " &
                     "FROM dbo.vw_FW_CurrentUser v " &
                     "INNER JOIN dbo.FW_Users u ON u.UserId = v.UserId " &
                     "LEFT JOIN dbo.FW_Employees e ON e.UserId = v.UserId AND ISNULL(e.DeletedFlag, 0) = 0 " &
-                    "WHERE ISNULL(v.IsActive, 0) = 1 " &
-                    "  AND (u.UserName LIKE @Pattern OR v.Email LIKE @Pattern OR e.Email LIKE @Pattern) " &
+                    "WHERE (u.UserName LIKE @Pattern OR v.Email LIKE @Pattern OR e.Email LIKE @Pattern) " &
                     "ORDER BY ISNULL(v.LastName, ''), ISNULL(v.FirstName, ''), u.UserName", conn)
                     cmd.Parameters.AddWithValue("@Pattern", "%" & text.Replace("[", "[[]").Replace("%", "[%]").Replace("_", "[_]") & "%")
 
@@ -756,7 +764,8 @@ Namespace SDC.Framework
                                 .FirstName = SafeString(reader("FirstName")),
                                 .LastName = SafeString(reader("LastName"))
                             }
-                            found.Add((account, SafeString(reader("UserName")), account.Email))
+                            found.Add((account, SafeString(reader("UserName")), account.Email,
+                                       Convert.ToInt32(reader("IsActive"), CultureInfo.InvariantCulture) = 1))
                         End While
                     End Using
                 End Using
