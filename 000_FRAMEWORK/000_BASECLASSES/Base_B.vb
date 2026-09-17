@@ -641,6 +641,14 @@ Namespace SDC.Framework
                 .MinimumWidth = 160
             })
             qbeGrid.Columns.Add("FieldValue", "Value")
+
+            ' One click opens a list, not two. A DataGridView combo cell takes the first click to
+            ' enter edit mode and the second to drop the list down, which reads as the first click
+            ' having missed - and over VirtualUI, where a click is a round trip, it is twice the
+            ' waiting for the same choice.
+            AddHandler qbeGrid.CellClick, AddressOf QbeGrid_CellClick
+            AddHandler qbeGrid.EditingControlShowing, AddressOf QbeGrid_EditingControlShowing
+
             qbeGrid.Columns("FieldName").ReadOnly = True
             qbeGrid.Columns("FriendlyName").ReadOnly = True
             qbeGrid.Columns("FieldName").Visible = False
@@ -3529,7 +3537,7 @@ Namespace SDC.Framework
                     Continue For
                 End If
 
-                Dim displayName = If(String.IsNullOrWhiteSpace(col.HeaderText), ToFriendlyCaption(fieldName), col.HeaderText.Trim())
+                Dim displayName = ResolveQbeFieldCaption(fieldName, If(String.IsNullOrWhiteSpace(col.HeaderText), ToFriendlyCaption(fieldName), col.HeaderText.Trim()))
                 Dim fieldKind = InferFieldKind(col)
                 Dim rowIndex As Integer
 
@@ -3578,7 +3586,7 @@ Namespace SDC.Framework
                     Continue For
                 End If
 
-                Dim displayName = ToFriendlyCaption(dc.ColumnName)
+                Dim displayName = ResolveQbeFieldCaption(dc.ColumnName, ToFriendlyCaption(dc.ColumnName))
                 Dim fieldKind = InferFieldKindFromType(dc.DataType)
 
                 qbeFieldDefinitions.Add(New QbeFieldDefinition With {
@@ -4710,6 +4718,136 @@ Namespace SDC.Framework
 
             ConfigureOperatorCellItems(operatorCell, fieldDefinition.FieldKind)
             operatorCell.Value = GetDefaultOperator(fieldDefinition).ToString()
+
+            ApplyQbeValueChoices(rowIndex, fieldDefinition)
+        End Sub
+
+        ''' <summary>
+        ''' Turns a search field's value box into a list, where the column points at a lookup table.
+        '''
+        ''' A column holding GenderID is searched by typing a number today, which means knowing the
+        ''' number. The declared foreign key says where those numbers come from, so the field can
+        ''' offer the rows themselves instead.
+        '''
+        ''' The list holds what the grid holds - the key - with the label beside it. A browse page
+        ''' filters in memory against its own rows, so a list of labels would search for text the
+        ''' column does not contain and match nothing.
+        '''
+        ''' Only where a single-column foreign key is declared. Nothing is guessed from a name: a
+        ''' key named after the table it points at could be guessed, and one named for the role it
+        ''' plays - a manager, an owner, a reporter - never could. A rule that finds the first kind
+        ''' and misses the second is worse than no rule.
+        ''' </summary>
+        Protected Overridable Sub ApplyQbeValueChoices(rowIndex As Integer, fieldDefinition As QbeFieldDefinition)
+            If fieldDefinition Is Nothing OrElse rowIndex < 0 OrElse rowIndex >= qbeGrid.Rows.Count Then Return
+
+            Dim choices = GetQbeValueChoices(fieldDefinition.FieldName)
+            If choices Is Nothing OrElse choices.Rows.Count = 0 Then Return
+
+            ' A blank first entry, so a field that has been searched on can be un-searched. Without
+            ' it the only way back from a chosen value is Clear Filters, which throws away every
+            ' other field's criteria to undo one of them.
+            '
+            ' On a copy, because the list itself is cached and shared by every page that offers
+            ' this field - a blank added to the cached table would be added again on each open.
+            Dim withBlank = choices.Copy()
+            Dim blank = withBlank.NewRow()
+            blank("Value") = String.Empty
+            blank("Display") = String.Empty
+            withBlank.Rows.InsertAt(blank, 0)
+
+            Dim row = qbeGrid.Rows(rowIndex)
+            Dim listCell As New DataGridViewComboBoxCell() With {
+                .DataSource = withBlank,
+                .DisplayMember = "Display",
+                .ValueMember = "Value",
+                .FlatStyle = FlatStyle.Flat,
+                .DisplayStyle = DataGridViewComboBoxDisplayStyle.ComboBox
+            }
+
+            row.Cells("FieldValue") = listCell
+
+            ' Equals and Not Equals only. Contains on a key is a search for rows whose id happens
+            ' to contain a digit, which is never what somebody picking from a list means.
+            Dim operatorCell = TryCast(row.Cells("Operator"), DataGridViewComboBoxCell)
+            If operatorCell IsNot Nothing Then
+                operatorCell.Items.Clear()
+                operatorCell.Items.Add(QbeComparisonOperator.EqualsTo.ToString())
+                operatorCell.Items.Add(QbeComparisonOperator.NotEquals.ToString())
+                operatorCell.Value = QbeComparisonOperator.EqualsTo.ToString()
+            End If
+        End Sub
+
+        ''' <summary>
+        ''' The list a field offers, or nothing. Overridable so a page can supply its own - a fixed
+        ''' set of statuses, say, where no foreign key exists to read.
+        ''' </summary>
+        Protected Overridable Function GetQbeValueChoices(fieldName As String) As DataTable
+            Return DataAccess.GetQbeValueChoices(ResolveCurrentRoleFieldTableName(), fieldName)
+        End Function
+
+        ''' <summary>
+        ''' What a search field is called: the role's caption for the column, where there is one.
+        '''
+        ''' The same answer the grid headers use, from the same map. A field renamed to "Gender"
+        ''' for a role was still labelled "Gender ID" in the search rows, because the QBE built its
+        ''' label from the column name while the header above it used the override - the page
+        ''' calling one thing two names.
+        '''
+        ''' Falls back to whatever the caller derived, which for a grid-built row is the header
+        ''' text and for a Start Empty page is the column name made friendly.
+        ''' </summary>
+        Protected Function ResolveQbeFieldCaption(fieldName As String, fallback As String) As String
+            If String.IsNullOrWhiteSpace(fieldName) Then Return fallback
+
+            Dim captions = GetRoleFieldCaptionMapForCurrentContext()
+            Dim caption As String = Nothing
+            If captions IsNot Nothing AndAlso captions.TryGetValue(fieldName.Trim(), caption) AndAlso
+               Not String.IsNullOrWhiteSpace(caption) Then
+                Return caption.Trim()
+            End If
+
+            Return fallback
+        End Function
+
+        ''' <summary>
+        ''' Clicking a list cell opens the list, rather than selecting the cell and waiting to be
+        ''' clicked again.
+        ''' </summary>
+        Private Sub QbeGrid_CellClick(sender As Object, e As DataGridViewCellEventArgs)
+            If e.RowIndex < 0 OrElse e.ColumnIndex < 0 Then Return
+
+            Dim cell = qbeGrid.Rows(e.RowIndex).Cells(e.ColumnIndex)
+            If cell Is Nothing OrElse cell.ReadOnly Then Return
+
+            ' Every editable cell, not only the lists. A grid that does not yet have focus spends
+            ' the first click getting it, so a search field took one click to wake up and another
+            ' to type in - and over VirtualUI each of those is a round trip to the browser.
+            qbeGrid.CurrentCell = cell
+
+            ' Select the contents of a list, so a choice replaces what is there. Leave a typed
+            ' value alone: somebody clicking into text they have already entered means to change
+            ' part of it, and selecting it all means their next key press throws it away.
+            qbeGrid.BeginEdit(TryCast(cell, DataGridViewComboBoxCell) IsNot Nothing)
+        End Sub
+
+        ''' <summary>
+        ''' Drops the list down as the editor appears, which is the other half of opening on one
+        ''' click: BeginEdit alone shows a closed combo box.
+        ''' </summary>
+        Private Sub QbeGrid_EditingControlShowing(sender As Object, e As DataGridViewEditingControlShowingEventArgs)
+            Dim editor = TryCast(e.Control, ComboBox)
+            If editor Is Nothing Then Return
+
+            ' Posted rather than set here. The editor is not yet placed and sized when this runs,
+            ' and a list dropped in that moment opens against the wrong rectangle.
+            BeginInvoke(Sub()
+                            Try
+                                If Not editor.IsDisposed Then editor.DroppedDown = True
+                            Catch
+                                ' A list that will not open is still a list that can be typed into.
+                            End Try
+                        End Sub)
         End Sub
 
         Private Sub ConfigureQbeOperatorsForAllRows()

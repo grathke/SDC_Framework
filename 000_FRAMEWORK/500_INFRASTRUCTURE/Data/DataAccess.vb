@@ -142,6 +142,13 @@ Namespace SDC.Framework
         ''' restarts. That is the same bargain the alias cache already makes, and DDL against a live
         ''' application is not a thing this framework does.
         ''' </summary>
+        ''' <summary>
+        ''' The search lists a browse page offers, keyed table.column. A null entry is an answer
+        ''' too - the column points at nothing, and asking the database again on every page open
+        ''' would not change that.
+        ''' </summary>
+        Private Shared ReadOnly qbeChoiceCache As New Dictionary(Of String, DataTable)(StringComparer.OrdinalIgnoreCase)
+
         Private Shared ReadOnly tableColumnCache As New Dictionary(Of String, Boolean)(StringComparer.OrdinalIgnoreCase)
         Private Shared ReadOnly rowVersionCache As New Dictionary(Of String, Boolean)(StringComparer.OrdinalIgnoreCase)
         Private Shared ReadOnly primaryKeyCache As New Dictionary(Of String, String)(StringComparer.OrdinalIgnoreCase)
@@ -8466,6 +8473,75 @@ Namespace SDC.Framework
             End Try
 
             Return relationships
+        End Function
+
+        ''' <summary>
+        ''' What a search field can be searched for, when the column points at a lookup table.
+        '''
+        ''' Two columns: Value, which is what the grid actually holds and therefore what a filter
+        ''' has to match, and Display, which is what the user reads. A browse page filters in
+        ''' memory against its own rows, so offering the label without the key would produce a
+        ''' search that matches nothing.
+        '''
+        ''' Nothing is returned unless the column has a **declared** single-column foreign key and
+        ''' the table it points at has a column worth reading. Guessing from names finds GenderID
+        ''' to FW_Gender and never finds AssignedManagerID to FW_Users, which is the case that
+        ''' matters.
+        '''
+        ''' Held for the life of the process, like the other schema facts: a lookup list changes
+        ''' when somebody adds a row to it, and a browse page's search list is not where that has
+        ''' to be seen first.
+        ''' </summary>
+        Public Shared Function GetQbeValueChoices(tableName As String, columnName As String) As DataTable
+            Dim normalizedTable = NormalizeTableName(tableName)
+            If normalizedTable = String.Empty OrElse String.IsNullOrWhiteSpace(columnName) Then Return Nothing
+
+            Dim cacheKey = normalizedTable & "." & columnName.Trim()
+            SyncLock metadataCacheLock
+                Dim cached As DataTable = Nothing
+                If qbeChoiceCache.TryGetValue(cacheKey, cached) Then Return cached
+            End SyncLock
+
+            Dim choices As DataTable = Nothing
+
+            Try
+                Dim relationship As ColumnRelationship = Nothing
+                If GetColumnRelationships(normalizedTable).TryGetValue(columnName.Trim(), relationship) AndAlso
+                   relationship IsNot Nothing AndAlso
+                   Not String.IsNullOrWhiteSpace(relationship.LookupTable) Then
+
+                    Dim displayColumn = SuggestDisplayColumn(relationship.LookupTable)
+                    If Not String.IsNullOrWhiteSpace(displayColumn) Then
+                        Dim rows = GetLookupTable(relationship.LookupTable, relationship.KeyColumn, displayColumn)
+                        If rows IsNot Nothing AndAlso rows.Rows.Count > 0 Then
+                            choices = New DataTable("QbeChoices")
+                            choices.Columns.Add("Value", GetType(String))
+                            choices.Columns.Add("Display", GetType(String))
+
+                            For Each row As DataRow In rows.Rows
+                                Dim value = Convert.ToString(row(relationship.KeyColumn), CultureInfo.InvariantCulture)
+                                Dim display = Convert.ToString(row(displayColumn), CultureInfo.InvariantCulture)
+                                If String.IsNullOrWhiteSpace(value) Then Continue For
+
+                                ' The key is shown beside the label because the grid shows the key:
+                                ' somebody looking at a column of numbers should be able to see
+                                ' which number they are choosing.
+                                choices.Rows.Add(value, If(String.IsNullOrWhiteSpace(display), value, display & "  (" & value & ")"))
+                            Next
+                        End If
+                    End If
+                End If
+            Catch
+                ' A field with no list is a field that is typed into, which is how every field
+                ' behaved before this existed.
+                choices = Nothing
+            End Try
+
+            SyncLock metadataCacheLock
+                qbeChoiceCache(cacheKey) = choices
+            End SyncLock
+
+            Return choices
         End Function
 
         ''' <summary>
