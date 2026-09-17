@@ -292,8 +292,9 @@ Assert-NotPattern -Path ".\000_FRAMEWORK\000_BASECLASSES\Base_U.vb" -Pattern "Se
 Assert-NotPattern -Path ".\000_FRAMEWORK\070_PAGEGENERATION\PageGenerator.vb" -Pattern "Dim updatedBy = If(SessionState.IsActive, SessionState.Current.Value.UserID, 0)" -Description "Generated pages stamp the acting user"
 Assert-Pattern -Path ".\000_FRAMEWORK\500_INFRASTRUCTURE\Data\DataAccess.vb" -Pattern "Dim acting = SessionState.ActingUserID" -Description "Audit rows fall back to the acting user"
 Assert-Pattern -Path ".\000_FRAMEWORK\500_INFRASTRUCTURE\Data\DataAccess.vb" -Pattern "SwitchedUserAuditNote" -Description "An audit row written while switched says so"
-Assert-Pattern -Path ".\000_FRAMEWORK\000_BASECLASSES\Base_U.vb" -Pattern "ConfirmSaveWhileSwitched" -Description "Saving while switched asks first"
-Assert-Pattern -Path ".\000_FRAMEWORK\000_BASECLASSES\Base_B.vb" -Pattern "SwitchedUserStampNotice" -Description "Delete and restore while switched say whose name goes on it"
+Assert-Pattern -Path ".\000_FRAMEWORK\000_BASECLASSES\Base_U.vb" -Pattern "SwitchedUserGuard.AllowWrite" -Description "Saving while switched is refused"
+Assert-Pattern -Path ".\000_FRAMEWORK\000_BASECLASSES\Base_B.vb" -Pattern "SwitchedUserGuard.AllowWrite" -Description "Delete and restore while switched are refused"
+Assert-Pattern -Path ".\000_FRAMEWORK\500_INFRASTRUCTURE\Security\SwitchedUserGuard.vb" -Pattern "RETURN TO YOURSELF FROM THE ROLE BUTTON FIRST." -Description "One wording for the refusal"
 
 
 Write-Step "Manual verification checklist"

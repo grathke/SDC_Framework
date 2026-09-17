@@ -1381,25 +1381,6 @@ Namespace SDC.Framework
         ''' Independent of CreateMaintenancePage: a browse page generated without a _U partner
         ''' still deletes.
         ''' </summary>
-        ''' <summary>
-        ''' The line added to a delete or restore confirmation while an administrator is viewing as
-        ''' somebody else, and nothing at all otherwise.
-        '''
-        ''' One dialog rather than two. The confirmation already exists and already asks whether to
-        ''' go ahead; the only thing the administrator does not yet know is whose name goes on it -
-        ''' theirs, always, because a change recorded against the person being viewed is a trail
-        ''' that cannot be trusted.
-        ''' </summary>
-        Protected Function SwitchedUserStampNotice() As String
-            If Not SwitchedUser.IsActive OrElse SwitchedUser.Original Is Nothing Then
-                Return String.Empty
-            End If
-
-            Return Environment.NewLine & Environment.NewLine &
-                   "This will be recorded under your own name, " & SwitchedUser.Original.DisplayName & "," & Environment.NewLine &
-                   "not the user you are viewing as."
-        End Function
-
         Protected Overridable Function UsesStandardSoftDelete() As Boolean
             Return False
         End Function
@@ -1452,6 +1433,11 @@ Namespace SDC.Framework
         Protected Overridable Function HandleDefaultDeleteAction() As Boolean
             If Not UsesStandardSoftDelete() Then Return False
 
+            ' A page that does not opt in is answered first, so the opt-in stays the thing that
+            ' decides whether this method acts at all. Refusing before it would tell somebody they
+            ' cannot delete on a page where deleting was never wired up.
+            If Not SwitchedUserGuard.AllowWrite(Me, "DELETE A RECORD") Then Return True
+
             Dim recordId = GetSelectedRecordIdForCustomAction()
             If Not recordId.HasValue Then Return False
 
@@ -1469,7 +1455,7 @@ Namespace SDC.Framework
             Dim prompt = If(String.IsNullOrWhiteSpace(summary), "Delete the selected record?", "Delete " & summary & "?")
             If MessageBox.Show(Me,
                                (prompt & Environment.NewLine & Environment.NewLine &
-                                "It will be removed from this list." & SwitchedUserStampNotice()).ToUpperInvariant(),
+                                "It will be removed from this list.").ToUpperInvariant(),
                                "CONFIRM DELETE",
                                MessageBoxButtons.YesNo,
                                MessageBoxIcon.Question) <> DialogResult.Yes Then
@@ -1504,6 +1490,8 @@ Namespace SDC.Framework
         Protected Overridable Function HandleDefaultRestoreAction(recordId As Integer) As Boolean
             If Not UsesStandardSoftDelete() Then Return False
 
+            If Not SwitchedUserGuard.AllowWrite(Me, "RESTORE A RECORD") Then Return True
+
             Dim primaryKey = DataAccess.GetPrimaryKeyFieldName(accessTableName)
             If String.IsNullOrWhiteSpace(primaryKey) Then
                 MessageBox.Show(Me,
@@ -1518,7 +1506,7 @@ Namespace SDC.Framework
             Dim prompt = If(String.IsNullOrWhiteSpace(summary), "Restore the selected record?", "Restore " & summary & "?")
             If MessageBox.Show(Me,
                                (prompt & Environment.NewLine & Environment.NewLine &
-                                "It will return to the normal list." & SwitchedUserStampNotice()).ToUpperInvariant(),
+                                "It will return to the normal list.").ToUpperInvariant(),
                                "CONFIRM RESTORE",
                                MessageBoxButtons.YesNo,
                                MessageBoxIcon.Question) <> DialogResult.Yes Then
