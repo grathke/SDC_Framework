@@ -737,6 +737,65 @@ Namespace SDC.Framework
         ''' Through vw_FW_CurrentUser as login uses it, which leaves out deleted accounts. Capped,
         ''' because a single letter matches most of a registration.
         ''' </summary>
+        ''' <summary>
+        ''' Brings dbo.FW_SwitchUser into line with dbo.FW_UserPeople, which is the single place
+        ''' that says who a login belongs to.
+        '''
+        ''' The procedure writes only rows that differ, so this is cheap to call before every read
+        ''' and costs nothing at all when nothing has changed. FW_SwitchUser_B calls it from
+        ''' PrepareBrowseSource.
+        '''
+        ''' Exceptions are left to the caller: the page swallows them and lists the last snapshot,
+        ''' which is a decision about that page rather than about this method.
+        ''' </summary>
+        Public Shared Sub RefreshSwitchUserSnapshot()
+            Using conn As New SqlConnection(ConnectionString)
+                conn.Open()
+                Using cmd As New SqlCommand("dbo.usp_FW_RefreshSwitchUser", conn)
+                    cmd.CommandType = CommandType.StoredProcedure
+                    cmd.ExecuteNonQuery()
+                End Using
+            End Using
+        End Sub
+
+        ''' <summary>
+        ''' The account a row of the Switch User page stands for, read from the login rather than
+        ''' from the snapshot.
+        '''
+        ''' Takes the snapshot row's own key - SwitchUserID, which is what the page aliases as PK -
+        ''' and joins through to vw_FW_CurrentUser, which is what login itself uses. A person
+        ''' deleted since the snapshot was taken therefore returns nothing, and the switch is
+        ''' refused rather than started against an account that no longer exists.
+        ''' </summary>
+        Public Shared Function GetSwitchUserTarget(switchUserId As Integer) As UserContext
+            If switchUserId <= 0 Then Return Nothing
+
+            Using conn As New SqlConnection(ConnectionString)
+                conn.Open()
+                Using cmd As New SqlCommand(
+                    "SELECT TOP 1 v.UserId, " &
+                    "       COALESCE(NULLIF(v.Email, ''), e.Email, '') AS Email, " &
+                    "       ISNULL(v.FirstName, '') AS FirstName, ISNULL(v.LastName, '') AS LastName " &
+                    "FROM dbo.FW_SwitchUser s " &
+                    "INNER JOIN dbo.vw_FW_CurrentUser v ON v.UserId = s.UserId " &
+                    "LEFT JOIN dbo.FW_Employees e ON e.UserId = s.UserId AND ISNULL(e.DeletedFlag, 0) = 0 " &
+                    "WHERE s.SwitchUserID = @SwitchUserID", conn)
+                    cmd.Parameters.AddWithValue("@SwitchUserID", switchUserId)
+
+                    Using reader = cmd.ExecuteReader()
+                        If Not reader.Read() Then Return Nothing
+
+                        Return New UserContext With {
+                            .UserId = Convert.ToInt32(reader("UserId"), CultureInfo.InvariantCulture),
+                            .Email = SafeString(reader("Email")),
+                            .FirstName = SafeString(reader("FirstName")),
+                            .LastName = SafeString(reader("LastName"))
+                        }
+                    End Using
+                End Using
+            End Using
+        End Function
+
         Public Shared Function FindUsersForSwitch(searchText As String) As List(Of (User As UserContext, UserName As String, Email As String, IsActive As Boolean))
             Dim found As New List(Of (User As UserContext, UserName As String, Email As String, IsActive As Boolean))()
             Dim text = If(searchText, String.Empty).Trim()
@@ -7699,22 +7758,39 @@ Namespace SDC.Framework
         End Sub
 
         ''' <summary>
-        ''' Adds a table to a role, with its field rows.
-        '''
-        ''' readOnlyGate is for a table whose only purpose is to be permitted or not - it grants
-        ''' Read and nothing else. Everything else keeps the long-standing defaults, which are
-        ''' Create, Update, Delete and QBE on and **Read off**. That combination is odd but it is
-        ''' not being changed here: it is what every existing row was created with, and a table
-        ''' added today should match the ones added yesterday.
-        '''
-        ''' For a gate table those defaults are actively wrong. Adding it would grant everything
-        ''' except the one permission that decides whether the feature appears at all, so an
-        ''' administrator who had just enabled a table would find nothing had happened.
+        ''' What a table is granted when a role first gains it.
         ''' </summary>
-        Public Shared Function AddRoleTableWithFields(roleId As Integer, registrationId As Integer, 
-                                                      roleSchemaId As Integer, dbTable As String, 
+        Public Enum RoleTableGrant
+            ''' <summary>
+            ''' The long-standing defaults: Create, Update, Delete and QBE on, and **Read off**.
+            ''' That combination is odd and is not being changed here - it is what every existing
+            ''' row was created with, and a table added today should match the ones added
+            ''' yesterday.
+            ''' </summary>
+            FullAccess = 0
+
+            ''' <summary>
+            ''' A table whose only purpose is to be permitted or not: Read and nothing else. The
+            ''' full defaults are actively wrong for one - they grant everything except the single
+            ''' permission that decides whether the feature appears, so an administrator who had
+            ''' just enabled a table would find nothing had happened.
+            ''' </summary>
+            ReadOnlyGate = 1
+
+            ''' <summary>
+            ''' A table that is only ever browsed: Read and QBE, which is how the page is searched,
+            ''' and nothing that writes. FW_SwitchUser is the first.
+            ''' </summary>
+            BrowseOnly = 2
+        End Enum
+
+        ''' <summary>
+        ''' Adds a table to a role, with its field rows. What it is granted is <paramref name="grant"/>.
+        ''' </summary>
+        Public Shared Function AddRoleTableWithFields(roleId As Integer, registrationId As Integer,
+                                                      roleSchemaId As Integer, dbTable As String,
                                                       tableAlias As String, tableCaption As String,
-                                                      Optional readOnlyGate As Boolean = False) As Integer
+                                                      Optional grant As RoleTableGrant = RoleTableGrant.FullAccess) As Integer
             Using conn As New SqlConnection(ConnectionString)
                 conn.Open()
                 Using trans = conn.BeginTransaction()
@@ -7729,11 +7805,15 @@ Namespace SDC.Framework
                             "ORDER BY RoleID), @TableCaption), @CanCreate, @CanRead, @CanUpdate, @CanDelete, @CanUseQbe, 1, @CreatedBy, GETDATE()); " &
                             "SELECT CAST(SCOPE_IDENTITY() as int)", conn, trans)
 
-                            cmd.Parameters.AddWithValue("@CanCreate", If(readOnlyGate, 0, 1))
-                            cmd.Parameters.AddWithValue("@CanRead", If(readOnlyGate, 1, 0))
-                            cmd.Parameters.AddWithValue("@CanUpdate", If(readOnlyGate, 0, 1))
-                            cmd.Parameters.AddWithValue("@CanDelete", If(readOnlyGate, 0, 1))
-                            cmd.Parameters.AddWithValue("@CanUseQbe", If(readOnlyGate, 0, 1))
+                            Dim writes = (grant = RoleTableGrant.FullAccess)
+                            Dim reads = (grant <> RoleTableGrant.FullAccess)
+                            cmd.Parameters.AddWithValue("@CanCreate", If(writes, 1, 0))
+                            cmd.Parameters.AddWithValue("@CanRead", If(reads, 1, 0))
+                            cmd.Parameters.AddWithValue("@CanUpdate", If(writes, 1, 0))
+                            cmd.Parameters.AddWithValue("@CanDelete", If(writes, 1, 0))
+                            ' QBE is how a browse-only page is searched at all, so it comes with
+                            ' Read there. A gate table has nothing to search.
+                            cmd.Parameters.AddWithValue("@CanUseQbe", If(grant = RoleTableGrant.ReadOnlyGate, 0, 1))
                             
                             cmd.Parameters.AddWithValue("@RoleID", roleId)
                             cmd.Parameters.AddWithValue("@RegistrationID", registrationId)

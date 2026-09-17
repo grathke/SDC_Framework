@@ -588,6 +588,37 @@ Namespace SDC.Framework
         End Function
 
         ''' <summary>
+        ''' Tables that are only ever browsed, where Read and Use QBE are the two ticks that mean
+        ''' anything and the rest are greyed out.
+        '''
+        ''' Not the same as a gate table, though it looks alike on screen: a gate table permits one
+        ''' tick, Read, and nothing else - Use QBE means nothing on a table with no rows to search.
+        ''' A browse-only table has rows, and searching them is the whole page, so QBE stays
+        ''' tickable.
+        '''
+        ''' FW_SwitchUser is the first: a snapshot of who each login belongs to, rewritten by a
+        ''' stored procedure and never edited by anybody. Create, Update and Delete on it would be
+        ''' ticks that grant nothing. The next page that only browses is one line here.
+        ''' </summary>
+        Private Shared Function IsBrowseOnlyTable(dbTable As String) As Boolean
+            If String.IsNullOrWhiteSpace(dbTable) Then Return False
+
+            Return String.Equals(dbTable.Trim(), "FW_SwitchUser", StringComparison.OrdinalIgnoreCase)
+        End Function
+
+        ''' <summary>
+        ''' What a table is granted the first time a role gains it, from the same two tests that
+        ''' decide which of its ticks are greyed out afterwards. One answer, so what a row arrives
+        ''' as and what it may be changed to cannot disagree.
+        ''' </summary>
+        Private Shared Function ResolveRoleTableGrant(dbTable As String) As DataAccess.RoleTableGrant
+            If IsReadOnlyGateTable(dbTable) Then Return DataAccess.RoleTableGrant.ReadOnlyGate
+            If IsBrowseOnlyTable(dbTable) Then Return DataAccess.RoleTableGrant.BrowseOnly
+
+            Return DataAccess.RoleTableGrant.FullAccess
+        End Function
+
+        ''' <summary>
         ''' Greys out the permissions that mean nothing on a gate table, so the only tick that has
         ''' an effect is the only tick that can be made.
         '''
@@ -598,15 +629,31 @@ Namespace SDC.Framework
         Private Sub RightGrid_DataBindingComplete(sender As Object, e As DataGridViewBindingCompleteEventArgs)
             If rightGrid Is Nothing OrElse Not rightGrid.Columns.Contains("Can_Read") Then Return
 
-            Dim locked = New String() {"Can_Create", "Can_Update", "Can_Delete",
-                                       "Can_ViewAllRecords", "Can_ViewOnlyMyRecords", "Can_UseQBE"}
+            Dim gateLocked = New String() {"Can_Create", "Can_Update", "Can_Delete",
+                                           "Can_ViewAllRecords", "Can_ViewOnlyMyRecords", "Can_UseQBE"}
+
+            ' Everything the gate list locks except two. Use QBE is how a browse-only page is
+            ' searched at all. View All is what shows the registration selector, and on a page
+            ' that may look across companies it is the tick that widens the scope - the decision
+            ' an administrator should be able to make and to take back.
+            Dim browseOnlyLocked = New String() {"Can_Create", "Can_Update", "Can_Delete",
+                                                 "Can_ViewOnlyMyRecords"}
 
             For Each row As DataGridViewRow In rightGrid.Rows
                 If row.IsNewRow Then Continue For
 
                 Dim boundRow = TryCast(row.DataBoundItem, DataRowView)
                 If boundRow Is Nothing OrElse Not boundRow.Row.Table.Columns.Contains("DB_Table") Then Continue For
-                If Not IsReadOnlyGateTable(Convert.ToString(boundRow("DB_Table"))) Then Continue For
+
+                Dim dbTable = Convert.ToString(boundRow("DB_Table"))
+                Dim locked As String()
+                If IsReadOnlyGateTable(dbTable) Then
+                    locked = gateLocked
+                ElseIf IsBrowseOnlyTable(dbTable) Then
+                    locked = browseOnlyLocked
+                Else
+                    Continue For
+                End If
 
                 For Each columnName In locked
                     If Not rightGrid.Columns.Contains(columnName) Then Continue For
@@ -680,7 +727,7 @@ Namespace SDC.Framework
                                                                   dbTable,
                                                                   tableAlias,
                                                                   tableAlias,
-                                                                  IsReadOnlyGateTable(dbTable))
+                                                                  ResolveRoleTableGrant(dbTable))
                     If newId <= 0 Then
                         MessageBox.Show("Failed to add table permission.", "Error")
                         Return
@@ -697,30 +744,12 @@ Namespace SDC.Framework
                     LoadRoleFieldsGrid()
                     
                     ' Select the row for this table in rightGrid to display its fields
-                    Dim rightGridDtAfter = TryCast(rightGrid.DataSource, DataTable)
-                    If rightGridDtAfter IsNot Nothing Then
-                        For i = 0 To rightGrid.Rows.Count - 1
-                            If CInt(rightGridDtAfter.Rows(i)("SchemaID")) = roleSchemaId Then
-                                rightGrid.ClearSelection()
-                                rightGrid.Rows(i).Selected = True
-                                Exit For
-                            End If
-                        Next
-                    End If
+                    SelectRightGridRowForSchema(roleSchemaId)
                     
                     MessageBox.Show("Table added and initial fields inserted.", "Success")
                 Else
                     ' Table already exists - just select it and sync schema
-                    Dim rightGridDtAfter = TryCast(rightGrid.DataSource, DataTable)
-                    If rightGridDtAfter IsNot Nothing Then
-                        For i = 0 To rightGrid.Rows.Count - 1
-                            If CInt(rightGridDtAfter.Rows(i)("SchemaID")) = roleSchemaId Then
-                                rightGrid.ClearSelection()
-                                rightGrid.Rows(i).Selected = True
-                                Exit For
-                            End If
-                        Next
-                    End If
+                    SelectRightGridRowForSchema(roleSchemaId)
                     
                     ' Refresh schema to sync any new columns (does LoadRoleFieldsGrid internally)
                     Dim syncCounts = RefreshSelectedRowSchema()
@@ -730,6 +759,49 @@ Namespace SDC.Framework
             Catch ex As Exception
                 MessageBox.Show("Error adding table permission: " & ex.Message, "Error")
             End Try
+        End Sub
+
+        ''' <summary>
+        ''' Selects the row for a table and scrolls it into view.
+        '''
+        ''' Selecting alone was not enough: a role with fifty tables puts a newly added one wherever
+        ''' the sort lands it, and a row selected off-screen reads as nothing having happened - the
+        ''' administrator scrolls looking for what they just added. The current cell is set as well
+        ''' as the selection, because that is what the grid scrolls to and what the field list below
+        ''' follows.
+        '''
+        ''' One method for both callers. Adding a table and re-picking one already there were the
+        ''' same nine lines twice, and only one of them would have been fixed.
+        ''' </summary>
+        Private Sub SelectRightGridRowForSchema(roleSchemaId As Integer)
+            Dim bound = TryCast(rightGrid.DataSource, DataTable)
+            If bound Is Nothing Then Return
+
+            For i = 0 To rightGrid.Rows.Count - 1
+                If i >= bound.Rows.Count Then Exit For
+                If CInt(bound.Rows(i)("SchemaID")) <> roleSchemaId Then Continue For
+
+                rightGrid.ClearSelection()
+                rightGrid.Rows(i).Selected = True
+
+                ' The first visible column, because the key one may be hidden and a current cell
+                ' cannot sit on a column nobody can see.
+                For Each column As DataGridViewColumn In rightGrid.Columns
+                    If column.Visible Then
+                        rightGrid.CurrentCell = rightGrid.Rows(i).Cells(column.Index)
+                        Exit For
+                    End If
+                Next
+
+                ' Setting the current cell scrolls the row into view already; this puts it near the
+                ' top instead of just inside the edge, where it is easy to miss.
+                Dim firstVisible = Math.Max(0, i - 2)
+                If rightGrid.Rows.Count > firstVisible Then
+                    rightGrid.FirstDisplayedScrollingRowIndex = firstVisible
+                End If
+
+                Return
+            Next
         End Sub
 
         Private Sub RightGrid_CellEndEdit(sender As Object, e As DataGridViewCellEventArgs)

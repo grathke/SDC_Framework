@@ -279,9 +279,18 @@ Namespace SDC.Framework
                 actionKey:="application-settings",
                 caption:=caption,
                 onClick:=Sub(sender, e)
-                             If IsApplicationAdminSession() Then
-                                 tileDropDowns.Open(TryCast(sender, Control),
-                                                    Function() BuildApplicationSettingsItems(menu))
+                             If Not IsApplicationAdminSession() Then
+                                 menu.OpenApplicationSettings()
+                                 Return
+                             End If
+
+                             ' A menu only where there is a choice. With one action left - the
+                             ' dashboard - the tile is the button it was before it grew a menu,
+                             ' because a one-item menu is a worse button. Add a second action, or
+                             ' grant the permission behind one, and the menu comes back by itself.
+                             Dim items = BuildApplicationSettingsItems(menu)
+                             If CountInvocableItems(items) > 1 Then
+                                 tileDropDowns.Open(TryCast(sender, Control), Function() items)
                              Else
                                  menu.OpenApplicationSettings()
                              End If
@@ -306,14 +315,45 @@ Namespace SDC.Framework
         ''' it - Application Settings still decides between the Application and Company dashboards
         ''' by role, in one place.
         ''' </summary>
-        Private Function BuildApplicationSettingsItems(menu As FW_MainMenu) As IEnumerable(Of ToolStripItem)
+        Private Function BuildApplicationSettingsItems(menu As FW_MainMenu) As List(Of ToolStripItem)
             Dim items As New List(Of ToolStripItem)()
 
             items.Add(BuildActionItem("Admin Dashboard", Sub() menu.OpenApplicationSettings()))
-            items.Add(New ToolStripSeparator())
-            items.Add(BuildActionItem("Switch User", Sub() menu.OpenSubstituteUser()))
+
+            ' Absent rather than disabled, the way a ribbon tile a role may not use is absent: a
+            ' greyed item invites the question of how to enable it, where a missing one reads as an
+            ' action this administrator does not have. The page enforces the permission again when
+            ' it opens - a hidden menu item is not authorization.
+            If CanSwitchUser() Then
+                items.Add(New ToolStripSeparator())
+                items.Add(BuildActionItem("Switch User", Sub() menu.OpenSubstituteUser()))
+            End If
 
             Return items
+        End Function
+
+        ''' <summary>
+        ''' Whether this session may look for somebody to switch to. Read on FW_SwitchUser, the
+        ''' table the Switch User page browses, so the permission is granted in Roles_U beside
+        ''' every other table rather than being a rule written into the menu.
+        ''' </summary>
+        Private Function CanSwitchUser() As Boolean
+            Return cachedAccessProfile IsNot Nothing AndAlso
+                   cachedAccessProfile.Can("FW_SwitchUser", AccessCapability.Read)
+        End Function
+
+        ''' <summary>
+        ''' How many items in a built menu are actions rather than furniture. Separators are not
+        ''' choices, and a menu holding one action and a separator is still a one-item menu.
+        ''' </summary>
+        Private Function CountInvocableItems(items As IEnumerable(Of ToolStripItem)) As Integer
+            If items Is Nothing Then Return 0
+
+            Dim count = 0
+            For Each item In items
+                If TypeOf item Is ToolStripMenuItem Then count += 1
+            Next
+            Return count
         End Function
 
         Private Function BuildActionItem(label As String, invoke As Action) As ToolStripMenuItem
@@ -395,13 +435,8 @@ Namespace SDC.Framework
             menu.SetRegionHeader(region, headerText)
             menu.SetRegionChrome(region, showHeader)
 
-            Dim control = controlFactory()
-            Dim accessControlled = TryCast(control, IAccessControlledControl)
-            If accessControlled IsNot Nothing Then
-                accessControlled.ApplyAccess(profile, tableName)
-            End If
-
-            menu.LoadRegionControl(region, control)
+            ' LoadRegionControl applies the access context, for every caller rather than this one.
+            menu.LoadRegionControl(region, controlFactory(), tableName)
             menu.SetRegionVisible(region, True)
         End Sub
 
@@ -415,13 +450,7 @@ Namespace SDC.Framework
             If profile.Can(tableName, required) Then
                 menu.SetRegionHeader(region, headerText)
 
-                Dim control = controlFactory()
-                Dim accessControlled = TryCast(control, IAccessControlledControl)
-                If accessControlled IsNot Nothing Then
-                    accessControlled.ApplyAccess(profile, tableName)
-                End If
-
-                menu.LoadRegionControl(region, control)
+                menu.LoadRegionControl(region, controlFactory(), tableName)
                 menu.SetRegionVisible(region, True)
                 Return
             End If

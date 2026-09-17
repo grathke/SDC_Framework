@@ -1960,12 +1960,37 @@ Namespace SDC.Framework
         Protected Overridable Sub ApplyPageSpecificLayout()
         End Sub
 
+        ''' <summary>
+        ''' Runs immediately before the grid is filled, for a page whose source has to be prepared
+        ''' first. Empty by default, and a page that does not override it behaves exactly as before.
+        '''
+        ''' It exists because one page browses a snapshot of a database view rather than a table,
+        ''' and the snapshot is refreshed by a stored procedure. That refresh belongs nowhere else:
+        ''' QBE's job is turning search rows into filters, and a write hidden inside a filter
+        ''' builder is not something anybody would look for.
+        '''
+        ''' **It runs on every fetch**, not only the first: the initial load, Find, Refresh, and
+        ''' toggling the deleted view all reach the grid through here. Anything expensive put in an
+        ''' override is therefore paid on all of them - which is why the one override that exists
+        ''' writes only what has actually changed.
+        '''
+        ''' Failures belong to the override. This is called before the read, so an override that
+        ''' throws stops the page filling; one that swallows its own failure leaves the page
+        ''' showing whatever the source last held, which for a snapshot is the right answer.
+        ''' </summary>
+        Protected Overridable Sub PrepareBrowseSource()
+        End Sub
+
         Private Sub RefreshGrid(Optional selectedRecordId As Integer? = Nothing,
                      Optional reevaluateQbe As Boolean = False,
                      Optional maxRows As Integer = 0,
                      Optional registrationIdOverride As Integer? = Nothing)
             SetColumnsPanelVisible(False)
             ApplyCrudButtonCaptions(GetRegistrationIdForCaptions())
+
+            ' Before the SQL check and the read: a page that prepares its own source may be the
+            ' reason there is anything to read.
+            PrepareBrowseSource()
 
             If Not EnsureSqlOrClose() Then
                 Return
@@ -3203,32 +3228,78 @@ Namespace SDC.Framework
             If roleId <= 0 OrElse String.IsNullOrWhiteSpace(tableName) Then
                 ' Fallback to registration-only captions
                 Dim captions = DataAccess.GetCrudButtonCaptions(registrationId)
-                createButton.Text = captions.CreateCaption
-                readButton.Text = captions.ReadCaption
-                updateButton.Text = captions.UpdateCaption
-                deleteButton.Text = captions.DeleteCaption
+                createButton.Text = ResolveCrudCaption(AccessCapability.Create, captions.CreateCaption)
+                readButton.Text = ResolveCrudCaption(AccessCapability.Read, captions.ReadCaption)
+                updateButton.Text = ResolveCrudCaption(AccessCapability.Update, captions.UpdateCaption)
+                deleteButton.Text = ResolveCrudCaption(AccessCapability.Delete, captions.DeleteCaption)
                 Return
             End If
 
             ' Use consolidated metadata call
             Dim metadata = DataAccess.GetPageInitMetadata(roleId, registrationId, tableName)
-            createButton.Text = metadata.CrudCaptions.CreateCaption
-            readButton.Text = metadata.CrudCaptions.ReadCaption
-            updateButton.Text = metadata.CrudCaptions.UpdateCaption
-            deleteButton.Text = metadata.CrudCaptions.DeleteCaption
+            createButton.Text = ResolveCrudCaption(AccessCapability.Create, metadata.CrudCaptions.CreateCaption)
+            readButton.Text = ResolveCrudCaption(AccessCapability.Read, metadata.CrudCaptions.ReadCaption)
+            updateButton.Text = ResolveCrudCaption(AccessCapability.Update, metadata.CrudCaptions.UpdateCaption)
+            deleteButton.Text = ResolveCrudCaption(AccessCapability.Delete, metadata.CrudCaptions.DeleteCaption)
         End Sub
 
+        ''' <summary>
+        ''' The last word on what a CRUD button says, for the page whose command is not what the
+        ''' word suggests.
+        '''
+        ''' The captions are a registration's own wording, overridden per role - "Modify" or
+        ''' "Change", "Read" or "View" - and that is right for a page that reads and edits records.
+        ''' The Switch User page reads nothing: its Read command becomes another user, and a button
+        ''' captioned "View" tells somebody they are about to look at a row when they are about to
+        ''' become a person.
+        '''
+        ''' Applied after the registration and role captions, so a page that does not override it
+        ''' is unaffected, and a page that does still starts from whatever wording the company
+        ''' chose rather than ignoring it.
+        ''' </summary>
+        Protected Overridable Function ResolveCrudCaption(action As AccessCapability, caption As String) As String
+            Return caption
+        End Function
+
+        ''' <summary>
+        ''' Whether the selector is sitting on the "all registrations" entry - an actual selection
+        ''' whose id is zero, as opposed to no selection at all.
+        ''' </summary>
+        Private Function IsAllRegistrationsSelected() As Boolean
+            If registrationComboBox Is Nothing OrElse registrationComboBox.SelectedValue Is Nothing Then Return False
+            If Convert.IsDBNull(registrationComboBox.SelectedValue) Then Return False
+
+            Dim selectedId As Integer
+            Return Integer.TryParse(Convert.ToString(registrationComboBox.SelectedValue, Globalization.CultureInfo.InvariantCulture),
+                                    Globalization.NumberStyles.Integer,
+                                    Globalization.CultureInfo.InvariantCulture,
+                                    selectedId) AndAlso selectedId = 0
+        End Function
+
+        ''' <summary>
+        ''' Which registration's wording the buttons take. Looking at every registration at once is
+        ''' not a registration, so the captions stay the ones the user signed in under rather than
+        ''' falling back to the framework defaults mid-session.
+        ''' </summary>
         Private Function GetRegistrationIdForCaptions() As Integer
             Dim registrationId As Integer = 0
-            If TryGetActiveRegistrationId(registrationId) Then
+            If TryGetActiveRegistrationId(registrationId) AndAlso registrationId > 0 Then
                 Return registrationId
             End If
 
-            Return 0
+            Return GetSessionRegistrationId()
         End Function
 
         Protected Overridable Function TryGetActiveRegistrationId(ByRef registrationId As Integer) As Boolean
             If RegistrationComboHelper.TryGetSelectedId(registrationComboBox, registrationId) Then
+                Return True
+            End If
+
+            ' Zero selected, on a page that offers it, means every registration rather than none.
+            ' Everywhere else zero still means nothing has been chosen and nothing loads, which is
+            ' why this is asked for by the page rather than assumed.
+            If AllRegistrationsAvailable() AndAlso IsAllRegistrationsSelected() Then
+                registrationId = 0
                 Return True
             End If
 
@@ -4123,11 +4194,40 @@ Namespace SDC.Framework
             LayoutQbeSection()
         End Sub
 
+        ''' <summary>
+        ''' Whether this page offers "All Registrations" in the selector, meaning every company at
+        ''' once rather than one.
+        '''
+        ''' Off for every page but the one that says otherwise, and honoured only for an App Admin.
+        ''' A company admin who found another company's rows in a list would be a security fault,
+        ''' not a convenience, and a default of on would put that one careless page away from
+        ''' happening.
+        '''
+        ''' The selector itself still needs View All Records on the page's table, so the entry
+        ''' appears for somebody who has been granted the wider scope and not for anybody else.
+        ''' </summary>
+        Protected Overridable Function AllowAllRegistrations() As Boolean
+            Return False
+        End Function
+
+        ''' <summary>
+        ''' True when this session may pick All Registrations: the page offers it and the session
+        ''' is an App Admin.
+        ''' </summary>
+        Private Function AllRegistrationsAvailable() As Boolean
+            Return AllowAllRegistrations() AndAlso IsAppAdminSession()
+        End Function
+
         Private Sub LoadRegistrationCombo()
             suppressRegistrationSelectionChanged = True
             Try
                 Dim sessionRegistrationId = GetSessionRegistrationId()
-                RegistrationComboHelper.Populate(registrationComboBox, sessionRegistrationId, False)
+                ' The "all" entry rides in on the placeholder row, which is the same shape - an
+                ' entry whose id is zero - said with a different word.
+                RegistrationComboHelper.Populate(registrationComboBox,
+                                                 sessionRegistrationId,
+                                                 AllRegistrationsAvailable(),
+                                                 "All Registrations")
                 If sessionRegistrationId > 0 Then
                     registrationComboBox.SelectedValue = sessionRegistrationId
                 End If
@@ -4157,11 +4257,43 @@ Namespace SDC.Framework
             PerformFindAfterRegistrationChange()
         End Sub
 
+        ''' <summary>
+        ''' Searches again after the registration is changed, for a page that lists rows anyway.
+        '''
+        ''' A page that starts empty does not: it opens with no rows on purpose, and choosing a
+        ''' company is not a search. Listing everybody in the newly chosen registration is exactly
+        ''' what StartsEmptyOnInitialLoad exists to prevent - on Switch User that is every person
+        ''' in a company, which with hundreds of them is a page nobody asked for. The grid is left
+        ''' cleared and the search criteria stand, waiting for Find.
+        ''' </summary>
         Private Sub PerformFindAfterRegistrationChange()
+            If StartsEmptyOnInitialLoad() AndAlso Not HasAnyQbeCriteria() Then
+                SetRetrievalStatus("Enter a search and press Find.", False)
+                Return
+            End If
+
             If findButton IsNot Nothing AndAlso findButton.Enabled Then
                 findButton.PerformClick()
             End If
         End Sub
+
+        ''' <summary>
+        ''' Whether the user has typed anything to search on. A row with an operator but no value
+        ''' is not a search: every field has an operator, chosen or defaulted.
+        ''' </summary>
+        Protected Function HasAnyQbeCriteria() As Boolean
+            If qbeGrid Is Nothing Then Return False
+
+            For Each row As DataGridViewRow In qbeGrid.Rows
+                If row.IsNewRow Then Continue For
+                If Not row.Cells.Item("FieldValue") Is Nothing AndAlso
+                   Not String.IsNullOrWhiteSpace(Convert.ToString(row.Cells("FieldValue").Value)) Then
+                    Return True
+                End If
+            Next
+
+            Return False
+        End Function
 
         Private Sub InitializeEmptyBrowseState()
             LayoutQbeSection()
