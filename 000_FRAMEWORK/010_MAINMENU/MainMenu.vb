@@ -83,12 +83,20 @@ Namespace SDC.Framework
         Private activeAccessProfile As AccessProfile
 
         ''' <summary>
-        ''' How often to look for new messages. **Temporary** - it belongs on the registration and
-        ''' user-adjustable from there, because the right number depends on the site: a support
-        ''' desk wants a minute, a two-person office does not want the traffic. Five minutes is a
-        ''' placeholder chosen to be cheap rather than right.
+        ''' How often to look for new messages, when the registration has not said. The interval
+        ''' itself is FW_Registration.MessageRetrievalFrequency, in minutes, read at sign-in and
+        ''' carried on the session - the right number depends on the site, because a support desk
+        ''' wants a minute and a two-person office does not want the traffic.
         ''' </summary>
-        Private Const MessageCheckIntervalMs As Integer = 5 * 60 * 1000
+        Private Const DefaultMessageCheckMinutes As Integer = 5
+
+        ''' <summary>
+        ''' The narrowest and widest a registration may set the check to. A minute is the floor
+        ''' because the query runs on the UI thread; an hour is the ceiling because beyond it the
+        ''' asterisk stops meaning "new mail" and starts meaning "mail at some point today".
+        ''' </summary>
+        Private Const MinMessageCheckMinutes As Integer = 1
+        Private Const MaxMessageCheckMinutes As Integer = 60
 
         ''' How far below the registration name's top edge the asterisk sits. It used to be six
         ''' pixels *above* that edge; +8 was tried and overshot, so this is half that move.
@@ -861,7 +869,7 @@ Namespace SDC.Framework
             End If
 
             If messageCheckTimer Is Nothing Then
-                messageCheckTimer = New Timer() With {.Interval = MessageCheckIntervalMs}
+                messageCheckTimer = New Timer()
                 AddHandler messageCheckTimer.Tick, AddressOf MessageCheckTimer_Tick
 
                 ' Wired once, with the timer, and left wired: the check inside answers whether
@@ -869,12 +877,37 @@ Namespace SDC.Framework
                 AddHandler Me.Activated, AddressOf MainMenu_Activated
             End If
 
+            ' Set on every start, not only the first: this runs again when the profile changes, and
+            ' a switch to another registration brings another interval with it.
+            messageCheckTimer.Interval = ResolveMessageCheckIntervalMs()
+
             messageCheckTimer.Stop()
             messageCheckTimer.Start()
 
-            ' Once immediately, so a message waiting at sign-in is not hidden for five minutes.
+            ' Once immediately, so a message waiting at sign-in is not hidden until the first tick.
             CheckForNewMessages()
         End Sub
+
+        ''' <summary>
+        ''' The check interval in milliseconds: what this registration asked for, in minutes, held
+        ''' within the range the timer can honour.
+        '''
+        ''' A registration that has set nothing, or a number outside the range, gets the default
+        ''' rather than an argument - a zero interval would be a query as fast as the timer can
+        ''' raise one, and Timer.Interval will not accept it at all.
+        ''' </summary>
+        Private Function ResolveMessageCheckIntervalMs() As Integer
+            Dim minutes = DefaultMessageCheckMinutes
+            Dim session = SessionState.Current
+            If session.HasValue AndAlso session.Value.MessageRetrievalMinutes > 0 Then
+                minutes = session.Value.MessageRetrievalMinutes
+            End If
+
+            If minutes < MinMessageCheckMinutes Then minutes = MinMessageCheckMinutes
+            If minutes > MaxMessageCheckMinutes Then minutes = MaxMessageCheckMinutes
+
+            Return minutes * 60 * 1000
+        End Function
 
         ''' <summary>
         ''' Ticks are cheap to skip and expensive to take, so the tick asks whether taking one
@@ -2259,7 +2292,14 @@ Namespace SDC.Framework
                                       selectedRole.RoleName,
                                       selectedRole.RoleType,
                                       selectedRole.IsApplicationAdmin,
-                                      selectedRole.IsCompanyAdmin)
+                                      selectedRole.IsCompanyAdmin,
+                                      activeSession.Value.MaxRecordsNoQBE,
+                                      activeSession.Value.DateFormat,
+                                      activeSession.Value.TimeFormat,
+                                      activeSession.Value.AllowUpdateMyProfile,
+                                      activeSession.Value.HomeGraphic,
+                                      activeSession.Value.TimeZoneName,
+                                      activeSession.Value.MessageRetrievalMinutes)
             MenuFormInitializer.Configure(Me, currentUser, True)
             UpdateRoleSelectionTile()
         End Sub

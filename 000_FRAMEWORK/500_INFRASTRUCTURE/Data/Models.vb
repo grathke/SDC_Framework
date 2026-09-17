@@ -163,6 +163,12 @@ Namespace SDC.Framework
         Public Property MaxRecordsNoQBE As Integer
 
         ''' <summary>
+        ''' Minutes between new-message checks, as this registration set it. Zero means it has set
+        ''' nothing, and the menu uses its own default.
+        ''' </summary>
+        Public Property MessageRetrievalMinutes As Integer
+
+        ''' <summary>
         ''' How this company writes a date and a time - the .NET patterns, resolved at login from
         ''' FW_Format_Date and FW_Format_Time through the registration's choice.
         '''
@@ -248,7 +254,8 @@ Namespace SDC.Framework
                                 Optional timeFormat As String = "",
                                 Optional allowUpdateMyProfile As Boolean = False,
                                 Optional homeGraphic As String = "",
-                                Optional timeZoneName As String = "")
+                                Optional timeZoneName As String = "",
+                                Optional messageRetrievalMinutes As Integer = 0)
             If user Is Nothing Then
                 ClearSession()
                 Return
@@ -292,6 +299,7 @@ Namespace SDC.Framework
                 .CrudUpdateCaption = "Modify",
                 .CrudDeleteCaption = "Delete",
                 .MaxRecordsNoQBE = If(maxRecordsNoQBE > 0, maxRecordsNoQBE, 10),
+                .MessageRetrievalMinutes = If(messageRetrievalMinutes > 0, messageRetrievalMinutes, 0),
                 .DateFormat = If(dateFormat, String.Empty).Trim(),
                 .TimeFormat = If(timeFormat, String.Empty).Trim(),
                 .AllowUpdateMyProfile = allowUpdateMyProfile,
@@ -513,6 +521,17 @@ Namespace SDC.Framework
 
         Public Property HDUserSupport As Integer
         Public Property HDApplicationSupport As Integer
+
+        ''' <summary>
+        ''' How often, in minutes, the main menu asks whether mail has arrived.
+        '''
+        ''' Nullable because the column is: a registration that has never chosen one gets the
+        ''' five minutes the timer used to have written into it. The check costs a query per
+        ''' interval per signed-in user, and the right number depends on the site - a busy support
+        ''' desk wants a minute, a two-person office does not want the traffic.
+        ''' </summary>
+        Public Property MessageRetrievalFrequency As Integer?
+
         Public Property IsActive As Boolean
         Public Property RowVersion As Byte()
     End Class

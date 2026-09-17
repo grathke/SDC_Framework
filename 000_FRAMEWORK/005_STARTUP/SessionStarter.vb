@@ -164,6 +164,9 @@ Namespace SDC.Framework
             Dim employeeTimeZone = DataAccess.GetEmployeeTimeZoneName(user.UserId)
             If employeeTimeZone <> String.Empty Then registrationTimeZone = employeeTimeZone
             Dim maxRecordsNoQBE = DataAccess.GetMaxRecordsNoQBE(sessionRegistrationId)
+            ' Off the same registration read as the Smarty keys above, rather than a query of its own.
+            Dim messageRetrievalMinutes = If(registrationRecord Is Nothing OrElse Not registrationRecord.MessageRetrievalFrequency.HasValue,
+                                             0, registrationRecord.MessageRetrievalFrequency.Value)
             Dim registrationDatePattern As String = String.Empty
             Dim registrationTimePattern As String = String.Empty
             DataAccess.GetRegistrationDisplayFormats(sessionRegistrationId, registrationDatePattern, registrationTimePattern)
@@ -200,7 +203,8 @@ Namespace SDC.Framework
                                       registrationTimePattern,
                                       allowUpdateMyProfile,
                                       homeGraphic,
-                                      registrationTimeZone)
+                                      registrationTimeZone,
+                                      messageRetrievalMinutes)
 
             If loginWarnings.Count > 0 Then
                 MessageBox.Show(owner, String.Join(vbCrLf & vbCrLf, loginWarnings).ToUpperInvariant(),

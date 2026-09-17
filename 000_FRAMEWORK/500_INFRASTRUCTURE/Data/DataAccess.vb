@@ -5064,6 +5064,7 @@ Namespace SDC.Framework
                     "ISNULL(TwoFactorAuthentication, 0) AS TwoFactorAuthentication, " &
                     "ISNULL(HDUserSupport, 0) AS HDUserSupport, " &
                     "ISNULL(HDApplicationSupport, 0) AS HDApplicationSupport, " &
+                    "MessageRetrievalFrequency, " &
                     "ISNULL(IsActive, 1) AS IsActive, r.RowVersion, ISNULL(z.TimeZoneName, '') AS TimeZoneName " &
                     "FROM dbo.FW_Registration r LEFT JOIN dbo.FW_TimeZones z ON z.TimeZoneID = r.TimeZoneID WHERE r.RegistrationID = @ID", conn)
 
@@ -5106,6 +5107,7 @@ Namespace SDC.Framework
                             .TwoFactorAuthentication = Convert.ToBoolean(reader("TwoFactorAuthentication"), CultureInfo.InvariantCulture),
                             .HDUserSupport = Convert.ToInt32(reader("HDUserSupport"), CultureInfo.InvariantCulture),
                             .HDApplicationSupport = Convert.ToInt32(reader("HDApplicationSupport"), CultureInfo.InvariantCulture),
+                            .MessageRetrievalFrequency = If(IsDBNull(reader("MessageRetrievalFrequency")), CType(Nothing, Integer?), CType(Convert.ToInt32(reader("MessageRetrievalFrequency"), CultureInfo.InvariantCulture), Integer?)),
                             .IsActive = Convert.ToBoolean(reader("IsActive"), CultureInfo.InvariantCulture),
                             .RowVersion = DirectCast(reader("RowVersion"), Byte())
                         }
@@ -5260,9 +5262,9 @@ Namespace SDC.Framework
                                                       record As RegistrationRecord, currentUserId As Integer) As Integer
             Using cmd As New SqlCommand(
                     "INSERT INTO dbo.FW_Registration " &
-                    "(RegName, RegistrationTypeID, FormatDateID, FormatTimeID, TimeZoneID, Address1, Address2, City, State, Zip, MainFax, MainPhone, MainEMail, WebLandingPage, Smarty_AuthID, Smarty_AuthToken, Smarty_EmbeddedKey, Smarty_UseEmbeddedKey, AllowMultipleRoles, AllowPasswordChangeAtLogin, AllowUpdateMyProfile, AllowUpdateMyProfileEmail, HomeGraphic, LicenseExpiration_Date, LicenseStart_Date, LicenseTermID, TwoFactorAuthentication, IsActive, CreatedBy, CreatedOn, UpdatedBy, UpdatedOn) " &
+                    "(RegName, RegistrationTypeID, FormatDateID, FormatTimeID, TimeZoneID, Address1, Address2, City, State, Zip, MainFax, MainPhone, MainEMail, WebLandingPage, Smarty_AuthID, Smarty_AuthToken, Smarty_EmbeddedKey, Smarty_UseEmbeddedKey, AllowMultipleRoles, AllowPasswordChangeAtLogin, AllowUpdateMyProfile, AllowUpdateMyProfileEmail, HomeGraphic, LicenseExpiration_Date, LicenseStart_Date, LicenseTermID, TwoFactorAuthentication, MessageRetrievalFrequency, IsActive, CreatedBy, CreatedOn, UpdatedBy, UpdatedOn) " &
                     "VALUES " &
-                    "(@RegName, @RegistrationTypeID, @FormatDateID, @FormatTimeID, @TimeZoneID, @Address1, @Address2, @City, @State, @Zip, @MainFax, @MainPhone, @MainEMail, @WebLandingPage, @Smarty_AuthID, @Smarty_AuthToken, @Smarty_EmbeddedKey, @Smarty_UseEmbeddedKey, @AllowMultipleRoles, @AllowPasswordChangeAtLogin, @AllowUpdateMyProfile, @AllowUpdateMyProfileEmail, @HomeGraphic, @LicenseExpiration_Date, @LicenseStart_Date, @LicenseTermID, @TwoFactorAuthentication, @IsActive, @CurrentUserId, GETDATE(), @CurrentUserId, GETDATE()); " &
+                    "(@RegName, @RegistrationTypeID, @FormatDateID, @FormatTimeID, @TimeZoneID, @Address1, @Address2, @City, @State, @Zip, @MainFax, @MainPhone, @MainEMail, @WebLandingPage, @Smarty_AuthID, @Smarty_AuthToken, @Smarty_EmbeddedKey, @Smarty_UseEmbeddedKey, @AllowMultipleRoles, @AllowPasswordChangeAtLogin, @AllowUpdateMyProfile, @AllowUpdateMyProfileEmail, @HomeGraphic, @LicenseExpiration_Date, @LicenseStart_Date, @LicenseTermID, @TwoFactorAuthentication, @MessageRetrievalFrequency, @IsActive, @CurrentUserId, GETDATE(), @CurrentUserId, GETDATE()); " &
                     "SELECT CAST(SCOPE_IDENTITY() AS INT);", conn, tx)
 
                     cmd.Parameters.AddWithValue("@RegName", DbValue(record.RegName))
@@ -5296,6 +5298,9 @@ Namespace SDC.Framework
                     cmd.Parameters.AddWithValue("@LicenseStart_Date", If(record.LicenseStart.HasValue, CType(record.LicenseStart.Value.Date, Object), DBNull.Value))
                     cmd.Parameters.AddWithValue("@LicenseTermID", If(record.LicenseTermID > 0, CType(record.LicenseTermID, Object), DBNull.Value))
                     cmd.Parameters.AddWithValue("@TwoFactorAuthentication", record.TwoFactorAuthentication)
+                    ' Nothing chosen stays NULL rather than becoming a zero the timer would have to
+                    ' treat as "never check".
+                    cmd.Parameters.AddWithValue("@MessageRetrievalFrequency", If(record.MessageRetrievalFrequency.HasValue, CType(record.MessageRetrievalFrequency.Value, Object), DBNull.Value))
                     cmd.Parameters.AddWithValue("@IsActive", record.IsActive)
                     cmd.Parameters.AddWithValue("@CurrentUserId", currentUserId)
 
@@ -5339,6 +5344,7 @@ Namespace SDC.Framework
                     "LicenseStart_Date = @LicenseStart_Date, " &
                     "LicenseTermID = @LicenseTermID, " &
                     "TwoFactorAuthentication = @TwoFactorAuthentication, " &
+                    "MessageRetrievalFrequency = @MessageRetrievalFrequency, " &
                     "IsActive = @IsActive, " &
                     "UpdatedBy = @CurrentUserId, " &
                     "UpdatedOn = GETDATE() " &
@@ -5376,6 +5382,9 @@ Namespace SDC.Framework
                     cmd.Parameters.AddWithValue("@LicenseStart_Date", If(record.LicenseStart.HasValue, CType(record.LicenseStart.Value.Date, Object), DBNull.Value))
                     cmd.Parameters.AddWithValue("@LicenseTermID", If(record.LicenseTermID > 0, CType(record.LicenseTermID, Object), DBNull.Value))
                     cmd.Parameters.AddWithValue("@TwoFactorAuthentication", record.TwoFactorAuthentication)
+                    ' Nothing chosen stays NULL rather than becoming a zero the timer would have to
+                    ' treat as "never check".
+                    cmd.Parameters.AddWithValue("@MessageRetrievalFrequency", If(record.MessageRetrievalFrequency.HasValue, CType(record.MessageRetrievalFrequency.Value, Object), DBNull.Value))
                     cmd.Parameters.AddWithValue("@IsActive", record.IsActive)
                     cmd.Parameters.AddWithValue("@CurrentUserId", currentUserId)
                     cmd.Parameters.Add("@OriginalRowVersion", SqlDbType.Timestamp).Value = record.RowVersion
