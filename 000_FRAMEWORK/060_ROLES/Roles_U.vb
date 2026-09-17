@@ -998,7 +998,7 @@ Namespace SDC.Framework
 
                 Dim schemaId = CInt(dt.Rows(selectedRowIndex)("SchemaID"))
                 Dim dbTable = dt.Rows(selectedRowIndex)("DB_Table").ToString()
-                Dim updatedBy = If(SessionState.Current.HasValue, SessionState.Current.Value.UserID, 0)
+                Dim updatedBy = SessionState.ActingUserID
 
                 Dim inserted, deleted, repaired As Integer
 
@@ -1370,7 +1370,7 @@ Namespace SDC.Framework
                 Dim overrideCaption = If(row.Cells("OverrideCaption").Value IsNot Nothing, row.Cells("OverrideCaption").Value.ToString(), "")
                 ' FriendlyFieldName is hidden in DataTable, read from dataRow not grid cells
                 Dim friendlyFieldName = If(dataRow("FriendlyFieldName") IsNot Nothing, dataRow("FriendlyFieldName").ToString(), "")
-                Dim updatedBy = If(SessionState.Current.HasValue, SessionState.Current.Value.UserID, 0)
+                Dim updatedBy = SessionState.ActingUserID
 
                 ' Auto-set IsActive when editing one of the trigger columns
                 Dim editedColName = roleFieldsGrid.Columns(e.ColumnIndex).Name

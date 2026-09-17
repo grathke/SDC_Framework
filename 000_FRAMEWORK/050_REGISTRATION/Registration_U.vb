@@ -127,7 +127,7 @@ Namespace SDC.Framework
 
             Dim currentUserId = 0
             If SessionState.IsActive AndAlso SessionState.Current.HasValue Then
-                currentUserId = SessionState.Current.Value.UserID
+                currentUserId = SessionState.ActingUserID
             End If
 
             Try

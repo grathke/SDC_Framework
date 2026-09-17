@@ -496,7 +496,7 @@ Namespace SDC.Framework
                 Return
             End If
 
-            Dim updatedBy = If(SessionState.Current.HasValue, SessionState.Current.Value.UserID, 0)
+            Dim updatedBy = SessionState.ActingUserID
             Dim result As DataAccess.SchemaSweepResult
 
             Dim previousCursor = Me.Cursor

@@ -619,7 +619,7 @@ Namespace SDC.Framework
             ' made sense while an empty list meant show everything; now that it means show nothing,
             ' the same collapse would empty the panel for every other role - which is the opposite
             ' of what ticking them all says.
-            Dim updatedBy = If(SessionState.Current.HasValue, SessionState.Current.Value.UserID, 0)
+            Dim updatedBy = SessionState.ActingUserID
             If Not DataAccess.SavePageHotFields(owner.GetType().Name, selected, updatedBy) Then
                 MessageBox.Show(owner,
                                 "The Hot Fields selection could not be saved for this page.",

@@ -616,7 +616,7 @@ Namespace SDC.Framework
                                                                      schemaId,
                                                                      Convert.ToString(selectedTable("DB_Table")),
                                                                      requested,
-                                                                     If(SessionState.Current.HasValue, SessionState.Current.Value.UserID, 0),
+                                                                     SessionState.ActingUserID,
                                                                      Not IsSelectedRoleAssigned(selectedRole))
                 If trace.Rows.Count = 0 Then
                     Throw New InvalidOperationException("The transaction returned no completion trace.")

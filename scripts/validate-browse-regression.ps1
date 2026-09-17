@@ -280,6 +280,22 @@ Assert-Pattern -Path ".\000_FRAMEWORK\085_MESSAGING\MessagesWindowControl.vb" -P
 Assert-Pattern -Path ".\000_FRAMEWORK\085_MESSAGING\MessagingDataAccess.vb" -Pattern "MarkRecipientRead" -Description "Read state is persisted per recipient"
 Assert-Pattern -Path ".\000_FRAMEWORK\085_MESSAGING\MessageComposeForm.vb" -Pattern "SelectionMode.MultiExtended" -Description "Compose supports multi-select recipients"
 
+Write-Step "Acting user: a change is recorded against whoever made it"
+
+# While an administrator views as somebody else the session belongs to that person, so a write
+# path reading the session's user id stamps the wrong name on the change. SessionState.ActingUserID
+# is the one answer; these checks fail when a new write path reaches past it.
+Assert-Pattern -Path ".\000_FRAMEWORK\500_INFRASTRUCTURE\Data\Models.vb" -Pattern "Public ReadOnly Property ActingUserID" -Description "The session can say who is acting"
+Assert-Pattern -Path ".\000_FRAMEWORK\500_INFRASTRUCTURE\Data\Models.vb" -Pattern "SwitchedUser.Original.UserId" -Description "Acting user is the administrator while switched"
+Assert-NotPattern -Path ".\000_FRAMEWORK\000_BASECLASSES\Base_B.vb" -Pattern "SessionState.Current.Value.UserID" -Description "Base browse stamps the acting user, not the session"
+Assert-NotPattern -Path ".\000_FRAMEWORK\000_BASECLASSES\Base_U.vb" -Pattern "SessionState.Current.Value.UserID" -Description "Base maintenance stamps the acting user, not the session"
+Assert-NotPattern -Path ".\000_FRAMEWORK\070_PAGEGENERATION\PageGenerator.vb" -Pattern "Dim updatedBy = If(SessionState.IsActive, SessionState.Current.Value.UserID, 0)" -Description "Generated pages stamp the acting user"
+Assert-Pattern -Path ".\000_FRAMEWORK\500_INFRASTRUCTURE\Data\DataAccess.vb" -Pattern "Dim acting = SessionState.ActingUserID" -Description "Audit rows fall back to the acting user"
+Assert-Pattern -Path ".\000_FRAMEWORK\500_INFRASTRUCTURE\Data\DataAccess.vb" -Pattern "SwitchedUserAuditNote" -Description "An audit row written while switched says so"
+Assert-Pattern -Path ".\000_FRAMEWORK\000_BASECLASSES\Base_U.vb" -Pattern "ConfirmSaveWhileSwitched" -Description "Saving while switched asks first"
+Assert-Pattern -Path ".\000_FRAMEWORK\000_BASECLASSES\Base_B.vb" -Pattern "SwitchedUserStampNotice" -Description "Delete and restore while switched say whose name goes on it"
+
+
 Write-Step "Manual verification checklist"
 Write-Host "Run these UI checks in Registration_B, Roles_B:" -ForegroundColor Yellow
 Write-Host "  1) Custom SQL without DeletedFlag: Show Deleted should be disabled when grid lacks DeletedFlag." -ForegroundColor Yellow

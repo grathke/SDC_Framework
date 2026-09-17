@@ -2684,9 +2684,12 @@ Namespace SDC.Framework
                     "  VALUES (@RegistrationID, @UserID, @PageName, @Factor, @UpdatedBy, GETDATE());", conn)
 
                     cmd.Parameters.AddWithValue("@Factor", CDec(Math.Round(factor, 2)))
+                    ' Two different answers from one id. UserID is whose zoom this is and stays
+                    ' the person whose screen it belongs to; UpdatedBy is who changed it, which
+                    ' while an administrator is viewing as somebody else is the administrator.
                     cmd.Parameters.AddWithValue("@UserID", userId)
                     cmd.Parameters.AddWithValue("@PageName", pageName.Trim())
-                    cmd.Parameters.AddWithValue("@UpdatedBy", userId)
+                    cmd.Parameters.AddWithValue("@UpdatedBy", SessionState.ActingUserID)
                     cmd.Parameters.AddWithValue("@RegistrationID",
                                                 If(registrationId > 0, CType(registrationId, Object), DBNull.Value))
                     cmd.ExecuteNonQuery()
@@ -4107,7 +4110,7 @@ Namespace SDC.Framework
                     Dim parameterNames = String.Join(", ", writableColumns.Select(Function(column) "@" & column))
                     Using cmd As New SqlCommand("INSERT INTO dbo." & GeneratedPagesTable & " (" & columnNames & ", CreatedBy) VALUES (" & parameterNames & ", @CreatedBy)", conn)
                         AddPageGenerationParameters(cmd, values)
-                        cmd.Parameters.Add("@CreatedBy", SqlDbType.Int).Value = If(SessionState.IsActive, SessionState.Current.Value.UserID, 0)
+                        cmd.Parameters.Add("@CreatedBy", SqlDbType.Int).Value = SessionState.ActingUserID
                         cmd.ExecuteNonQuery()
                     End Using
                     Return True
@@ -4116,7 +4119,7 @@ Namespace SDC.Framework
                 Dim assignments = String.Join(", ", writableColumns.Select(Function(column) column & " = @" & column))
                 Using cmd As New SqlCommand("UPDATE dbo." & GeneratedPagesTable & " SET " & assignments & ", UpdatedBy = @UpdatedBy, UpdatedOn = GETDATE() WHERE GeneratedPageID = @GeneratedPageID AND RowVersion = @RowVersion", conn)
                     AddPageGenerationParameters(cmd, values)
-                    cmd.Parameters.Add("@UpdatedBy", SqlDbType.Int).Value = If(SessionState.IsActive, SessionState.Current.Value.UserID, 0)
+                    cmd.Parameters.Add("@UpdatedBy", SqlDbType.Int).Value = SessionState.ActingUserID
                     cmd.Parameters.Add("@GeneratedPageID", SqlDbType.Int).Value = generatedPageId
                     cmd.Parameters.Add("@RowVersion", SqlDbType.Timestamp).Value = If(originalRowVersion, New Byte() {})
                     Return cmd.ExecuteNonQuery() = 1
@@ -5514,8 +5517,14 @@ Namespace SDC.Framework
                 End If
 
                 If Not resolvedUserId.HasValue OrElse resolvedUserId.Value <= 0 Then
-                    If session.UserID > 0 Then
-                        resolvedUserId = session.UserID
+                    ' The acting user, not the session's. While an administrator is viewing as
+                    ' somebody else the session belongs to that person, and a row saying they did
+                    ' something the administrator did is a trail that cannot be trusted about
+                    ' anybody. Most callers pass no actor and fall through to here - every page
+                    ' save, and the generic delete and restore - so this is what makes it honest.
+                    Dim acting = SessionState.ActingUserID
+                    If acting > 0 Then
+                        resolvedUserId = acting
                     End If
                 End If
             End If
@@ -5539,6 +5548,42 @@ Namespace SDC.Framework
                 ' Logging must never interrupt app flow.
             End Try
         End Sub
+
+        ''' <summary>
+        ''' The snapshot an audit row stores, with a note added when it was written while an
+        ''' administrator was viewing as somebody else.
+        '''
+        ''' Two facts, both needed to read the row alone: who was being viewed, and which
+        ''' registration they belong to. The row's UserID is the administrator - a user of another
+        ''' registration entirely - so a reader in the viewed company cannot resolve that id
+        ''' against their own list of people, and without the note has nothing to go on.
+        '''
+        ''' Prefixed rather than merged into the JSON. The snapshot is a page's own record of what
+        ''' changed, in whatever shape that page uses, and parsing it to add a field would make
+        ''' this depend on every page's format.
+        ''' </summary>
+        Private Shared Function SwitchedUserAuditNote(snapshotJson As String) As String
+            If Not SwitchedUser.IsActive OrElse SwitchedUser.Original Is Nothing Then
+                Return snapshotJson
+            End If
+
+            Dim session = SessionState.Current
+            Dim viewedName = If(session.HasValue, session.Value.FirstLast, String.Empty)
+            Dim viewedId = If(session.HasValue, session.Value.UserID, 0)
+            Dim viewedRegistration = If(session.HasValue, session.Value.RegistrationName, String.Empty)
+
+            Dim note = "[VIEWED AS " & If(String.IsNullOrWhiteSpace(viewedName), "USER", viewedName.ToUpperInvariant()) &
+                       " (" & viewedId.ToString(CultureInfo.InvariantCulture) & ")" &
+                       If(String.IsNullOrWhiteSpace(viewedRegistration), String.Empty, " OF " & viewedRegistration.ToUpperInvariant()) &
+                       " BY " & SwitchedUser.Original.DisplayName.ToUpperInvariant() &
+                       " (" & SwitchedUser.Original.UserId.ToString(CultureInfo.InvariantCulture) & ")]"
+
+            If String.IsNullOrWhiteSpace(snapshotJson) Then
+                Return note
+            End If
+
+            Return note & Environment.NewLine & snapshotJson
+        End Function
 
         Public Shared Sub LogUpdateAudit(pageName As String,
                                          tableName As String,
@@ -5565,11 +5610,24 @@ Namespace SDC.Framework
                 End If
 
                 If Not resolvedUserId.HasValue OrElse resolvedUserId.Value <= 0 Then
-                    If session.UserID > 0 Then
-                        resolvedUserId = session.UserID
+                    ' The acting user, not the session's. While an administrator is viewing as
+                    ' somebody else the session belongs to that person, and a row saying they did
+                    ' something the administrator did is a trail that cannot be trusted about
+                    ' anybody. Most callers pass no actor and fall through to here - every page
+                    ' save, and the generic delete and restore - so this is what makes it honest.
+                    Dim acting = SessionState.ActingUserID
+                    If acting > 0 Then
+                        resolvedUserId = acting
                     End If
                 End If
             End If
+
+            ' A row written while an administrator is viewing as somebody else says so, in itself.
+            ' The trail already holds a Start row naming who they became, but a row that needs a
+            ' different row to be understood is a row somebody will read alone and misread - and
+            ' the id on it belongs to a user of another registration, whose name a reader scoped
+            ' to their own company cannot resolve at all.
+            Dim auditSnapshot = SwitchedUserAuditNote(snapshotJson)
 
             Try
                 Using conn As New SqlConnection(ConnectionString)
@@ -5586,7 +5644,7 @@ Namespace SDC.Framework
                         cmd.Parameters.AddWithValue("@Phase", DbValueBounded(phase, 20))
                         cmd.Parameters.AddWithValue("@RecordKey", DbValueBounded(recordKey, 100))
                         cmd.Parameters.AddWithValue("@SaveSucceeded", If(saveSucceeded.HasValue, CType(saveSucceeded.Value, Object), DBNull.Value))
-                        cmd.Parameters.AddWithValue("@SnapshotJson", DbValue(snapshotJson))
+                        cmd.Parameters.AddWithValue("@SnapshotJson", DbValue(auditSnapshot))
                         cmd.ExecuteNonQuery()
                     End Using
                 End Using
@@ -6777,9 +6835,7 @@ Namespace SDC.Framework
         ''' it is asked for and reported.
         ''' </summary>
         Public Shared Sub SyncRoleSchemaWithDatabase()
-            Dim syncUserId = If(SessionState.IsActive AndAlso SessionState.Current.HasValue,
-                                SessionState.Current.Value.UserID,
-                                0)
+            Dim syncUserId = SessionState.ActingUserID
 
             Using conn As New SqlConnection(ConnectionString)
                 conn.Open()
@@ -6969,7 +7025,7 @@ Namespace SDC.Framework
                     cmd.Parameters.AddWithValue("@RegistrationID", registrationId)
                     cmd.Parameters.AddWithValue("@RoleName", If(String.IsNullOrWhiteSpace(roleName), CType(DBNull.Value, Object), CType(roleName.Trim(), Object)))
                     cmd.Parameters.AddWithValue("@DisplayOrder", displayOrder)
-                    cmd.Parameters.AddWithValue("@CreatedBy", If(SessionState.IsActive, SessionState.Current.Value.UserID, 0))
+                    cmd.Parameters.AddWithValue("@CreatedBy", SessionState.ActingUserID)
 
                     Dim result = cmd.ExecuteScalar()
                     InvalidateRoleMetadataCache()
@@ -7201,7 +7257,7 @@ Namespace SDC.Framework
                     cmd.Parameters.AddWithValue("@Can_UseQBE", canUseQBE)
                     cmd.Parameters.AddWithValue("@Can_ViewAllRecords", canViewAllRecords)
                     cmd.Parameters.AddWithValue("@Can_ViewOnlyMyRecords", canViewOnlyMyRecords)
-                    cmd.Parameters.AddWithValue("@CreatedBy", If(SessionState.IsActive, SessionState.Current.Value.UserID, 0))
+                    cmd.Parameters.AddWithValue("@CreatedBy", SessionState.ActingUserID)
 
                     Dim result = cmd.ExecuteScalar()
                     Return If(result IsNot Nothing AndAlso Not IsDBNull(result), CInt(result), 0)
@@ -7451,7 +7507,7 @@ Namespace SDC.Framework
                     cmd.Parameters.AddWithValue("@DBTable", dbTable)
                     cmd.Parameters.AddWithValue("@TableAlias", effectiveTableAlias)
                     cmd.Parameters.AddWithValue("@TableCaption", effectiveTableCaption)
-                    cmd.Parameters.AddWithValue("@CreatedBy", If(SessionState.IsActive, SessionState.Current.Value.UserID, 0))
+                    cmd.Parameters.AddWithValue("@CreatedBy", SessionState.ActingUserID)
                     
                     Dim result = cmd.ExecuteScalar()
                     Return If(result IsNot Nothing AndAlso Not IsDBNull(result), CInt(result), 0)
@@ -7508,7 +7564,7 @@ Namespace SDC.Framework
                             cmd.Parameters.AddWithValue("@CanViewAllRecords", canViewAllRecords)
                             cmd.Parameters.AddWithValue("@CanViewOnlyMyRecords", canViewOnlyMyRecords)
                             cmd.Parameters.AddWithValue("@CanUseQBE", canUseQBE)
-                            cmd.Parameters.AddWithValue("@UpdatedBy", If(SessionState.IsActive, SessionState.Current.Value.UserID, 0))
+                            cmd.Parameters.AddWithValue("@UpdatedBy", SessionState.ActingUserID)
                             cmd.ExecuteNonQuery()
                         End Using
 
@@ -7517,7 +7573,7 @@ Namespace SDC.Framework
                                 "UPDATE dbo.FW_RoleDetails SET OverrideCaption = @TableCaption, UpdatedBy = @UpdatedBy, UpdatedOn = GETDATE() " &
                                 "WHERE RegistrationID = @RegistrationID AND SchemaID = @SchemaID AND DB_Table = @DBTable", conn, trans)
                                 propagateCommand.Parameters.AddWithValue("@TableCaption", effectiveTableCaption)
-                                propagateCommand.Parameters.AddWithValue("@UpdatedBy", If(SessionState.IsActive, SessionState.Current.Value.UserID, 0))
+                                propagateCommand.Parameters.AddWithValue("@UpdatedBy", SessionState.ActingUserID)
                                 propagateCommand.Parameters.AddWithValue("@RegistrationID", registrationId)
                                 propagateCommand.Parameters.AddWithValue("@SchemaID", schemaId)
                                 propagateCommand.Parameters.AddWithValue("@DBTable", dbTable)
@@ -7821,12 +7877,12 @@ Namespace SDC.Framework
                             cmd.Parameters.AddWithValue("@DBTable", dbTable)
                             cmd.Parameters.AddWithValue("@TableAlias", tableAlias)
                             cmd.Parameters.AddWithValue("@TableCaption", tableCaption)
-                            cmd.Parameters.AddWithValue("@CreatedBy", If(SessionState.IsActive, SessionState.Current.Value.UserID, 0))
+                            cmd.Parameters.AddWithValue("@CreatedBy", SessionState.ActingUserID)
                             
                             Dim detailId = CInt(cmd.ExecuteScalar())
                             
                             ' Insert fields for this table within same transaction
-                            InsertRoleFieldsWithTransaction(registrationId, roleId, roleSchemaId, dbTable, If(SessionState.IsActive, SessionState.Current.Value.UserID, 0), conn, trans)
+                            InsertRoleFieldsWithTransaction(registrationId, roleId, roleSchemaId, dbTable, SessionState.ActingUserID, conn, trans)
                             
                             trans.Commit()
                             InvalidateRoleMetadataCache()
@@ -10496,8 +10552,11 @@ Namespace SDC.Framework
                     "SET DeletedFlag = 1, DeletedBy = @DeletedBy, DeletedOn = SYSUTCDATETIME() " &
                     "WHERE SavedQbeID = @SavedQbeID AND UserID = @UserID AND ISNULL(DeletedFlag, 0) = 0", conn)
                     cmd.Parameters.AddWithValue("@SavedQbeID", savedQbeId)
+                    ' UserID says whose saved search it is; DeletedBy says who deleted it. One id
+                    ' answered both until 2026-09-17, which named the viewed user as the deleter
+                    ' of their own search while an administrator was doing it.
                     cmd.Parameters.AddWithValue("@UserID", ownerUserId)
-                    cmd.Parameters.AddWithValue("@DeletedBy", ownerUserId)
+                    cmd.Parameters.AddWithValue("@DeletedBy", SessionState.ActingUserID)
                     rowsAffected = cmd.ExecuteNonQuery()
                 End Using
 

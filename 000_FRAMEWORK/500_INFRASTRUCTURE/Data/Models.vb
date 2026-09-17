@@ -226,6 +226,32 @@ Namespace SDC.Framework
             End Get
         End Property
 
+        ''' <summary>
+        ''' Who is actually doing this: the administrator while viewing as somebody else, and the
+        ''' signed-in user otherwise.
+        '''
+        ''' Every CreatedBy, UpdatedBy, DeletedBy and audit row takes this rather than UserID. An
+        ''' administrator viewing as Alan and saving a record made that change, and a trail saying
+        ''' Alan did it is a trail that cannot be trusted about anybody. There is no path that
+        ''' writes the viewed user's name onto a change the administrator made - it is not a
+        ''' setting, and it is not offered.
+        '''
+        ''' **Not for a UserID that is a row's key.** A saved layout, a saved search, a page zoom,
+        ''' a UI hint, a mailbox and a Help Desk reporter all say whose row it is, not who changed
+        ''' it, and while viewing as Alan those must stay Alan's or the administrator would be
+        ''' handed their own layouts on his screen. Where one method writes both - the key and the
+        ''' stamp - they take different answers.
+        ''' </summary>
+        Public ReadOnly Property ActingUserID As Integer
+            Get
+                If SwitchedUser.IsActive AndAlso SwitchedUser.Original IsNot Nothing Then
+                    Return SwitchedUser.Original.UserId
+                End If
+
+                Return If(currentSession.HasValue, currentSession.Value.UserID, 0)
+            End Get
+        End Property
+
         ''' <summary>The same, for the Company Admin role.</summary>
         Public ReadOnly Property IsCompanyAdmin As Boolean
             Get
@@ -348,7 +374,10 @@ Namespace SDC.Framework
                 Return
             End If
 
-            DataAccess.MarkUserUiHintSeen(session.RegistrationID, session.UserID, normalized, session.UserID)
+            ' Whose hint it is, then who marked it seen. The same id answered both until
+            ' 2026-09-17: a hint dismissed by an administrator viewing as somebody else is still
+            ' that person's hint, and the administrator is still the one who dismissed it.
+            DataAccess.MarkUserUiHintSeen(session.RegistrationID, session.UserID, normalized, ActingUserID)
             seenUiHints.Add(normalized)
         End Sub
 

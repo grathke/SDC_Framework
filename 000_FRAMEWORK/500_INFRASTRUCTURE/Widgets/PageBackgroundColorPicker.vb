@@ -269,8 +269,7 @@ Namespace SDC.Framework
         Private Sub Commit()
             ClosePanel()
 
-            Dim savedBy = If(SessionState.IsActive AndAlso SessionState.Current.HasValue,
-                             SessionState.Current.Value.UserID, 0)
+            Dim savedBy = SessionState.ActingUserID
 
             ' A missing FW_Pages row is no longer a failure and is no longer announced:
             ' SavePageBackgroundColor creates one. Whether a row had to be written is a fact about

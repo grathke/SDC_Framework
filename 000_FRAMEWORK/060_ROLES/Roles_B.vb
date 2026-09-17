@@ -1016,7 +1016,7 @@ Namespace SDC.Framework
 
             If MessageBox.Show(Me, confirmText, "DELETE ROLE", MessageBoxButtons.YesNo, MessageBoxIcon.Warning) = DialogResult.Yes Then
                 Try
-                    Dim updatedBy = If(SessionState.IsActive, SessionState.Current.Value.UserID, 0)
+                    Dim updatedBy = SessionState.ActingUserID
                     DataAccess.DeleteRole(roleId.Value, updatedBy)
                     RefreshGrid()
                     AutoClosingMessage.Show(Me, "Role deleted.", "Delete", MessageBoxIcon.Information, 1000)
@@ -1056,7 +1056,7 @@ Namespace SDC.Framework
             End If
 
             Try
-                Dim updatedBy = If(SessionState.IsActive, SessionState.Current.Value.UserID, 0)
+                Dim updatedBy = SessionState.ActingUserID
                 DataAccess.RestoreRole(roleId.Value, updatedBy)
                 RefreshGrid()
                 AutoClosingMessage.Show(Me, "Role restored.", "Restore", MessageBoxIcon.Information, 1000)

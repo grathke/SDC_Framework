@@ -1381,6 +1381,25 @@ Namespace SDC.Framework
         ''' Independent of CreateMaintenancePage: a browse page generated without a _U partner
         ''' still deletes.
         ''' </summary>
+        ''' <summary>
+        ''' The line added to a delete or restore confirmation while an administrator is viewing as
+        ''' somebody else, and nothing at all otherwise.
+        '''
+        ''' One dialog rather than two. The confirmation already exists and already asks whether to
+        ''' go ahead; the only thing the administrator does not yet know is whose name goes on it -
+        ''' theirs, always, because a change recorded against the person being viewed is a trail
+        ''' that cannot be trusted.
+        ''' </summary>
+        Protected Function SwitchedUserStampNotice() As String
+            If Not SwitchedUser.IsActive OrElse SwitchedUser.Original Is Nothing Then
+                Return String.Empty
+            End If
+
+            Return Environment.NewLine & Environment.NewLine &
+                   "This will be recorded under your own name, " & SwitchedUser.Original.DisplayName & "," & Environment.NewLine &
+                   "not the user you are viewing as."
+        End Function
+
         Protected Overridable Function UsesStandardSoftDelete() As Boolean
             Return False
         End Function
@@ -1450,7 +1469,7 @@ Namespace SDC.Framework
             Dim prompt = If(String.IsNullOrWhiteSpace(summary), "Delete the selected record?", "Delete " & summary & "?")
             If MessageBox.Show(Me,
                                (prompt & Environment.NewLine & Environment.NewLine &
-                                "It will be removed from this list.").ToUpperInvariant(),
+                                "It will be removed from this list." & SwitchedUserStampNotice()).ToUpperInvariant(),
                                "CONFIRM DELETE",
                                MessageBoxButtons.YesNo,
                                MessageBoxIcon.Question) <> DialogResult.Yes Then
@@ -1460,7 +1479,7 @@ Namespace SDC.Framework
             Dim failure = DataAccess.SoftDeleteGeneratedPageRecord(accessTableName,
                                                                   primaryKey,
                                                                   recordId.Value,
-                                                                  If(SessionState.IsActive, SessionState.Current.Value.UserID, 0),
+                                                                  SessionState.ActingUserID,
                                                                   ResolveBrowsePageName())
             If Not String.IsNullOrWhiteSpace(failure) Then
                 MessageBox.Show(Me, failure.ToUpperInvariant(), "DELETE FAILED", MessageBoxButtons.OK, MessageBoxIcon.Warning)
@@ -1495,10 +1514,21 @@ Namespace SDC.Framework
                 Return True
             End If
 
+            Dim summary = GetSelectedRowSummary()
+            Dim prompt = If(String.IsNullOrWhiteSpace(summary), "Restore the selected record?", "Restore " & summary & "?")
+            If MessageBox.Show(Me,
+                               (prompt & Environment.NewLine & Environment.NewLine &
+                                "It will return to the normal list." & SwitchedUserStampNotice()).ToUpperInvariant(),
+                               "CONFIRM RESTORE",
+                               MessageBoxButtons.YesNo,
+                               MessageBoxIcon.Question) <> DialogResult.Yes Then
+                Return True
+            End If
+
             Dim failure = DataAccess.RestoreGeneratedPageRecord(accessTableName,
                                                                 primaryKey,
                                                                 recordId,
-                                                                If(SessionState.IsActive, SessionState.Current.Value.UserID, 0),
+                                                                SessionState.ActingUserID,
                                                                 ResolveBrowsePageName())
             If Not String.IsNullOrWhiteSpace(failure) Then
                 MessageBox.Show(Me, failure.ToUpperInvariant(), "RESTORE FAILED", MessageBoxButtons.OK, MessageBoxIcon.Warning)
@@ -2394,7 +2424,8 @@ Namespace SDC.Framework
 
             Dim pageName = Me.GetType().Name
             Dim tableName = ResolveCurrentRoleFieldTableName()
-            Dim actingUserId = session.Value.UserID
+            ' The layout belongs to selected.OwnerUserID; this is who is deleting it.
+            Dim actingUserId = SessionState.ActingUserID
             DataAccess.DeleteTableLayout(registrationId,
                                          selected.OwnerUserID,
                                          pageName,
@@ -2743,7 +2774,7 @@ Namespace SDC.Framework
                                              "Default",
                                              "* Default",
                                              snapshot,
-                                             userId)
+                                             SessionState.ActingUserID)
 
                 PopulateLayoutSelector(registrationId)
                 SelectLayoutItem("Default", "* Default", 0)
@@ -2779,7 +2810,7 @@ Namespace SDC.Framework
                                          "UserNamed",
                                          layoutName,
                                          snapshot,
-                                         userId)
+                                         SessionState.ActingUserID)
 
             PopulateLayoutSelector(registrationId)
             SelectLayoutItem("UserNamed", layoutName, ownerUserId)
@@ -2850,7 +2881,7 @@ Namespace SDC.Framework
                                          "Default",
                                          "* Default",
                                          BuildCurrentLayoutSnapshotJson(),
-                                         session.Value.UserID)
+                                         SessionState.ActingUserID)
             PopulateLayoutSelector(registrationId)
         End Sub
 
@@ -5042,7 +5073,7 @@ Namespace SDC.Framework
                                              "LastUsed",
                                              "Last Used",
                                              currentSnapshot,
-                                             userId)
+                                             SessionState.ActingUserID)
             Catch
                 ' Ignore close persistence errors to avoid blocking form close.
             End Try

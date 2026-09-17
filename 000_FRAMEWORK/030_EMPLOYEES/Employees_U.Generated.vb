@@ -200,7 +200,7 @@ Namespace SDC.Framework
 
             Dim savedId As Integer = recordId
             If savedId <= 0 AndAlso record.Table.Columns.Contains(primaryKey) AndAlso Not record.IsNull(primaryKey) Then Integer.TryParse(Convert.ToString(record(primaryKey)), savedId)
-            Dim updatedBy = If(SessionState.IsActive, SessionState.Current.Value.UserID, 0)
+            Dim updatedBy = SessionState.ActingUserID
 
             Dim outcome As SaveResult
             Dim savedRecordId = DataAccess.TrySaveGeneratedPageRecord(tableName, primaryKey, savedId, values, originalRowVersion, updatedBy, outcome)

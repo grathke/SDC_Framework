@@ -954,7 +954,7 @@ Namespace SDC.Framework
                 settings.Add(New TabOrderSetting With {.ControlName = item.Control.Name, .TabOrder = index, .TabStop = item.Control.TabStop})
             Next
 
-            Dim updatedBy = If(SessionState.IsActive AndAlso SessionState.Current.HasValue, SessionState.Current.Value.UserID, 0)
+            Dim updatedBy = SessionState.ActingUserID
             DataAccess.SaveTabOrderSettings(GetPageName(), settings, updatedBy)
 
             ' Closing after OK must not undo what OK just applied, and the saved state becomes
@@ -1654,11 +1654,56 @@ Namespace SDC.Framework
         End Sub
 
         Protected Function ExecuteSaveWorkflow() As Boolean
+            If Not ConfirmSaveWhileSwitched() Then
+                Return False
+            End If
+
             If Not ValidateAndBuildForSave() Then
                 Return False
             End If
 
             Return SaveRecordWithAudit()
+        End Function
+
+        ''' <summary>
+        ''' Asks, while an administrator is viewing as somebody else, whether to save under their
+        ''' own name - because that is the only way it can be saved.
+        '''
+        ''' The record is stamped with the administrator's id whatever they answer here: there is
+        ''' no path that writes a change to somebody's name when another person made it. The
+        ''' question is not which name to use, it is whether to go ahead knowing whose name it
+        ''' will be.
+        '''
+        ''' **No closes the page.** Not "cancel and stay", because an administrator who does not
+        ''' want their name on it does not want the edits either, and a page left open with
+        ''' unsaved changes they have just declined to save is a trap to walk back into.
+        '''
+        ''' Returns False when the page is closing or the save is refused.
+        ''' </summary>
+        Protected Overridable Function ConfirmSaveWhileSwitched() As Boolean
+            If Not SwitchedUser.IsActive OrElse SwitchedUser.Original Is Nothing Then
+                Return True
+            End If
+
+            Dim administrator = SwitchedUser.Original.DisplayName
+            Dim answer = MessageBox.Show(Me,
+                                         ("This record will be saved under your own name, " & administrator & "," & Environment.NewLine &
+                                          "not the user you are viewing as." & Environment.NewLine & Environment.NewLine &
+                                          "Save it?").ToUpperInvariant(),
+                                         "Save While Viewing As Another User",
+                                         MessageBoxButtons.YesNo,
+                                         MessageBoxIcon.Question)
+
+            If answer = DialogResult.Yes Then
+                Return True
+            End If
+
+            ' Closed rather than cancelled, and without the unsaved-changes prompt: they have just
+            ' been asked and said no, and asking again in other words is not a second question.
+            Me.DialogResult = DialogResult.Cancel
+            bypassCancelCloseCheck = True
+            Me.Close()
+            Return False
         End Function
 
         Protected Function ValidateAndBuildForSave() As Boolean

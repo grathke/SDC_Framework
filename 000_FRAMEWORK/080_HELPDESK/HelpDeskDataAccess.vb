@@ -402,8 +402,10 @@ Namespace SDC.Framework
         End Function
 
         Private Shared Function CurrentUserId() As Integer
-            If SessionState.IsActive AndAlso SessionState.Current.HasValue Then Return SessionState.Current.Value.UserID
-            Return 0
+            ' Authorship: CreatedBy, UpdatedBy and ClosedBy on a ticket. While an administrator
+            ' is viewing as somebody else, the change is the administrator's. The reporter of a
+            ' ticket is a different question and is answered on the page, from the session.
+            Return SessionState.ActingUserID
         End Function
 
         Private Shared Function ResolveSupportUserIdForNewIssue(registrationId As Integer) As Integer

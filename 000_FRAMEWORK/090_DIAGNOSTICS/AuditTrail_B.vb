@@ -226,7 +226,7 @@ Namespace SDC.Framework
             End If
 
             Try
-                Dim updatedBy = If(SessionState.IsActive AndAlso SessionState.Current.HasValue, SessionState.Current.Value.UserID, 0)
+                Dim updatedBy = SessionState.ActingUserID
                 DataAccess.SoftDeleteAuditTrailEntry(auditId.Value, updatedBy)
                 LoadFilterOptions()
                 LoadGrid()
@@ -248,7 +248,7 @@ Namespace SDC.Framework
             End If
 
             Try
-                Dim updatedBy = If(SessionState.IsActive AndAlso SessionState.Current.HasValue, SessionState.Current.Value.UserID, 0)
+                Dim updatedBy = SessionState.ActingUserID
                 DataAccess.RestoreAuditTrailEntry(auditId.Value, updatedBy)
                 LoadFilterOptions()
                 LoadGrid()

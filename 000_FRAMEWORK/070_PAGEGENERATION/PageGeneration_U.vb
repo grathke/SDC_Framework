@@ -3402,8 +3402,10 @@ Namespace SDC.Framework
                             MessageBoxIcon.Information)
         End Sub
 
+        ''' <summary>Whose name goes on a generation request: the acting user, so an administrator
+        ''' viewing as somebody else is recorded as having generated the page.</summary>
         Private Shared Function CurrentUserId() As Integer
-            Return If(SessionState.Current.HasValue, SessionState.Current.Value.UserID, 0)
+            Return SessionState.ActingUserID
         End Function
 
         Private Shared Function DbSaveValue(value As String) As Object
