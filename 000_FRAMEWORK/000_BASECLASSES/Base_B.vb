@@ -72,6 +72,24 @@ Namespace SDC.Framework
         Private ReadOnly qbeFieldColumnWidthIncrease As Integer
         Private ReadOnly qbeValueColumnWidthIncrease As Integer
         Private missingSqlWarningShown As Boolean = False
+
+        ''' <summary>
+        ''' What the page SQL returns, asked once per page rather than once per question.
+        '''
+        ''' Opening a browse page asked the server for the same column list twice - once to find out
+        ''' whether the SQL selects a PK, once to decide whether the view-only-my-rows scope applies -
+        ''' and a third time on a Start Empty page, for QBE. The answer cannot differ between them:
+        ''' it is the same SQL, in the same page, moments apart.
+        '''
+        ''' Keyed by the SQL and the registration, so a page whose SQL is replaced - Start Empty, a
+        ''' generation, the columns manager - reads the new answer rather than the old one. Only a
+        ''' successful answer is kept, for the same reason the schema cache keeps only successes: a
+        ''' dropped connection returns an empty schema, and caching that would make every later
+        ''' question on this page answer wrongly.
+        ''' </summary>
+        Private cachedSqlSchema As DataTable
+        Private cachedSqlSchemaKey As String = String.Empty
+
         Private lastAppliedSqlSignature As String = String.Empty
         Private lastVisibleColumnsSignature As String = String.Empty
         Private sqlLoadedFromPages As Boolean = False
@@ -3452,7 +3470,7 @@ Namespace SDC.Framework
                 Return
             End If
 
-            Dim schema = DataAccess.GetSchemaFromSelectSql(activeSql, registrationId)
+            Dim schema = GetSqlSchemaForPage(activeSql, registrationId)
             If schema Is Nothing OrElse schema.Columns.Count = 0 Then
                 Return
             End If
@@ -3594,13 +3612,32 @@ Namespace SDC.Framework
             Return False
         End Function
 
+        ''' <summary>
+        ''' The column list the page SQL returns, from <see cref="cachedSqlSchema"/> when it has
+        ''' already been asked for on this page with this SQL.
+        ''' </summary>
+        Private Function GetSqlSchemaForPage(activeSql As String, registrationId As Integer) As DataTable
+            Dim key = registrationId.ToString(Globalization.CultureInfo.InvariantCulture) & "|" & If(activeSql, String.Empty)
+            If cachedSqlSchema IsNot Nothing AndAlso String.Equals(cachedSqlSchemaKey, key, StringComparison.Ordinal) Then
+                Return cachedSqlSchema
+            End If
+
+            Dim schema = DataAccess.GetSchemaFromSelectSql(activeSql, registrationId)
+            If schema IsNot Nothing AndAlso schema.Columns IsNot Nothing AndAlso schema.Columns.Count > 0 Then
+                cachedSqlSchema = schema
+                cachedSqlSchemaKey = key
+            End If
+
+            Return schema
+        End Function
+
         Private Function IsMaintenancePkMissingInSqlSchema(registrationId As Integer) As Boolean
             Dim activeSql = GetActiveBaseSql()
             If String.IsNullOrWhiteSpace(activeSql) Then
                 Return True
             End If
 
-            Dim schema = DataAccess.GetSchemaFromSelectSql(activeSql, registrationId)
+            Dim schema = GetSqlSchemaForPage(activeSql, registrationId)
             If schema Is Nothing OrElse schema.Columns Is Nothing OrElse schema.Columns.Count = 0 Then
                 Return True
             End If
@@ -3691,7 +3728,7 @@ Namespace SDC.Framework
                 Return False
             End If
 
-            Dim schema = DataAccess.GetSchemaFromSelectSql(activeSql, registrationId)
+            Dim schema = GetSqlSchemaForPage(activeSql, registrationId)
             Return schema IsNot Nothing AndAlso schema.Columns.Contains("UserID")
         End Function
 
