@@ -149,6 +149,9 @@ Namespace SDC.Framework
         ''' </summary>
         Private Shared ReadOnly qbeChoiceCache As New Dictionary(Of String, DataTable)(StringComparer.OrdinalIgnoreCase)
 
+        ''' <summary>Each table's computed columns and the columns they are built from.</summary>
+        Private Shared ReadOnly computedSourceCache As New Dictionary(Of String, Dictionary(Of String, List(Of String)))(StringComparer.OrdinalIgnoreCase)
+
         Private Shared ReadOnly tableColumnCache As New Dictionary(Of String, Boolean)(StringComparer.OrdinalIgnoreCase)
         Private Shared ReadOnly rowVersionCache As New Dictionary(Of String, Boolean)(StringComparer.OrdinalIgnoreCase)
         Private Shared ReadOnly primaryKeyCache As New Dictionary(Of String, String)(StringComparer.OrdinalIgnoreCase)
@@ -1795,8 +1798,22 @@ Namespace SDC.Framework
             Try
                 Using conn As New SqlConnection(ConnectionString)
                     conn.Open()
+                    ' Every table in dbo. It listed FW_, AS_ and CRM_ until 2026-09-18, which was a
+                    ' list that had to grow for each new application - and CTY_ tables would have
+                    ' been invisible here until somebody remembered to add them. A table nobody
+                    ' should pick is switched off by its FW_RoleSchema row, which is one list
+                    ' instead of two that can disagree.
+                    '
+                    ' Switched off means not offered here either: a table nobody can be granted
+                    ' permission on is one whose generated pages nobody could open. Only where a
+                    ' row exists and says so - a table the sweep has not seen yet has no row at
+                    ' all, and that is a new table, not a refused one.
                     Using cmd As New SqlCommand(
-                        "SELECT name FROM sys.tables WHERE name LIKE 'FW_%' OR name LIKE 'AS_%' OR name LIKE 'CRM_%' ORDER BY UPPER(name)", conn)
+                        "SELECT t.name FROM sys.tables t " &
+                        "WHERE t.schema_id = SCHEMA_ID('dbo') " &
+                        "  AND NOT EXISTS (SELECT 1 FROM dbo.FW_RoleSchema s " &
+                        "                  WHERE s.DB_Table = t.name AND ISNULL(s.IsActive, 1) = 0) " &
+                        "ORDER BY UPPER(t.name)", conn)
                         
                         Using reader = cmd.ExecuteReader()
                             While reader.Read()
@@ -2261,6 +2278,83 @@ Namespace SDC.Framework
             End Using
 
             Return computed
+        End Function
+
+        ''' <summary>
+        ''' The columns each computed column is built from, as ComputedColumn -> its sources.
+        '''
+        ''' Read from the expression SQL Server stores, not guessed: FirstLast is
+        ''' `isnull([FirstName],'') + … + isnull([LastName],'')`, so the bracketed names are the
+        ''' answer. Only names that are really columns of the same table survive, which discards
+        ''' the bracketed function and type names an expression can also contain.
+        '''
+        ''' What it is for: a computed column cannot be typed into, so a maintenance page offering
+        ''' FirstLast alone shows a name nobody can change. Knowing its sources lets the generator
+        ''' offer them beside it.
+        '''
+        ''' One query for the table, held for the life of the process like the other schema facts.
+        ''' </summary>
+        Public Shared Function GetComputedColumnSources(tableName As String) As Dictionary(Of String, List(Of String))
+            Dim sources As New Dictionary(Of String, List(Of String))(StringComparer.OrdinalIgnoreCase)
+
+            Dim normalizedTable = NormalizeTableName(tableName)
+            If normalizedTable = String.Empty Then Return sources
+
+            SyncLock metadataCacheLock
+                Dim cached As Dictionary(Of String, List(Of String)) = Nothing
+                If computedSourceCache.TryGetValue(normalizedTable, cached) Then
+                    For Each pair In cached
+                        sources(pair.Key) = New List(Of String)(pair.Value)
+                    Next
+                    Return sources
+                End If
+            End SyncLock
+
+            Try
+                Dim columns = New HashSet(Of String)(GetTableColumnList(normalizedTable), StringComparer.OrdinalIgnoreCase)
+
+                Using conn As New SqlConnection(ConnectionString)
+                    conn.Open()
+                    Using cmd As New SqlCommand(
+                        "SELECT c.name, c.definition " &
+                        "FROM sys.computed_columns AS c " &
+                        "INNER JOIN sys.tables AS t ON t.object_id = c.object_id " &
+                        "INNER JOIN sys.schemas AS s ON s.schema_id = t.schema_id " &
+                        "WHERE s.name = N'dbo' AND t.name = @TableName", conn)
+                        cmd.Parameters.Add("@TableName", SqlDbType.VarChar, 128).Value = normalizedTable
+                        Using reader = cmd.ExecuteReader()
+                            While reader.Read()
+                                Dim computedName = SafeString(reader.GetValue(0))
+                                Dim definition = SafeString(reader.GetValue(1))
+                                If computedName = String.Empty OrElse definition = String.Empty Then Continue While
+
+                                Dim named As New List(Of String)()
+                                For Each match As Match In Regex.Matches(definition, "\[([^\]]+)\]")
+                                    Dim candidate = match.Groups(1).Value
+                                    If Not columns.Contains(candidate) Then Continue For
+                                    If String.Equals(candidate, computedName, StringComparison.OrdinalIgnoreCase) Then Continue For
+                                    If named.Contains(candidate, StringComparer.OrdinalIgnoreCase) Then Continue For
+                                    named.Add(candidate)
+                                Next
+
+                                If named.Count > 0 Then sources(computedName) = named
+                            End While
+                        End Using
+                    End Using
+                End Using
+
+                SyncLock metadataCacheLock
+                    Dim keep As New Dictionary(Of String, List(Of String))(StringComparer.OrdinalIgnoreCase)
+                    For Each pair In sources
+                        keep(pair.Key) = New List(Of String)(pair.Value)
+                    Next
+                    computedSourceCache(normalizedTable) = keep
+                End SyncLock
+            Catch
+                ' No sources is the behaviour that existed before this did.
+            End Try
+
+            Return sources
         End Function
 
         ''' <summary>
@@ -8159,26 +8253,6 @@ Namespace SDC.Framework
             Return Char.IsLetter(ch) AndAlso Not IsVowel(ch)
         End Function
 
-        Public Shared Function GetAvailableTablesForRoles() As DataTable
-            Dim table As New DataTable("SchemaTables")
-
-            Using conn As New SqlConnection(ConnectionString)
-                conn.Open()
-                Using cmd As New SqlCommand(
-                    "SELECT TABLE_NAME AS DB_Table, TABLE_NAME AS Table_Alias " &
-                    "FROM INFORMATION_SCHEMA.TABLES " &
-                    "WHERE TABLE_SCHEMA = 'dbo' AND (TABLE_NAME LIKE 'FW_%' OR TABLE_NAME LIKE 'AS_%') " &
-                    "ORDER BY TABLE_NAME", conn)
-                    
-                    Using da As New SqlDataAdapter(cmd)
-                        da.Fill(table)
-                    End Using
-                End Using
-            End Using
-
-            Return table
-        End Function
-
         Public Shared Function GetRolePermissionsForTable(roleId As Integer, tableName As String) As DataTable
             Dim table As New DataTable("RolePermissions")
 
@@ -10209,7 +10283,7 @@ Namespace SDC.Framework
             Const sql As String =
                 "SELECT " &
                 " (SELECT COUNT(*) FROM sys.tables t " &
-                "  WHERE t.schema_id = SCHEMA_ID('dbo') AND (t.name LIKE 'FW[_]%' OR t.name LIKE 'AS[_]%') " &
+                "  WHERE t.schema_id = SCHEMA_ID('dbo') " &
                 "    AND NOT EXISTS (SELECT 1 FROM dbo.FW_RoleSchema s WHERE s.DB_Table = t.name)) " &
                 "+ (SELECT COUNT(*) FROM dbo.FW_RoleSchema s " &
                 "  WHERE OBJECT_ID('dbo.' + s.DB_Table) IS NULL) " &
@@ -10271,10 +10345,14 @@ Namespace SDC.Framework
             addedCount = 0
             removedCount = 0
 
+            ' Every table in dbo, whoever owns it. The prefix list was FW_ and AS_, so a CTY_ table
+            ' was never registered here - and a table with no FW_RoleSchema row can be granted to
+            ' nobody, which would have read as a permissions fault rather than a missing sweep.
+            ' A table that should not be offered is switched off on its row instead.
             Dim missing As New List(Of String)()
             Using cmd As New SqlCommand(
                 "SELECT t.name FROM sys.tables t " &
-                "WHERE t.schema_id = SCHEMA_ID('dbo') AND (t.name LIKE 'FW[_]%' OR t.name LIKE 'AS[_]%') " &
+                "WHERE t.schema_id = SCHEMA_ID('dbo') " &
                 "  AND NOT EXISTS (SELECT 1 FROM dbo.FW_RoleSchema s WHERE s.DB_Table = t.name) " &
                 "ORDER BY t.name", conn)
                 Using reader = cmd.ExecuteReader()

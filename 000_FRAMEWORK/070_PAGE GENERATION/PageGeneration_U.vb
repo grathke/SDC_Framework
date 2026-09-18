@@ -240,6 +240,8 @@ Namespace SDC.Framework
             AddControlBesideField(fields, browsePageNameTextBox, browseGenerationOptions)
             AddControlBesideField(fields, maintenancePageNameTextBox, generateMaintenancePageCheckBox)
             AddHandler pageBaseNameTextBox.Leave, AddressOf PageBaseNameTextBox_Leave
+            AddHandler browsePageNameTextBox.Leave, AddressOf PageNameTextBox_Leave
+            AddHandler maintenancePageNameTextBox.Leave, AddressOf PageNameTextBox_Leave
             AddHandler ownerComboBox.SelectedIndexChanged, AddressOf OwnerComboBox_SelectedIndexChanged
             AddHandler generateBrowsePageCheckBox.CheckedChanged, AddressOf GenerateBrowsePageCheckBox_CheckedChanged
             AddHandler useQbeOnlyCheckBox.CheckedChanged, AddressOf BrowseOptionCheckBox_CheckedChanged
@@ -1153,13 +1155,35 @@ Namespace SDC.Framework
             generateMaintenancePageCheckBox.Checked = True
         End Sub
 
+        ''' <summary>
+        ''' A page name typed over by hand gets the same squeeze the derived one does.
+        '''
+        ''' Both boxes are editable, and a name is only ever a class name - so a space typed into
+        ''' one is not a name the generator can refuse politely, it is a name nobody can compile.
+        ''' Structural underscores survive: the owner prefix and the _B or _U are kept.
+        ''' </summary>
+        Private Sub PageNameTextBox_Leave(sender As Object, e As EventArgs)
+            Dim textBox = TryCast(sender, TextBox)
+            If textBox Is Nothing Then Return
+
+            Dim identifier = PageGenerator.ToPageIdentifier(textBox.Text)
+            If Not String.Equals(identifier, textBox.Text, StringComparison.Ordinal) Then
+                textBox.Text = identifier
+            End If
+        End Sub
+
         Private Sub ApplyGeneratedPageNames(baseName As String)
             Dim normalizedBaseName = RemoveOwnerPrefix(baseName)
             Dim owner = SelectedOwner()
             Dim pagePrefix = If(owner Is Nothing, String.Empty, owner.Prefix & "_")
+
+            ' The base name stays as typed, because it is also the caption - "Test Employee" reads
+            ' as a page. The two page names are class names, so they take the identifier form of it.
+            Dim identifier = PageGenerator.ToPageIdentifier(normalizedBaseName)
+
             pageBaseNameTextBox.Text = normalizedBaseName
-            browsePageNameTextBox.Text = pagePrefix & normalizedBaseName & "_B"
-            maintenancePageNameTextBox.Text = pagePrefix & normalizedBaseName & "_U"
+            browsePageNameTextBox.Text = pagePrefix & identifier & "_B"
+            maintenancePageNameTextBox.Text = pagePrefix & identifier & "_U"
         End Sub
 
         ''' <summary>
@@ -2225,6 +2249,8 @@ Namespace SDC.Framework
                                     Exit For
                                 End If
                             Next
+
+                            IncludeComputedFieldSources(maintenanceGrid, fieldName)
                         ElseIf eventArgs.ColumnIndex = browseGrid.Columns("Displays").Index AndAlso Not seedingSelectionGrids Then
                             ' What a foreign key shows on the browse page is almost always what it
                             ' should show on the maintenance page - they are the same column of the
@@ -2271,15 +2297,10 @@ Namespace SDC.Framework
                 Dim savedMaintenanceFields = maintenanceFieldsTextBox.Text.Trim()
                 Dim specDisplayColumns = ParseSpecDisplayColumns(lookupTargets)
 
-                ' A request that has never answered the lookup question gets the obvious answer:
-                ' every declared foreign key is a lookup. The alternative was a page generated with
-                ' raw identifiers in its combos, because the tick was there to be found rather than
-                ' offered.
-                '
-                ' Only when nothing was answered. A saved request that deliberately unticked one
-                ' keeps that decision - re-ticking it here would overrule the user on every reopen.
-                Dim lookupsUnanswered = lookupTargets.Count = 0
-
+                ' Nothing is ticked on the user's behalf. A declared foreign key once seeded itself
+                ' as a lookup, which also put the field on the page - Lookup implies Include - and
+                ' a new request therefore opened with fields already chosen that nobody had chosen.
+                ' What the page holds is the request's decision, not the schema's.
                 seedingSelectionGrids = True
                 For Each field In fields
                     Dim maintenanceRowIndex = maintenanceGrid.Rows.Add(
@@ -2294,21 +2315,6 @@ Namespace SDC.Framework
                     maintenanceRow.Cells("Column").Value = If(ContainsField(column2Fields, field), Column2Choice, Column1Choice)
                     ApplyColumnTint(maintenanceRow)
                     ConfigureLookupDisplayCell(maintenanceRow, field, relationships, specDisplayColumns, lookupColumnCache)
-
-                    If lookupsUnanswered Then
-                        Dim seededRelationship As DataAccess.ColumnRelationship = Nothing
-                        If relationships.TryGetValue(field, seededRelationship) Then
-                            Dim seededSpec = BuildLookupSpecFromRelationship(field,
-                                                                            seededRelationship,
-                                                                            Convert.ToString(maintenanceRow.Cells("Displays").Value),
-                                                                            lookupRegistrationCache)
-                            If seededSpec <> String.Empty Then
-                                lookupTargets(field) = seededSpec
-                                maintenanceRow.Cells("Lookup").Value = True
-                                maintenanceRow.Cells("Include").Value = True
-                            End If
-                        End If
-                    End If
 
                     ' Nothing to point at, so nothing to tick. A spec written before the foreign
                     ' keys were declared keeps its tick, so it can still be removed - it just
@@ -2422,7 +2428,7 @@ Namespace SDC.Framework
         Private Sub SelectTableButton_Click(sender As Object, e As EventArgs)
             Dim tables = DataAccess.GetDatabaseTables()
             If tables.Count = 0 Then
-                MessageBox.Show(Me, "NO FW_, AS_, OR CRM_ TABLES WERE FOUND.", "SELECT TABLE", MessageBoxButtons.OK, MessageBoxIcon.Information)
+                MessageBox.Show(Me, "NO TABLES WERE FOUND.", "SELECT TABLE", MessageBoxButtons.OK, MessageBoxIcon.Information)
                 Return
             End If
 
@@ -2668,6 +2674,38 @@ Namespace SDC.Framework
         ''' The cell stays editable, and an explicit answer holds until the row is moved again.
         ''' Moving it is the gesture that re-asks the question.
         ''' </summary>
+        ''' <summary>
+        ''' Ticking a computed field also ticks the fields it is made of.
+        '''
+        ''' FirstLast is read-only on a maintenance page, because the database fills it - so a page
+        ''' that has it and nothing else shows a name with no way to change it. The columns behind
+        ''' it come from the expression SQL Server stores, so this is knowledge rather than a guess.
+        '''
+        ''' Adds, never removes. Unticking the computed field later leaves FirstName and LastName
+        ''' where they are, because by then they are fields in their own right - the same rule the
+        ''' Required and Lookup ticks follow.
+        ''' </summary>
+        Private Sub IncludeComputedFieldSources(grid As DataGridView, fieldName As String)
+            If String.IsNullOrWhiteSpace(fieldName) OrElse grid Is Nothing Then Return
+
+            Dim tableName = underlyingTableNameTextBox.Text.Trim()
+            If tableName.StartsWith("dbo.", StringComparison.OrdinalIgnoreCase) Then tableName = tableName.Substring(4)
+            If tableName = String.Empty Then Return
+
+            Dim sources As List(Of String) = Nothing
+            If Not DataAccess.GetComputedColumnSources(tableName).TryGetValue(fieldName.Trim(), sources) Then Return
+            If sources Is Nothing OrElse sources.Count = 0 Then Return
+
+            For Each source In sources
+                For Each maintenanceRow As DataGridViewRow In grid.Rows
+                    If String.Equals(Convert.ToString(maintenanceRow.Cells("FieldName").Value), source, StringComparison.OrdinalIgnoreCase) Then
+                        maintenanceRow.Cells("Include").Value = True
+                        Exit For
+                    End If
+                Next
+            Next
+        End Sub
+
         Private Shared Sub ApplyPlaceholderColumnFromNeighbour(grid As DataGridView, fieldName As String)
             If grid Is Nothing OrElse Not grid.Columns.Contains("Column") Then Return
             If Not PageGenerator.IsPlaceholderField(fieldName) Then Return

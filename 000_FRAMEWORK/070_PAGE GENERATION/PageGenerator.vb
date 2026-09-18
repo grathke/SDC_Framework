@@ -1305,11 +1305,41 @@ Namespace SDC.Framework
                 End If
             End If
 
+            normalized = ToPageIdentifier(normalized)
+
             If Not normalized.EndsWith(suffix, StringComparison.OrdinalIgnoreCase) Then
                 normalized &= suffix
             End If
 
             Return If(String.IsNullOrWhiteSpace(ownerPrefix), String.Empty, ownerPrefix & "_") & normalized
+        End Function
+
+        ''' <summary>
+        ''' A page name a class can actually be called.
+        '''
+        ''' What is typed is English - "Test Employee" - and what is written is a class name, so
+        ''' anything a VB identifier cannot hold comes out. Nothing is substituted for it: a space
+        ''' between two words disappears and leaves TestEmployee, which is how the name would have
+        ''' been typed had the box asked for an identifier.
+        '''
+        ''' Generation used to refuse the name instead, with a message saying it must be a valid
+        ''' identifier ending in _B - true, and no help at all to somebody who had typed a space.
+        ''' </summary>
+        Friend Shared Function ToPageIdentifier(value As String) As String
+            If String.IsNullOrWhiteSpace(value) Then Return String.Empty
+
+            Dim builder As New StringBuilder()
+            For Each character In value.Trim()
+                If Char.IsLetterOrDigit(character) OrElse character = "_"c Then builder.Append(character)
+            Next
+
+            Dim identifier = builder.ToString()
+
+            ' A name cannot begin with a digit, and a page called after a number is not worth
+            ' refusing over - it is worth one underscore.
+            If identifier.Length > 0 AndAlso Char.IsDigit(identifier(0)) Then identifier = "_" & identifier
+
+            Return identifier
         End Function
 
         ''' <summary>
@@ -2074,10 +2104,23 @@ Namespace SDC.Framework
                                   ", CurrentLookupId(""" & EscapeLiteral(spec.FieldName) & """))" &
                                   ", """ & EscapeLiteral(spec.ValueColumn) & """, """ & EscapeLiteral(spec.DisplayColumn) & """, CurrentLookupId(""" & EscapeLiteral(spec.FieldName) & """))")
             Next
-            If fields.Any(Function(field) String.Equals(field, "RegistrationID", StringComparison.OrdinalIgnoreCase)) Then
-                output.AppendLine("            If recordId <= 0 AndAlso record.Table.Columns.Contains(""RegistrationID"") AndAlso SessionState.IsActive AndAlso SessionState.Current.HasValue Then")
+            ' A new record starts in the registration the user is working in. Which control carries
+            ' that depends on the page: a registration ticked as a lookup is a combo, and the column
+            ' is spelled however the table spells it - RegistrationId and RegistrationID both occur.
+            ' Assuming a textbox named for the second spelling wrote code that did not compile.
+            Dim registrationField = fields.FirstOrDefault(Function(field) String.Equals(field, "RegistrationID", StringComparison.OrdinalIgnoreCase))
+            If Not String.IsNullOrEmpty(registrationField) Then
+                output.AppendLine("            If recordId <= 0 AndAlso record.Table.Columns.Contains(""" & EscapeLiteral(registrationField) & """) AndAlso SessionState.IsActive AndAlso SessionState.Current.HasValue Then")
                 output.AppendLine("                Dim sessionRegistrationId = SessionState.WorkingRegistrationID()")
-                output.AppendLine("                If sessionRegistrationId > 0 AndAlso String.IsNullOrWhiteSpace(registrationIDTextBox.Text) Then registrationIDTextBox.Text = sessionRegistrationId.ToString(Globalization.CultureInfo.InvariantCulture)")
+
+                If IsLookupField(registrationField, lookupFields) Then
+                    output.AppendLine("                If sessionRegistrationId > 0 AndAlso CurrentLookupId(""" & EscapeLiteral(registrationField) & """) <= 0 Then " &
+                                      LookupControlVariable(registrationField) & ".SelectedValue = sessionRegistrationId")
+                Else
+                    output.AppendLine("                If sessionRegistrationId > 0 AndAlso String.IsNullOrWhiteSpace(" & ControlVariable(registrationField) & ".Text) Then " &
+                                      ControlVariable(registrationField) & ".Text = sessionRegistrationId.ToString(Globalization.CultureInfo.InvariantCulture)")
+                End If
+
                 output.AppendLine("            End If")
             End If
             output.AppendLine("            If record.Table.Columns.Contains(""RowVersion"") AndAlso Not record.IsNull(""RowVersion"") Then originalRowVersion = CType(DirectCast(record(""RowVersion""), Byte()).Clone(), Byte())")
@@ -2209,8 +2252,16 @@ Namespace SDC.Framework
             output.AppendLine("        ''' one - an unimplemented partial method leaves no call site to take a result")
             output.AppendLine("        ''' from.")
             output.AppendLine("        ''' </summary>")
+            ' The name is Control.OnValidating's, with a different signature, so VB reports BC40005
+            ' - shadowing rather than overriding. It is what is wanted: the hook is the page's, and
+            ' nothing calls the base member. Silenced here rather than renamed because the name is
+            ' in hand-written code, and rather than by Shadows because VB then demands the same
+            ' word on the implementing half - which is somebody else's file and a trap for the
+            ' next person who writes one.
+            output.AppendLine("#Disable Warning BC40005 ' Deliberate: this hook hides Control.OnValidating, as the summary says.")
             output.AppendLine("        Partial Private Sub OnValidating(ByRef allowSave As Boolean)")
             output.AppendLine("        End Sub")
+            output.AppendLine("#Enable Warning BC40005")
             output.AppendLine()
             output.AppendLine("        ''' <summary>The values are built and nothing is written. Add, change or remove entries.</summary>")
             output.AppendLine("        Partial Private Sub OnBeforeSave(values As Dictionary(Of String, Object))")

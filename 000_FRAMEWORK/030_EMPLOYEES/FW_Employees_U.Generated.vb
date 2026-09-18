@@ -257,8 +257,10 @@ Namespace SDC.Framework
         ''' one - an unimplemented partial method leaves no call site to take a result
         ''' from.
         ''' </summary>
+#Disable Warning BC40005 ' Deliberate: this hook hides Control.OnValidating, as the summary says.
         Partial Private Sub OnValidating(ByRef allowSave As Boolean)
         End Sub
+#Enable Warning BC40005
 
         ''' <summary>The values are built and nothing is written. Add, change or remove entries.</summary>
         Partial Private Sub OnBeforeSave(values As Dictionary(Of String, Object))
