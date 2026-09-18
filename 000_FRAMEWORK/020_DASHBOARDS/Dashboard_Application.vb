@@ -27,7 +27,7 @@ Namespace SDC.Framework
         Private ReadOnly enabledTablesButton As DashboardIconButton
         Private ReadOnly closeIconButton As Button
         Private ReadOnly generatedFW_Employees_BButton As DashboardIconButton
-        Private ReadOnly generatedFW_UserAccessDiagnostic_BButton As DashboardIconButton
+        Private ReadOnly userAccessDiagnosticButton As DashboardIconButton
         Private iconDragController As DashboardIconDragController
         Private iconImageController As IconImageController
 
@@ -234,7 +234,7 @@ Namespace SDC.Framework
 
 
 
-            generatedFW_UserAccessDiagnostic_BButton = New DashboardIconButton() With {
+            userAccessDiagnosticButton = New DashboardIconButton() With {
                 .Name = "ActionKey_FW_UserAccessDiagnostic_B",
                 .PageName = "FW_UserAccessDiagnostic_B",
                 .Text = "User Access Diagnostic",
@@ -250,9 +250,9 @@ Namespace SDC.Framework
                 .TextAlign = ContentAlignment.BottomCenter,
                 .TabStop = False
             }
-            generatedFW_UserAccessDiagnostic_BButton.FlatAppearance.BorderSize = 0
-            generatedFW_UserAccessDiagnostic_BButton.FlatAppearance.MouseOverBackColor = Color.Transparent
-            generatedFW_UserAccessDiagnostic_BButton.FlatAppearance.MouseDownBackColor = Color.Transparent
+            userAccessDiagnosticButton.FlatAppearance.BorderSize = 0
+            userAccessDiagnosticButton.FlatAppearance.MouseOverBackColor = Color.Transparent
+            userAccessDiagnosticButton.FlatAppearance.MouseDownBackColor = Color.Transparent
 
 
 
@@ -346,14 +346,14 @@ Namespace SDC.Framework
             AddHandler newPageRequestsButton.MouseEnter, AddressOf IconButton_MouseEnter
             AddHandler newPageRequestsButton.MouseLeave, AddressOf IconButton_MouseLeave
             AddHandler newPageRequestsButton.Click, AddressOf NewPageRequestsButton_Click
-            AddHandler generatedFW_UserAccessDiagnostic_BButton.MouseEnter, AddressOf IconButton_MouseEnter
-            AddHandler generatedFW_UserAccessDiagnostic_BButton.MouseLeave, AddressOf IconButton_MouseLeave
-            AddHandler generatedFW_UserAccessDiagnostic_BButton.Click, AddressOf GeneratedFW_UserAccessDiagnostic_BButton_Click
+            AddHandler userAccessDiagnosticButton.MouseEnter, AddressOf IconButton_MouseEnter
+            AddHandler userAccessDiagnosticButton.MouseLeave, AddressOf IconButton_MouseLeave
+            AddHandler userAccessDiagnosticButton.Click, AddressOf UserAccessDiagnosticButton_Click
             AddHandler generatedFW_Employees_BButton.MouseEnter, AddressOf IconButton_MouseEnter
             AddHandler generatedFW_Employees_BButton.MouseLeave, AddressOf IconButton_MouseLeave
             AddHandler generatedFW_Employees_BButton.Click, AddressOf GeneratedFW_Employees_BButton_Click
             AddHandler closeIconButton.Click, AddressOf CloseButton_Click
-            Me.Controls.Add(generatedFW_UserAccessDiagnostic_BButton)
+            Me.Controls.Add(userAccessDiagnosticButton)
             Me.Controls.Add(generatedFW_Employees_BButton)
             Me.Controls.Add(topStripLabel)
             Me.Controls.Add(closeIconButton)
@@ -423,8 +423,8 @@ Namespace SDC.Framework
             rolesButton.Top = DashboardGridLayout.CellTop(1)
             generatedFW_Employees_BButton.Left = DashboardGridLayout.CellLeft(5)
             generatedFW_Employees_BButton.Top = DashboardGridLayout.CellTop(1)
-            generatedFW_UserAccessDiagnostic_BButton.Left = DashboardGridLayout.CellLeft(4)
-            generatedFW_UserAccessDiagnostic_BButton.Top = DashboardGridLayout.CellTop(1)
+            userAccessDiagnosticButton.Left = DashboardGridLayout.CellLeft(4)
+            userAccessDiagnosticButton.Top = DashboardGridLayout.CellTop(1)
             registrationButton.Top = DashboardGridLayout.CellTop(1)
             auditHistoryButton.Top = DashboardGridLayout.CellTop(2)
             helpDeskButton.Top = DashboardGridLayout.CellTop(2)
@@ -628,7 +628,12 @@ Namespace SDC.Framework
 
 
 
-        Private Sub GeneratedFW_UserAccessDiagnostic_BButton_Click(sender As Object, e As EventArgs)
+        ''' <summary>
+        ''' Named plainly, because the page is not generated. The generator wrote this button in
+        ''' August and called it generatedFW_UserAccessDiagnostic_BButton; the page has been built
+        ''' by hand ever since, and a name saying otherwise outranks any document that corrects it.
+        ''' </summary>
+        Private Sub UserAccessDiagnosticButton_Click(sender As Object, e As EventArgs)
             ResetIconButtonVisuals()
             Using page As New FW_UserAccessDiagnostic_B(currentUser, accessProfile)
                 page.ShowDialog(Me)

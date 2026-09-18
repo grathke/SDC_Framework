@@ -54,6 +54,8 @@ Namespace SDC.Framework
         Public Property OwnerFolder As String = String.Empty
 
         Public Property BrowsePath As String = String.Empty
+        Public Property BrowseCompanionPath As String = String.Empty
+        Public Property BrowseCompanionSource As String = String.Empty
         Public Property MaintenancePath As String = String.Empty
         Public Property BrowseSource As String = String.Empty
         Public Property MaintenanceSource As String = String.Empty
@@ -134,6 +136,11 @@ Namespace SDC.Framework
                                       Nothing, Nothing, plan.CreatedBy)
 
             If plan.GenerateBrowsePage Then
+                ' The companion goes down only when there is nothing there, or when what is there
+                ' is a whole page from before the split - which would otherwise sit beside the
+                ' generated half declaring the same class twice.
+                WriteCompanionPage(plan.BrowseCompanionPath, plan.BrowseCompanionSource, created, skipped)
+
                 If WriteGeneratedPage(plan.BrowsePath, plan.BrowseSource, overwriteExistingPages, created, skipped) Then
                     If Not SaveBrowseBaseline(requestId, plan.BrowseSource, errors) Then
                         errors.Add("The generated browse source baseline could not be saved.")
@@ -411,7 +418,8 @@ Namespace SDC.Framework
             End If
             If Not plan.IsValid Then Return plan
 
-            plan.BrowsePath = GeneratedPagePath(workspaceRoot, plan.BrowsePageName, plan.OwnerFolder)
+            plan.BrowseCompanionPath = GeneratedPagePath(workspaceRoot, plan.BrowsePageName, plan.OwnerFolder)
+            plan.BrowsePath = GeneratedHalfPath(plan.BrowseCompanionPath)
             ' The companion is the page's real name and the anchor for finding it; the generated
             ' half sits beside it with .Generated before the extension. Looking the companion up
             ' first is what lets a filed page stay where somebody put it.
@@ -419,6 +427,7 @@ Namespace SDC.Framework
             plan.MaintenancePath = GeneratedHalfPath(plan.MaintenanceCompanionPath)
 
             If plan.GenerateBrowsePage Then
+                plan.BrowseCompanionSource = BuildBrowseCompanionSource(plan.BrowsePageName)
                 plan.BrowseSource = BuildBrowseSource(plan.BrowsePageName,
                                                       plan.TableName,
                                                       useQbeOnly,
@@ -461,6 +470,7 @@ Namespace SDC.Framework
             lines.Add("PAGE FILES")
             If plan.GenerateBrowsePage Then
                 lines.Add("  " & Path.GetFileName(plan.BrowsePath) & If(File.Exists(plan.BrowsePath), "   (EXISTS - WOULD BE OVERWRITTEN)", "   (NEW FILE)"))
+                lines.Add("  " & Path.GetFileName(plan.BrowseCompanionPath) & CompanionNote(plan.BrowseCompanionPath))
             Else
                 lines.Add("  BROWSE PAGE NOT SELECTED")
             End If
@@ -469,17 +479,7 @@ Namespace SDC.Framework
 
                 ' Named separately because the two halves are treated differently, and somebody
                 ' reading this list is entitled to know which of their files is at risk.
-                If Not String.IsNullOrWhiteSpace(plan.MaintenanceCompanionPath) Then
-                    Dim companionNote As String
-                    If Not File.Exists(plan.MaintenanceCompanionPath) Then
-                        companionNote = "   (NEW FILE - YOURS, WRITTEN ONCE)"
-                    ElseIf File.ReadAllText(plan.MaintenanceCompanionPath).IndexOf("Partial Public Class", StringComparison.OrdinalIgnoreCase) >= 0 Then
-                        companionNote = "   (YOURS - LEFT ALONE)"
-                    Else
-                        companionNote = "   (WHOLE PAGE FROM BEFORE THE SPLIT - WOULD BE REPLACED, OLD COPY KEPT)"
-                    End If
-                    lines.Add("  " & Path.GetFileName(plan.MaintenanceCompanionPath) & companionNote)
-                End If
+                lines.Add("  " & Path.GetFileName(plan.MaintenanceCompanionPath) & CompanionNote(plan.MaintenanceCompanionPath))
             Else
                 lines.Add("  MAINTENANCE PAGE NOT SELECTED")
             End If
@@ -1649,12 +1649,16 @@ Namespace SDC.Framework
                 "Option Explicit On",
                 "",
                 "Namespace SDC.Framework",
-                "    Public Class " & pageName,
+                "",
+                "    ''' <summary>",
+                "    ''' Written by the page generator. Every regeneration replaces this file in full,",
+                "    ''' so nothing added here survives. " & pageName & ".vb is the half that does.",
+                "    ''' </summary>",
+                "    Partial Public Class " & pageName,
                 "        Inherits FW_Base_B",
                 "",
-                "        Public Sub New(user As UserContext, Optional profile As AccessProfile = Nothing)",
-                "            MyBase.New(user, profile, """ & EscapeLiteral(tableName) & """)",
-                "        End Sub",
+                "        ''' <summary>The table this page browses, for the companion's constructor.</summary>",
+                "        Friend Const GeneratedTableName As String = """ & EscapeLiteral(tableName) & """",
                 "",
                 If(useQbeOnly,
                    String.Join(Environment.NewLine, {
@@ -1675,6 +1679,115 @@ Namespace SDC.Framework
                 "        Protected Overrides Function UsesStandardSoftDelete() As Boolean",
                 "            Return True",
                 "        End Function",
+                "",
+                "        ''' <summary>",
+                "        ''' The page is built and its grid is not loaded yet. Implement it in",
+                "        ''' " & pageName & ".vb to add anything this page needs of its own.",
+                "        '''",
+                "        ''' A partial method with no implementation costs nothing: the compiler",
+                "        ''' removes the call as well as the declaration.",
+                "        ''' </summary>",
+                "        Partial Private Sub OnPageBuilt()",
+                "        End Sub",
+                "    End Class",
+                "End Namespace",
+                ""
+            })
+        End Function
+
+        ''' <summary>
+        ''' The browse page's own file: written once, never read or rewritten again.
+        '''
+        ''' The same split the maintenance page has had since 2026-09-14. A _B was a single
+        ''' generated file until 2026-09-18, so hand-written browse code sat in the one file the
+        ''' generator replaces - and the only protection was a dialog warning that it would be.
+        ''' </summary>
+        ''' <summary>
+        ''' Why this request must not be opened, or nothing when it is safe to open.
+        '''
+        ''' One case, and it is the one that cost 878 lines of FW_UserAccessDiagnostic_B: a browse
+        ''' page written before the split is a single file the generator replaces in full, and a
+        ''' page that has since been developed by hand has no separate half for that work to sit in.
+        ''' Nothing can tell which lines are generated and which are somebody's, because these pages
+        ''' predate the stored baselines - so the answer is to refuse rather than to guess.
+        '''
+        ''' By size, because that is the only signal there is. A generated whole page was around
+        ''' twenty lines and never more than forty; past sixty, somebody has been working in it.
+        ''' The threshold is deliberately generous - the cost of refusing wrongly is a page that
+        ''' must be split by hand, and the cost of allowing wrongly is the work itself.
+        '''
+        ''' A split page is never refused: its companion declares Partial, its generated half is
+        ''' the only thing rewritten, and that is exactly the arrangement this protects.
+        ''' </summary>
+        Friend Shared Function UnsafeToOpenReason(browsePageName As String) As String
+            If String.IsNullOrWhiteSpace(browsePageName) Then Return String.Empty
+
+            Dim path = GeneratedPagePath(Environment.CurrentDirectory, browsePageName)
+            If String.IsNullOrWhiteSpace(path) OrElse Not File.Exists(path) Then Return String.Empty
+
+            Dim content = File.ReadAllText(path)
+            If content.IndexOf("Partial Public Class", StringComparison.OrdinalIgnoreCase) >= 0 Then Return String.Empty
+
+            Dim lineCount = content.Split(ChrW(10)).Length
+            If lineCount <= UnsplitBrowsePageLineLimit Then Return String.Empty
+
+            Return System.IO.Path.GetFileName(path).ToUpperInvariant() & " HAS " &
+                   lineCount.ToString(Globalization.CultureInfo.InvariantCulture) & " LINES OF CODE WRITTEN BY HAND." &
+                   Environment.NewLine & Environment.NewLine &
+                   "IT WAS GENERATED BEFORE A BROWSE PAGE WAS SPLIT IN TWO, SO THERE IS NO" &
+                   Environment.NewLine &
+                   "SEPARATE FILE FOR THAT WORK AND UPDATING THE PAGE WOULD REPLACE IT." &
+                   Environment.NewLine & Environment.NewLine &
+                   "THIS REQUEST CANNOT BE OPENED UNTIL THE PAGE HAS BEEN SPLIT BY HAND."
+        End Function
+
+        ''' <summary>Past this many lines, an unsplit browse page holds somebody's work.</summary>
+        Private Const UnsplitBrowsePageLineLimit As Integer = 60
+
+        ''' <summary>
+        ''' What the preview says about a companion file, which is never simply overwritten.
+        '''
+        ''' Three states, and the third is the one worth naming: a whole page written before the
+        ''' split is replaced by a companion, with the old file kept beside it.
+        ''' </summary>
+        Private Shared Function CompanionNote(companionPath As String) As String
+            If String.IsNullOrWhiteSpace(companionPath) Then Return String.Empty
+            If Not File.Exists(companionPath) Then Return "   (NEW FILE - YOURS, WRITTEN ONCE)"
+
+            If File.ReadAllText(companionPath).IndexOf("Partial Public Class", StringComparison.OrdinalIgnoreCase) >= 0 Then
+                Return "   (YOURS - LEFT ALONE)"
+            End If
+
+            Return "   (WHOLE PAGE FROM BEFORE THE SPLIT - WOULD BE REPLACED, OLD COPY KEPT)"
+        End Function
+
+        Private Shared Function BuildBrowseCompanionSource(pageName As String) As String
+            Return String.Join(Environment.NewLine, {
+                "Option Strict On",
+                "Option Explicit On",
+                "",
+                "Imports System.Collections.Generic",
+                "Imports System.Data",
+                "Imports System.Drawing",
+                "Imports System.Windows.Forms",
+                "",
+                "Namespace SDC.Framework",
+                "",
+                "    ''' <summary>",
+                "    ''' This file is yours. The page generator writes " & pageName & ".Generated.vb and never",
+                "    ''' reads this one, so anything added here survives the page being regenerated.",
+                "    '''",
+                "    ''' To reach into the generated half, implement OnPageBuilt - it is declared at the",
+                "    ''' end of that file and called by the constructor below.",
+                "    ''' </summary>",
+                "    Partial Public Class " & pageName,
+                "        Inherits FW_Base_B",
+                "",
+                "        Public Sub New(user As UserContext, Optional profile As AccessProfile = Nothing)",
+                "            MyBase.New(user, profile, GeneratedTableName)",
+                "            OnPageBuilt()",
+                "        End Sub",
+                "",
                 "    End Class",
                 "End Namespace",
                 ""

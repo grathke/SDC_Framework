@@ -333,6 +333,12 @@ Known exceptions in the current codebase, to be resolved rather than copied:
 - Browse-only pages with no `_U` partner: `FW_AuditTrail_B`, `FW_HD_Admin_B`,
   `FW_HD_AdminDashboard_B`, `FW_UserAccessDiagnostic_B`.
 - `FW_HD_Issues_B` and `FW_HD_Issues_Support_B` share a single `FW_HD_Issues_U`.
+- **`FW_UserAccessDiagnostic_B` is hand-written, not generated.** It was generated once on
+  2026-08-19 and has grown to 878 lines since, in the single file a browse page was before the
+  split — so there is no `.Generated.vb` half and regenerating it would replace the lot. Its
+  generation request was deleted on 2026-09-18 and its dashboard button renamed off
+  `generatedFW_…`, so nothing claims otherwise any more. Treat it like `Roles_U`: a framework page
+  maintained by hand. Do not create a request for it to "tidy it up".
 - Primary keys follow five conventions at once: bare `ID` (`FW_Gender`), `<Table>ID`
   (`AuditTrailID`), `<Table>_ID` (`BusinessRuleType_ID`), all-caps
   (`APPLICATION_SETTINGS_DASHBOARDID`), and names unrelated to their table (`Attachment` holds
@@ -459,6 +465,11 @@ These are baseline rules for this application, not optional task-specific sugges
   only compiled.
 - **Pages are not drag-resizable.** Every form is `FixedDialog` with no maximise box, and a new page
   follows. Code may still size a window — the zoom keys and Hot Fields both do.
+- **A combo's drop-down list is never wider than its box.** `ComboWidth.Narrow` sets
+  `DropDownWidth = Width` for every path, and `AddComboField` sets no `DropDownWidth` at all, so
+  the framework and every generated page get this without asking. Do not set `DropDownWidth` by
+  hand on a new page: the access diagnostic did, and its list opened 280 wide over a box fitted to
+  "DEVELOPMENT TEAM". A name too long for the box truncates, which is the intended trade.
 
 ## Restore Point Decision Guardrail (Required)
 

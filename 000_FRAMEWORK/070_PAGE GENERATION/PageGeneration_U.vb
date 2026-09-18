@@ -721,17 +721,45 @@ Namespace SDC.Framework
                 If Not pagesReady Then lines.Add("THE SELECTED PAGE TARGETS WERE NOT BOTH CREATED OR CONFIRMED.")
                 If Not sqlReady Then lines.Add("THE FW_ROLETABLES SQL RECORD WAS NOT CREATED OR CONFIRMED.")
             End If
-            MessageBox.Show(Me,
-                            String.Join(Environment.NewLine, lines).ToUpperInvariant(),
-                            "GENERATE PAGES",
-                            MessageBoxButtons.OK,
-                            If(pagesReady AndAlso sqlReady, MessageBoxIcon.Information, MessageBoxIcon.Warning))
+            WideMessage.Show(Me,
+                             SpacedReport(lines).ToUpperInvariant(),
+                             "GENERATE PAGES",
+                             If(pagesReady AndAlso sqlReady, MessageBoxIcon.Information, MessageBoxIcon.Warning))
 
             If pagesReady AndAlso sqlReady Then
                 CloseAfterSuccessfulCommand()
             End If
 
         End Sub
+
+        ''' <summary>
+        ''' The generation report with a blank line between every entry.
+        '''
+        ''' It was blank lines between the headings only, so four files under one heading ran
+        ''' together as a block and the eye had to find the boundaries. Spacing every line makes a
+        ''' report of eight entries twice as tall and considerably quicker to read.
+        '''
+        ''' Blanks already in the list are not doubled, and a heading stays against the entries it
+        ''' introduces - a heading floating equidistant between two groups belongs to neither.
+        ''' </summary>
+        Private Shared Function SpacedReport(lines As List(Of String)) As String
+            If lines Is Nothing OrElse lines.Count = 0 Then Return String.Empty
+
+            Dim spaced As New List(Of String)()
+            For index = 0 To lines.Count - 1
+                Dim line = lines(index)
+                spaced.Add(line)
+
+                If index = lines.Count - 1 Then Continue For
+                If String.IsNullOrWhiteSpace(line) Then Continue For
+                If String.IsNullOrWhiteSpace(lines(index + 1)) Then Continue For
+                If line.EndsWith(":", StringComparison.Ordinal) Then Continue For
+
+                spaced.Add(String.Empty)
+            Next
+
+            Return String.Join(Environment.NewLine, spaced)
+        End Function
 
         ''' <summary>
         ''' Compares a generated file against the hash recorded when it was generated. False when
@@ -784,7 +812,7 @@ Namespace SDC.Framework
             ' Both generated pages are checked. Only the _U page used to be, so a hand-edited _B was
             ' overwritten by the next generation with no warning at all.
             maintenancePageHasManualChanges = FileDiffersFromBaseline(dataRow, "GeneratedMaintenanceHash", maintenancePageNameTextBox.Text, generatedHalf:=True)
-            browsePageHasManualChanges = FileDiffersFromBaseline(dataRow, "GeneratedBrowseHash", browsePageNameTextBox.Text)
+            browsePageHasManualChanges = FileDiffersFromBaseline(dataRow, "GeneratedBrowseHash", browsePageNameTextBox.Text, generatedHalf:=True)
             pageHasManualChanges = maintenancePageHasManualChanges OrElse browsePageHasManualChanges
 
             If Not File.Exists(pagePath) Then
@@ -838,6 +866,30 @@ Namespace SDC.Framework
             If String.IsNullOrWhiteSpace(handWritten) OrElse Not File.Exists(handWritten) Then Return String.Empty
 
             Return "CUSTOM CODE IN " & IO.Path.GetFileName(handWritten).ToUpperInvariant() & " IS LEFT UNCHANGED."
+        End Function
+
+        ''' <summary>
+        ''' The browse page's hand-written half, named, when it exists and is really that half.
+        '''
+        ''' A page generated before 2026-09-18 is a single whole file at this path, which the split
+        ''' replaces rather than leaves alone - so it is only called untouched once it declares
+        ''' Partial, which is what the companion the generator writes looks like.
+        ''' </summary>
+        Private Function UntouchedBrowseFileList() As String
+            Dim pageName = browsePageNameTextBox.Text.Trim()
+            If pageName = String.Empty Then Return String.Empty
+
+            Dim handWritten = PageGenerator.GeneratedPagePath(Environment.CurrentDirectory, pageName)
+            If String.IsNullOrWhiteSpace(handWritten) OrElse Not File.Exists(handWritten) Then Return String.Empty
+
+            Dim name = IO.Path.GetFileName(handWritten).ToUpperInvariant()
+
+            If File.ReadAllText(handWritten).IndexOf("Partial Public Class", StringComparison.OrdinalIgnoreCase) < 0 Then
+                Return name & " IS A WHOLE PAGE FROM BEFORE THE SPLIT." & Environment.NewLine & Environment.NewLine &
+                       "IT WILL BE REPLACED BY A COMPANION, AND THE OLD FILE KEPT BESIDE IT."
+            End If
+
+            Return "CUSTOM CODE IN " & name & " IS LEFT UNCHANGED."
         End Function
 
         ''' <summary>
@@ -912,18 +964,15 @@ Namespace SDC.Framework
                 End If
             End If
 
-            ' A browse page is one file with no companion, so there is nowhere for hand-written code
-            ' to survive. The dialog said nothing about that until 2026-09-18 - silent in the one
-            ' case where something is actually lost. Splitting a _B the way a _U is split would fix
-            ' it properly; saying so is what can be done without touching every existing page.
-            '
-            ' Only when there is something to replace. A browse page nobody has edited loses
-            ' nothing, and warning about it anyway is how a warning stops being read.
-            If generatesBrowse AndAlso browsePageHasManualChanges Then
-                message.AppendLine()
-                message.AppendLine("CHANGES MADE BY HAND IN " &
-                                   browsePageNameTextBox.Text.Trim().ToUpperInvariant() &
-                                   ".VB WILL BE REPLACED.")
+            ' A browse page is two files as well since 2026-09-18, so its hand-written half is left
+            ' alone the same way the maintenance one is. It was a single generated file before that,
+            ' and the dialog had to warn that hand edits would be replaced.
+            If generatesBrowse Then
+                Dim browseUntouched = UntouchedBrowseFileList()
+                If browseUntouched <> String.Empty Then
+                    message.AppendLine()
+                    message.AppendLine(browseUntouched)
+                End If
             End If
 
             ' When, not just what. This dialog opens the request; nothing is written until Save &
@@ -936,14 +985,16 @@ Namespace SDC.Framework
             message.AppendLine()
             message.Append("CONTINUE?")
 
-            Dim proceed = MessageBox.Show(Me,
-                            message.ToString(),
-                            If(generatesBrowse AndAlso generatesMaintenance,
-                               "UPDATE THESE PAGES?",
-                               "UPDATE THIS PAGE?"),
-                            MessageBoxButtons.YesNo,
-                            MessageBoxIcon.Question,
-                            MessageBoxDefaultButton.Button2)
+            ' WideMessage rather than MessageBox: six sentences naming three files, and MessageBox
+            ' wrapped the longest of them mid-sentence, so a message written in lines was read in
+            ' fragments. It defaults to No the same way.
+            Dim proceed = WideMessage.Ask(Me,
+                                          message.ToString(),
+                                          If(generatesBrowse AndAlso generatesMaintenance,
+                                             "UPDATE THESE PAGES?",
+                                             "UPDATE THIS PAGE?"),
+                                          MessageBoxButtons.YesNo,
+                                          MessageBoxIcon.Question)
 
             If proceed = DialogResult.Yes Then
                 ' Unlocked, and the overwrite prompt at generation is skipped: that question has
@@ -1946,11 +1997,10 @@ Namespace SDC.Framework
                 Return
             End If
 
-            MessageBox.Show(owner,
-                            String.Join(Environment.NewLine, result.Messages),
-                            "COMPILE CHECK",
-                            MessageBoxButtons.OK,
-                            If(result.Succeeded, MessageBoxIcon.Information, MessageBoxIcon.Error))
+            WideMessage.Show(owner,
+                             String.Join(Environment.NewLine, result.Messages),
+                             "COMPILE CHECK",
+                             If(result.Succeeded, MessageBoxIcon.Information, MessageBoxIcon.Error))
         End Sub
 
         Private Sub PreviewRequestButton_Click(sender As Object, e As EventArgs)

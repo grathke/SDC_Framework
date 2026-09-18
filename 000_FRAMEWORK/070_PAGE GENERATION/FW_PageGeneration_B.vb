@@ -85,6 +85,16 @@ Namespace SDC.Framework
         End Function
 
         Protected Overrides Function HandleCustomUpdateAction(recordId As Integer) As Boolean
+            ' Refused before the page opens, not warned about once it is. A request whose browse
+            ' page holds hand-written code in the file the generator replaces cannot be updated
+            ' safely at all, and a dialog inside the page is one click away from doing it anyway.
+            Dim refusal = UnsafeToOpenReason(recordId)
+            If refusal <> String.Empty Then
+                MessageBox.Show(Me, refusal, "This Request Cannot Be Updated",
+                                MessageBoxButtons.OK, MessageBoxIcon.Warning)
+                Return True
+            End If
+
             Using page As New PageGeneration_U(recordId, currentUser, accessProfile)
                 ' The page asks about manual changes to the generated files while it loads, which is
                 ' before it can be shown. Declining abandons the open, and the user stays here.
@@ -95,6 +105,25 @@ Namespace SDC.Framework
                 End If
             End Using
             Return True
+        End Function
+
+        ''' <summary>
+        ''' The request's browse page name, asked of the generator for its verdict on it.
+        ''' </summary>
+        Private Shared Function UnsafeToOpenReason(recordId As Integer) As String
+            If recordId <= 0 Then Return String.Empty
+
+            Try
+                Dim request = DataAccess.GetPageGenerationById(recordId)
+                If request Is Nothing OrElse Not request.Table.Columns.Contains("BrowsePageName") Then Return String.Empty
+                If request.IsNull("BrowsePageName") Then Return String.Empty
+
+                Return PageGenerator.UnsafeToOpenReason(Convert.ToString(request("BrowsePageName")))
+            Catch
+                ' A request that cannot be read is not a request that is unsafe - the page itself
+                ' reports the failure when it tries to load the same row.
+                Return String.Empty
+            End Try
         End Function
 
         Private Function OpenSelectedRequest() As Boolean
