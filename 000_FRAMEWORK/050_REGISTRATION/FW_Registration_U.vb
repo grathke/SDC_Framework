@@ -256,10 +256,12 @@ Namespace SDC.Framework
             timeZoneComboBox = AddComboField("TimeZoneID", optionsY, True, optionsX, 290, "Time Zone")
 
             optionsY += rowGap
-            licenseTermComboBox = AddComboField("LicenseTermID", optionsY, True, optionsX, 290, "License Term")
-
-            optionsY += rowGap
             messageFrequencyComboBox = AddComboField("MessageRetrievalFrequency", optionsY, False, optionsX, 290, "Message Check")
+
+            ' The two licence fields sit together, because the term is what sets the expiry. Message
+            ' Check was inserted between them on 2026-09-17 and split a pair that reads as one.
+            optionsY += rowGap
+            licenseTermComboBox = AddComboField("LicenseTermID", optionsY, True, optionsX, 290, "License Term")
 
             optionsY += rowGap
             licenseExpirationPicker = AddDateField("LicenseExpiration_Date", optionsY, True, optionsX, False, False, "License Expiration")
@@ -295,10 +297,12 @@ Namespace SDC.Framework
             smartyEmbeddedKeyTextBox = AddField("Smarty_EmbeddedKey", y, False, False)
             SetFieldLabelText("Smarty_EmbeddedKey", "Smarty Embedded Key")
 
+            ' Directly under the box it belongs to, lined up with the text rather than the label,
+            ' and placed from that control's own position so it follows if the field ever moves.
             smartyUseEmbeddedKeyCheckBox = AddOptionCheckBox("CheckBox_Smarty_UseEmbeddedKey",
                                                              "Use Smarty Embedded Key",
-                                                             optionsX,
-                                                             y + 2)
+                                                             smartyEmbeddedKeyTextBox.Left,
+                                                             smartyEmbeddedKeyTextBox.Bottom + 8)
         End Sub
 
         ''' <summary>
@@ -576,7 +580,11 @@ Namespace SDC.Framework
                 choices.Rows.Add(minutes, minutes.ToString(CultureInfo.InvariantCulture) & " minutes")
             Next
 
-            Dim selected = If(storedMinutes.HasValue AndAlso storedMinutes.Value > 0, storedMinutes.Value, DefaultMessageCheckMinutes)
+            ' Held to what the menu will actually do with it. A stored 1 was shown as "1 minutes"
+            ' while the timer ran at 5 - the page saying one thing and the application doing
+            ' another. Out of range now shows the number that governs.
+            Dim stored = If(storedMinutes.HasValue AndAlso storedMinutes.Value > 0, storedMinutes.Value, DefaultMessageCheckMinutes)
+            Dim selected = FW_MainMenu.ClampMessageCheckMinutes(stored)
             If Not offered.Contains(selected) Then
                 choices.Rows.Add(selected, selected.ToString(CultureInfo.InvariantCulture) & " minutes")
             End If

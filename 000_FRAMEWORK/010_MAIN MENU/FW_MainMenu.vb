@@ -953,10 +953,20 @@ Namespace SDC.Framework
                 minutes = session.Value.MessageRetrievalMinutes
             End If
 
-            If minutes < MinMessageCheckMinutes Then minutes = MinMessageCheckMinutes
-            If minutes > MaxMessageCheckMinutes Then minutes = MaxMessageCheckMinutes
+            Return ClampMessageCheckMinutes(minutes) * 60 * 1000
+        End Function
 
-            Return minutes * 60 * 1000
+        ''' <summary>
+        ''' The interval this registration will actually be checked at, whatever the column says.
+        '''
+        ''' Shared because Registration_U has to offer the same numbers. It offered a stored 1 as
+        ''' "1 minutes" while the menu ran at 5, which is the page and the behaviour disagreeing in
+        ''' a way only reading this code would settle.
+        ''' </summary>
+        Friend Shared Function ClampMessageCheckMinutes(minutes As Integer) As Integer
+            If minutes < MinMessageCheckMinutes Then Return MinMessageCheckMinutes
+            If minutes > MaxMessageCheckMinutes Then Return MaxMessageCheckMinutes
+            Return minutes
         End Function
 
         ''' <summary>
