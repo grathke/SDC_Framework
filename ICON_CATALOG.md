@@ -368,3 +368,28 @@ anywhere and no caller — see Gaps.
   Add button in `Roles_U` calls for one role and one table. A stored procedure of that name was
   written in `sql/004` and never installed; `sql/123` retires it, because a second copy of these
   rules in T-SQL is one that can disagree with the first.
+
+## ActionKey_EnabledTables
+
+- placement: `Dashboard_Application` only, grid cell (3, 4)
+- ActionType: Page - opens a dialog rather than a `_B`/`_U` pair
+- target: `FW_EnabledTables`, in `000_FRAMEWORK\060_ROLES\`
+- caption source: fixed (`Enabled Tables`)
+- icon file: `Color_Favorites.png`
+- visibility rule: none of its own. The admin dashboard is the gate, reached through
+  `application-settings` and shown only to an App Admin.
+- click behavior: lists every registered table with a tick box. The tick is `FW_RoleSchema.IsActive`
+  shown as stored - ticked means available, which is how every table starts. Unticking one removes
+  it from Roles and from page generation. Nothing is written until OK, and disabling a table that
+  roles already hold is confirmed first, naming them.
+- note: `IsActive` is read in four places that never knew about each other - `Roles_U`'s left grid,
+  the access diagnostic's table list and its `GetRoleSchemaIdByTable` lookup, and `GetDatabaseTables`
+  behind page generation's Select Table. Permission resolution is NOT one of them: it reads
+  `FW_RoleDetails` directly, so disabling a table does not revoke anyone. The dialog says exactly
+  that, and shows a Roles count and a Pages count so the size of what is being frozen is visible.
+- note: not a `_B`/`_U` pair, deliberately. There is one field worth setting per table, and the work
+  is comparing the whole list - which a checklist shows and a browse grid does not.
+- note: two page buttons open the same dialog rather than copying it - "Tables…" between the grids
+  on `Roles_U`, and beside Select Table on `PageGeneration_U`. Both are hidden from anyone who is
+  not an App Admin, and `DataAccess.SetTableEnablement` refuses the write as well, because three
+  hidden buttons are three chances to forget.

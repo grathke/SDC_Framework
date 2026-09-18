@@ -45,6 +45,7 @@ Namespace SDC.Framework
         ' Buttons
         Private addTableButton As Button
         Private removeTableButton As Button
+        Private enabledTablesButton As Button
         Private okButton As Button
         Private Shadows cancelButton As Button
         Private ReadOnly focusOriginalBackColors As New Dictionary(Of Control, Color)()
@@ -192,6 +193,22 @@ Namespace SDC.Framework
             }
             AddHandler removeTableButton.Click, AddressOf RemoveTableButton_Click
             Me.Controls.Add(removeTableButton)
+
+            ' Button - Enabled Tables
+            ' Here as well as on the admin dashboard, because this is where the question comes up:
+            ' the left list is what a table being enabled decides, and noticing one that should not
+            ' be grantable happens while looking at it, not while crossing the dashboard.
+            enabledTablesButton = New Button With {
+                .Text = "Tables…",
+                .Location = New Point(180, 240),
+                .Size = New Size(70, 35),
+                .Font = New Font("Arial", 9, FontStyle.Regular),
+                .Visible = SessionState.IsApplicationAdmin
+            }
+            Dim enabledTablesTip As New ToolTip()
+            enabledTablesTip.SetToolTip(enabledTablesButton, "Which tables are available to grant at all")
+            AddHandler enabledTablesButton.Click, AddressOf EnabledTablesButton_Click
+            Me.Controls.Add(enabledTablesButton)
 
             ' Right panel label
             rightLabel = New Label With {
@@ -378,6 +395,20 @@ Namespace SDC.Framework
             AddHandler roleFieldsGrid.EditingControlShowing, AddressOf RoleFieldsGrid_EditingControlShowing
             AddHandler Me.FormClosing, AddressOf Roles_U_FormClosing
             Me.Controls.Add(roleFieldsGrid)
+        End Sub
+
+        ''' <summary>
+        ''' The same checklist the admin dashboard opens, not a second copy of it. The left grid is
+        ''' rebuilt afterwards, because what it lists is exactly what was just decided.
+        ''' </summary>
+        Private Sub EnabledTablesButton_Click(sender As Object, e As EventArgs)
+            Using tables As New FW_EnabledTables()
+                tables.ShowDialog(Me)
+            End Using
+
+            ' Unconditionally. Cancel changes nothing, so rebuilding costs one query and removes the
+            ' case where the list disagrees with what was just seen.
+            LoadLeftGrid()
         End Sub
 
         Private Sub LoadLeftGrid()

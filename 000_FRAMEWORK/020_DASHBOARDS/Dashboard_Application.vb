@@ -24,6 +24,7 @@ Namespace SDC.Framework
         Private ReadOnly databaseConfigButton As DashboardIconButton
         Private ReadOnly companyDashboardButton As DashboardIconButton
         Private ReadOnly updateSchemaButton As DashboardIconButton
+        Private ReadOnly enabledTablesButton As DashboardIconButton
         Private ReadOnly closeIconButton As Button
         Private ReadOnly generatedFW_Employees_BButton As DashboardIconButton
         Private ReadOnly generatedFW_UserAccessDiagnostic_BButton As DashboardIconButton
@@ -294,6 +295,25 @@ Namespace SDC.Framework
             updateSchemaButton.FlatAppearance.BorderSize = 0
             updateSchemaButton.FlatAppearance.MouseOverBackColor = Color.Transparent
             updateSchemaButton.FlatAppearance.MouseDownBackColor = Color.Transparent
+
+            enabledTablesButton = New DashboardIconButton() With {
+                .Name = "ActionKey_EnabledTables",
+                .Text = "Enabled Tables",
+                .Location = DashboardGridLayout.CellLocation(3, 4),
+                .Size = New Size(DashboardGridLayout.IconWidth, DashboardGridLayout.IconHeight),
+                .BackColor = Color.Transparent,
+                .UseVisualStyleBackColor = False,
+                .FlatStyle = FlatStyle.Flat,
+                .Font = New Font("Segoe UI", 13.0F, FontStyle.Regular),
+                .Image = IconScaler.Load("Color_Favorites.png", DashboardIconSize, SystemIcons.Application.ToBitmap()),
+                .TextImageRelation = TextImageRelation.ImageAboveText,
+                .ImageAlign = ContentAlignment.TopCenter,
+                .TextAlign = ContentAlignment.BottomCenter,
+                .TabStop = False
+            }
+            enabledTablesButton.FlatAppearance.BorderSize = 0
+            enabledTablesButton.FlatAppearance.MouseOverBackColor = Color.Transparent
+            enabledTablesButton.FlatAppearance.MouseDownBackColor = Color.Transparent
             AddHandler Me.Load, AddressOf Dashboard_Application_Load
             AddHandler Me.Resize, AddressOf Dashboard_Application_Resize
             AddHandler rolesButton.MouseEnter, AddressOf IconButton_MouseEnter
@@ -320,6 +340,9 @@ Namespace SDC.Framework
             AddHandler updateSchemaButton.MouseEnter, AddressOf IconButton_MouseEnter
             AddHandler updateSchemaButton.MouseLeave, AddressOf IconButton_MouseLeave
             AddHandler updateSchemaButton.Click, AddressOf UpdateSchemaButton_Click
+            AddHandler enabledTablesButton.MouseEnter, AddressOf IconButton_MouseEnter
+            AddHandler enabledTablesButton.MouseLeave, AddressOf IconButton_MouseLeave
+            AddHandler enabledTablesButton.Click, AddressOf EnabledTablesButton_Click
             AddHandler newPageRequestsButton.MouseEnter, AddressOf IconButton_MouseEnter
             AddHandler newPageRequestsButton.MouseLeave, AddressOf IconButton_MouseLeave
             AddHandler newPageRequestsButton.Click, AddressOf NewPageRequestsButton_Click
@@ -344,6 +367,7 @@ Namespace SDC.Framework
             Me.Controls.Add(helpDeskSupportButton)
             Me.Controls.Add(newPageRequestsButton)
             Me.Controls.Add(updateSchemaButton)
+            Me.Controls.Add(enabledTablesButton)
         End Sub
 
         Private Sub Dashboard_Application_Load(sender As Object, e As EventArgs)
@@ -407,6 +431,8 @@ Namespace SDC.Framework
             helpDeskSupportButton.Top = DashboardGridLayout.CellTop(2)
             newPageRequestsButton.Left = rolesButton.Left
             newPageRequestsButton.Top = DashboardGridLayout.CellTop(3)
+            enabledTablesButton.Left = DashboardGridLayout.CellLeft(4)
+            enabledTablesButton.Top = DashboardGridLayout.CellTop(3)
 
             ' Last, because everything above pins icons to the cells written in this file. Anything
             ' that has been dragged elsewhere is laid back over the top; anything untouched keeps
@@ -437,6 +463,17 @@ Namespace SDC.Framework
             ResetIconButtonVisuals()
             Using frm As New FW_AuditTrail_B()
                 frm.ShowDialog(Me)
+            End Using
+        End Sub
+
+        ''' <summary>
+        ''' Which tables the application offers at all. A checklist rather than a page, because the
+        ''' work is comparing the whole list rather than opening one record to tick one box.
+        ''' </summary>
+        Private Sub EnabledTablesButton_Click(sender As Object, e As EventArgs)
+            ResetIconButtonVisuals()
+            Using page As New FW_EnabledTables(currentUser)
+                page.ShowDialog(Me)
             End Using
         End Sub
 

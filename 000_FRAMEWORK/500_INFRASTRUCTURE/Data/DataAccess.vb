@@ -2281,6 +2281,92 @@ Namespace SDC.Framework
         End Function
 
         ''' <summary>
+        ''' Every registered table, whether it is enabled, and what already depends on it.
+        '''
+        ''' Enabled is FW_RoleSchema.IsActive, reported as it is stored rather than inverted, so the
+        ''' screen and the column say the same thing.
+        '''
+        ''' The two counts are what disabling costs. Roles is how many roles hold the table: their
+        ''' permissions keep working, because permission resolution reads FW_RoleDetails without
+        ''' consulting IsActive - what is lost is the ability to change them, since Roles_U's left
+        ''' grid and the access diagnostic both drop an inactive table. Pages is how many FW_Pages
+        ''' rows name it: those pages still open, but they can no longer be regenerated, because
+        ''' page generation will not offer the table.
+        ''' </summary>
+        Public Shared Function GetTableEnablement() As DataTable
+            Dim table As New DataTable("TableEnablement")
+
+            Using conn As New SqlConnection(ConnectionString)
+                conn.Open()
+                Using cmd As New SqlCommand(
+                    "SELECT s.DB_Table, " &
+                    "       ISNULL(NULLIF(LTRIM(RTRIM(s.Table_Alias)), ''), s.DB_Table) AS Table_Alias, " &
+                    "       CASE WHEN ISNULL(s.IsActive, 1) = 0 THEN CAST(0 AS bit) ELSE CAST(1 AS bit) END AS IsEnabled, " &
+                    "       (SELECT COUNT(DISTINCT rd.RoleID) FROM dbo.FW_RoleDetails rd " &
+                    "         WHERE rd.DB_Table = s.DB_Table AND ISNULL(rd.DeletedFlag, 0) = 0) AS RoleCount, " &
+                    "       (SELECT COUNT(*) FROM dbo." & PagesTable & " p " &
+                    "         WHERE p.DB_Table = s.DB_Table AND ISNULL(p.DeletedFlag, 0) = 0) AS PageCount " &
+                    "FROM dbo.FW_RoleSchema s " &
+                    "WHERE ISNULL(s.DeletedFlag, 0) = 0 " &
+                    "ORDER BY ISNULL(NULLIF(LTRIM(RTRIM(s.Table_Alias)), ''), s.DB_Table), s.DB_Table", conn)
+                    Using adapter As New SqlDataAdapter(cmd)
+                        adapter.Fill(table)
+                    End Using
+                End Using
+            End Using
+
+            Return table
+        End Function
+
+        ''' <summary>
+        ''' Enables and disables tables, all of them or none of them.
+        '''
+        ''' One transaction because this is a permission change: half-applied, some tables would be
+        ''' granted and others not, with nothing on screen saying which half took.
+        ''' </summary>
+        Public Shared Function SetTableEnablement(enablement As Dictionary(Of String, Boolean)) As Integer
+            If enablement Is Nothing OrElse enablement.Count = 0 Then Return 0
+
+            ' At the write, not only on the buttons. Three places open this checklist and each hides
+            ' its button from everybody else, which is three chances to forget and no protection at
+            ' all for a caller written later.
+            If Not SessionState.IsApplicationAdmin Then
+                Throw New InvalidOperationException("ONLY AN APPLICATION ADMINISTRATOR MAY ENABLE OR DISABLE A TABLE.")
+            End If
+
+            Dim changed = 0
+
+            Using conn As New SqlConnection(ConnectionString)
+                conn.Open()
+                Using trans = conn.BeginTransaction()
+                    Try
+                        For Each pair In enablement
+                            If String.IsNullOrWhiteSpace(pair.Key) Then Continue For
+
+                            Using cmd As New SqlCommand(
+                                "UPDATE dbo.FW_RoleSchema SET IsActive = @IsActive " &
+                                "WHERE DB_Table = @DBTable AND ISNULL(IsActive, 1) <> @IsActive", conn, trans)
+                                cmd.Parameters.Add("@IsActive", SqlDbType.Bit).Value = If(pair.Value, 1, 0)
+                                cmd.Parameters.Add("@DBTable", SqlDbType.VarChar, 128).Value = pair.Key.Trim()
+                                changed += cmd.ExecuteNonQuery()
+                            End Using
+                        Next
+
+                        trans.Commit()
+                    Catch
+                        trans.Rollback()
+                        Throw
+                    End Try
+                End Using
+            End Using
+
+            ' A table's availability has changed, and the role metadata caches hold the old answer.
+            If changed > 0 Then InvalidateRoleMetadataCache()
+
+            Return changed
+        End Function
+
+        ''' <summary>
         ''' The columns each computed column is built from, as ComputedColumn -> its sources.
         '''
         ''' Read from the expression SQL Server stores, not guessed: FirstLast is
