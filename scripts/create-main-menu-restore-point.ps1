@@ -34,8 +34,8 @@ New-Item -ItemType Directory -Path $restorePoint -Force | Out-Null
 # CLAUDE.md comes too: the Protected Areas rule that governs edits here is in it, and a restore
 # point that loses the rule protecting the file is half a restore point.
 $files = @(
-    "000_FRAMEWORK\010_MAINMENU\MainMenu.vb",
-    "100_PROJECTS\SDC\MenuFormInitializer.vb",
+    "000_FRAMEWORK\010_MAIN MENU\MainMenu.vb",
+    "100_CTY\MenuFormInitializer.vb",
     "CLAUDE.md"
 )
 
@@ -54,8 +54,8 @@ foreach ($relativePath in $files) {
 - Created: $(Get-Date -Format "yyyy-MM-dd HH:mm:ss")
 - Purpose: $Description
 - Files captured:
-    - 000_FRAMEWORK\010_MAINMENU\MainMenu.vb
-    - 100_PROJECTS\SDC\MenuFormInitializer.vb
+    - 000_FRAMEWORK\010_MAIN MENU\MainMenu.vb
+    - 100_CTY\MenuFormInitializer.vb
     - CLAUDE.md
 
 Restoring: copy MainMenu.vb and MenuFormInitializer.vb back to the paths above. They are a pair -

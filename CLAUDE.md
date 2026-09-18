@@ -63,7 +63,7 @@ whether something is expected of them.
   decision; length for its own sake is not.
 - Read the full relevant file before changing it. Never apply a generic solution without first
   understanding the existing code.
-- Before editing `000_FRAMEWORK\000_BASECLASSES\Base_B.vb` or `000_FRAMEWORK\000_BASECLASSES\Base_U.vb`, read the section of `FRAMEWORK_NOTES.md`
+- Before editing `000_FRAMEWORK\000_BASE CLASSES\Base_B.vb` or `000_FRAMEWORK\000_BASE CLASSES\Base_U.vb`, read the section of `FRAMEWORK_NOTES.md`
   that covers the behavior being changed. The contracts there are not obvious from a single call
   site, and getting one backwards is expensive: the required-field colour precedence was argued the
   wrong way round on 2026-08-31 because the documented rule was never consulted.
@@ -116,15 +116,25 @@ opened rather than by layer. Folder names are uppercase throughout, which reads 
 than mixed case does:
 
 ```
-000_BASECLASSES   Base_B, Base_U             <- edited directly
-005_STARTUP       Program, LoginForm
-010_MAINMENU      the shell
-020_DASHBOARDS    Application, Company, ...
+000_BASE CLASSES     Base_B, Base_U           <- edited directly
+005_STARTUP          Program, LoginForm
+010_MAIN MENU        the shell
+020_DASHBOARDS       Application, Company, ...
 
-040_USERS         050_REGISTRATION   060_ROLES      070_PAGEGENERATION
-080_HELPDESK      085_MESSAGING      090_DIAGNOSTICS
+030_EMPLOYEES   040_USERS   050_REGISTRATION   060_ROLES   070_PAGE GENERATION
+080_HELP DESK   085_MESSAGING   090_DIAGNOSTICS
 
 500_INFRASTRUCTURE/  Controllers  Data  Helpers  Security  Widgets
+999_GENERATED        generated framework pages, waiting to be filed
+```
+
+And at the root, each application beside the framework:
+
+```
+000_FRAMEWORK/
+100_CTY/             the first application - its pages are CTY_
+    999_GENERATED    its own waiting room
+200_.../             the next one
 ```
 
 **The number carries the meaning, not the name.** Below 500 is worked on. `500_INFRASTRUCTURE` is
@@ -137,23 +147,26 @@ is `PascalCase` — `500_INFRASTRUCTURE/Data`. Nested folders take no
 number, because once they are grouped nothing about their order matters. The two cases together
 mean a path tells you its own shape before you have read the words.
 
-`100_PROJECTS/` is for the applications built on the framework, one folder per project. Its first
-occupant is `SDC/MenuFormInitializer.vb`, which is the boundary made concrete: `FW_MainMenu` in
-`010_MAINMENU` renders a ribbon, and the initializer decides which tiles that ribbon has, under
-its own `MenuSurfaceName` so each application's saved arrangements stay separate. A second
-application writes its own and changes nothing in `000_FRAMEWORK`.
+**An application built on the framework is a folder of its own at the root, not a child of a
+container.** `100_CTY` is the first; `200_` is the next. `100_PROJECTS` held them until 2026-09-18
+and earned nothing: an application is a peer of the framework, and the container only said "this is
+not the framework", which the prefix already says.
 
-`900_SANDBOX/` is for experiments, and is excluded from compilation in the project file, the way
-`tests` and `project-backup` are.
+`100_CTY/MenuFormInitializer.vb` is the boundary made concrete: `FW_MainMenu` in `010_MAIN MENU`
+renders a ribbon, and the initializer decides which tiles that ribbon has, under its own
+`MenuSurfaceName` so each application's saved arrangements stay separate. A second application
+writes its own and changes nothing in `000_FRAMEWORK`.
 
-A generated `_B`/`_U` pair is written to **`999_GENERATED PAGES/`**, deliberately. It is a draft
-waiting to be filed, and the folder is numbered 999 so an unfiled page sits at the bottom of the
-tree looking like something outstanding rather than something settled.
+**Each owner has its own waiting room: `999_GENERATED`.** A generated `_B`/`_U` pair lands in the
+one belonging to whoever it is for — `000_FRAMEWORK/999_GENERATED` for a framework page, and the
+application's own for an application page. The number puts it at the bottom of that tree, so an
+unfiled page looks like something outstanding rather than something settled, and a new application
+brings its waiting room with it instead of adding a folder to the root.
 
 **Filing one is the user's decision, and theirs to make by hand.** A page moves to wherever it
-belongs — a band under `000_FRAMEWORK`, or any project folder under `100_PROJECTS` — and which of
-those it is depends on what the page turns out to be, which the generator cannot know. Do not file
-a page, and do not assume one is still where it was generated.
+belongs — a band under `000_FRAMEWORK`, or its application's folder — and which of those it is
+depends on what the page turns out to be, which the generator cannot know. Do not file a page, and
+do not assume one is still where it was generated.
 
 Moving it breaks nothing. Every `.vb` under the project is compiled, `RootNamespace` is empty and
 each file declares its own namespace, so a page compiles wherever it sits. Regeneration follows it:
@@ -161,17 +174,17 @@ each file declares its own namespace, so a page compiles wherever it sits. Regen
 filed page is rewritten where it now lives and only a genuinely new one lands in `999_GENERATED
 PAGES`. Nothing records where a page came from.
 
-The exception is the four folders the project file excludes — `900_SANDBOX`, `tests`,
-`project-backup` and `restore-points`. A page moved into one of those drops out of the build
+The exception is the three folders the project file excludes — `tests`, `project-backup` and
+`restore-points`. A page moved into one of those drops out of the build
 without saying so.
 
-`999_GENERATED PAGES/.gitkeep` carries the same guidance for whoever opens the folder, and keeps it
+`999_GENERATED/.gitkeep` carries the same guidance for whoever opens the folder, and keeps it
 alive in git for the case it should usually be in: empty.
 
 Folder numbers are three digits throughout, so they sort correctly under a plain lexicographic
 sort as well as a natural one. **Files inside them carry no number and no `FW_` prefix** — the
 folder says both, and two orderings that can disagree is how they drift apart. Class names are
-unchanged: `000_FRAMEWORK/000_BASECLASSES/Base_B.vb` still declares `FW_Base_B`.
+unchanged: `000_FRAMEWORK/000_BASE CLASSES/Base_B.vb` still declares `FW_Base_B`.
 
 A script that scans for pages must recurse. Two guardrail scripts scanned the root
 non-recursively and, after the move, one failed outright and the other passed while checking
@@ -200,7 +213,7 @@ session, so delivery constraints do not apply to it.
 
 Key areas:
 
-- Page framework: `000_FRAMEWORK\000_BASECLASSES\Base_B.vb` (browse pages) and `000_FRAMEWORK\000_BASECLASSES\Base_U.vb` (maintenance pages).
+- Page framework: `000_FRAMEWORK\000_BASE CLASSES\Base_B.vb` (browse pages) and `000_FRAMEWORK\000_BASE CLASSES\Base_U.vb` (maintenance pages).
 - Data access: `DataAccess.vb`, plus `HelpDeskDataAccess.vb` and `MessagingDataAccess.vb`.
 - Models: `Models.vb`.
 - Entry point and shell: `Program.vb`, `LoginForm.vb`, `MainMenu.vb`.
@@ -262,9 +275,15 @@ Key areas:
 
 ## Naming Conventions (Required)
 
-- Database tables that belong to the framework are prefixed `FW_`, for example `dbo.FW_Users`.
-- Pages that belong to the framework are prefixed `FW_`, for example `FW_Registration_B`.
-- Application-specific tables and pages built on top of the framework do **not** take the prefix.
+- **Every table and page carries its owner's prefix.** `FW_` is the core framework —
+  `dbo.FW_Users`, `FW_Registration_B`. An application built on it uses its own code: `CTY_` for the
+  first one, `XXX_` for the next. The prefix answers "whose is this?" without opening a folder, and
+  it is what lets two applications each have a `Customers_B` without colliding.
+- **The folder mirrors the prefix.** `FW_` lives under `000_FRAMEWORK`, `CTY_` under `100_CTY`, and
+  the next application under `200_`. One idea said twice, deliberately: the name travels into SQL,
+  into `FW_Pages` rows and into error messages, where the folder cannot follow it.
+- Everything runs as one application today. Splitting into a solution later is a matter of moving
+  folders, which is exactly what the prefixes make safe.
 - **A table that exists only to carry a permission takes `FW_Perm_`**, holds no data and has no
   `_B`/`_U` pair — `FW_Perm_Dashboard` gates the Dashboard tile. It is a real table, not a name
   invented at a call site: the sweep required when removing a page reports every `FW_RoleDetails`
@@ -305,7 +324,9 @@ Key areas:
 Known exceptions in the current codebase, to be resolved rather than copied:
 
 - `Roles_B/_U`, `Users_AppAdmin_B/_U` and `PageGeneration_U` are framework pages without the
-  `FW_` prefix.
+  `FW_` prefix. They predate the rule, and they read as belonging to nobody — which is the whole
+  argument for it. Renaming one reaches its `FW_Pages` row, its role and layout rows and every
+  caller, so it happens when the page is being worked on anyway.
 - Browse-only pages with no `_U` partner: `FW_AuditTrail_B`, `FW_HD_Admin_B`,
   `FW_HD_AdminDashboard_B`, `FW_UserAccessDiagnostic_B`.
 - `FW_HD_Issues_B` and `FW_HD_Issues_Support_B` share a single `FW_HD_Issues_U`.
@@ -480,7 +501,7 @@ name that no longer resolves.
 
 ## QBE Visibility Guardrail (Required)
 
-- Before the first substantive edit to `000_FRAMEWORK\000_BASECLASSES\Base_B.vb`, run the `Create Base_B Restore Point` task. Do not edit Base_B until its timestamped restore point is created.
+- Before the first substantive edit to `000_FRAMEWORK\000_BASE CLASSES\Base_B.vb`, run the `Create Base_B Restore Point` task. Do not edit Base_B until its timestamped restore point is created.
 - QBE fields must be derived only from visible browse-grid columns after all standard hiding and saved-layout rules have been applied.
 - Internal maintenance aliases, including `PK`, must never appear in the browse grid, QBE, columns manager, or user-facing field lists.
 - A real ID column explicitly selected by page SQL, such as `IssueID`, is distinct from the internal `PK` alias and may appear when visible.
@@ -542,7 +563,7 @@ See also `BASE_B_QBE_LAYOUT_GUIDE.md`.
 
 ## Save And Model Contract Guardrail (Required)
 
-- Before the first substantive edit to `000_FRAMEWORK\000_BASECLASSES\Base_U.vb`, run the `Create Base_U Restore Point` task. Do not edit Base_U until its timestamped restore point is created.
+- Before the first substantive edit to `000_FRAMEWORK\000_BASE CLASSES\Base_U.vb`, run the `Create Base_U Restore Point` task. Do not edit Base_U until its timestamped restore point is created.
 - Standard `_U` pages must use the shared save result contract and must distinguish success, conflict, deleted record, unavailable concurrency protection, and failure.
 - Record identity, registration context, and concurrency tokens must survive every load, clone, form-bind, validation, and record-rebuild path.
 - Model and data-reader nullability must match the database contract. A nullable database column must map to a nullable model property and safe `DBNull` conversion; never make it required merely because a current page does not display it.

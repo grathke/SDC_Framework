@@ -167,7 +167,7 @@ controls - before any of it is wired to the generator or to a page somebody depe
 Judge it accordingly. It does not need the New Page Regression Guardrail, an ActionKey, an icon
 or a permission until it stops being an experiment. Say plainly which of the two it currently is.
 
-One trap: `900_SANDBOX` is **excluded from compilation** in the project file, alongside `tests`,
+One trap: the removed `900_SANDBOX` (gone 2026-09-18) is **excluded from compilation** in the project file, alongside `tests`,
 `project-backup` and `restore-points`. A page that has to run cannot live there. Put it somewhere
 that builds and keep it obviously named, or it will be mistaken for a finished page later.
 

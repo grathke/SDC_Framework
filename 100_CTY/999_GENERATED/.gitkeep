@@ -1,0 +1,17 @@
+Generated CTY_ pages land here, and wait here until they are filed.
+
+Filing one means moving it up into 100_CTY, or into a band inside it once this
+application grows enough to have bands. Folders do not affect the build: every
+.vb under the project is compiled, RootNamespace is empty, and each file declares
+its own namespace, so a page compiles wherever it sits.
+
+The folders to avoid are the ones the project excludes - tests, project-backup
+and restore-points. A page dropped in one of those leaves the build without
+saying so.
+
+Regenerating follows the file. PageGenerator looks the page up by name before it
+writes, so a filed page is rewritten where it now lives and only a genuinely new
+one is written here. Nothing remembers where a page came from.
+
+This file exists because git does not track empty directories, and this folder is
+empty whenever nothing is waiting - which is the state it should usually be in.

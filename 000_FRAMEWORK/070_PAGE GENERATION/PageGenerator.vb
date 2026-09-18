@@ -792,13 +792,18 @@ Namespace SDC.Framework
         ''' <summary>
         ''' Where a generated page is written, and the one place that decides it.
         '''
-        ''' 999_GENERATED PAGES at the repository root, not the root itself. A generated pair is a draft:
-        ''' it is reviewed and then filed by hand into a band under 000_FRAMEWORK or into the project
-        ''' it belongs to under 100_PROJECTS, and which of those depends on what the page turns out
-        ''' to be. The generator cannot know that, so it does not guess - but it should not scatter
-        ''' loose files across the root either, where an unfiled page looks like part of the
-        ''' repository rather than something waiting on a decision. One folder says both: these are
-        ''' generated, and none of them has been filed yet.
+        ''' The framework's own waiting room: 000_FRAMEWORK\999_GENERATED. A generated pair is a
+        ''' draft - it is reviewed and then filed by hand into a band, and which band depends on
+        ''' what the page turns out to be, which the generator cannot know. It does not guess, but
+        ''' it should not scatter loose files across the framework either, where an unfiled page
+        ''' looks like part of it rather than something waiting on a decision. One folder says
+        ''' both: these are generated, and none of them has been filed.
+        '''
+        ''' Inside the owner rather than at the repository root, decided 2026-09-18. A project gets
+        ''' its own 999_GENERATED under its own folder, so the number means the same thing in every
+        ''' tree - at the bottom, waiting - and a new project brings its waiting room with it
+        ''' instead of adding one more folder to the root. Which owner a page belongs to is the
+        ''' generation request's to say; until it does, everything lands here.
         '''
         ''' The SDK glob compiles the folder like any other, so a page works before it is filed.
         '''
@@ -806,7 +811,7 @@ Namespace SDC.Framework
         ''' this move would have changed the generator's idea of where a page lives and left the
         ''' page's "has it been edited by hand" checks looking at the old spot.
         ''' </summary>
-        Public Const GeneratedPagesFolder As String = "999_GENERATED PAGES"
+        Public Const GeneratedPagesFolder As String = "000_FRAMEWORK\999_GENERATED"
 
         ''' <summary>
         ''' The caller that means the main ribbon rather than a dashboard. It has been in the Menu
@@ -878,9 +883,9 @@ Namespace SDC.Framework
         ''' PAGES if it has not.
         '''
         ''' Filing a generated page is the expected next step - it is a draft, and it belongs in a
-        ''' band under 000_FRAMEWORK or in a project under 100_PROJECTS once you know which. Writing
+        ''' band under 000_FRAMEWORK or in an application folder such as 100_CTY once you know which. Writing
         ''' by name alone made that a one-way door: regenerating a filed page put a second copy in
-        ''' 999_GENERATED PAGES, two files declaring the same class in the same namespace, which is a
+        ''' 999_GENERATED, two files declaring the same class in the same namespace, which is a
         ''' hard compile error rather than a duplicate anybody would spot.
         '''
         ''' So the page is looked for before it is placed, the same way a dashboard is. Move a page
@@ -888,11 +893,11 @@ Namespace SDC.Framework
         ''' </summary>
         ''' <summary>
         ''' Where a generated page lives, so regeneration rewrites it where it was filed rather than
-        ''' dropping a second copy in 999_GENERATED PAGES.
+        ''' dropping a second copy in 999_GENERATED.
         '''
         ''' **A file is never named FW_.** The prefix belongs to the class and to the folder a page
         ''' is filed under, never to the file itself - so FW_Employees_B lives in Employees_B.vb,
-        ''' whether that is still in 999_GENERATED PAGES or filed under 000_FRAMEWORK\030_EMPLOYEES.
+        ''' whether that is still in 999_GENERATED or filed under 000_FRAMEWORK\030_EMPLOYEES.
         '''
         ''' The prefixed name is still looked for, because pages generated before this rule was
         ''' applied carry it, and regeneration must rewrite those where they are rather than leave

@@ -114,7 +114,7 @@ than a subclass compiled from a file. Generating one becomes inserting a row, an
 downstream of the file disappears:
 
 - no source file, so no compile step before the page exists
-- no filing a page out of `999_GENERATED PAGES` into a band or a project
+- no filing a page out of `999_GENERATED` into a band or a project
 - no duplicate-class hazard when a filed page is regenerated
 - no rebuild before a new page can be opened
 
@@ -220,7 +220,7 @@ generator checks whether a page has manual changes before overwriting it. A pure
 has nowhere to put custom behaviour.
 
 So the shape to aim for is **data-driven by default, with a file generated only when a page needs
-behaviour of its own** — which is what filing a page out of `999_GENERATED PAGES` already signals.
+behaviour of its own** — which is what filing a page out of `999_GENERATED` already signals.
 
 ---
 

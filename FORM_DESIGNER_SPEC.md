@@ -348,8 +348,8 @@ one field by field, position by position. Both regression scripts. The unmapped-
 layout naming a dropped column.
 
 **Phase 2 — the sandbox designer.** The three panes, field-first palette, drag to rows, save the
-document, Preview. A page in `070_PAGEGENERATION`, obviously named as an experiment, not wired to
-any request. `900_SANDBOX` is excluded from compilation and cannot host a page that has to run.
+document, Preview. A page in `070_PAGE GENERATION`, obviously named as an experiment, not wired to
+any request. the removed `900_SANDBOX` (gone 2026-09-18) is excluded from compilation and cannot host a page that has to run.
 
 *Judged as:* an experiment. No ActionKey, no icon, no permission, no New Page Regression Guardrail
 until it stops being one.

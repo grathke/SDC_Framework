@@ -1,0 +1,12 @@
+A placeholder for the second application, so the shape is visible before there is
+anything in it: an application is a folder at the root beside 000_FRAMEWORK, not
+a child of a container.
+
+Rename this folder to the application's own code when it exists - 200_XXX - and
+give its tables and pages the matching XXX_ prefix. The prefix is what travels
+into SQL, into FW_Pages rows and into error messages, where a folder cannot
+follow.
+
+100_CTY is the first application and the worked example: two files that decide
+what that application is - which tiles its ribbon has, and what occupies its
+regions - while everything they call lives in 000_FRAMEWORK.

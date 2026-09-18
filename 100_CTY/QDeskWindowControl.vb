@@ -19,7 +19,7 @@ Namespace SDC.Framework
     ''' schedule, a count, a short list - and the shape is the part worth agreeing before anything
     ''' is written to fill it.
     '''
-    ''' It lives under 100_PROJECTS\SDC rather than in the framework because which default a given
+    ''' It lives under 100_CTY rather than in the framework because which default a given
     ''' application wants is MenuFormInitializer's decision. A second application on this framework
     ''' writes its own and changes nothing in 000_FRAMEWORK.
     ''' </summary>
