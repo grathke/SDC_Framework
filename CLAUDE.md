@@ -83,7 +83,9 @@ whether something is expected of them.
   marker. This is the realistic test: Thinfinity is how the application is delivered.
 - **"run no tf"** — launch it as a plain desktop window instead. Needed for page generation, and it
   is the only run that performs the startup schema sweep. See the run section below.
-- **"run duplicate check first"** — apply the Consolidation Guardrail before making changes.
+- **"run duplicate check first"** — a hard request to apply the Consolidation Guardrail before making
+  changes: look for duplicate or near-duplicate logic first, and ask whether to consolidate if there
+  is any. Before any medium to large change, offer the duplicate check without being asked.
 
 ## End Of Day Protection Check (Required)
 
@@ -222,59 +224,6 @@ Key areas:
 - Entry point and shell: `Program.vb`, `LoginForm.vb`, `FW_MainMenu.vb`.
 - Naming convention: `*_B` = browse page, `*_U` = maintenance page.
 - SQL migrations: `sql/`. Validation and restore-point scripts: `scripts/`.
-
-## Companion Documents
-
-- `FRAMEWORK_NOTES.md` — how the menu shell, browse pages, maintenance pages, required-field
-  styling and layout persistence actually work. Read before changing framework behavior.
-- `ICON_CATALOG.md` — the repository icon catalog required by the Action Icon Guardrail.
-- `TEST_CASES.md` — manual and scripted test cases with stable IDs. Add a case when a defect is
-  found, and record pass or fail with a date.
-- `BASE_B_QBE_LAYOUT_GUIDE.md`, `COMBO_CHECKLIST.md` — existing area-specific guides.
-- `ENGLISH_SEARCH_SPEC.md` — **proposed, not built.** An English filter box on browse pages,
-  parsed locally into a SQL predicate. Read it before building any of it, and before changing QBE
-  filtering: section 8 records the three filter paths a change has to reach, which is not obvious
-  from any one of them.
-- `PAGE_GENERATION_SIMPLIFICATION.md` — **proposed, not built.** Why a generated `_B` is almost
-  entirely boilerplate, and what follows from that: the three duplicated handlers belong in
-  `FW_Base_B`, and a browse page may not need to be a compiled class at all. Read it before
-  changing the page generator or adding anything to a generated page template — section 2 is worth
-  doing on its own merits and is independent of the rest.
-- `BASE_BHF_SPEC.md` — **proposed, partly built.** Hot Fields: a docking panel on every browse
-  page listing every field of the selected record, not just the columns the page SQL selects.
-  Read it before touching the layout row above the browse grid, and before adding anything to
-  `FW_Base_B`'s constructor - section 9 records why the widget must be built before the
-  `buildDefaultBrowseShell` early return, which the colour picker got wrong.
-- `PAGE_FIELD_PICKER_SPEC.md` — **proposed, not built.** What a browse page selects, and what Hot
-  Fields shows: the generation request defines the page at birth, Save writes `FW_Pages` without
-  writing files, the page owns its Hot Fields list thereafter, and a confirmed Generate takes it
-  back to birth. Read it before changing `Table_SQL` handling, saved layouts or `UpsertPageRecord` —
-  section 1 records that a `_B` page reads its columns at runtime, so a column change needs no
-  rebuild, and section 5 that `Last Used` is written automatically and beats the `* Default`, which
-  is why a reset that leaves it behind changes nothing anyone can see.
-- `PAGE_LAYOUT_RUNTIME_SPEC.md` — **proposed, not built.** Moving a `_U` page's layout out of
-  generated code and into data the page reads at runtime, and the drag-and-drop designer that
-  would edit it. Read it before changing how a `_U` is laid out and before adding to the
-  `FW_Base_U` field helpers — section 1 records why a row is the unit the framework reasons
-  about, and the three faults on 2026-09-14 that were all the same mistake of something not
-  being on the row it appeared to be on. Section 4 is the map of the helpers and the naming they
-  produce; section 5 says the first cut of the designer is a sandbox page and should be judged
-  as one.
-- `FORM_DESIGNER_SPEC.md` — **proposed, nothing built.** Expands section 5 of the document above:
-  the second kind of `_U` page whose field block is read from data, and the three-pane designer that
-  edits it. Read it before adding `LayoutMode` to the generation request, before changing
-  `BuildMaintenanceSource`, and before painting anything in a designer — section 2 is nine products
-  and the one idea worth taking from each, section 6 is the layout document and why a row is an
-  object in it, and section 7 records that `AppAdminRequiredBackColor` is a load-bearing exact ARGB
-  that no other colour may borrow.
-- `THINFINITY_NOTES.md` — **reference, nothing built.** The VirtualUI SDK surface behind the
-  delivery rules below: session detection, `StdDialogs` and the file dialogs, upload and download,
-  printing, the `Options` flags, `BrowserInfo`. Read it before adding the SDK to the project or
-  changing the Help Desk attachment path — section 2 records why the SDK can be added before it is
-  installed, section 5 why a second attachment picker may not be needed at all, and section 11.2 the
-  `http.sys` URL reservation the server cannot bind its own port without.
-- `.github/new-page-request-template.md` and `.github/new-page-request-manual.md` — the page
-  request template and how to interpret a filled-in one.
 
 ## Naming Conventions (Required)
 
@@ -436,6 +385,59 @@ powershell -ExecutionPolicy Bypass -File .\scripts\create-base-u-restore-point.p
 
 Restore points are written to `restore-points/`.
 
+## Companion Documents
+
+- `FRAMEWORK_NOTES.md` — how the menu shell, browse pages, maintenance pages, required-field
+  styling and layout persistence actually work. Read before changing framework behavior.
+- `ICON_CATALOG.md` — the repository icon catalog required by the Action Icon Guardrail.
+- `TEST_CASES.md` — manual and scripted test cases with stable IDs. Add a case when a defect is
+  found, and record pass or fail with a date.
+- `BASE_B_QBE_LAYOUT_GUIDE.md`, `COMBO_CHECKLIST.md` — existing area-specific guides.
+- `ENGLISH_SEARCH_SPEC.md` — **proposed, not built.** An English filter box on browse pages,
+  parsed locally into a SQL predicate. Read it before building any of it, and before changing QBE
+  filtering: section 8 records the three filter paths a change has to reach, which is not obvious
+  from any one of them.
+- `PAGE_GENERATION_SIMPLIFICATION.md` — **proposed, not built.** Why a generated `_B` is almost
+  entirely boilerplate, and what follows from that: the three duplicated handlers belong in
+  `FW_Base_B`, and a browse page may not need to be a compiled class at all. Read it before
+  changing the page generator or adding anything to a generated page template — section 2 is worth
+  doing on its own merits and is independent of the rest.
+- `BASE_BHF_SPEC.md` — **proposed, partly built.** Hot Fields: a docking panel on every browse
+  page listing every field of the selected record, not just the columns the page SQL selects.
+  Read it before touching the layout row above the browse grid, and before adding anything to
+  `FW_Base_B`'s constructor - section 9 records why the widget must be built before the
+  `buildDefaultBrowseShell` early return, which the colour picker got wrong.
+- `PAGE_FIELD_PICKER_SPEC.md` — **proposed, not built.** What a browse page selects, and what Hot
+  Fields shows: the generation request defines the page at birth, Save writes `FW_Pages` without
+  writing files, the page owns its Hot Fields list thereafter, and a confirmed Generate takes it
+  back to birth. Read it before changing `Table_SQL` handling, saved layouts or `UpsertPageRecord` —
+  section 1 records that a `_B` page reads its columns at runtime, so a column change needs no
+  rebuild, and section 5 that `Last Used` is written automatically and beats the `* Default`, which
+  is why a reset that leaves it behind changes nothing anyone can see.
+- `PAGE_LAYOUT_RUNTIME_SPEC.md` — **proposed, not built.** Moving a `_U` page's layout out of
+  generated code and into data the page reads at runtime, and the drag-and-drop designer that
+  would edit it. Read it before changing how a `_U` is laid out and before adding to the
+  `FW_Base_U` field helpers — section 1 records why a row is the unit the framework reasons
+  about, and the three faults on 2026-09-14 that were all the same mistake of something not
+  being on the row it appeared to be on. Section 4 is the map of the helpers and the naming they
+  produce; section 5 says the first cut of the designer is a sandbox page and should be judged
+  as one.
+- `FORM_DESIGNER_SPEC.md` — **proposed, nothing built.** Expands section 5 of the document above:
+  the second kind of `_U` page whose field block is read from data, and the three-pane designer that
+  edits it. Read it before adding `LayoutMode` to the generation request, before changing
+  `BuildMaintenanceSource`, and before painting anything in a designer — section 2 is nine products
+  and the one idea worth taking from each, section 6 is the layout document and why a row is an
+  object in it, and section 7 records that `AppAdminRequiredBackColor` is a load-bearing exact ARGB
+  that no other colour may borrow.
+- `THINFINITY_NOTES.md` — **reference, nothing built.** The VirtualUI SDK surface behind the
+  delivery rules below: session detection, `StdDialogs` and the file dialogs, upload and download,
+  printing, the `Options` flags, `BrowserInfo`. Read it before adding the SDK to the project or
+  changing the Help Desk attachment path — section 2 records why the SDK can be added before it is
+  installed, section 5 why a second attachment picker may not be needed at all, and section 11.2 the
+  `http.sys` URL reservation the server cannot bind its own port without.
+- `.github/new-page-request-template.md` and `.github/new-page-request-manual.md` — the page
+  request template and how to interpret a filled-in one.
+
 ## Default Engineering Guardrails
 
 These are baseline rules for this application, not optional task-specific suggestions:
@@ -449,7 +451,7 @@ These are baseline rules for this application, not optional task-specific sugges
 - Require confirmation for destructive or irreversible actions.
 - Validate the complete caller and model path, then build and manually test the real workflow.
 
-### Rules learned the hard way
+## Rules Learned The Hard Way
 
 - **Fewest database round trips, everywhere.** Prefer one joined query over several, and say the
   query count when proposing a data-access change. A session of logging in and opening a few pages
@@ -501,67 +503,6 @@ These are baseline rules for this application, not optional task-specific sugges
 - Do not declare a cross-cutting change complete until the application builds, focused checks pass, all affected callers are searched, and the actual user workflow is manually verified.
 - If a special page intentionally does not follow the shared contract, document it explicitly and add a validation check for that exception.
 
-## New Page Regression Guardrail (Required)
-
-- Every new `_B` or `_U` page requires a regression pass before completion.
-- Verify inheritance, naming, constructor context, table and RegistrationID scope, Base_B SQL/`AS PK` behavior, Base_U identity and RowVersion preservation, all callers/action icons, permissions, and missing-schema behavior.
-- Check create, update, delete, cancel, conflict, retry, and special-page paths where applicable.
-- Search for duplicate or page-local paths that bypass shared behavior.
-- Build the project, run focused regression checks, search all affected callers, and manually verify the actual page workflow.
-- Run `scripts\validate-browse-regression.ps1` for a `_B` page and `scripts\validate-maintenance-regression.ps1` for a `_U` page, then work through the manual checklist each one prints.
-- Run `dotnet test .\tests\SDC.Framework.Tests\SDC.Framework.Tests.vbproj` whenever the change touches permissions, display-name formatting, hashing, credential resolution, or the empty-combo test. Passing tests do not substitute for the manual workflow check.
-- Do not declare a new page complete from compilation alone.
-- For every new standard `_B` page, verify the no-row `FW_Pages` path against the actual database: opening the page must create the correct `WindowOrPage`, `DB_Table`, friendly alias, session `CreatedBy`, and PK-safe fallback SQL.
-
-## Removing A Page Or Table (Required)
-
-A page leaves traces in **eight** framework tables. Removing `FW_Entity` on 2026-09-03 was planned
-against four of them, and the other four surfaced one at a time only because someone kept asking
-whether the last one had been missed. Work the list, do not recall it.
-
-| Table | What it holds |
-|---|---|
-| `FW_Pages` | the page's row, its SQL, its alias |
-| `FW_RoleFields` | one row per field permission — often over a hundred |
-| `FW_RoleDetails` | table captions and role overrides |
-| `FW_RoleSchema` | one row per known table |
-| `FW_DashboardLayouts` | tile position and chosen picture, keyed by `ActionKey` |
-| `FW_TableLayouts` | saved grid column layouts, per page and per user |
-| `FW_SavedQbe` | saved searches, keyed by table **context** — the page's caption, not its name |
-| `FW_GeneratedPages` | the generation request, which can be reopened and regenerated |
-
-`FW_AuditTrail` also names the table, and normally **stays**: an audit row records that something
-happened, and that remains true after the page is deleted. Remove it only on a database that has
-never held real work, and say why.
-
-Two sweeps catch what the list misses. Neither should return rows afterwards:
-
-- role and layout rows whose table no longer exists — `OBJECT_ID('dbo.' + DB_Table) IS NULL`
-- views and procedures with unresolved references — `sys.sql_expression_dependencies` where
-  `referenced_id IS NULL`
-
-The same list applies in reverse to a **rename**, where every one of those rows keeps pointing at a
-name that no longer resolves.
-
-## QBE Visibility Guardrail (Required)
-
-- Before the first substantive edit to `000_FRAMEWORK\000_BASE CLASSES\FW_Base_B.vb`, run the `Create Base_B Restore Point` task. Do not edit Base_B until its timestamped restore point is created.
-- QBE fields must be derived only from visible browse-grid columns after all standard hiding and saved-layout rules have been applied.
-- Internal maintenance aliases, including `PK`, must never appear in the browse grid, QBE, columns manager, or user-facing field lists.
-- A real ID column explicitly selected by page SQL, such as `IssueID`, is distinct from the internal `PK` alias and may appear when visible.
-- For Start Empty pages, where QBE is derived from SQL schema before a grid exists, exclude `PK`, soft-delete fields, and other internal aliases.
-- Any change to Base_B grid/QBE loading must run the browse regression script and manually verify that hiding a browse column also removes it from QBE.
-
-See also `BASE_B_QBE_LAYOUT_GUIDE.md`.
-
-## Copied Page Regression Guardrail (Required)
-
-- A copied page is a new page, not a shortcut.
-- Verify the new file/class name, base inheritance, constructor context, table name, SQL source, registration/user scope, permissions, action handlers, callers, titles, and model paths independently.
-- Remove copied page-specific overrides and stale references unless explicitly required by the new page contract.
-- Run the New Page Regression Guardrail for the copied page.
-- Add a validation check proving the copied page does not inherit from or call the source page.
-
 ## Consolidation Guardrail (Required)
 
 - Before implementing any fix or feature, check related files/classes for duplicate or near-duplicate logic.
@@ -579,6 +520,26 @@ See also `BASE_B_QBE_LAYOUT_GUIDE.md`.
 - For browse pages, double-click must invoke the visible, enabled command that performs the equivalent user action. It must not introduce a separate maintenance-key lookup or maintenance-open path.
 - Before completing a change, search for any new duplicate handler, override, callback, or model reconstruction path and remove it unless the documented exception requires it.
 
+## New Page Regression Guardrail (Required)
+
+- Every new `_B` or `_U` page requires a regression pass before completion.
+- Verify inheritance, naming, constructor context, table and RegistrationID scope, Base_B SQL/`AS PK` behavior, Base_U identity and RowVersion preservation, all callers/action icons, permissions, and missing-schema behavior.
+- Check create, update, delete, cancel, conflict, retry, and special-page paths where applicable.
+- Search for duplicate or page-local paths that bypass shared behavior.
+- Build the project, run focused regression checks, search all affected callers, and manually verify the actual page workflow.
+- Run `scripts\validate-browse-regression.ps1` for a `_B` page and `scripts\validate-maintenance-regression.ps1` for a `_U` page, then work through the manual checklist each one prints.
+- Run `dotnet test .\tests\SDC.Framework.Tests\SDC.Framework.Tests.vbproj` whenever the change touches permissions, display-name formatting, hashing, credential resolution, or the empty-combo test. Passing tests do not substitute for the manual workflow check.
+- Do not declare a new page complete from compilation alone.
+- For every new standard `_B` page, verify the no-row `FW_Pages` path against the actual database: opening the page must create the correct `WindowOrPage`, `DB_Table`, friendly alias, session `CreatedBy`, and PK-safe fallback SQL.
+
+## Copied Page Regression Guardrail (Required)
+
+- A copied page is a new page, not a shortcut.
+- Verify the new file/class name, base inheritance, constructor context, table name, SQL source, registration/user scope, permissions, action handlers, callers, titles, and model paths independently.
+- Remove copied page-specific overrides and stale references unless explicitly required by the new page contract.
+- Run the New Page Regression Guardrail for the copied page.
+- Add a validation check proving the copied page does not inherit from or call the source page.
+
 ## Action Icon Guardrail (Required)
 
 - Every actionable icon on a dashboard, menu, toolbar, or page must have a unique ActionKey, a registered caption, an icon file, a target page or command, and an explicit click handler.
@@ -590,6 +551,31 @@ See also `BASE_B_QBE_LAYOUT_GUIDE.md`.
 - Decorative or status-only icons are excluded; this guardrail applies only when an icon performs navigation or a command.
 - After adding or changing an actionable icon, search all target-page callers for profile-dropping calls, build the project, open the icon manually, and verify the target title and permission-controlled controls.
 - Update the repository icon catalog in the same change, including ActionKey, placement, target, icon file, visibility rule, and click behavior.
+
+## QBE Visibility Guardrail (Required)
+
+- Before the first substantive edit to `000_FRAMEWORK\000_BASE CLASSES\FW_Base_B.vb`, run the `Create Base_B Restore Point` task. Do not edit Base_B until its timestamped restore point is created.
+- QBE fields must be derived only from visible browse-grid columns after all standard hiding and saved-layout rules have been applied.
+- Internal maintenance aliases, including `PK`, must never appear in the browse grid, QBE, columns manager, or user-facing field lists.
+- A real ID column explicitly selected by page SQL, such as `IssueID`, is distinct from the internal `PK` alias and may appear when visible.
+- For Start Empty pages, where QBE is derived from SQL schema before a grid exists, exclude `PK`, soft-delete fields, and other internal aliases.
+- Any change to Base_B grid/QBE loading must run the browse regression script and manually verify that hiding a browse column also removes it from QBE.
+
+See also `BASE_B_QBE_LAYOUT_GUIDE.md`.
+
+## Browse Framework Change Checklist
+
+Before merging any browse or grid behavior change (`_B` pages), verify all items below:
+
+0. Preflight before editing: run the `Preflight Browse Framework` task. It runs static browse-contract
+   checks without rebuilding, including QBE visibility, no page-specific QBE defaults, and
+   double-click invoking Modify.
+1. Shared-first implementation: place data behavior in shared data access helpers; place deleted-view
+   button enablement rules in shared guard helpers; keep page-local logic for page-specific UX only.
+2. Coverage check: confirm base browse and custom browse pages (Users, Roles) all use the
+   shared behavior.
+3. Build check (see hotfix build command above).
+4. Regression check: run `scripts\validate-browse-regression.ps1` and the UI checks it lists.
 
 ## Security And Access Guardrail (Required)
 
@@ -629,22 +615,33 @@ See also `BASE_B_QBE_LAYOUT_GUIDE.md`.
 - After editing, search all affected callers and model reconstruction paths, run focused validation, build the project, and manually verify the actual workflow.
 - Do not declare completion from compilation alone when the change affects user-facing behavior or database writes.
 
-## Browse Framework Change Checklist
+## Removing A Page Or Table (Required)
 
-Before merging any browse or grid behavior change (`_B` pages), verify all items below:
+A page leaves traces in **eight** framework tables. Removing `FW_Entity` on 2026-09-03 was planned
+against four of them, and the other four surfaced one at a time only because someone kept asking
+whether the last one had been missed. Work the list, do not recall it.
 
-0. Preflight before editing: run the `Preflight Browse Framework` task. It runs static browse-contract
-   checks without rebuilding, including QBE visibility, no page-specific QBE defaults, and
-   double-click invoking Modify.
-1. Shared-first implementation: place data behavior in shared data access helpers; place deleted-view
-   button enablement rules in shared guard helpers; keep page-local logic for page-specific UX only.
-2. Coverage check: confirm base browse and custom browse pages (Users, Roles) all use the
-   shared behavior.
-3. Build check (see hotfix build command above).
-4. Regression check: run `scripts\validate-browse-regression.ps1` and the UI checks it lists.
+| Table | What it holds |
+|---|---|
+| `FW_Pages` | the page's row, its SQL, its alias |
+| `FW_RoleFields` | one row per field permission — often over a hundred |
+| `FW_RoleDetails` | table captions and role overrides |
+| `FW_RoleSchema` | one row per known table |
+| `FW_DashboardLayouts` | tile position and chosen picture, keyed by `ActionKey` |
+| `FW_TableLayouts` | saved grid column layouts, per page and per user |
+| `FW_SavedQbe` | saved searches, keyed by table **context** — the page's caption, not its name |
+| `FW_GeneratedPages` | the generation request, which can be reopened and regenerated |
 
-## Trigger Phrase
+`FW_AuditTrail` also names the table, and normally **stays**: an audit row records that something
+happened, and that remains true after the page is deleted. Remove it only on a database that has
+never held real work, and say why.
 
-- If the user says "run duplicate check first", treat it as a hard request to run the consolidation guardrail before making changes.
-- On that trigger, check for duplicate or near-duplicate logic first and ask whether to consolidate if repeated logic exists.
-- Before any medium to large change, ask the user if they want me to run the duplicate check first.
+Two sweeps catch what the list misses. Neither should return rows afterwards:
+
+- role and layout rows whose table no longer exists — `OBJECT_ID('dbo.' + DB_Table) IS NULL`
+- views and procedures with unresolved references — `sys.sql_expression_dependencies` where
+  `referenced_id IS NULL`
+
+The same list applies in reverse to a **rename**, where every one of those rows keeps pointing at a
+name that no longer resolves.
+
