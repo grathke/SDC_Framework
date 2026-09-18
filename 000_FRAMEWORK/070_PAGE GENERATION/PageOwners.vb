@@ -41,7 +41,7 @@ Namespace SDC.Framework
             ''' <summary>The prefix its tables and pages carry, without the underscore: "FW", "CTY".</summary>
             Public Property Prefix As String
 
-            ''' <summary>What the picker shows: "Framework (FW_)", "CTY (CTY_)".</summary>
+            ''' <summary>What the picker shows: "FRAMEWORK (FW_)", "CTY (CTY_)".</summary>
             Public Property DisplayName As String
 
             Public Overrides Function ToString() As String
@@ -72,12 +72,14 @@ Namespace SDC.Framework
                 Dim prefix = PrefixFor(folderName)
                 If prefix = String.Empty Then Continue For
 
+                ' Described the same way as the rest. The framework showed "Framework (FW_)" from a
+                ' literal while its neighbours showed their folder names - CTY, NEXT PROJECT - so
+                ' one row in the list was written in a different voice from the others. Only the
+                ' prefix is the framework's exception; how it reads is not.
                 owners.Add(New Owner With {
                     .FolderName = folderName,
                     .Prefix = prefix,
-                    .DisplayName = If(String.Equals(folderName, FrameworkFolder, StringComparison.OrdinalIgnoreCase),
-                                      "Framework (FW_)",
-                                      DescribeOwner(folderName, prefix))
+                    .DisplayName = DescribeOwner(folderName, prefix)
                 })
             Next
 
