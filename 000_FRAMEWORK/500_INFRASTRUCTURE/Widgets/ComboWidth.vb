@@ -86,12 +86,10 @@ Namespace SDC.Framework
                 Next
             End Using
 
+            ' Narrow matches the list to the box. It matters most here: letting the list open to the
+            ' widest entry in the world put a thirteen hundred pixel list under a two hundred pixel
+            ' box, which reads as a fault rather than as helpfulness; a long name truncates instead.
             Narrow(combo, leadingWidest)
-
-            ' The list matches the box. Letting it open to the widest entry in the world put a
-            ' thirteen hundred pixel list under a two hundred pixel box, which reads as a fault
-            ' rather than as helpfulness; a long name truncates instead.
-            combo.DropDownWidth = combo.Width
         End Sub
 
         Private Shared Sub Narrow(combo As ComboBox, widest As Integer)
@@ -100,6 +98,12 @@ Namespace SDC.Framework
             ' The drop-down arrow and the text inset, which MeasureString knows nothing about.
             Dim needed = widest + SystemInformation.VerticalScrollBarWidth + 12
             combo.Width = Math.Max(Minimum, Math.Min(combo.Width, needed))
+
+            ' The list matches the box. Narrowing one and not the other left every combo built with
+            ' an explicit DropDownWidth opening wider than itself - the registration picker on the
+            ' access diagnostic was 280 over a box fitted to "DEVELOPMENT TEAM". FitToLeadingItems
+            ' had this line and the other two paths did not, which is why one combo looked right.
+            combo.DropDownWidth = combo.Width
         End Sub
 
     End Class
