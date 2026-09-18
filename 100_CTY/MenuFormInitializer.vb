@@ -242,7 +242,7 @@ Namespace SDC.Framework
             ' One-off tiles are absent on purpose. Close and the pinned row were captioned by
             ' whoever asked for them, and an override would overrule that.
             '
-            ' No SetActionPage calls remain: the generated UsersY tile went with the FW_Users pages
+            ' No SetActionPage calls remain: the last generated tile went with the FW_Users pages
             ' on 2026-09-08. The generator writes them back here as pages are generated.
 
             ' Generated ribbon tiles are inserted above this marker. PageGenerator matches the next

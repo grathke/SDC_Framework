@@ -153,7 +153,7 @@ makes 2.3's override safe.
 ## 3. The constraint everything above has to fit
 
 **A row is the unit, and rows are identified by `Top`.** `IsRowLayoutControl` and
-`IsCollapsibleRow` in `Base_U.vb` group controls by their `Top` and collapse a row when permissions
+`IsCollapsibleRow` in `FW_Base_U.vb` group controls by their `Top` and collapse a row when permissions
 have hidden every field on it; `HideFieldAndCloseGap` measures the distance to the next row in the
 same column; `GeneratedFieldsBottom` is `20 + rows * 42`.
 

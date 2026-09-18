@@ -63,7 +63,7 @@ whether something is expected of them.
   decision; length for its own sake is not.
 - Read the full relevant file before changing it. Never apply a generic solution without first
   understanding the existing code.
-- Before editing `000_FRAMEWORK\000_BASE CLASSES\Base_B.vb` or `000_FRAMEWORK\000_BASE CLASSES\Base_U.vb`, read the section of `FRAMEWORK_NOTES.md`
+- Before editing `000_FRAMEWORK\000_BASE CLASSES\FW_Base_B.vb` or `000_FRAMEWORK\000_BASE CLASSES\FW_Base_U.vb`, read the section of `FRAMEWORK_NOTES.md`
   that covers the behavior being changed. The contracts there are not obvious from a single call
   site, and getting one backwards is expensive: the required-field colour precedence was argued the
   wrong way round on 2026-08-31 because the documented rule was never consulted.
@@ -79,7 +79,10 @@ whether something is expected of them.
   It does **not** waive the guardrails that require their own approval: database view changes,
   physical deletes, creating roles or permissions, and restore points still need an explicit ask.
   If more than one proposal is open, do not guess — list what is pending and ask which one.
-- **"run"** — launch the application, in reply to a `READY TO RUN` marker.
+- **"run"** — launch the application **with Thinfinity**, in reply to a `RUN IT ?` or `READY TO RUN`
+  marker. This is the realistic test: Thinfinity is how the application is delivered.
+- **"run no tf"** — launch it as a plain desktop window instead. Needed for page generation, and it
+  is the only run that performs the startup schema sweep. See the run section below.
 - **"run duplicate check first"** — apply the Consolidation Guardrail before making changes.
 
 ## End Of Day Protection Check (Required)
@@ -184,7 +187,7 @@ alive in git for the case it should usually be in: empty.
 Folder numbers are three digits throughout, so they sort correctly under a plain lexicographic
 sort as well as a natural one. **Files inside them carry no number and no `FW_` prefix** — the
 folder says both, and two orderings that can disagree is how they drift apart. Class names are
-unchanged: `000_FRAMEWORK/000_BASE CLASSES/Base_B.vb` still declares `FW_Base_B`.
+unchanged: `000_FRAMEWORK/000_BASE CLASSES/FW_Base_B.vb` still declares `FW_Base_B`.
 
 A script that scans for pages must recurse. Two guardrail scripts scanned the root
 non-recursively and, after the move, one failed outright and the other passed while checking
@@ -213,10 +216,10 @@ session, so delivery constraints do not apply to it.
 
 Key areas:
 
-- Page framework: `000_FRAMEWORK\000_BASE CLASSES\Base_B.vb` (browse pages) and `000_FRAMEWORK\000_BASE CLASSES\Base_U.vb` (maintenance pages).
+- Page framework: `000_FRAMEWORK\000_BASE CLASSES\FW_Base_B.vb` (browse pages) and `000_FRAMEWORK\000_BASE CLASSES\FW_Base_U.vb` (maintenance pages).
 - Data access: `DataAccess.vb`, plus `HelpDeskDataAccess.vb` and `MessagingDataAccess.vb`.
 - Models: `Models.vb`.
-- Entry point and shell: `Program.vb`, `LoginForm.vb`, `MainMenu.vb`.
+- Entry point and shell: `Program.vb`, `LoginForm.vb`, `FW_MainMenu.vb`.
 - Naming convention: `*_B` = browse page, `*_U` = maintenance page.
 - SQL migrations: `sql/`. Validation and restore-point scripts: `scripts/`.
 
@@ -353,6 +356,19 @@ dotnet build .\SDC.Framework.vbproj -p:UseAppHost=false -p:OutputPath=bin\Debug\
 Run: `powershell -ExecutionPolicy Bypass -File .\run-local.ps1` (VS Code task `Run SDC.Framework`).
 With database: `.\run-with-db.ps1`.
 
+**`-NoTF` runs it as a plain desktop window instead of through Thinfinity**, and two things only
+work that way:
+
+- **Page generation.** It compiles what it writes to check the build, and a compile cannot run
+  inside a browser session. The Application dashboard says so and refuses to open the page.
+- **The startup schema sweep.** `SchemaDriftWatch` returns immediately unless `--no-tf` is present,
+  on purpose: a browser session is somebody using the application, and the sweep physically deletes
+  permission rows. A new table therefore registers itself in `FW_RoleSchema` on a desktop run and
+  not on a Thinfinity one, where opening Roles is what triggers the sync instead.
+
+Everything else behaves the same either way, and Thinfinity is the more realistic test because it
+is how the application is delivered — a browser carrying pixels and events from a server.
+
 ### Database configuration
 
 No credentials are compiled into the application. `DataAccess.BuildConnectionString` reads them
@@ -426,6 +442,23 @@ These are baseline rules for this application, not optional task-specific sugges
 - Use shared soft-delete and audit policies for create, update, delete, restore, permission, and security changes.
 - Require confirmation for destructive or irreversible actions.
 - Validate the complete caller and model path, then build and manually test the real workflow.
+
+### Rules learned the hard way
+
+- **Fewest database round trips, everywhere.** Prefer one joined query over several, and say the
+  query count when proposing a data-access change. A session of logging in and opening a few pages
+  was measured at 110 round trips, which is how the schema and page caches came to exist.
+- **An inserted row ends up selected and visible.** Not selected alone — selecting does not scroll.
+  Find the row by its key, set the grid's **current cell** on its first *visible* column (that is
+  what scrolls, and a current cell cannot sit on a hidden one), then set
+  `FirstDisplayedScrollingRowIndex` a couple of rows above it so it lands near the top rather than
+  against the edge. `FW_Base_B.RestoreGridViewState` and `Roles_U.SelectRightGridRowForSchema` are
+  the worked examples. A row selected off-screen reads as nothing having happened.
+- **Say when you cannot deliver.** Name the gap in figures and ask whether it is acceptable. Never
+  hand over an approximation as "close enough", and never report something as verified that was
+  only compiled.
+- **Pages are not drag-resizable.** Every form is `FixedDialog` with no maximise box, and a new page
+  follows. Code may still size a window — the zoom keys and Hot Fields both do.
 
 ## Restore Point Decision Guardrail (Required)
 
@@ -501,7 +534,7 @@ name that no longer resolves.
 
 ## QBE Visibility Guardrail (Required)
 
-- Before the first substantive edit to `000_FRAMEWORK\000_BASE CLASSES\Base_B.vb`, run the `Create Base_B Restore Point` task. Do not edit Base_B until its timestamped restore point is created.
+- Before the first substantive edit to `000_FRAMEWORK\000_BASE CLASSES\FW_Base_B.vb`, run the `Create Base_B Restore Point` task. Do not edit Base_B until its timestamped restore point is created.
 - QBE fields must be derived only from visible browse-grid columns after all standard hiding and saved-layout rules have been applied.
 - Internal maintenance aliases, including `PK`, must never appear in the browse grid, QBE, columns manager, or user-facing field lists.
 - A real ID column explicitly selected by page SQL, such as `IssueID`, is distinct from the internal `PK` alias and may appear when visible.
@@ -563,7 +596,7 @@ See also `BASE_B_QBE_LAYOUT_GUIDE.md`.
 
 ## Save And Model Contract Guardrail (Required)
 
-- Before the first substantive edit to `000_FRAMEWORK\000_BASE CLASSES\Base_U.vb`, run the `Create Base_U Restore Point` task. Do not edit Base_U until its timestamped restore point is created.
+- Before the first substantive edit to `000_FRAMEWORK\000_BASE CLASSES\FW_Base_U.vb`, run the `Create Base_U Restore Point` task. Do not edit Base_U until its timestamped restore point is created.
 - Standard `_U` pages must use the shared save result contract and must distinguish success, conflict, deleted record, unavailable concurrency protection, and failure.
 - Record identity, registration context, and concurrency tokens must survive every load, clone, form-bind, validation, and record-rebuild path.
 - Model and data-reader nullability must match the database contract. A nullable database column must map to a nullable model property and safe `DBNull` conversion; never make it required merely because a current page does not display it.

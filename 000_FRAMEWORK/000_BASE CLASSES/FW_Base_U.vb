@@ -258,7 +258,7 @@ Namespace SDC.Framework
             '
             ' ResolveTableRename rather than the plain override, so an alias that merely restates the
             ' derived name changes nothing: FW_Users is aliased "Users" against four roles, and
-            ' applying that would flatten UsersY_U and Users_AppAdmin_U to one title while renaming
+            ' applying that would flatten two maintenance pages over the same table to one title while renaming
             ' nothing.
             Dim session = SessionState.Current
             If session.HasValue AndAlso session.Value.RegistrationID > 0 Then
@@ -2162,7 +2162,7 @@ Namespace SDC.Framework
         End Sub
 
         ''' <summary>
-        ''' This page's browse partner, by name: UsersY_U to UsersY_B.
+        ''' This page's browse partner, by name: FW_Employees_U to FW_Employees_B.
         '''
         ''' FW_Pages is keyed by browse page name, so a maintenance page has no row of its own and
         ''' takes the caption of the page it was opened from. A page whose partner is not named that

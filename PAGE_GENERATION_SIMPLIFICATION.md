@@ -10,11 +10,11 @@ The question that prompted it: *is there a better, simpler, more elegant way to 
 
 ## 1. The finding
 
-Here is the whole of a generated browse page, `UsersY_B.vb`, with the body of each handler
+Here is the whole of a generated browse page, `Widget_B.vb`, with the body of each handler
 elided:
 
 ```vb
-Public Class UsersY_B
+Public Class Widget_B
     Inherits FW_Base_B
 
     Public Sub New(user As UserContext, Optional profile As AccessProfile = Nothing)
@@ -67,12 +67,12 @@ saved, and cannot see a property on a class it does not know. `FW_Base_U` is alr
 the hook returns one thing that can be both shown and read. An interface would have needed a cast
 back to `Form` that compiles and fails at runtime.
 
-**Result: a generated `_B` went from 66 lines to 21.** `UserX_B.vb` and `UsersY_B.vb` had been
+**Result: a generated `_B` went from 66 lines to 21.** `another generated page` and `Widget_B.vb` had been
 byte-identical apart from the class name.
 
 One consequence: `FW_GeneratedPages` stores a hash of the generated source to detect hand edits.
-Changing the template invalidated it for the two existing requests, so regenerating `UserX` or
-`UsersY` reports them as manually edited until re-baselined.
+Changing the template invalidated it for the two existing requests, so regenerating either of them or
+`Widget` reports them as manually edited until re-baselined.
 
 ---
 
@@ -210,7 +210,7 @@ of the eight-table list in `CLAUDE.md`.
 
 ## 5. Where the argument stops
 
-`_U` is different. `UsersY_U.vb` is 170 lines with real content: control layout, `AddComboField`
+`_U` is different. `Widget_U.vb` is 170 lines with real content: control layout, `AddComboField`
 calls, `BindToFormInternal`, `TryBuildRecord`, `SaveRecord`. That earns being code. Much of it is
 still template and the page-specific part is largely the field list, but it is not the same
 open-and-shut case as `_B`.
@@ -230,7 +230,7 @@ Section 2, and it is done. What it leaves behind is the honest answer to section
 *how much of a page really needs to be code*:
 
 ```vb
-Public Class UsersY_B
+Public Class Widget_B
     Inherits FW_Base_B
 
     Public Sub New(user As UserContext, Optional profile As AccessProfile = Nothing)
@@ -238,7 +238,7 @@ Public Class UsersY_B
     End Sub
 
     Protected Overrides Function CreateMaintenancePage(recordId As Integer) As FW_Base_U
-        Return New UsersY_U(recordId, CurrentUserContext, CurrentAccessProfile)
+        Return New Widget_U(recordId, CurrentUserContext, CurrentAccessProfile)
     End Function
 
     Protected Overrides Function UsesStandardSoftDelete() As Boolean

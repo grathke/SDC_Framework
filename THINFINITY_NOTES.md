@@ -222,7 +222,7 @@ OnClose            OnReceiveMessage  OnRecorderChanged
 
 `OnBrowserResize` matters most to existing code. `HotFieldsPanel` notes that the viewport is fixed
 once a session starts (`HotFieldsPanel.vb:290`), and `MainMenu` sizes itself against the session
-surface rather than a physical screen (`MainMenu.vb:130`, `MainMenu.vb:182`). If the viewport can in
+surface rather than a physical screen (`FW_MainMenu.vb:130`, `FW_MainMenu.vb:182`). If the viewport can in
 fact change, this event is where that is noticed — worth testing before relying on either
 assumption.
 

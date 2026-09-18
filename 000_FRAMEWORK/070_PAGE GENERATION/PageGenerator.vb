@@ -47,6 +47,12 @@ Namespace SDC.Framework
         Public Property GenerateMaintenancePage As Boolean
         Public Property BrowsePageName As String = String.Empty
         Public Property MaintenancePageName As String = String.Empty
+        ''' <summary>
+        ''' The folder of the owner these pages belong to - "000_FRAMEWORK", "100_CTY" - which
+        ''' decides both the prefix on their names and the 999_GENERATED they are written to.
+        ''' </summary>
+        Public Property OwnerFolder As String = String.Empty
+
         Public Property BrowsePath As String = String.Empty
         Public Property MaintenancePath As String = String.Empty
         Public Property BrowseSource As String = String.Empty
@@ -210,14 +216,14 @@ Namespace SDC.Framework
 
             If plan.GenerateBrowsePage AndAlso IsDashboardCaller(plan.MenuCaller) Then
                 Try
-                    EnsureDashboardIcon(workspaceRoot, plan.MenuCaller, plan.TableName, plan.IconFileName, plan.BrowsePageName, plan.MaintenancePageName, created, skipped, errors)
+                    EnsureDashboardIcon(workspaceRoot, plan.MenuCaller, plan.TableName, plan.IconFileName, plan.BrowsePageName, plan.MaintenancePageName, plan.TableAlias, created, skipped, errors)
                 Catch ex As Exception
                     errors.Add("ICON WARNING: " & ex.Message)
                 End Try
             ElseIf plan.GenerateBrowsePage AndAlso IsMainMenuCaller(plan.MenuCaller) Then
                 Dim before = errors.Count
                 Try
-                    EnsureMainMenuTile(workspaceRoot, plan.BrowsePageName, plan.TableName, plan.IconFileName, created, skipped, errors)
+                    EnsureMainMenuTile(workspaceRoot, plan.BrowsePageName, plan.TableName, plan.IconFileName, plan.TableAlias, created, skipped, errors)
                 Catch ex As Exception
                     errors.Add("MAIN MENU WARNING: " & ex.Message)
                 End Try
@@ -228,7 +234,7 @@ Namespace SDC.Framework
                 ' this branch existed.
                 If errors.Count > before Then
                     Try
-                        EnsureDashboardIcon(workspaceRoot, "Dashboard_Application", plan.TableName, plan.IconFileName, plan.BrowsePageName, plan.MaintenancePageName, created, skipped, errors)
+                        EnsureDashboardIcon(workspaceRoot, "Dashboard_Application", plan.TableName, plan.IconFileName, plan.BrowsePageName, plan.MaintenancePageName, plan.TableAlias, created, skipped, errors)
                         created.Add("PLACED ON THE APP ADMIN DASHBOARD INSTEAD: " & plan.BrowsePageName)
                     Catch ex As Exception
                         errors.Add("ICON WARNING: the App Admin dashboard fallback also failed - " & ex.Message)
@@ -305,10 +311,35 @@ Namespace SDC.Framework
                 Return plan
             End If
 
-            Dim createAsFrameworkPages = ReadGenerationFlag(request, "CreateAsFrameworkPages", False)
+            ' Who the pages belong to, which decides both their prefix and where they are written.
+            '
+            ' Two ways this fails, and both are said plainly rather than guessed past. Without a
+            ' repository under the working directory there are no owner folders to choose from -
+            ' the application is running from bin, or served from a deploy folder - and generation
+            ' would write source files somewhere nobody will ever compile them. Without an owner on
+            ' the request there is no prefix and no destination, and picking one would name every
+            ' table and page in this request after a guess.
+            Dim owners = PageOwners.All(workspaceRoot)
+            If owners.Count = 0 Then
+                plan.Errors.Add("Pages cannot be generated from here: no owner folders were found under " &
+                                workspaceRoot & ". Run the application from the repository.")
+                Return plan
+            End If
+
+            Dim ownerFolder = If(request.Table.Columns.Contains("Owner"), DbText(request("Owner")), String.Empty)
+            Dim owner = PageOwners.ByFolder(workspaceRoot, ownerFolder)
+            If owner Is Nothing Then
+                plan.Errors.Add(If(String.IsNullOrWhiteSpace(ownerFolder),
+                                   "This request has no owner. Choose who the pages belong to before generating.",
+                                   "This request names the owner folder '" & ownerFolder &
+                                   "', which no longer exists. Choose an owner before generating."))
+                Return plan
+            End If
+
+            plan.OwnerFolder = owner.FolderName
             plan.TableName = DbText(request("UnderlyingTableName"))
-            plan.BrowsePageName = NormalizeGeneratedPageName(DbText(request("BrowsePageName")), "_B", createAsFrameworkPages)
-            plan.MaintenancePageName = NormalizeGeneratedPageName(DbText(request("MaintenancePageName")), "_U", createAsFrameworkPages)
+            plan.BrowsePageName = NormalizeGeneratedPageName(DbText(request("BrowsePageName")), "_B", owner.Prefix)
+            plan.MaintenancePageName = NormalizeGeneratedPageName(DbText(request("MaintenancePageName")), "_U", owner.Prefix)
             plan.BrowseSql = DbText(request("BrowseSql"))
             plan.MenuCaller = DbText(request("MenuCaller"))
             plan.IconFileName = If(request.Table.Columns.Contains("IconFileName"), DbText(request("IconFileName")), String.Empty)
@@ -380,11 +411,11 @@ Namespace SDC.Framework
             End If
             If Not plan.IsValid Then Return plan
 
-            plan.BrowsePath = GeneratedPagePath(workspaceRoot, plan.BrowsePageName)
+            plan.BrowsePath = GeneratedPagePath(workspaceRoot, plan.BrowsePageName, plan.OwnerFolder)
             ' The companion is the page's real name and the anchor for finding it; the generated
             ' half sits beside it with .Generated before the extension. Looking the companion up
             ' first is what lets a filed page stay where somebody put it.
-            plan.MaintenanceCompanionPath = GeneratedPagePath(workspaceRoot, plan.MaintenancePageName)
+            plan.MaintenanceCompanionPath = GeneratedPagePath(workspaceRoot, plan.MaintenancePageName, plan.OwnerFolder)
             plan.MaintenancePath = GeneratedHalfPath(plan.MaintenanceCompanionPath)
 
             If plan.GenerateBrowsePage Then
@@ -832,11 +863,24 @@ Namespace SDC.Framework
         Private Shared ReadOnly PinnedRibbonKeys As String() =
             {"my-profile", "login-as-substitute", "select-role", "help-desk"}
 
-        Private Shared Function ResolveSourceFile(workspaceRoot As String, fileName As String) As String
-            If String.IsNullOrWhiteSpace(workspaceRoot) OrElse Not Directory.Exists(workspaceRoot) Then Return String.Empty
+        ''' <summary>
+        ''' Where a page's file is, searched within one owner's tree.
+        '''
+        ''' <paramref name="searchRoot"/> is the owner's folder, not the repository, and that is the
+        ''' whole point: a file drops its owner's prefix, so FW_Test_B and CTY_Test_B are both
+        ''' Test_B.vb. Searching the repository would find the framework's file while generating
+        ''' CTY's page and rewrite it - two owners could not share a base name, and the second
+        ''' generation would destroy the first rather than say anything.
+        '''
+        ''' An empty search root means the repository, for the callers that only ask where a page
+        ''' is rather than where one should be written.
+        ''' </summary>
+        Private Shared Function ResolveSourceFile(workspaceRoot As String, fileName As String, Optional searchRoot As String = "") As String
+            Dim root = If(String.IsNullOrWhiteSpace(searchRoot), workspaceRoot, searchRoot)
+            If String.IsNullOrWhiteSpace(root) OrElse Not Directory.Exists(root) Then Return String.Empty
 
             Try
-                Return If(Directory.EnumerateFiles(workspaceRoot, fileName, SearchOption.AllDirectories).
+                Return If(Directory.EnumerateFiles(root, fileName, SearchOption.AllDirectories).
                                     Where(Function(path) Not IsInNonSourceFolder(path)).
                                     OrderBy(Function(path) path, StringComparer.OrdinalIgnoreCase).
                                     FirstOrDefault(), String.Empty)
@@ -895,28 +939,83 @@ Namespace SDC.Framework
         ''' Where a generated page lives, so regeneration rewrites it where it was filed rather than
         ''' dropping a second copy in 999_GENERATED.
         '''
-        ''' **A file is never named FW_.** The prefix belongs to the class and to the folder a page
-        ''' is filed under, never to the file itself - so FW_Employees_B lives in Employees_B.vb,
-        ''' whether that is still in 999_GENERATED or filed under 000_FRAMEWORK\030_EMPLOYEES.
+        ''' **A file is named exactly what its page is called**, prefix included: FW_Employees_B
+        ''' lives in FW_Employees_B.vb, whether that is still in its owner's 999_GENERATED or filed
+        ''' under 000_FRAMEWORK\030_EMPLOYEES.
         '''
-        ''' The prefixed name is still looked for, because pages generated before this rule was
-        ''' applied carry it, and regeneration must rewrite those where they are rather than leave
-        ''' one copy behind and write another.
+        ''' It dropped the prefix until 2026-09-18, on the grounds that the folder said who owned
+        ''' the page. That held while there was one owner and failed with two: FW_Test_B and
+        ''' CTY_Test_B would both have been Test_B.vb - indistinguishable in a file list, an editor
+        ''' tab or a search, and the second generation would have rewritten the first.
+        '''
+        ''' The unprefixed name is still looked for, because pages generated under the old rule
+        ''' carry it, and regeneration must rewrite those where they are rather than leave one copy
+        ''' behind and write another.
         ''' </summary>
-        Public Shared Function GeneratedPagePath(workspaceRoot As String, pageName As String) As String
+        ''' <summary>
+        ''' Where a page's file is, or where a new one goes: its owner's 999_GENERATED.
+        '''
+        ''' <paramref name="ownerFolder"/> is the owner's root folder - "000_FRAMEWORK", "100_CTY".
+        ''' Empty falls back to the framework's, which is what a caller asking only "where is this
+        ''' page?" wants: the answer for an existing page comes from the search below, and the
+        ''' fallback is only reached for a page that does not exist yet.
+        ''' </summary>
+        Public Shared Function GeneratedPagePath(workspaceRoot As String,
+                                                  pageName As String,
+                                                  Optional ownerFolder As String = "") As String
             Dim trimmedName = pageName.Trim()
-            Dim fileName = If(trimmedName.StartsWith("FW_", StringComparison.OrdinalIgnoreCase), trimmedName.Substring(3), trimmedName) & ".vb"
 
-            Dim existing = ResolveSourceFile(workspaceRoot, fileName)
+            ' The file is named exactly what the page is called, prefix included. It dropped the
+            ' prefix until 2026-09-18, on the grounds that the folder said who owned it - true
+            ' while there was one owner, and false the moment there were two: FW_Test_B and
+            ' CTY_Test_B would both have been Test_B.vb, indistinguishable in every list of files,
+            ' every editor tab and every search.
+            Dim fileName = trimmedName & ".vb"
+
+            ' Within this owner's folder when one is given. Two owners can hold a page with the
+            ' same base name, and their files are both <base>.vb - so a repository-wide search
+            ' would answer with somebody else's page and regenerate over it.
+            Dim searchRoot = If(String.IsNullOrWhiteSpace(ownerFolder), String.Empty, Path.Combine(workspaceRoot, ownerFolder))
+
+            Dim existing = ResolveSourceFile(workspaceRoot, fileName, searchRoot)
             If existing.Length > 0 Then Return existing
 
-            ' Older pages, written before the rule.
-            If trimmedName.StartsWith("FW_", StringComparison.OrdinalIgnoreCase) Then
-                Dim legacy = ResolveSourceFile(workspaceRoot, trimmedName & ".vb")
+            ' Pages written while the file dropped its prefix - Employees_B.vb for FW_Employees_B.
+            ' Regeneration has to rewrite those where they are rather than leave one copy behind
+            ' and write another under the new name.
+            Dim unprefixed = StripOwnerPrefix(trimmedName) & ".vb"
+            If Not String.Equals(unprefixed, fileName, StringComparison.OrdinalIgnoreCase) Then
+                Dim legacy = ResolveSourceFile(workspaceRoot, unprefixed, searchRoot)
                 If legacy.Length > 0 Then Return legacy
             End If
 
-            Return Path.Combine(workspaceRoot, GeneratedPagesFolder, fileName)
+            Dim destination = If(String.IsNullOrWhiteSpace(ownerFolder), GeneratedPagesFolder,
+                                 Path.Combine(ownerFolder, PageOwners.GeneratedFolderName))
+
+            Return Path.Combine(workspaceRoot, destination, fileName)
+        End Function
+
+        ''' <summary>
+        ''' A page name with its owner's prefix removed, which is what the file is called. FW_ is
+        ''' recognised whether or not the framework folder is present, because pages named that way
+        ''' exist in every copy of this repository.
+        ''' </summary>
+        Private Shared Function StripOwnerPrefix(pageName As String) As String
+            Dim trimmed = If(pageName, String.Empty).Trim()
+
+            If trimmed.StartsWith("FW_", StringComparison.OrdinalIgnoreCase) Then
+                Return trimmed.Substring(3)
+            End If
+
+            Dim underscore = trimmed.IndexOf("_"c)
+            If underscore > 0 Then
+                Dim leading = trimmed.Substring(0, underscore)
+                If KnownOwnerPrefixes().Contains(leading, StringComparer.OrdinalIgnoreCase) Then
+                    Return trimmed.Substring(underscore + 1)
+                End If
+            End If
+
+            Return trimmed
         End Function
 
         Private Shared Function IsMainMenuCaller(menuCaller As String) As Boolean
@@ -942,6 +1041,7 @@ Namespace SDC.Framework
                                               browsePageName As String,
                                               tableName As String,
                                               iconFileName As String,
+                                              tableAlias As String,
                                               created As List(Of String),
                                               skipped As List(Of String),
                                               errors As List(Of String))
@@ -983,7 +1083,7 @@ Namespace SDC.Framework
             Dim tile = String.Join(newLine, {
                 "            menu.UpsertActionTile(",
                 "                actionKey:=""" & actionKey & """,",
-                "                caption:=""" & DisplayPageCaption(browsePageName).Replace("""", """""") & """,",
+                "                caption:=""" & DisplayPageCaption(browsePageName, tableAlias).Replace("""", """""") & """,",
                 "                onClick:=Sub(sender, e)",
                 "                             Using frm As New " & browsePageName & "(user, profile)",
                 "                                 frm.ShowDialog(menu)",
@@ -1184,19 +1284,40 @@ Namespace SDC.Framework
             Return Convert.ToBoolean(request(columnName))
         End Function
 
+        ''' <summary>
+        ''' The page's name as it will be written: the owner's prefix, the base name, the suffix.
+        '''
+        ''' Any owner's prefix already on the name is taken off first, so a request switched from
+        ''' one owner to another is renamed rather than stacked - FW_Widget_B picked as CTY becomes
+        ''' CTY_Widget_B, not CTY_FW_Widget_B.
+        ''' </summary>
         Private Shared Function NormalizeGeneratedPageName(pageName As String,
                                                             suffix As String,
-                                                            createAsFrameworkPages As Boolean) As String
+                                                            ownerPrefix As String) As String
             Dim normalized = If(pageName, String.Empty).Trim()
-            If normalized.StartsWith("FW_", StringComparison.OrdinalIgnoreCase) Then
-                normalized = normalized.Substring(3)
+
+            Dim underscore = normalized.IndexOf("_"c)
+            If underscore > 0 Then
+                Dim leading = normalized.Substring(0, underscore)
+                ' Only a prefix that is really an owner's, so Users_AppAdmin_B keeps its name.
+                If KnownOwnerPrefixes().Contains(leading, StringComparer.OrdinalIgnoreCase) Then
+                    normalized = normalized.Substring(underscore + 1)
+                End If
             End If
 
             If Not normalized.EndsWith(suffix, StringComparison.OrdinalIgnoreCase) Then
                 normalized &= suffix
             End If
 
-            Return If(createAsFrameworkPages, "FW_", String.Empty) & normalized
+            Return If(String.IsNullOrWhiteSpace(ownerPrefix), String.Empty, ownerPrefix & "_") & normalized
+        End Function
+
+        ''' <summary>
+        ''' Every owner's prefix, for recognising one on a name. Read from the folders, so an
+        ''' application added later is recognised without this list being touched.
+        ''' </summary>
+        Private Shared Function KnownOwnerPrefixes() As List(Of String)
+            Return PageOwners.All(Environment.CurrentDirectory).Select(Function(item) item.Prefix).ToList()
         End Function
 
         Private Shared Sub EnsureDashboardIcon(workspaceRoot As String,
@@ -1205,6 +1326,7 @@ Namespace SDC.Framework
                                                 iconFileName As String,
                                                 browsePageName As String,
                                                 maintenancePageName As String,
+                                                tableAlias As String,
                                                 created As List(Of String),
                                                 skipped As List(Of String),
                                                 errors As List(Of String))
@@ -1250,7 +1372,7 @@ Namespace SDC.Framework
                 "            generated" & browsePageName & "Button = New DashboardIconButton() With {",
                 "                .Name = ""ActionKey_" & browsePageName & """,",
                 "                .PageName = """ & EscapeLiteral(browsePageName) & """,",
-                "                .Text = """ & DisplayPageCaption(browsePageName) & """,",
+                "                .Text = """ & DisplayPageCaption(browsePageName, tableAlias) & """,",
                 "                .Location = DashboardGridLayout.CellLocation(" & gridCell.Y.ToString(Globalization.CultureInfo.InvariantCulture) & ", " & gridCell.X.ToString(Globalization.CultureInfo.InvariantCulture) & "),",
                 "                .Size = New Size(DashboardGridLayout.IconWidth, DashboardGridLayout.IconHeight),",
                 "                .BackColor = Color.Transparent,",
@@ -1330,8 +1452,28 @@ Namespace SDC.Framework
             Return source.Insert(index, insertion)
         End Function
 
-        Private Shared Function DisplayPageCaption(pageName As String) As String
-            Return If(pageName.EndsWith("_B", StringComparison.OrdinalIgnoreCase), pageName.Substring(0, pageName.Length - 2), pageName)
+        ''' <summary>
+        ''' What a button opening this page says.
+        '''
+        ''' The page's alias where the request gave one, which is also the page's own title - so a
+        ''' button and the page it opens say the same thing, set once. Without an alias it falls
+        ''' back to the page name, stripped of its owner's prefix and its _B: FW_Test_B reads
+        ''' "Test".
+        '''
+        ''' **A prefix never reaches a caption.** FW_ and CTY_ say who owns the source; on a button
+        ''' they are noise to whoever is reading it, and on two buttons they are the only thing
+        ''' telling them apart, which is a caption doing a folder's job.
+        ''' </summary>
+        Private Shared Function DisplayPageCaption(pageName As String, tableAlias As String) As String
+            Dim chosen = If(tableAlias, String.Empty).Trim()
+            If chosen <> String.Empty Then Return StripOwnerPrefix(chosen)
+
+            Dim name = StripOwnerPrefix(If(pageName, String.Empty).Trim())
+            If name.EndsWith("_B", StringComparison.OrdinalIgnoreCase) Then
+                name = name.Substring(0, name.Length - 2)
+            End If
+
+            Return name.Replace("_", " ", StringComparison.Ordinal)
         End Function
 
         Private Shared Sub ValidateName(value As String, description As String, suffix As String, errors As List(Of String))

@@ -557,13 +557,31 @@ Namespace SDC.Framework
             If Program.InBrowserSession Then
                 MessageBox.Show(Me,
                                 "PAGE GENERATION RUNS ON THE DESKTOP." & Environment.NewLine & Environment.NewLine &
-                                "It writes source files and compiles them to check they build, and the compile step cannot run inside a browser session." & Environment.NewLine & Environment.NewLine &
-                                "Close this and start the application with 'run no tf'.",
+                                "IT WRITES SOURCE FILES AND COMPILES THEM TO CHECK THE BUILD. THE COMPILE STEP CANNOT RUN INSIDE A BROWSER SESSION." & Environment.NewLine & Environment.NewLine &
+                                "CLOSE THIS AND START THE APPLICATION WITH 'RUN NO TF'.",
                                 "Page Generation",
                                 MessageBoxButtons.OK,
                                 MessageBoxIcon.Information)
                 Return
             End If
+
+            ' And it has to be running from the repository. The owners a page can belong to are the
+            ' numbered folders at the root, and the files are written into one of them - so with no
+            ' repository under the working directory there is nothing to choose and nowhere to
+            ' write. Refused here rather than inside the page: filling in a request that cannot be
+            ' generated is work nobody gets back.
+            If PageOwners.All(Environment.CurrentDirectory).Count = 0 Then
+                MessageBox.Show(Me,
+                                ("PAGE GENERATION NEEDS THE REPOSITORY." & Environment.NewLine & Environment.NewLine &
+                                 "It writes source files into an owner's folder, and no owner folders were found under " &
+                                 Environment.CurrentDirectory & "." & Environment.NewLine & Environment.NewLine &
+                                 "Start the application from the repository with 'run no tf'.").ToUpperInvariant(),
+                                "Page Generation",
+                                MessageBoxButtons.OK,
+                                MessageBoxIcon.Information)
+                Return
+            End If
+
             Using page As New FW_PageGeneration_B(currentUser, accessProfile)
                 page.ShowDialog(Me)
             End Using

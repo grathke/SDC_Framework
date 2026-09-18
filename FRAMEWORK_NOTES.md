@@ -8,7 +8,7 @@ checked against the source at that time; corrections to the original notes are m
 
 ## Menu Framework
 
-`MainMenu.vb` is the reusable ribbon plus pluggable regions shell. Public API:
+`FW_MainMenu.vb` is the reusable ribbon plus pluggable regions shell. Public API:
 
 | Member | Purpose |
 |---|---|
@@ -44,7 +44,7 @@ checked against the source at that time; corrections to the original notes are m
   `GeneralDashboardWindowControl.vb`, `AcmeDashboardWindowControl.vb`.
 
 **Correction:** the original notes referred to `MenuForm.vb`. That file no longer exists; the shell
-is `MainMenu.vb`.
+is `FW_MainMenu.vb`.
 
 **Menu icon request template** — ask for these before implementing a new icon: ActionType
 (Table/Page/SubMenu/Command), target (DB table such as `FW_Gender`, or a page/submenu key), caption
@@ -680,7 +680,7 @@ page falls back to the App Admin dashboard, deliberately, so a generated page is
 from nowhere. Free a ribbon slot, regenerate, and the fallback icon and the new tile both exist.
 
 Since 2026-09-05 both the preview and the generation report say so —
-`ALREADY ON DASHBOARD_APPLICATION: UsersY_B has an icon there from an earlier generation` — naming
+`ALREADY ON DASHBOARD_APPLICATION: <page> has an icon there from an earlier generation` — naming
 the file to edit. **It is a warning, not a fix.** Removing the old button is still by hand.
 
 Removing it automatically means deleting four separate pieces of generated code from a `.vb` file by

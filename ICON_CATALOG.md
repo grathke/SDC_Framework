@@ -8,7 +8,7 @@ rule, click behavior.
 
 Registration happens in two places:
 
-- `000_FRAMEWORK\010_MAIN MENU\MainMenu.vb` builds the ribbon and owns `UpsertActionTile`, `ConfigureActionVisibility`,
+- `000_FRAMEWORK\010_MAIN MENU\FW_MainMenu.vb` builds the ribbon and owns `UpsertActionTile`, `ConfigureActionVisibility`,
   `SetActionIconFromFile`.
 - `MenuFormInitializer.Configure` decides which actions are visible for the session and adds
   page-specific tiles such as `user-admin`.
@@ -28,7 +28,7 @@ more than one application; a second application's initializer passes its own nam
 pictures.
 
 - The filename written in `000_FRAMEWORK\020_DASHBOARDS\Dashboard_Application.vb`, `000_FRAMEWORK\020_DASHBOARDS\Dashboard_Company.vb` or the
-  `AddActionTile` calls in `000_FRAMEWORK\010_MAIN MENU\MainMenu.vb` is the **default**, not necessarily what is on
+  `AddActionTile` calls in `000_FRAMEWORK\010_MAIN MENU\FW_MainMenu.vb` is the **default**, not necessarily what is on
   screen. "Reset to Default" clears the override and returns to it.
 - `UpdateRoleSelectionTile` rebuilds the role tile from source on every role change, picture
   included, and puts the chosen one back afterwards. Anything else that rewrites a tile's `Image`
@@ -57,7 +57,7 @@ the order `LayoutPinnedActions` sets and can only have their pictures changed. I
 so that a pinned tile hidden by a permission lets the rest close up behind it.
 
 Both panels use one tile size and one margin — `TileWidth`, `TileHeight`, `TileMargin` in
-`000_FRAMEWORK\010_MAIN MENU\MainMenu.vb` — so spacing is identical across the ribbon and the pinned panel is sized to
+`000_FRAMEWORK\010_MAIN MENU\FW_MainMenu.vb` — so spacing is identical across the ribbon and the pinned panel is sized to
 exactly the tiles it holds. When a tile is hidden the remaining ones pack together and the spare
 room collects at the end of the panel; no hole is left where the hidden one was.
 
@@ -349,7 +349,7 @@ anywhere and no caller — see Gaps.
   shared `DashboardIconSize`. Until 2026-09-07 the Company dashboard used `SystemIcons` glyphs, so
   the same action looked different depending on which dashboard it was opened from. The User Admin
   icon that shared this treatment (`Color_Favorites.png`) went from both dashboards on 2026-09-08,
-  along with the `UserX` icon on the Application dashboard, which this catalog never recorded.
+  along with a generated page's icon on the Application dashboard, which this catalog never recorded.
 
 ## ActionKey_UpdateSchema
 

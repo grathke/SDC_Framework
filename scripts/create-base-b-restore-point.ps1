@@ -29,7 +29,7 @@ $restorePoint = Join-Path $repoRoot "restore-points\$timestamp-base-b-$safeDescr
 New-Item -ItemType Directory -Path $restorePoint -Force | Out-Null
 
 $files = @(
-    "000_FRAMEWORK\000_BASE CLASSES\Base_B.vb",
+    "000_FRAMEWORK\000_BASE CLASSES\FW_Base_B.vb",
     "scripts\validate-browse-regression.ps1",
     "CLAUDE.md",
     "BASE_B_QBE_LAYOUT_GUIDE.md"
@@ -50,7 +50,7 @@ foreach ($relativePath in $files) {
 - Created: $(Get-Date -Format "yyyy-MM-dd HH:mm:ss")
 - Purpose: $Description
 - Files captured:
-    - 000_FRAMEWORK\000_BASE CLASSES\Base_B.vb
+    - 000_FRAMEWORK\000_BASE CLASSES\FW_Base_B.vb
     - scripts/validate-browse-regression.ps1
     - CLAUDE.md
     - BASE_B_QBE_LAYOUT_GUIDE.md

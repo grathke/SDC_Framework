@@ -33,7 +33,8 @@ Namespace SDC.Framework
         ''' FW_Pages.UseHotFields when the page is generated - which is what the running page reads.
         ''' </remarks>
         Private displayHotFieldsCheckBox As CheckBox
-        Private createAsFrameworkPagesCheckBox As CheckBox
+        Private ownerComboBox As ComboBox
+        Private ownerBorderPanel As Panel
         Private underlyingTableNameTextBox As TextBox
         Private tableAliasTextBox As TextBox
         Private generateBrowsePageCheckBox As CheckBox
@@ -181,14 +182,41 @@ Namespace SDC.Framework
             Controls.Add(generatedPageIdTextBox)
             requestNameTextBox = AddEntryField(fields, "RequestName", False, 34, 150, False, "1. Request Name")
             pageBaseNameTextBox = AddEntryField(fields, "PageBaseName", False, 34, 150, False, "2. Pages To Generate")
-            createAsFrameworkPagesCheckBox = New CheckBox With {
-                .Name = "CheckBox_CreateAsFrameworkPages",
-                .Text = "Create as Framework Pages",
-                .Checked = False,
-                .AutoSize = True,
-                .Margin = New Padding(8, 6, 0, 0)
+            ' Who the pages belong to. One answer for the prefix and the folder, which were a
+            ' checkbox and a constant until 2026-09-18 and could disagree.
+            '
+            ' "Make a Selection" is the default and is not a valid answer: the old checkbox
+            ' defaulted to unticked, which silently meant "not framework" and was right only by
+            ' accident. An owner decides where files are written and what every table and page is
+            ' called, which is too much to infer from somebody not touching a control.
+            ownerComboBox = New ComboBox With {
+                .Name = "ComboBox_Owner",
+                .DropDownStyle = ComboBoxStyle.DropDownList,
+                .Width = 220,
+                .Margin = New Padding(8, 4, 0, 0),
+                .BackColor = FW_Base_U.AppAdminRequiredBackColor
             }
-            AddControlBesideField(fields, pageBaseNameTextBox, createAsFrameworkPagesCheckBox)
+            PopulateOwnerCombo()
+
+            ' The red border a required field shows when it is empty. Base_U builds one as a panel
+            ' behind the control, and this page lays its own fields out, so it is built here the
+            ' same way rather than bent into the base's helper: a panel one pixel larger than the
+            ' combo on every side, showing through as a border.
+            ' Sized from the combo, not auto-sized. An AutoSize panel holding a docked control
+            ' measures to nothing - the control fills the panel, the panel shrinks to its contents,
+            ' and both end up zero wide. The combo was invisible on the page until this was fixed.
+            ownerBorderPanel = New Panel With {
+                .Name = "Panel_OwnerRequiredBorder",
+                .Padding = New Padding(1),
+                .Size = New Size(ownerComboBox.Width + 2, ownerComboBox.Height + 2),
+                .Margin = New Padding(8, 2, 0, 0)
+            }
+            ownerComboBox.Margin = New Padding(0)
+            ownerComboBox.Dock = DockStyle.Fill
+            ownerBorderPanel.Controls.Add(ownerComboBox)
+
+            AddControlBesideField(fields, pageBaseNameTextBox, ownerBorderPanel)
+            RefreshOwnerRequiredBorder()
             browsePageNameTextBox = AddEntryField(fields, "BrowsePageName", False, 34, 150, False, "3. Browse Page Name")
             maintenancePageNameTextBox = AddEntryField(fields, "MaintenancePageName", False, 34, 150, False, "4. Maintenance Page Name")
             generateBrowsePageCheckBox = New CheckBox With {.Text = "Generate", .Checked = False, .AutoSize = True, .Margin = New Padding(8, 6, 0, 0)}
@@ -212,7 +240,7 @@ Namespace SDC.Framework
             AddControlBesideField(fields, browsePageNameTextBox, browseGenerationOptions)
             AddControlBesideField(fields, maintenancePageNameTextBox, generateMaintenancePageCheckBox)
             AddHandler pageBaseNameTextBox.Leave, AddressOf PageBaseNameTextBox_Leave
-            AddHandler createAsFrameworkPagesCheckBox.CheckedChanged, AddressOf CreateAsFrameworkPagesCheckBox_CheckedChanged
+            AddHandler ownerComboBox.SelectedIndexChanged, AddressOf OwnerComboBox_SelectedIndexChanged
             AddHandler generateBrowsePageCheckBox.CheckedChanged, AddressOf GenerateBrowsePageCheckBox_CheckedChanged
             AddHandler useQbeOnlyCheckBox.CheckedChanged, AddressOf BrowseOptionCheckBox_CheckedChanged
             AddHandler displayHotFieldsCheckBox.CheckedChanged, AddressOf BrowseOptionCheckBox_CheckedChanged
@@ -226,7 +254,7 @@ Namespace SDC.Framework
             ' already read FW_..., so the rewrite changed no text. The request then generated with
             ' the setting it had on disk - unticked - and wrote Employees_B where the box said
             ' FW_Employees_B.
-            AddHandler createAsFrameworkPagesCheckBox.CheckedChanged, AddressOf MarkDirty
+            AddHandler ownerComboBox.SelectedIndexChanged, AddressOf MarkDirty
             AddHandler generateBrowsePageCheckBox.CheckedChanged, AddressOf MarkDirty
             AddHandler generateMaintenancePageCheckBox.CheckedChanged, AddressOf MarkDirty
             AddHandler useQbeOnlyCheckBox.CheckedChanged, AddressOf MarkDirty
@@ -635,7 +663,7 @@ Namespace SDC.Framework
             End If
             ' Files and database rows are both skipped into one list, so the heading cannot claim
             ' either. It said "SKIPPED BECAUSE THE FILE ALREADY EXISTS" over entries like
-            ' "FW_Pages:UsersY_B", which is a row whose SQL already matched - no file involved, and
+            ' "FW_Pages:FW_Employees_B", which is a row whose SQL already matched - no file involved, and
             ' nothing for the reader to go and look at. Splitting them says which is which.
             Dim skippedRecords = skippedPageResults.Where(Function(entry) entry.StartsWith("FW_Pages", StringComparison.OrdinalIgnoreCase)).ToList()
             Dim skippedFiles = skippedPageResults.Where(Function(entry) Not entry.StartsWith("FW_Pages", StringComparison.OrdinalIgnoreCase)).ToList()
@@ -764,80 +792,43 @@ Namespace SDC.Framework
         ''' <summary>
         ''' Asks whether to regenerate over manual changes, then unlocks the page or abandons it.
         '''
-        ''' Three questions, escalating. The first states the situation plainly; the second warns;
-        ''' the third says what is actually about to happen and cannot be undone. Every one defaults
-        ''' to No, and answering No at any point abandons the open: the page never appears, the
-        ''' user is back on the browse list they started from, and their edits are untouched.
+        ''' One question, defaulting to No. Answering No abandons the open: the page never appears,
+        ''' the user is back on the browse list they started from, and their edits are untouched.
         '''
-        ''' Three prompts for one action is deliberate. The files being overwritten are hand-written
-        ''' code that exists nowhere else, and the generator cannot tell a deliberate customisation
-        ''' from an accident.
+        ''' It was three escalating prompts until 2026-09-18, the second of which said "any code you
+        ''' added by hand is not in the page request" and "it cannot be put back" - which is not
+        ''' true. The file being replaced is the .Generated half, which the generator rewrites in
+        ''' full by design; the half named after the page holds hand-written code and is never
+        ''' rewritten at all. Three warnings, escalating to "PERMANENT - LAST CHANCE", were guarding
+        ''' something that was not at risk, at the moment somebody was trying to do something else.
         ''' </summary>
         Private Sub ProtectManualPageChanges()
             Dim fileList = ChangedPageFileList()
             Dim fileWord = If(browsePageHasManualChanges AndAlso maintenancePageHasManualChanges, "FILES HAVE", "FILE HAS")
 
-            ' Names where the code should have gone, rather than only warning that it is about
-            ' to be lost. A page is two files now: the .Generated.vb half is rewritten on every
-            ' generation, and the half named after the page is never read or written again after
-            ' the first time. Code in the second is safe and raises none of this.
+            ' What happens, then what does not, then the question. Every line is true of both
+            ' halves of a page: the generator rewrites its own file, and the file named after the
+            ' page - where the Employees role grids live, and anything else added by hand - is
+            ' written once and never read or rewritten again.
             Dim proceed = MessageBox.Show(Me,
-                            "A GENERATED PAGE " & fileWord & " BEEN CHANGED IN VS CODE." & Environment.NewLine &
-                            Environment.NewLine &
                             fileList & Environment.NewLine &
                             Environment.NewLine &
-                            "THESE ARE THE GENERATOR'S FILES. IT REWRITES THEM IN FULL." & Environment.NewLine &
+                            "THE PAGE WILL BE UPDATED FROM SELECTIONS MADE HERE." & Environment.NewLine &
                             Environment.NewLine &
-                            "YOUR OWN CODE BELONGS IN THE PAGE'S OTHER FILE - THE ONE WITHOUT .GENERATED" & Environment.NewLine &
-                            "IN ITS NAME. IT IS NEVER REWRITTEN, AND ANYTHING IN IT SURVIVES EVERY" & Environment.NewLine &
-                            "REGENERATION." & Environment.NewLine &
+                            "YOUR CUSTOM CHANGES REMAIN UNTOUCHED." & Environment.NewLine &
                             Environment.NewLine &
-                            "SAVE AND SAVE & GENERATE ARE DISABLED UNTIL YOU DECIDE." & Environment.NewLine &
-                            Environment.NewLine &
-                            "DO YOU WANT TO REGENERATE THIS PAGE ANYWAY?",
-                            "MANUAL PAGE CHANGES DETECTED",
+                            "CONTINUE?",
+                            "UPDATE THIS PAGE?",
                             MessageBoxButtons.YesNo,
                             MessageBoxIcon.Question,
                             MessageBoxDefaultButton.Button2)
 
             If proceed = DialogResult.Yes Then
-                Dim confirmed = MessageBox.Show(Me,
-                                "REGENERATING REPLACES THE GENERATED PAGE WITH A FRESH ONE." & Environment.NewLine &
-                                Environment.NewLine &
-                                "ANY CODE YOU ADDED BY HAND IS NOT IN THE PAGE REQUEST." & Environment.NewLine &
-                                Environment.NewLine &
-                                "IT CANNOT BE PUT BACK BY REGENERATING AGAIN." & Environment.NewLine &
-                                Environment.NewLine &
-                                "DO YOU STILL WANT TO CONTINUE?",
-                                "MANUAL CHANGES WILL BE REPLACED",
-                                MessageBoxButtons.YesNo,
-                                MessageBoxIcon.Warning,
-                                MessageBoxDefaultButton.Button2)
-
-                If confirmed = DialogResult.Yes Then
-                    Dim final = MessageBox.Show(Me,
-                                    "THIS WILL OVERWRITE:" & Environment.NewLine &
-                                    Environment.NewLine &
-                                    fileList & Environment.NewLine &
-                                    Environment.NewLine &
-                                    "EVERY MANUAL CHANGE IN THE " & If(browsePageHasManualChanges AndAlso maintenancePageHasManualChanges, "FILES ABOVE", "FILE ABOVE") & " WILL BE PERMANENTLY LOST." & Environment.NewLine &
-                                    Environment.NewLine &
-                                    "THIS CANNOT BE UNDONE." & Environment.NewLine &
-                                    Environment.NewLine &
-                                    "ARE YOU SURE?",
-                                    "PERMANENT - LAST CHANCE",
-                                    MessageBoxButtons.YesNo,
-                                    MessageBoxIcon.Error,
-                                    MessageBoxDefaultButton.Button2)
-
-                    If final = DialogResult.Yes Then
-                        ' Unlocked, and the overwrite prompt at generation is skipped: the user has
-                        ' just answered a stronger form of that question twice.
-                        manualChangesOverridden = True
-                        RefreshPageCaption()
-                        Return
-                    End If
-                End If
+                ' Unlocked, and the overwrite prompt at generation is skipped: that question has
+                ' just been answered.
+                manualChangesOverridden = True
+                RefreshPageCaption()
+                Return
             End If
 
             ' Declined. The page used to open read-only with nothing on it but Close, which read
@@ -849,8 +840,8 @@ Namespace SDC.Framework
         ''' <summary>
         ''' Whether the generation report mentions a given page, under either name it can have.
         '''
-        ''' The class is FW_Employees_B; the file, once filed under a numbered framework folder, is
-        ''' Employees_B.vb - the folder carries the prefix and the file does not. The report names
+        ''' The class is FW_Employees_B and so is the file. Pages generated before 2026-09-18 carry
+        ''' the unprefixed name - Employees_B.vb - which is why both are looked for. The report names
         ''' the path it wrote, so looking only for the class name found nothing, the page decided
         ''' generation was incomplete, said so, and stayed open after a generate that had in fact
         ''' worked.
@@ -1162,7 +1153,83 @@ Namespace SDC.Framework
             generateMaintenancePageCheckBox.Checked = True
         End Sub
 
-        Private Sub CreateAsFrameworkPagesCheckBox_CheckedChanged(sender As Object, e As EventArgs)
+        Private Sub ApplyGeneratedPageNames(baseName As String)
+            Dim normalizedBaseName = RemoveOwnerPrefix(baseName)
+            Dim owner = SelectedOwner()
+            Dim pagePrefix = If(owner Is Nothing, String.Empty, owner.Prefix & "_")
+            pageBaseNameTextBox.Text = normalizedBaseName
+            browsePageNameTextBox.Text = pagePrefix & normalizedBaseName & "_B"
+            maintenancePageNameTextBox.Text = pagePrefix & normalizedBaseName & "_U"
+        End Sub
+
+        ''' <summary>
+        ''' The owner chosen, or nothing while the picker still says "Make a Selection".
+        ''' </summary>
+        Private Function SelectedOwner() As PageOwners.Owner
+            Return TryCast(ownerComboBox.SelectedItem, PageOwners.Owner)
+        End Function
+
+        ''' <summary>
+        ''' Red while no owner is chosen, and gone once one is - the same signal every other
+        ''' required field on a maintenance page gives.
+        ''' </summary>
+        Private Sub RefreshOwnerRequiredBorder()
+            If ownerBorderPanel Is Nothing Then Return
+
+            Dim settled = If(ownerBorderPanel.Parent Is Nothing, SystemColors.Control, ownerBorderPanel.Parent.BackColor)
+            ownerBorderPanel.BackColor = If(SelectedOwner() Is Nothing, Color.Red, settled)
+        End Sub
+
+        ''' <summary>
+        ''' Fills the picker from the folders at the repository root, so adding an application is
+        ''' adding a folder and nothing else. Nothing here lists the owners, and nothing here can
+        ''' therefore fall behind them.
+        ''' </summary>
+        Private Sub PopulateOwnerCombo()
+            ownerComboBox.Items.Clear()
+            ownerComboBox.Items.Add(PageOwners.NoSelection)
+
+            Dim owners = PageOwners.All(Environment.CurrentDirectory)
+            For Each pageOwner In owners
+                ownerComboBox.Items.Add(pageOwner)
+            Next
+
+            ' No owners means the application is not running from the repository - launched from
+            ' bin, or served from a deploy folder - and generation could not write a file anywhere
+            ' useful either. Said here, where somebody is about to choose, rather than leaving an
+            ' empty list to be puzzled over.
+            If owners.Count = 0 Then
+                ownerComboBox.Items.Add("No owners found - run from the repository")
+                ownerComboBox.Enabled = False
+            Else
+                ownerComboBox.Enabled = True
+            End If
+
+            ownerComboBox.SelectedIndex = 0
+        End Sub
+
+        ''' <summary>
+        ''' Puts the picker on a stored owner, or back to "Make a Selection" when the request has
+        ''' none - or names a folder that no longer exists, which is the same thing to somebody
+        ''' about to generate.
+        ''' </summary>
+        Private Sub SelectOwnerByFolder(folderName As String)
+            If Not String.IsNullOrWhiteSpace(folderName) Then
+                For index = 0 To ownerComboBox.Items.Count - 1
+                    Dim owner = TryCast(ownerComboBox.Items(index), PageOwners.Owner)
+                    If owner IsNot Nothing AndAlso String.Equals(owner.FolderName, folderName.Trim(), StringComparison.OrdinalIgnoreCase) Then
+                        ownerComboBox.SelectedIndex = index
+                        Return
+                    End If
+                Next
+            End If
+
+            ownerComboBox.SelectedIndex = 0
+        End Sub
+
+        Private Sub OwnerComboBox_SelectedIndexChanged(sender As Object, e As EventArgs)
+            RefreshOwnerRequiredBorder()
+
             If pageBaseNameTextBox Is Nothing Then
                 Return
             End If
@@ -1173,13 +1240,23 @@ Namespace SDC.Framework
             End If
         End Sub
 
-        Private Sub ApplyGeneratedPageNames(baseName As String)
-            Dim normalizedBaseName = RemoveFrameworkPrefix(baseName)
-            Dim pagePrefix = If(createAsFrameworkPagesCheckBox.Checked, "FW_", String.Empty)
-            pageBaseNameTextBox.Text = normalizedBaseName
-            browsePageNameTextBox.Text = pagePrefix & normalizedBaseName & "_B"
-            maintenancePageNameTextBox.Text = pagePrefix & normalizedBaseName & "_U"
-        End Sub
+        ''' <summary>
+        ''' A base name with any owner's prefix taken off, so switching owner renames the pages
+        ''' rather than stacking prefixes: FW_Widget picked as CTY becomes CTY_Widget, not
+        ''' CTY_FW_Widget.
+        ''' </summary>
+        Private Function RemoveOwnerPrefix(value As String) As String
+            Dim result = If(value, String.Empty).Trim()
+
+            For Each pageOwner In PageOwners.All(Environment.CurrentDirectory)
+                Dim prefix = pageOwner.Prefix & "_"
+                If result.StartsWith(prefix, StringComparison.OrdinalIgnoreCase) Then
+                    Return result.Substring(prefix.Length)
+                End If
+            Next
+
+            Return result
+        End Function
 
         Private Shared Function RemoveFrameworkPrefix(value As String) As String
             Dim result = If(value, String.Empty).Trim()
@@ -1422,11 +1499,15 @@ Namespace SDC.Framework
                 generatedPageIdTextBox.Text = DbText(row("GeneratedPageID"))
                 requestNameTextBox.Text = DbText(row("RequestName"))
                 pageBaseNameTextBox.Text = DbText(row("PageBaseName"))
-                If row.Table.Columns.Contains("CreateAsFrameworkPages") AndAlso Not row.IsNull("CreateAsFrameworkPages") Then
-                    createAsFrameworkPagesCheckBox.Checked = Convert.ToBoolean(row("CreateAsFrameworkPages"))
+                ' The owner the request was saved with. A request from before owners existed, or one
+                ' naming a folder that has since gone, reopens on "Make a Selection" rather than
+                ' on a guess.
+                If row.Table.Columns.Contains("Owner") AndAlso Not row.IsNull("Owner") Then
+                    SelectOwnerByFolder(Convert.ToString(row("Owner")))
                 Else
-                    createAsFrameworkPagesCheckBox.Checked = False
+                    SelectOwnerByFolder(String.Empty)
                 End If
+                RefreshOwnerRequiredBorder()
                 browsePageNameTextBox.Text = DbText(row("BrowsePageName"))
                 maintenancePageNameTextBox.Text = DbText(row("MaintenancePageName"))
                 underlyingTableNameTextBox.Text = DbText(row("UnderlyingTableName"))
@@ -1490,11 +1571,10 @@ Namespace SDC.Framework
             generateMaintenancePageCheckBox.DataBindings.Clear()
             generateBrowsePageCheckBox.DataBindings.Add("Checked", formBindingSource, "GenerateBrowsePage", True, DataSourceUpdateMode.Never)
             generateMaintenancePageCheckBox.DataBindings.Add("Checked", formBindingSource, "GenerateMaintenancePage", True, DataSourceUpdateMode.Never)
-            createAsFrameworkPagesCheckBox.DataBindings.Clear()
+            ' The owner picker is not data-bound: its items are objects read from the folders, and
+                ' a binding would have to match one of them to a stored string anyway. LoadRequest
+                ' selects it by folder name instead.
             Dim pageGenerationTable = TryCast(formBindingSource.DataSource, DataTable)
-            If pageGenerationTable IsNot Nothing AndAlso pageGenerationTable.Columns.Contains("CreateAsFrameworkPages") Then
-                createAsFrameworkPagesCheckBox.DataBindings.Add("Checked", formBindingSource, "CreateAsFrameworkPages", True, DataSourceUpdateMode.Never)
-            End If
             useQbeOnlyCheckBox.DataBindings.Clear()
             If pageGenerationTable IsNot Nothing AndAlso pageGenerationTable.Columns.Contains("UseQbeOnly") Then
                 useQbeOnlyCheckBox.DataBindings.Add("Checked", formBindingSource, "UseQbeOnly", True, DataSourceUpdateMode.Never)
@@ -3288,7 +3368,7 @@ Namespace SDC.Framework
                     {"MaintenancePageName", DbSaveValue(maintenancePageNameTextBox.Text)},
                     {"GenerateBrowsePage", generateBrowsePageCheckBox.Checked},
                     {"GenerateMaintenancePage", generateMaintenancePageCheckBox.Checked},
-                    {"CreateAsFrameworkPages", createAsFrameworkPagesCheckBox.Checked},
+                    {"Owner", If(SelectedOwner() Is Nothing, String.Empty, SelectedOwner().FolderName)},
                     {"UseQbeOnly", useQbeOnlyCheckBox.Checked},
                     {"UseHotFields", displayHotFieldsCheckBox.Checked},
                     {"UnderlyingTableName", DbSaveValue(underlyingTableNameTextBox.Text)},

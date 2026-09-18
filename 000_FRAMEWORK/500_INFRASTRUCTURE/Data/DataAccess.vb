@@ -1265,8 +1265,8 @@ Namespace SDC.Framework
         ''' What a page is called: its Table_Alias, or an empty string when it has none.
         '''
         ''' The caption for a page and for every button that opens it, since 2026-09-06. Per page
-        ''' rather than per table, which is the point - Users_AppAdmin_B and UsersY_B are both views
-        ''' of FW_Users and can be called different things.
+        ''' rather than per table, which is the point - two browse pages can be different views
+        ''' of one table and can be called different things.
         '''
         ''' Empty means "nothing chosen", and the caller falls back to the formatter. UpsertPageRecord
         ''' used to fill this with the table name for a page that had none, which made every page look
@@ -4100,14 +4100,15 @@ Namespace SDC.Framework
             ' each, the command carried it, and no column ever received it. Nothing failed: the
             ' save reported success and the setting was simply the value it had before.
             '
-            ' CreateAsFrameworkPages was the one that showed: ticking it renames the pages to FW_,
+            ' CreateAsFrameworkPages was the one that showed: ticking it renamed the pages to FW_,
             ' the request saved without it, and generation then wrote the unprefixed names the
-            ' stored row still asked for.
+            ' stored row still asked for. That flag became Owner on 2026-09-18 - one answer for
+            ' the prefix and the folder - and is in this list for the same reason it was added.
             Dim writableColumns = New String() {
                 "RequestName", "PageBaseName", "BrowsePageName", "MaintenancePageName", "UnderlyingTableName",
                 "UseRegistrationID", "BrowseFields", "MaintenanceFields", "BrowseSql", "LookupFields", "AdminRequiredFields",
                 "MenuCaller", "IconFileName", "GenerateBrowsePage", "GenerateMaintenancePage", "UseQbeOnly",
-                "UseHotFields", "CreateAsFrameworkPages", "TableAlias", "HotFields", "Column2Fields"
+                "UseHotFields", "Owner", "TableAlias", "HotFields", "Column2Fields"
             }
 
             Using conn As New SqlConnection(ConnectionString)
@@ -4141,7 +4142,7 @@ Namespace SDC.Framework
                                    String.Equals(pair.Key, "GenerateMaintenancePage", StringComparison.OrdinalIgnoreCase) OrElse
                                    String.Equals(pair.Key, "UseQbeOnly", StringComparison.OrdinalIgnoreCase) OrElse
                                    String.Equals(pair.Key, "UseHotFields", StringComparison.OrdinalIgnoreCase) OrElse
-                                   String.Equals(pair.Key, "CreateAsFrameworkPages", StringComparison.OrdinalIgnoreCase),
+                                   False,
                                    command.Parameters.Add("@" & pair.Key, SqlDbType.Bit),
                                    command.Parameters.Add("@" & pair.Key, SqlDbType.VarChar, -1))
                 parameter.Value = If(pair.Value Is Nothing, DBNull.Value, pair.Value)

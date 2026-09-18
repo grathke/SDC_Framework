@@ -18,8 +18,8 @@ $Files = @($Files | ForEach-Object { $_ -split ',' } | ForEach-Object { $_.Trim(
 # the one that already exists. So this refuses them and points at the right script rather than
 # quietly making an inferior copy.
 $baseFiles = @{
-    "Base_B.vb" = "create-base-b-restore-point.ps1"
-    "Base_U.vb" = "create-base-u-restore-point.ps1"
+    "FW_Base_B.vb" = "create-base-b-restore-point.ps1"
+    "FW_Base_U.vb" = "create-base-u-restore-point.ps1"
 }
 
 foreach ($relativePath in $Files) {

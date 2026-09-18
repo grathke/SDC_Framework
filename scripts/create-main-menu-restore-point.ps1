@@ -26,7 +26,7 @@ $restorePoint = Join-Path $repoRoot "restore-points\$timestamp-main-menu-$safeDe
 New-Item -ItemType Directory -Path $restorePoint -Force | Out-Null
 
 # Both halves of the menu, because the boundary between them is exactly what a layout change moves.
-# MainMenu.vb holds the shell - the ribbon, the region shells and the content grid - and
+# FW_MainMenu.vb holds the shell - the ribbon, the region shells and the content grid - and
 # MenuFormInitializer.vb decides which tiles that ribbon has and which occupant each region gets.
 # Capturing one without the other restores a shell that no longer matches its caller, which is the
 # failure a restore point cannot afford.
@@ -34,7 +34,7 @@ New-Item -ItemType Directory -Path $restorePoint -Force | Out-Null
 # CLAUDE.md comes too: the Protected Areas rule that governs edits here is in it, and a restore
 # point that loses the rule protecting the file is half a restore point.
 $files = @(
-    "000_FRAMEWORK\010_MAIN MENU\MainMenu.vb",
+    "000_FRAMEWORK\010_MAIN MENU\FW_MainMenu.vb",
     "100_CTY\MenuFormInitializer.vb",
     "CLAUDE.md"
 )
@@ -54,11 +54,11 @@ foreach ($relativePath in $files) {
 - Created: $(Get-Date -Format "yyyy-MM-dd HH:mm:ss")
 - Purpose: $Description
 - Files captured:
-    - 000_FRAMEWORK\010_MAIN MENU\MainMenu.vb
+    - 000_FRAMEWORK\010_MAIN MENU\FW_MainMenu.vb
     - 100_CTY\MenuFormInitializer.vb
     - CLAUDE.md
 
-Restoring: copy MainMenu.vb and MenuFormInitializer.vb back to the paths above. They are a pair -
+Restoring: copy FW_MainMenu.vb and MenuFormInitializer.vb back to the paths above. They are a pair -
 the shell and its caller - and restoring one alone leaves the menu calling a shell that has moved.
 "@ | Set-Content -LiteralPath (Join-Path $restorePoint "RESTORE_POINT.md") -Encoding ascii
 

@@ -31,7 +31,7 @@ New-Item -ItemType Directory -Path $restorePoint -Force | Out-Null
 # can invalidate - while capturing nothing that describes the contract being changed. It restored
 # cleanly and protected the wrong thing, which is the failure a restore point cannot afford.
 $files = @(
-    "000_FRAMEWORK\000_BASE CLASSES\Base_U.vb",
+    "000_FRAMEWORK\000_BASE CLASSES\FW_Base_U.vb",
     "scripts\validate-maintenance-regression.ps1",
     "CLAUDE.md",
     "FRAMEWORK_NOTES.md",
@@ -53,7 +53,7 @@ foreach ($relativePath in $files) {
 - Created: $(Get-Date -Format "yyyy-MM-dd HH:mm:ss")
 - Purpose: $Description
 - Files captured:
-    - 000_FRAMEWORK\000_BASE CLASSES\Base_U.vb
+    - 000_FRAMEWORK\000_BASE CLASSES\FW_Base_U.vb
     - scripts/validate-maintenance-regression.ps1
     - CLAUDE.md
     - FRAMEWORK_NOTES.md
