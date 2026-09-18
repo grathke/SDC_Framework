@@ -32,7 +32,14 @@ whether something is expected of them.
   Then say `run` and I will rebuild and relaunch.
   ```
 
-  Do not close the application unless the user asks. They may have unsaved work on screen.
+  Do not close the application unless the user asks. They may have unsaved work on screen. The
+  hotfix build writes to a different output path and needs no lock, so it is the way to check that
+  code compiles while the application stays open.
+
+  **Exception: when the user says they cannot close it, end the process at once.** Do not ask, do
+  not confirm the id with them, do not check whether it is really stuck — a Thinfinity session that
+  stops relaying leaves the window unreachable from the browser while the process looks perfectly
+  healthy to Windows, so "it is responding" proves nothing.
 - **`RUN IT ?`** — the request to launch is a heading too, not a line of prose. Whenever the work is
   ready to exercise, end with this heading and wait. `yes` or `run` is the go-ahead.
 
@@ -69,6 +76,14 @@ whether something is expected of them.
   wrong way round on 2026-08-31 because the documented rule was never consulted.
 - Before a change that touches multiple files, affects working behavior, or is more than a small
   targeted edit: describe the plan and get confirmation before proceeding.
+- **Direction is not approval.** An answer that refines an approach — "grab the latest rows rather
+  than deleting" — shapes the idea; it does not release it. Ask again, plainly, and wait for a yes.
+  On 2026-09-17 guidance of exactly that kind was read as a go-ahead and produced a table, a stored
+  procedure and four indexes nobody had agreed to.
+- **Ask one question at a time, and never refer to an item by its number from an earlier list.** A
+  number is only an address if it is stable, and a `WHATS NEXT` list renumbers every message — so
+  "item 2" points at whatever is in that slot now, and "2 yes" lands on the wrong thing. Name the
+  subject in the question.
 - When something looks wrong, investigate the actual page, control or data first. If it is still
   unclear, ask. Do not presume intent or build a theory on an unconfirmed premise.
 
@@ -390,6 +405,11 @@ Restore points are written to `restore-points/`.
 - `FRAMEWORK_NOTES.md` — how the menu shell, browse pages, maintenance pages, required-field
   styling and layout persistence actually work. Read before changing framework behavior.
 - `ICON_CATALOG.md` — the repository icon catalog required by the Action Icon Guardrail.
+- `PARKED_DECISIONS.md` — what has been decided but not built, and what is deliberately waiting:
+  the data-driven menu, the region occupant, the help desk conversation table, contractors, the
+  runtime layout designer, the phone. **Nothing in it is a task list** — every item is parked on
+  purpose, and several were argued at length and stopped for reasons the code does not show. Read
+  it before proposing any of that work, and add to it when something is parked rather than done.
 - `TEST_CASES.md` — manual and scripted test cases with stable IDs. Add a case when a defect is
   found, and record pass or fail with a date.
 - `BASE_B_QBE_LAYOUT_GUIDE.md`, `COMBO_CHECKLIST.md` — existing area-specific guides.
@@ -453,6 +473,16 @@ These are baseline rules for this application, not optional task-specific sugges
 
 ## Rules Learned The Hard Way
 
+- **Server, network and Windows-configuration work is not done through Claude.** Say so plainly and
+  stop. An afternoon on the Thinfinity server on 2026-09-12 — auto-logon, session modes, URL
+  reservations, RDP limits — ended with the owner locked out of his own machine and recovered only
+  through an out-of-band console. Three reasons it goes wrong: the machine cannot be seen, so every
+  step is inferred from pasted screenshots; the undo path runs through the thing being changed, so
+  "reversible" is reversible only from a session the change removes; and constraints surface hours
+  in, after recommendations have already been acted on. Offer what does help — reading a pasted log,
+  explaining what a setting does, diagnosing from this machine. **This development machine is the
+  exception**, where commands are run here and the results are seen: builds, the local Thinfinity
+  install, queries against the database.
 - **Fewest database round trips, everywhere.** Prefer one joined query over several, and say the
   query count when proposing a data-access change. A session of logging in and opening a few pages
   was measured at 110 round trips, which is how the schema and page caches came to exist.
