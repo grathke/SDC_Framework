@@ -426,7 +426,11 @@ Namespace SDC.Framework
             Dim indicator = state.Indicator
             If indicator Is Nothing OrElse indicator.IsDisposed Then Return
 
-            indicator.Text = CInt(Math.Round(state.Factor * 100)).ToString(Globalization.CultureInfo.InvariantCulture) & "%"
+            ' The keys beside the reading. A percentage on its own says the page has a zoom and not
+            ' how to work it, and nothing else on screen says either - the keys are not on a menu,
+            ' a toolbar or a tooltip. Discreet enough to ignore, in the same grey as the number.
+            indicator.Text = CInt(Math.Round(state.Factor * 100)).ToString(Globalization.CultureInfo.InvariantCulture) &
+                             "%:  F9 larger   F10 smaller   F8 reset"
             indicator.Location = New Point(4, Math.Max(0, form.ClientSize.Height - indicator.Height - 3))
             indicator.BringToFront()
         End Sub
