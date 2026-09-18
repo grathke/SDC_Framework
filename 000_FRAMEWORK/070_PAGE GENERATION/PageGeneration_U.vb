@@ -63,6 +63,7 @@ Namespace SDC.Framework
         Private generatePagesButton As Button
         Private previewCodeButton As Button
         Private selectTableButton As Button
+        Private enabledTablesButton As Button
         Private selectFieldsButton As Button
         ' The caption line the base class draws on the form: caption at y=15, Tab Order button at
         ' y=10, both about 28 tall. Questions start below it, and the form is taller by the delta
@@ -284,6 +285,22 @@ Namespace SDC.Framework
             }
             AddHandler selectTableButton.Click, AddressOf SelectTableButton_Click
             tableSelectionPanel.Controls.Add(selectTableButton)
+
+            ' Beside the picker, because this is where a missing table is noticed: the list is open,
+            ' the table is not in it, and going out to a dashboard to enable it and coming back is
+            ' the long way round. App Admin only, being a decision about the whole application.
+            enabledTablesButton = New Button With {
+                .Text = "Tables…",
+                .Size = New Size(80, 32),
+                .FlatStyle = FlatStyle.Standard,
+                .UseVisualStyleBackColor = True,
+                .Margin = New Padding(0, 0, 8, 0),
+                .Visible = SessionState.IsApplicationAdmin
+            }
+            Dim enabledTablesTip As New ToolTip()
+            enabledTablesTip.SetToolTip(enabledTablesButton, "Which tables are available at all")
+            AddHandler enabledTablesButton.Click, AddressOf EnabledTablesButton_Click
+            tableSelectionPanel.Controls.Add(enabledTablesButton)
             ' Nudged down so the shorter text box sits on the button's centre line rather than its top.
             underlyingTableNameTextBox.Margin = New Padding(0, 3, 0, 0)
 
@@ -545,6 +562,13 @@ Namespace SDC.Framework
             okButton.Text = "Save"
             okButton.Enabled = True
 
+            ' The difference between the two buttons is the whole of what somebody needs to know
+            ' here, and neither caption says it: Save stores the request, Save & Generate also
+            ' writes the files. The same distinction the update dialog has to spell out.
+            Dim footerTips As New ToolTip()
+            footerTips.SetToolTip(okButton, "Saves the request only, does not update any page.")
+            footerTips.SetToolTip(generatePagesButton, "Saves the request and updates the pages.")
+
             ApplyQuestionTabOrder()
         End Sub
 
@@ -764,7 +788,7 @@ Namespace SDC.Framework
             pageHasManualChanges = maintenancePageHasManualChanges OrElse browsePageHasManualChanges
 
             If Not File.Exists(pagePath) Then
-                If pageHasManualChanges Then ProtectManualPageChanges()
+                ProtectManualPageChanges()
                 Return
             End If
 
@@ -778,7 +802,11 @@ Namespace SDC.Framework
             Next
 
             pageHasManualChanges = pageHasManualChanges OrElse pageFields.Any(Function(field) Not savedFields.Contains(field))
-            If pageHasManualChanges Then ProtectManualPageChanges()
+
+            ' Every open of an existing request, not only the ones with something at risk. What the
+            ' two buttons do is the thing somebody needs to know before pressing one, and a page
+            ' with no hand-written code simply leaves out the line about custom code.
+            ProtectManualPageChanges()
         End Sub
 
         ''' <summary>
@@ -789,6 +817,27 @@ Namespace SDC.Framework
             If browsePageHasManualChanges Then changed.Add(browsePageNameTextBox.Text.Trim() & ".vb")
             If maintenancePageHasManualChanges Then changed.Add(maintenancePageNameTextBox.Text.Trim() & ".Generated.vb")
             Return String.Join(Environment.NewLine, changed)
+        End Function
+
+        ''' <summary>
+        ''' The hand-written half, named, when there is one on disk to name.
+        '''
+        ''' A maintenance page is two files: the .Generated half, rewritten in full every time, and
+        ''' the file named after the page, written once at birth and never read or rewritten again.
+        ''' Only the second survives a regeneration, and the message said so without naming it -
+        ''' which read as covering the file it did name, the one being replaced.
+        '''
+        ''' Nothing when the page has no such file, which is every browse page: a _B is a single
+        ''' generated file, so there is no untouched half and nothing reassuring to say.
+        ''' </summary>
+        Private Function UntouchedPageFileList() As String
+            Dim pageName = maintenancePageNameTextBox.Text.Trim()
+            If pageName = String.Empty Then Return String.Empty
+
+            Dim handWritten = PageGenerator.GeneratedPagePath(Environment.CurrentDirectory, pageName)
+            If String.IsNullOrWhiteSpace(handWritten) OrElse Not File.Exists(handWritten) Then Return String.Empty
+
+            Return "CUSTOM CODE IN " & IO.Path.GetFileName(handWritten).ToUpperInvariant() & " IS LEFT UNCHANGED."
         End Function
 
         ''' <summary>
@@ -804,23 +853,94 @@ Namespace SDC.Framework
         ''' rewritten at all. Three warnings, escalating to "PERMANENT - LAST CHANCE", were guarding
         ''' something that was not at risk, at the moment somebody was trying to do something else.
         ''' </summary>
-        Private Sub ProtectManualPageChanges()
-            Dim fileList = ChangedPageFileList()
-            Dim fileWord = If(browsePageHasManualChanges AndAlso maintenancePageHasManualChanges, "FILES HAVE", "FILE HAS")
+        ''' <summary>
+        ''' Whether the request asks for this half, read from the row rather than from the check box.
+        '''
+        ''' The boxes are data-bound and are still unticked while this runs - the check happens as
+        ''' the record loads, before binding has caught up. Reading them gave a message that named a
+        ''' file and then said nothing about what would happen to it.
+        ''' </summary>
+        Private Function RequestGenerates(columnName As String) As Boolean
+            Dim dataRow = TryCast(formBindingSource.Current, DataRowView)
+            If dataRow Is Nothing OrElse Not dataRow.Row.Table.Columns.Contains(columnName) Then Return True
+            If dataRow.Row.IsNull(columnName) Then Return True
 
-            ' What happens, then what does not, then the question. Every line is true of both
-            ' halves of a page: the generator rewrites its own file, and the file named after the
-            ' page - where the Employees role grids live, and anything else added by hand - is
-            ' written once and never read or rewritten again.
+            Return Convert.ToBoolean(dataRow.Row(columnName))
+        End Function
+
+        Private Sub ProtectManualPageChanges()
+            ' The files that changed, then what happens to each kind, then the question. Named by
+            ' file rather than by whose work it was: the change may be the other developer's, or
+            ' from a generator that has since altered what it writes. All that is known, and all
+            ' that matters, is that the file no longer matches what was generated.
+            '
+            ' "Updated", never "regenerated". Regenerate describes what the tool does; update
+            ' describes what happens to the page, which is what the decision is about.
+            Dim message As New StringBuilder()
+
+            ' The file list can be empty: this dialog also opens when the page's fields no longer
+            ' match the saved request, where no file has been touched at all. Leading blank lines
+            ' for a list that is not there is how the message came to start with white space.
+            Dim changedFiles = ChangedPageFileList()
+            If changedFiles <> String.Empty Then
+                message.AppendLine(changedFiles)
+                message.AppendLine()
+            End If
+
+            Dim generatesMaintenance = RequestGenerates("GenerateMaintenancePage")
+            Dim generatesBrowse = RequestGenerates("GenerateBrowsePage")
+
+            ' One sentence, naming what the request actually asks for. Two lines saying the same
+            ' thing about two halves read as two separate warnings when they are one statement.
+            If generatesMaintenance OrElse generatesBrowse Then
+                Dim subject = If(generatesMaintenance AndAlso generatesBrowse,
+                                 "THE BROWSE AND MAINTENANCE PAGES WILL BE UPDATED FROM SELECTIONS MADE HERE.",
+                                 If(generatesMaintenance,
+                                    "THE MAINTENANCE PAGE WILL BE UPDATED FROM SELECTIONS MADE HERE.",
+                                    "THE BROWSE PAGE WILL BE UPDATED FROM SELECTIONS MADE HERE."))
+                message.AppendLine(subject)
+            End If
+
+            ' A maintenance page is two files and only one of them is rewritten, so hand-written
+            ' code survives. Said here because the dialog names the file that does not survive, and
+            ' unqualified reassurance read as covering that one.
+            If generatesMaintenance Then
+                Dim untouched = UntouchedPageFileList()
+                If untouched <> String.Empty Then
+                    message.AppendLine()
+                    message.AppendLine(untouched)
+                End If
+            End If
+
+            ' A browse page is one file with no companion, so there is nowhere for hand-written code
+            ' to survive. The dialog said nothing about that until 2026-09-18 - silent in the one
+            ' case where something is actually lost. Splitting a _B the way a _U is split would fix
+            ' it properly; saying so is what can be done without touching every existing page.
+            '
+            ' Only when there is something to replace. A browse page nobody has edited loses
+            ' nothing, and warning about it anyway is how a warning stops being read.
+            If generatesBrowse AndAlso browsePageHasManualChanges Then
+                message.AppendLine()
+                message.AppendLine("CHANGES MADE BY HAND IN " &
+                                   browsePageNameTextBox.Text.Trim().ToUpperInvariant() &
+                                   ".VB WILL BE REPLACED.")
+            End If
+
+            ' When, not just what. This dialog opens the request; nothing is written until Save &
+            ' Generate is pressed, and Save alone never touches a file. Without the line the message
+            ' reads as though answering Yes updates the page there and then.
+            message.AppendLine()
+            message.AppendLine("THIS HAPPENS WHEN SAVE & GENERATE IS PRESSED.")
+            message.AppendLine()
+            message.AppendLine("SAVE ON ITS OWN DOES NOT UPDATE ANY PAGE.")
+            message.AppendLine()
+            message.Append("CONTINUE?")
+
             Dim proceed = MessageBox.Show(Me,
-                            fileList & Environment.NewLine &
-                            Environment.NewLine &
-                            "THE PAGE WILL BE UPDATED FROM SELECTIONS MADE HERE." & Environment.NewLine &
-                            Environment.NewLine &
-                            "YOUR CUSTOM CHANGES REMAIN UNTOUCHED." & Environment.NewLine &
-                            Environment.NewLine &
-                            "CONTINUE?",
-                            "UPDATE THIS PAGE?",
+                            message.ToString(),
+                            If(generatesBrowse AndAlso generatesMaintenance,
+                               "UPDATE THESE PAGES?",
+                               "UPDATE THIS PAGE?"),
                             MessageBoxButtons.YesNo,
                             MessageBoxIcon.Question,
                             MessageBoxDefaultButton.Button2)
@@ -2423,6 +2543,16 @@ Namespace SDC.Framework
                 End If
             End Using
 
+        End Sub
+
+        ''' <summary>
+        ''' The same checklist the admin dashboard and Roles_U open, not a third copy of it. Nothing
+        ''' needs refreshing afterwards: Select Table reads the list when it is clicked.
+        ''' </summary>
+        Private Sub EnabledTablesButton_Click(sender As Object, e As EventArgs)
+            Using tables As New FW_EnabledTables()
+                tables.ShowDialog(Me)
+            End Using
         End Sub
 
         Private Sub SelectTableButton_Click(sender As Object, e As EventArgs)
