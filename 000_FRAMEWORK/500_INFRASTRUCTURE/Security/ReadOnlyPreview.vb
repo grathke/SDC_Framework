@@ -23,7 +23,7 @@ Namespace SDC.Framework
     End Class
 
     ''' <summary>
-    ''' A latch that makes the current thread refuse to write.
+    ''' A latch that makes the current thread refuse to write a record.
     '''
     ''' It exists because a maintenance page opened to be looked at can still write without anybody
     ''' pressing OK. Seven paths were found: the record save and its audit rows, the roles that ride
@@ -31,6 +31,16 @@ Namespace SDC.Framework
     ''' colour picker and a help desk issue. Four of those need no button on the page at all - a
     ''' zoom keypress alone persists a row - which is why disabling OK is not a control and this is
     ''' checked at the write instead.
+    '''
+    ''' It started as "a preview writes nothing" and that was the wrong rule. What must not happen
+    ''' is a preview touching **a record**; the rest of that list is preferences, and blocking those
+    ''' produced a Save that appeared to do nothing and a zoom that would not be remembered. So the
+    ''' rule is now: a preview never writes a record, and preferences behave exactly as they do on
+    ''' any other page. Nothing to remember and no carve-outs to explain.
+    '''
+    ''' Gated: the record save, which throws, and the audit rows that belong to it, which skip - an
+    ''' audit row for a save that never happened asserts a change nobody made. Not gated: the tab
+    ''' order, the page zoom and the page background colour.
     '''
     ''' Marked thread-static and held only for as long as a modal preview is on screen. A latch that
     ''' outlived its window, or reached another thread, would silently stop real work from saving -

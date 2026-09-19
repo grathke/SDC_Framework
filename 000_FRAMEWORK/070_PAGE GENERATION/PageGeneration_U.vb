@@ -2900,37 +2900,39 @@ Namespace SDC.Framework
 
             Dim targetField = includedFields(targetPosition)
 
-            ' The two trade columns as well as places.
+            ' Crossing a boundary changes the column and moves nothing.
             '
-            ' Within a column that is a no-op. Across the boundary it is the whole point: the last
-            ' field of column one and the first of column two swap, so the moved field arrives in
-            ' the other column and the one it displaced comes back - which is what crossing a
-            ' boundary means, and the only thing Move Up could do that was not a dead press when
-            ' the neighbour was in the other column.
+            ' A press means "up the page". Inside a column that is a swap with the neighbour. At the
+            ' edge of one it is not: the field takes the next column and keeps its place in the
+            ' list, so the boundary moves by one and the columns change length. Swapping there would
+            ' hold the counts fixed for ever - column one could never grow, which is what a run of
+            ' presses is usually trying to do.
             '
-            ' It also keeps membership contiguous by construction. The boundary is an index in this
-            ' list, and swapping across it never moves that index - so there is no arrangement where
-            ' a column two field sits above a column one field, and the page cannot be given a split
-            ' nobody chose.
+            ' Membership stays contiguous either way, because the boundary is a single index in this
+            ' list and both moves keep it one: a swap leaves it alone, a crossing shifts it by one.
+            ' There is no arrangement where a column two field sits above a column one field.
             Dim selectedColumnValue = Convert.ToString(grid.Rows(selectedIndex).Cells("Column").Value)
             Dim targetRow = grid.Rows.Cast(Of DataGridViewRow)().
                 FirstOrDefault(Function(row) String.Equals(Convert.ToString(row.Cells("FieldName").Value), targetField, StringComparison.OrdinalIgnoreCase))
             Dim targetColumnValue = If(targetRow Is Nothing, selectedColumnValue, Convert.ToString(targetRow.Cells("Column").Value))
 
+            If Not String.Equals(selectedColumnValue, targetColumnValue, StringComparison.Ordinal) Then
+                grid.Rows(selectedIndex).Cells("Column").Value = targetColumnValue
+                ApplyColumnTint(grid.Rows(selectedIndex))
+                grid.ClearSelection()
+                grid.Rows(selectedIndex).Selected = True
+                grid.CurrentCell = grid.Rows(selectedIndex).Cells("FieldName")
+
+                ' The row stayed exactly where it was and only its column changed, so without this
+                ' nothing appears to have happened - the tint is the only difference and the eye is
+                ' on the button, not on a 70 pixel cell at the far end of the row.
+                GridRowFlash.Flash(grid, grid.Rows(selectedIndex))
+                Return
+            End If
+
             includedFields(targetPosition) = selectedField
             includedFields(selectedPosition) = targetField
             OrderSelectionGrid(grid, String.Join(", ", includedFields))
-
-            For Each row As DataGridViewRow In grid.Rows
-                Dim name = Convert.ToString(row.Cells("FieldName").Value)
-                If String.Equals(name, selectedField, StringComparison.OrdinalIgnoreCase) Then
-                    row.Cells("Column").Value = targetColumnValue
-                    ApplyColumnTint(row)
-                ElseIf String.Equals(name, targetField, StringComparison.OrdinalIgnoreCase) Then
-                    row.Cells("Column").Value = selectedColumnValue
-                    ApplyColumnTint(row)
-                End If
-            Next
 
             ' After the reorder, never before: the column is read from where the row has landed.
             ApplyPlaceholderColumnFromNeighbour(grid, selectedField)
@@ -3422,6 +3424,14 @@ Namespace SDC.Framework
         Private Shared ReadOnly Column2RowBackColor As Color = Color.FromArgb(238, 244, 250)
 
         ''' <summary>
+        ''' The same tint carried through selection, deep enough to read white text on. A selected
+        ''' column two row is still plainly column two, rather than the same blue as every other
+        ''' selected row.
+        ''' </summary>
+        Private Shared ReadOnly Column2SelectionBackColor As Color = Color.FromArgb(64, 110, 160)
+
+
+        ''' <summary>
         ''' A cell whose question this row cannot answer: unticked, read-only, greyed and carrying
         ''' the reason. One helper rather than a copy per case - a greyed cell says only that it
         ''' cannot be ticked, never why, and two copies of that rule is how one of them ends up
@@ -3444,6 +3454,11 @@ Namespace SDC.Framework
 
             Dim inColumnTwo = String.Equals(Convert.ToString(row.Cells("Column").Value), Column2Choice, StringComparison.Ordinal)
             row.DefaultCellStyle.BackColor = If(inColumnTwo, Column2RowBackColor, Color.Empty)
+
+            ' The selected row shows its selection colour and nothing else, so the tint - the only
+            ' thing that says which column a field is in - was invisible on the one row somebody is
+            ' looking at. Which is every row they have just moved.
+            row.DefaultCellStyle.SelectionBackColor = If(inColumnTwo, Column2SelectionBackColor, Color.Empty)
         End Sub
 
         ''' <summary>

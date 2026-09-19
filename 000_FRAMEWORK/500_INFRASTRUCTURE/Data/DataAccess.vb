@@ -1201,8 +1201,6 @@ Namespace SDC.Framework
         ''' here would create one without the SQL, alias and table name that give it meaning.
         ''' </summary>
         Public Shared Function SavePageBackgroundColor(windowOrPageName As String, argb As Integer, updatedBy As Integer) As Boolean
-            If ReadOnlyPreview.ShouldSkip() Then Return False
-
             If String.IsNullOrWhiteSpace(windowOrPageName) Then Return False
 
             Dim pageKey = windowOrPageName.Trim()
@@ -2871,8 +2869,6 @@ Namespace SDC.Framework
         ''' </summary>
         Public Shared Sub SavePageZoom(userId As Integer, pageName As String, factor As Single,
                                        registrationId As Integer)
-            If ReadOnlyPreview.ShouldSkip() Then Return
-
             If userId <= 0 OrElse String.IsNullOrWhiteSpace(pageName) Then Return
 
             Using conn As New SqlConnection(ConnectionString)
