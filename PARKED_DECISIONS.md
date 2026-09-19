@@ -49,6 +49,118 @@ permitted it.
 Three registration fields circle this and two do nothing today: `AllowMessaging` and
 `DisplayDashboardOnStartUp` are consumed by nothing, and a third — "show messages on load" — does
 not exist. Settle them together rather than adding a third flag that means the same as the first two.
+*Refined 2026-09-19.* Name the **tile**, not the region. A tile's click handler already checks the
+permission, builds the control, puts it in the right region and sets the chrome — so a startup
+setting holding an `ActionKey` invokes what already exists and the question "which region gets
+what" disappears. It also collapses the three flags above into one value: `DisplayDashboardOnStartUp`
+becomes *startup tile = Dashboard*, `AllowMessaging` and the absent "show messages on load" become
+*startup tile = Messages*. One setting that cannot contradict itself, and it survives the move to
+menu buttons in a table, where the `ActionKey` is already the key.
+
+Three things still to decide before building it: not every tile is a valid target (some open a
+drop-down rather than filling a region); what happens when the tile is not permitted, which the rule
+above already answers as *fall back to the default*; and whether the registration sets it, the user
+overrides it, or both.
+
+### Who may change a maintenance page's layout
+
+*Settled 2026-09-19. Not built.*
+
+Three scopes, deliberately different, and the distinction is what a thing **is** rather than where
+it is stored:
+
+| | Scope | Who may change it |
+|---|---|---|
+| Browse column layouts | per user, per page | any user, their own |
+| `_U` tab order | one per page | developer only |
+| `_U` control positions | one per page | developer only |
+
+A browse grid is somebody arranging their own working view. A maintenance page's field order and
+positions are the page's *design*, which everybody then receives — so there is one set, and no
+per-user variant. That closes the open question in `PAGE_LAYOUT_RUNTIME_SPEC.md` section 8: there is
+no conflict between a developer's layout and a user's, because there is no user's.
+
+**"Developer" is a session, not only a role.** App Admin is a role a customer's administrator can
+hold over Thinfinity. The test is the role **and** a desktop session — the same line page generation
+draws when it refuses to open in a browser. Applied to the tab order manager on 2026-09-19; the
+positions would use the same gate.
+
+**Reordering is the developer's, applying is everybody's.** Every page reads the saved order on open,
+for every user, in every session. Only the writing is gated.
+
+### Where repositioning happens
+
+*Settled 2026-09-19. Not built.*
+
+In the preview opened from page generation, and nowhere else — not on a normally opened page, even
+for an App Admin.
+
+- Page generation refuses to open in a browser session, so a preview can never be dragged over
+  Thinfinity. On a normal page that needs a second rule, and a rule whose only job is to block a
+  path is how the path gets unblocked by accident.
+- The preview is already the arrangement surface: it computes the placement, re-arranges the real
+  page to match it, and saves the tab order.
+- A normal page is carrying a record. Dragging fields while somebody has half-typed an address mixes
+  designing the page with using it, and the undo for each is different.
+- Design happens once and use happens constantly. Putting a drag mode on every page open, for
+  something done rarely, trades a permanent risk for an occasional convenience.
+
+
+**Saving replaces the page's whole set**, in one transaction, as `SaveTabOrderSettings` already does:
+delete the page's rows, write the current ones. It changes rarely, nothing is gained by merging row
+by row, and a replace cannot leave a stale row behind. A saved row naming a control that is not on
+the page is ignored rather than reported — unlike the unmapped-field report, which exists because
+such a control stops a page saving. Here it is an expected state: a row saved for a field that is in
+the request but not yet generated simply waits for it.
+### How a field is repositioned
+
+*Settled 2026-09-19. Not built.*
+
+**Two buttons, not dragging.** Select a field in the preview; `Up` and `Down` move it one row and
+displace what is there.
+
+Dragging was the obvious idea and is the wrong one here. The delivery rules prefer discrete events
+over continuous pointer sampling — a button click always arrives, mouse movement is coalesced and
+degrades by acting late rather than failing. Buttons also match what already exists: `Up` and `Down`
+in the tab order manager, `Move Up` and `Move Down` in the field picker. A third surface that
+reordered by mouse would make the same operation work two ways depending on where you were standing.
+
+Snapping disappears with the drag. One press is one row slot, so the rule that a row is the unit —
+`IsRowLayoutControl` and `CollapseHiddenFieldRows` decide what a row *is* by comparing `Top` — is
+enforced by construction rather than by a snap that has to be correct. Nothing can land between rows
+because nothing is ever placed by pixel.
+
+**No long-move affordance**, deliberately. Neither the tab order manager nor the field picker has
+one, and inventing a keyboard jump here would be a third way of doing what those two already do. If
+long moves hurt, they hurt in all three places and get added to all three.
+
+**Down past the end of a column wraps to the top of the next one**, and `Up` at the top of a column
+goes back to the bottom of the previous. Moving a field across columns is not a separate command,
+it is what happens when you keep pressing — which is also the order the page tabs in, down one
+column and then the next.
+
+The consequence is that **column membership is always contiguous**: everything before the wrap point
+is in one column, everything after in the next. That is accepted. The model today allows an
+interleaved arrangement — `Column2Fields` is any subset — but nothing produces one and nothing wants
+one.
+
+**Written as "the next column", not "the other column".** There may one day be a column 3, and the
+interaction costs nothing to generalise. The layout does not generalise for free: `PlaceMaintenancePage`
+holds `TwoColumns`, a single `ColumnTwoLeft` and a `leftFields`/`rightFields` pair,
+`MaintenanceLayout.PageWidth` chooses between a one-column and a two-column width, and the request
+stores `Column2Fields` rather than a column number per field. None of it is hard — placement is one
+function now, so columns become a loop over an index — but it is a change, not a flag. And three
+columns is roughly 1400 wide against a 1260 minimum window, so it is also a decision about the
+window.
+
+**A field's row is its ordinal within its column, not a coordinate.** So `Up` on the page moves it
+past the previous field *in its own column*, which may be several steps in the underlying ordered
+list when the fields between belong elsewhere. That is not what the field picker's `Move Up` does —
+that moves one place in the whole included list, and can appear to do nothing when the neighbour is
+in another column. The page moves by rows because rows are what you are looking at; the two are not
+the same operation and should not be written as though they are.
+
+
 
 ### A conversation entry table for the Help Desk
 
