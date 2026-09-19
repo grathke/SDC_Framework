@@ -312,7 +312,15 @@ Namespace SDC.Framework
 
             ' Queued behind whatever the page's own Shown work queued, so the snapshot is of the
             ' page as it settled rather than as it was first drawn.
-            BeginInvoke(New Action(Sub() PageZoom.AttachAndReveal(Me)))
+            BeginInvoke(New Action(
+                Sub()
+                    PageZoom.AttachAndReveal(Me)
+
+                    ' The read-out lines up with the grid: centred in the gap below it, and starting
+                    ' at its left edge. Every browse page has one and it is the page's subject, so
+                    ' the reading sits with the thing being read rather than in the window's corner.
+                    PageZoom.SetIndicatorAnchor(Me, browseGrid)
+                End Sub))
         End Sub
 
         Protected ReadOnly Property PageColorPicker As PageBackgroundColorPicker

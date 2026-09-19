@@ -328,6 +328,17 @@ Namespace SDC.Framework
         ''' has would be a second formatter in all but name, and would still be wrong for the first
         ''' product whose initials run to four.
         ''' </summary>
+        Private Shared Function ResolveApplicationTitle() As String
+            Dim name = Application.ProductName
+            If String.IsNullOrWhiteSpace(name) Then
+                name = System.Reflection.Assembly.GetExecutingAssembly().GetName().Name
+            End If
+            If String.IsNullOrWhiteSpace(name) Then Return "Main Menu"
+
+            Dim normalized = name.Trim().Replace("."c, "_"c)
+            Return DisplayNameFormatter.ToDisplayName(normalized, stripFrameworkPrefix:=False)
+        End Function
+
         ''' <summary>
         ''' What the title band says: the application, then the registration in capitals -
         ''' "City Nexus: DEVELOPMENT TEAM".
@@ -352,16 +363,6 @@ Namespace SDC.Framework
                                       session.Value.RegistrationName)
 
             Return application & ": " & registrationName.Trim().ToUpperInvariant()
-        End Function
-        Private Shared Function ResolveApplicationTitle() As String
-            Dim name = Application.ProductName
-            If String.IsNullOrWhiteSpace(name) Then
-                name = System.Reflection.Assembly.GetExecutingAssembly().GetName().Name
-            End If
-            If String.IsNullOrWhiteSpace(name) Then Return "Main Menu"
-
-            Dim normalized = name.Trim().Replace("."c, "_"c)
-            Return DisplayNameFormatter.ToDisplayName(normalized, stripFrameworkPrefix:=False)
         End Function
         Private Const RibbonPanelMargin As Integer = 16
         Private Const RibbonPanelBorder As Integer = 2
@@ -470,6 +471,7 @@ Namespace SDC.Framework
                 .Size = New Size(Me.ClientSize.Width - 16, TitleBandHeight - 10),
                 .Anchor = AnchorStyles.Top Or AnchorStyles.Left Or AnchorStyles.Right,
                 .Text = BuildTitleBandText(),
+                .AutoEllipsis = True,
                 .TextAlign = ContentAlignment.MiddleCenter,
                 .Font = New Font("Segoe UI", 18.0F, FontStyle.Regular),
                 .ForeColor = Color.FromArgb(52, 60, 70),
@@ -515,20 +517,13 @@ Namespace SDC.Framework
                 .Margin = New Padding(0)
             }
 
+            ' The registration is not read here any more - BuildTitleBandText asks the session for
+            ' it when it builds the band, and is asked again after a Switch User.
             Dim session = SessionState.Current
-            Dim registrationNameForHeader As String = "DEVELOPMENT TEAM"
-            Dim registrationIdForHeader As Integer = 1
             Dim welcomeName As String = currentUser.DisplayName
             Dim welcomeUserId As Integer = currentUser.UserId
 
             If session.HasValue Then
-                If session.Value.RegistrationName <> String.Empty Then
-                    registrationNameForHeader = session.Value.RegistrationName
-                End If
-
-                If session.Value.RegistrationID > 0 Then
-                    registrationIdForHeader = session.Value.RegistrationID
-                End If
 
                 If session.Value.FirstLast <> String.Empty Then
                     welcomeName = session.Value.FirstLast
@@ -770,12 +765,16 @@ Namespace SDC.Framework
 
             ' Seated again once the form has been laid out. Doing it only during construction put
             ' the caption where the combo was going to be rather than where it ended up.
-            ' F9 larger, F10 smaller, F8 back to normal. On Load rather than Shown: a zoom applied
+            ' F8 larger, F9 smaller, F10 back to normal. On Load rather than Shown: a zoom applied
             ' after the window is up is seen to jump, and a remembered one has to be what the page
             ' opens as.
             AddHandler Me.Load,
                 Sub(sender, e)
                     PageZoom.Attach(Me)
+
+                    ' The read-out lines up with the content region: centred in the gap below it,
+                    ' and starting at its left edge rather than at the window frame.
+                    PageZoom.SetIndicatorAnchor(Me, contentHost)
                 End Sub
 
             AddHandler Me.Shown,
@@ -811,10 +810,14 @@ Namespace SDC.Framework
             If titleLabel IsNot Nothing AndAlso welcomeLabel IsNot Nothing Then
                 Dim left = welcomeLabel.Right + 16
                 Dim right = timeZoneOverrideCaption.Left - 16
-                If right > left Then
-                    titleLabel.Location = New Point(left, titleLabel.Top)
-                    titleLabel.Size = New Size(right - left, titleLabel.Height)
-                End If
+
+                ' Never left where it was. A negative gap - a long name and a long registration on a
+                ' narrow window - used to skip this block, and the label kept its old full width
+                ' underneath the opaque greeting, which is the clipping this was written to cure.
+                ' Given nothing to work with it is given nothing, and shows as much of itself as it
+                ' can with an ellipsis rather than a word cut in half.
+                titleLabel.Location = New Point(left, titleLabel.Top)
+                titleLabel.Size = New Size(Math.Max(0, right - left), titleLabel.Height)
             End If
         End Sub
         Private Sub UpdateRoleSelectionTile()
@@ -2473,6 +2476,12 @@ Namespace SDC.Framework
             ' measured from where the greeting ends, so aligning before the new name is in place
             ' measures the old one and leaves the title where it was.
             AlignTimeZoneToRibbon()
+
+            ' And tell PageZoom the layout changed. It rebuilds every control from the snapshot it
+            ' took when it attached, so without this the next F9 or F8 would put the band back as it
+            ' was before the switch - the title under the new, longer greeting. The same fault the
+            ' maintenance preview had, and the same answer.
+            PageZoom.Recapture(Me)
         End Sub
 
         ''' <summary>

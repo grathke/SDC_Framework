@@ -11,7 +11,7 @@ Namespace SDC.Framework
     ''' <summary>
     ''' Scales a form's contents from the keyboard, and keeps them centred.
     '''
-    ''' F9 larger, F10 smaller, F8 back to normal. Not F11 or F12: a browser takes those for
+    ''' F8 larger, F9 smaller, F10 back to normal. Not F11 or F12: a browser takes those for
     ''' fullscreen and developer tools before VirtualUI ever sees them, and not Shift+F10, which is
     ''' Windows' own context-menu key.
     '''
@@ -73,6 +73,18 @@ Namespace SDC.Framework
             Public DesignMaximum As Size
             Public DesignMinimum As Size
             Public Indicator As Label
+
+            ''' <summary>
+            ''' The control the read-out lines up with: centred in the gap below it, and starting at
+            ''' its left edge. Nothing means sit above the bottom edge at the far left, which is
+            ''' what a page that names no anchor gets.
+            '''
+            ''' A control rather than two numbers, because the numbers would have to be scaled and
+            ''' the control is measured where it actually is - after the zoom has moved it. Storing
+            ''' a band captured at 100 per cent and multiplying by the factor was the first attempt
+            ''' and is wrong the moment a page is attached while already zoomed.
+            ''' </summary>
+            Public IndicatorAnchor As Control
         End Class
 
         Private Shared ReadOnly states As New Dictionary(Of Form, State)()
@@ -109,12 +121,14 @@ Namespace SDC.Framework
 
             AddHandler form.KeyDown,
                 Sub(sender As Object, e As KeyEventArgs)
+                    ' F8 larger, F9 smaller, F10 reset. It was F9, F10, F8 until 2026-09-19, which
+                    ' put the reset before the pair it resets rather than after them.
                     Select Case e.KeyCode
-                        Case Keys.F9
-                            Apply(form, state.Factor + Increment)
-                        Case Keys.F10
-                            Apply(form, state.Factor - Increment)
                         Case Keys.F8
+                            Apply(form, state.Factor + Increment)
+                        Case Keys.F9
+                            Apply(form, state.Factor - Increment)
+                        Case Keys.F10
                             Apply(form, 1.0F)
                         Case Else
                             Return
@@ -165,6 +179,18 @@ Namespace SDC.Framework
             state.Layout.Clear()
             Capture(form, state.Layout)
             state.DesignSize = form.ClientSize
+        End Sub
+        ''' <summary>
+        ''' Lines the zoom read-out up with a control: centred in the gap below it, starting at its
+        ''' left edge. Call after Attach. Without one the read-out sits above the bottom edge at the
+        ''' far left, as it always did.
+        ''' </summary>
+        Public Shared Sub SetIndicatorAnchor(form As Form, anchor As Control)
+            Dim state As State = Nothing
+            If form Is Nothing OrElse Not states.TryGetValue(form, state) Then Return
+
+            state.IndicatorAnchor = anchor
+            PlaceIndicator(form, state)
         End Sub
         Public Shared Function CurrentFactor(form As Form) As Single
             Dim state As State = Nothing
@@ -451,8 +477,30 @@ Namespace SDC.Framework
             ' how to work it, and nothing else on screen says either - the keys are not on a menu,
             ' a toolbar or a tooltip. Discreet enough to ignore, in the same grey as the number.
             indicator.Text = CInt(Math.Round(state.Factor * 100)).ToString(Globalization.CultureInfo.InvariantCulture) &
-                             "%:  F9 larger   F10 smaller   F8 reset"
-            indicator.Location = New Point(4, Math.Max(0, form.ClientSize.Height - indicator.Height - 3))
+                             "%:  F8 larger   F9 smaller   F10 reset"
+            ' Scaled, because the band is a design measurement like every other one here: the gap
+            ' below the page's content grows with the zoom, and a band fixed at its 100 per cent
+            ' value would leave the read-out drifting towards the top of it as the space opened up.
+            ' Two up from dead centre. An AutoSize label is a little taller than the glyphs in it,
+            ' with the slack below the baseline, so the arithmetic centres the box and the eye sees
+            ' the text sitting low.
+            Const OpticalLift As Integer = 2
+
+            Dim band = 0
+            Dim left = 4
+
+            Dim anchor = state.IndicatorAnchor
+            If anchor IsNot Nothing AndAlso Not anchor.IsDisposed AndAlso anchor.IsHandleCreated Then
+                ' In the form's own coordinates, whatever the control is nested inside.
+                Dim bounds = form.RectangleToClient(anchor.RectangleToScreen(anchor.ClientRectangle))
+                band = form.ClientSize.Height - bounds.Bottom
+                left = bounds.Left
+            End If
+
+            Dim top = If(band > indicator.Height,
+                         form.ClientSize.Height - band + ((band - indicator.Height) \ 2) - OpticalLift,
+                         form.ClientSize.Height - indicator.Height - 3)
+            indicator.Location = New Point(Math.Max(0, left), Math.Max(0, top))
             indicator.BringToFront()
         End Sub
 

@@ -19,9 +19,9 @@ Namespace SDC.Framework
     ''' they did with the dialog. The contract is the same too - ChosenUser, once the page closes
     ''' with OK - so the menu swapped one line.
     '''
-    ''' Browse-only: no maintenance page, no create, no delete. "Switch to" is the page's Update
-    ''' command rather than a button of its own, which is what makes double-clicking a row work
-    ''' through the command everybody can see instead of a second path nobody can.
+    ''' Browse-only: no maintenance page, no create, no delete. "Switch to" is the page's Read
+    ''' command rather than a button of its own, and double-clicking a row invokes that command -
+    ''' the one everybody can see, rather than a second path nobody can.
     ''' </summary>
     Public Class FW_SwitchUser_B
         Inherits FW_Base_B
@@ -141,14 +141,18 @@ Namespace SDC.Framework
             Return Nothing
         End Function
 
+        ''' <summary>Double-clicking somebody means switching to them, so the gesture invokes Read.</summary>
+        Protected Overrides Function DoubleClickCommandButton() As Button
+            Return readButton
+        End Function
+
         ''' <summary>
         ''' "Switch to": takes the selected row as the answer and closes.
         '''
         ''' The Read command, because reading is all this page does to a record. It was the Update
         ''' command first, only so that Base_B's double-click - which invokes the Update button -
         ''' would work. That put an Update permission on a table nothing updates, which misdescribes
-        ''' the page to whoever grants it. Double-click does nothing here instead, which is right:
-        ''' there is no record to open.
+        ''' the page to whoever grants it, so the gesture was disabled instead.
         '''
         ''' The permission this page needs is therefore Read, and QBE to search with. Nothing else.
         '''
@@ -161,11 +165,6 @@ Namespace SDC.Framework
         ''' SwitchUserID - the snapshot row, not the login. PK is the row's identity to the
         ''' framework, so it is the table's own key; the login it stands for is read from it.
         ''' </summary>
-        ''' <summary>Double-clicking somebody means switching to them.</summary>
-        Protected Overrides Function DoubleClickCommandButton() As Button
-            Return readButton
-        End Function
-
         Protected Overrides Function HandleCustomReadAction() As Boolean
             Dim selected = GetSelectedRecordIdForCustomAction()
             If Not selected.HasValue OrElse selected.Value <= 0 Then
