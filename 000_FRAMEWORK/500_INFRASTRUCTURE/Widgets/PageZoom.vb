@@ -145,6 +145,27 @@ Namespace SDC.Framework
         End Sub
 
         ''' <summary>The zoom a form is on, for whatever will eventually remember it.</summary>
+        ''' <summary>
+        ''' Takes the layout snapshot again, for a page whose controls have deliberately moved
+        ''' since it attached.
+        '''
+        ''' Apply rebuilds every control from the snapshot times the factor, so a page rearranged
+        ''' after attaching is put back the moment the zoom changes - and a control added after
+        ''' attaching is never scaled at all, because it is not in the snapshot. Re-taking it while
+        ''' the page is at design scale answers both.
+        '''
+        ''' Refused above 100 per cent on purpose: captured while zoomed, the scaled bounds would
+        ''' become the new design bounds and every later zoom would compound.
+        ''' </summary>
+        Public Shared Sub Recapture(form As Form)
+            Dim state As State = Nothing
+            If form Is Nothing OrElse Not states.TryGetValue(form, state) Then Return
+            If Math.Abs(state.Factor - 1.0F) > 0.001F Then Return
+
+            state.Layout.Clear()
+            Capture(form, state.Layout)
+            state.DesignSize = form.ClientSize
+        End Sub
         Public Shared Function CurrentFactor(form As Form) As Single
             Dim state As State = Nothing
             If form Is Nothing OrElse Not states.TryGetValue(form, state) Then Return 1.0F

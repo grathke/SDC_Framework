@@ -2539,8 +2539,7 @@ Namespace SDC.Framework
                 seedingSelectionGrids = False
                 OrderSelectionGrid(maintenanceGrid, savedMaintenanceFields)
                 layout.Controls.Add(CreateSelectionPanel("_U Maintenance Fields", maintenanceGrid, Nothing, offerColumnSuggestion:=True,
-                                                         previewHandler:=Sub(previewSender As Object, previewArgs As EventArgs) ShowLayoutPreview(maintenanceGrid, tableName),
-                                                         realPageHandler:=Sub(realSender As Object, realArgs As EventArgs) ShowRealPagePreview(maintenanceGrid)), 1, 0)
+                                                         previewHandler:=Sub(previewSender As Object, previewArgs As EventArgs) ShowLayoutPreview(maintenanceGrid, tableName)), 1, 0)
 
                 Dim actions As New FlowLayoutPanel With {.Dock = DockStyle.Fill, .FlowDirection = FlowDirection.RightToLeft}
                 Dim cancelButton As New Button With {.Text = "Cancel", .DialogResult = DialogResult.Cancel, .AutoSize = True}
@@ -2750,20 +2749,6 @@ Namespace SDC.Framework
             End Try
         End Sub
 
-        ''' <summary>
-        ''' Opens the compiled maintenance page read-only, for the things a layout preview cannot
-        ''' know: the role grids under an employee's fields, the Zip Coder button, anything else a
-        ''' companion file adds. It shows the page as it was last built, not the request on screen.
-        ''' </summary>
-        Private Sub ShowRealPagePreview(grid As DataGridView)
-            Dim pageName = If(maintenancePageNameTextBox.Text, String.Empty).Trim()
-            If pageName = String.Empty Then
-                WideMessage.Show(grid.FindForm(), "NAME THE _U PAGE FIRST.", "Real Page Preview")
-                Return
-            End If
-
-            RealPagePreview.Show(grid.FindForm(), pageName, currentUser)
-        End Sub
         Private Shared Function CreateSelectionPanel(caption As String,
                                                      grid As DataGridView,
                                                      Optional note As String = Nothing,

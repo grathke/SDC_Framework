@@ -2110,11 +2110,13 @@ Namespace SDC.Framework
             ' hosts the role selector; every other page leaves it empty and costs nothing, because
             ' the generator cannot know what a companion will add and a page that has to resize
             ' itself afterwards flickers on every open.
-            page.ExtraBelowFields = If(page.CarriesLogin, EmployeeRolesSelector.PanelHeight + 16, 0)
+            Dim reservedWidth = If(page.CarriesLogin, EmployeeRolesSelector.PanelWidth, 0)
+            Dim reservedHeight = If(page.CarriesLogin, EmployeeRolesSelector.PanelHeight, 0)
+            page.ExtraBelowFields = If(page.CarriesLogin, reservedHeight + 16, 0)
 
-            page.Width = MaintenanceLayout.PageWidth(page.TwoColumns, page.ColumnTwoLeft, page.ZipOnTheRight)
-            page.Height = MaintenanceLayout.PageHeight(page.RowsDown, page.ExtraBelowFields)
             page.FieldsBottom = MaintenanceLayout.FieldsBottom(page.RowsDown)
+            page.Width = MaintenanceLayout.PageWidth(page.TwoColumns, page.ColumnTwoLeft, page.ZipOnTheRight, reservedWidth)
+            page.Height = MaintenanceLayout.PageHeight(page.RowsDown, page.ExtraBelowFields, page.FieldsBottom, reservedHeight)
 
             If page.CarriesLogin Then
                 ' Exactly where FW_Employees_U puts the selector in OnFieldsBuilt, so an outline
@@ -2314,8 +2316,8 @@ Namespace SDC.Framework
             Dim extraBelowFields = page.ExtraBelowFields
 
             output.AppendLine("            ClientSize = New Size(" & formWidth.ToString() & ", " & page.Height.ToString() & ")")
-            output.AppendLine("            okButton.Location = New Point(ClientSize.Width - 270, ClientSize.Height - 46)")
-            output.AppendLine("            cancelActionButton.Location = New Point(ClientSize.Width - 135, ClientSize.Height - 46)")
+            output.AppendLine("            okButton.Location = New Point(ClientSize.Width - " & MaintenanceLayout.ButtonRowWidth.ToString() & ", ClientSize.Height - " & (MaintenanceLayout.ButtonHeight + MaintenanceLayout.ButtonBottomGap).ToString() & ")")
+            output.AppendLine("            cancelActionButton.Location = New Point(ClientSize.Width - " & (MaintenanceLayout.ButtonWidth + MaintenanceLayout.ButtonRightGap).ToString() & ", ClientSize.Height - " & (MaintenanceLayout.ButtonHeight + MaintenanceLayout.ButtonBottomGap).ToString() & ")")
 
             ' Where every control goes, decided before a line of source is written. The loop below
             ' turns that list into calls and does nothing else, which is what lets a layout preview

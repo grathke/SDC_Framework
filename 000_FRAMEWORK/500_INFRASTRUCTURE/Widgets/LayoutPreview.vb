@@ -80,7 +80,10 @@ Namespace SDC.Framework
 
             ' The same size the generated page is given, plus the row the caption takes. A preview
             ' that used its own arithmetic would drift from the page the first time either changed.
-            ClientSize = New Size(page.Width, page.Height + MaintenanceLayout.CaptionShift + StatusBarHeight)
+            ' The size the layout wants. PreviewWindow caps it to the screen and makes the rest
+            ' scrollable, so a page too tall for the monitor is still readable to the bottom.
+            Dim wanted = New Size(page.Width, page.Height + MaintenanceLayout.CaptionShift + StatusBarHeight)
+            ClientSize = wanted
 
             AddCaption()
 
@@ -91,6 +94,8 @@ Namespace SDC.Framework
             AddReservedBand()
             AddActionButtons()
             AddStatusBar()
+
+            PreviewWindow.Fit(Me, wanted)
         End Sub
 
         Private Const StatusBarHeight As Integer = 30

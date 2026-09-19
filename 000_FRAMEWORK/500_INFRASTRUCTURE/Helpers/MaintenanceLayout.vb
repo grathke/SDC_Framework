@@ -157,8 +157,28 @@ Namespace SDC.Framework
         ''' <summary>A page is never shorter than this, however few fields it has.</summary>
         Public Const MinimumPageHeight As Integer = 120
 
-        ''' <summary>The band below the fields that holds OK and Cancel.</summary>
-        Public Const ButtonRowHeight As Integer = 55
+        ''' <summary>
+        ''' OK and Cancel, as a widget with a footprint rather than three magic numbers.
+        '''
+        ''' The generator emitted Width - 270, Width - 135 and Height - 46, which is this
+        ''' arithmetic written out longhand - the same way 450 was 120 + 10 + 320 until this
+        ''' morning. Derived, the emitted numbers are identical and the page can be asked whether
+        ''' it is wide enough to hold its own buttons.
+        ''' </summary>
+        Public Const ButtonWidth As Integer = 120
+        Public Const ButtonHeight As Integer = 36
+        Public Const ButtonGap As Integer = 15
+        Public Const ButtonRightGap As Integer = 15
+        Public Const ButtonBottomGap As Integer = 10
+
+        ''' <summary>From OK's left edge to the right edge of the page. The emitted 270.</summary>
+        Public Const ButtonRowWidth As Integer = ButtonWidth + ButtonGap + ButtonWidth + ButtonRightGap
+
+        ''' <summary>The band below the fields that holds OK and Cancel. The emitted 55.</summary>
+        Public Const ButtonRowHeight As Integer = ButtonHeight + 19
+
+        ''' <summary>The gap between the last field row and whatever a companion puts below it.</summary>
+        Public Const ReservedGap As Integer = 8
 
         ''' <summary>
         ''' Where the second column starts. Wider apart when column one holds Zip, because the Zip
@@ -168,10 +188,26 @@ Namespace SDC.Framework
             Return ColumnLeft + ColumnWidth + If(wantsZipCoder AndAlso Not zipOnTheRight, ZipColumnGap, PlainColumnGap)
         End Function
 
-        ''' <summary>How wide the page is.</summary>
-        Public Function PageWidth(twoColumns As Boolean, columnTwoLeft As Integer, zipOnTheRight As Boolean) As Integer
-            If Not twoColumns Then Return SingleColumnPageWidth
-            Return columnTwoLeft + ColumnWidth + If(zipOnTheRight, ZipButtonMargin, PageMargin)
+        ''' <summary>
+        ''' How wide the page is - never narrower than what it has to hold.
+        '''
+        ''' A single column was a flat 600 whatever was on the page, so a page reserving room for
+        ''' the 616 wide roles panel was built around a widget wider than itself, and the panel ran
+        ''' off the right edge. The button floor has never bitten, and is here so a narrow page
+        ''' cannot be generated with its own buttons hanging off either.
+        ''' </summary>
+        Public Function PageWidth(twoColumns As Boolean,
+                                  columnTwoLeft As Integer,
+                                  zipOnTheRight As Boolean,
+                                  reservedWidth As Integer) As Integer
+            Dim natural = If(twoColumns,
+                             columnTwoLeft + ColumnWidth + If(zipOnTheRight, ZipButtonMargin, PageMargin),
+                             SingleColumnPageWidth)
+
+            Dim floor = ColumnLeft + ButtonRowWidth
+            If reservedWidth > 0 Then floor = Math.Max(floor, ColumnLeft + reservedWidth + PageMargin)
+
+            Return Math.Max(natural, floor)
         End Function
 
         ''' <summary>
@@ -179,8 +215,18 @@ Namespace SDC.Framework
         ''' the fields asks for the room through extraBelowFields - the generator cannot know what
         ''' a companion will add, and a page that resizes itself afterwards flickers on every open.
         ''' </summary>
-        Public Function PageHeight(rowsDown As Integer, extraBelowFields As Integer) As Integer
-            Return Math.Max(MinimumPageHeight, ButtonRowHeight + rowsDown * RowPitch) + extraBelowFields
+        Public Function PageHeight(rowsDown As Integer,
+                                   extraBelowFields As Integer,
+                                   fieldsBottom As Integer,
+                                   reservedHeight As Integer) As Integer
+            Dim natural = Math.Max(MinimumPageHeight, ButtonRowHeight + rowsDown * RowPitch) + extraBelowFields
+            If reservedHeight <= 0 Then Return natural
+
+            ' The reserved band is 16 taller than the panel in it, and the button row needs 55. A
+            ' page sized only by the natural figure put OK's top three pixels inside the panel on
+            ' every employee page - invisible while the grids inside stopped short of the panel's
+            ' own bottom, and plain the moment nothing else was there to hide it.
+            Return Math.Max(natural, fieldsBottom + ReservedGap + reservedHeight + ButtonRowHeight)
         End Function
 
         ''' <summary>Where the generated fields stop, for whatever a companion puts underneath.</summary>
