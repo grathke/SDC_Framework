@@ -1,0 +1,149 @@
+Option Strict On
+Option Explicit On
+
+Imports System.Collections.Generic
+Imports System.Drawing
+Imports System.Windows.Forms
+
+Namespace SDC.Framework
+
+    ''' <summary>
+    ''' The measurements a maintenance page is laid out on, in one place.
+    '''
+    ''' They were literals in two files that had to agree and could not be made to: FW_Base_U's
+    ''' field helpers applied 120, 10, 320 and 26 as bare numbers, while the page generator
+    ''' separately declared a 450 wide column - three of those numbers restated in a file that
+    ''' never applies them. A layout preview would have been the third copy.
+    '''
+    ''' Whoever draws a maintenance page reads these: the helpers that create the controls, the
+    ''' generator that writes the calls, and the preview that shows the result without generating
+    ''' anything. Derived figures are derived here rather than written out again.
+    ''' </summary>
+    Public Module MaintenanceLayout
+
+        ''' <summary>The first row's Top.</summary>
+        Public Const FirstRow As Integer = 20
+
+        ''' <summary>
+        ''' The vertical distance between rows.
+        '''
+        ''' Load-bearing, and not only a spacing choice. FW_Base_U decides what a row *is* by
+        ''' comparing Top, and CollapseHiddenFieldRows consumes RowTop(next) - RowTop(current) when
+        ''' a row above is hidden. A control placed off the pitch to look better centred stops being
+        ''' on its row, and permission-driven hiding then closes the wrong gap.
+        '''
+        ''' Nothing that measures an existing layout may read this. Those paths measure the controls
+        ''' in front of them on purpose - see HideFieldAndCloseGap - so that a page laid out some
+        ''' other way still collapses correctly.
+        ''' </summary>
+        Public Const RowPitch As Integer = 42
+
+        ''' <summary>The left edge of the first column.</summary>
+        Public Const ColumnLeft As Integer = 20
+
+        Public Const LabelWidth As Integer = 120
+        Public Const LabelGap As Integer = 10
+        Public Const FieldWidth As Integer = 320
+        Public Const FieldHeight As Integer = 26
+
+        ''' <summary>How far right of its label a field sits.</summary>
+        Public Const ControlOffset As Integer = LabelWidth + LabelGap
+
+        ''' <summary>A whole column: the label, the gap to its control, and the control.</summary>
+        Public Const ColumnWidth As Integer = LabelWidth + LabelGap + FieldWidth
+
+        ''' <summary>
+        ''' The gap between the two columns when column one holds Zip. The Zip Coder button sits
+        ''' past the right edge of the Zip box, so that column needs the room.
+        ''' </summary>
+        Public Const ZipColumnGap As Integer = 110
+
+        ''' <summary>The gap between the two columns otherwise.</summary>
+        Public Const PlainColumnGap As Integer = 40
+
+        ''' <summary>
+        ''' How far ApplySharedPageCaption moves the fields down to make room for the page title.
+        '''
+        ''' A generated page is emitted with its first row at FirstRow and then shifted by this on
+        ''' Shown, so the finished page sits one row lower than the source says. A preview that
+        ''' leaves it out disagrees with the real page by exactly one row.
+        ''' </summary>
+        Public Const CaptionShift As Integer = 42
+
+        ''' <summary>Narrower than this and a box is not worth narrowing further.</summary>
+        Public Const MinimumSizedFieldWidth As Integer = 44
+
+        ''' <summary>
+        ''' How wide a text box should be for the column behind it, or the width it already has
+        ''' when there is no reason to change it.
+        '''
+        ''' Measured rather than multiplied by a constant, so it follows the page's font and DPI
+        ''' instead of assuming one machine's. Capped at 40 characters because anything longer
+        ''' already exceeds the width the page gave the box and would be clamped away. The sample
+        ''' is deliberately a middling character: the font is proportional, so a measured average is
+        ''' right for ordinary text and wrong for a field full of Ws.
+        '''
+        ''' It only ever shrinks. Growing a box could push it over the Zip Coder button, past the
+        ''' edge of a two-column page, or over whatever a hand-written page put beside it - and the
+        ''' width the page chose is a deliberate statement this cannot know better than.
+        '''
+        ''' Multiline boxes are left alone. Their size says how many lines to show, which has
+        ''' nothing to do with how many characters the column holds.
+        ''' </summary>
+        Public Function SizedFieldWidth(maxLength As Integer,
+                                        controlFont As Font,
+                                        currentWidth As Integer,
+                                        multiline As Boolean) As Integer
+            If maxLength <= 0 OrElse multiline OrElse currentWidth <= MinimumSizedFieldWidth Then Return currentWidth
+
+            Dim sample As New String("n"c, Math.Min(maxLength, 40))
+            Dim measured = TextRenderer.MeasureText(sample, controlFont).Width + 12
+
+            Return Math.Max(MinimumSizedFieldWidth, Math.Min(measured, currentWidth))
+        End Function
+
+        ''' <summary>
+        ''' How many characters the column behind a control holds, or zero when nothing says.
+        '''
+        ''' The page's own control-to-column map is asked first; the control's name is only a
+        ''' fallback, for a page whose map does not carry it.
+        ''' </summary>
+        Public Function ResolveColumnMaxLength(controlName As String,
+                                               controlMap As Dictionary(Of String, String),
+                                               columnLengths As Dictionary(Of String, Integer)) As Integer
+            If columnLengths Is Nothing Then Return 0
+
+            Dim mappedColumn As String = Nothing
+            If controlMap IsNot Nothing AndAlso controlMap.TryGetValue(controlName, mappedColumn) AndAlso
+               Not String.IsNullOrWhiteSpace(mappedColumn) Then
+                If columnLengths.ContainsKey(mappedColumn) Then
+                    Return columnLengths(mappedColumn)
+                End If
+            End If
+
+            Dim fallbackColumn = InferColumnNameFromControlName(controlName)
+            If fallbackColumn <> String.Empty AndAlso columnLengths.ContainsKey(fallbackColumn) Then
+                Return columnLengths(fallbackColumn)
+            End If
+
+            Return 0
+        End Function
+
+        ''' <summary>The column a text control is named for, by the naming convention.</summary>
+        Public Function InferColumnNameFromControlName(controlName As String) As String
+            If String.IsNullOrWhiteSpace(controlName) Then
+                Return String.Empty
+            End If
+
+            Dim prefixes = New String() {"TextBox_", "MaskedTextBox_", "RichTextBox_"}
+            For Each prefix In prefixes
+                If controlName.StartsWith(prefix, StringComparison.OrdinalIgnoreCase) Then
+                    Return controlName.Substring(prefix.Length)
+                End If
+            Next
+
+            Return String.Empty
+        End Function
+
+    End Module
+End Namespace

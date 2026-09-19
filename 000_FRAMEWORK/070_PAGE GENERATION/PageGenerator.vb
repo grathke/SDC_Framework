@@ -1975,7 +1975,7 @@ Namespace SDC.Framework
 
             Dim placeColumn =
                 Sub(columnFields As List(Of String), fieldLeft As Integer)
-                    Dim y = 20
+                    Dim y = MaintenanceLayout.FirstRow
                     For Each field In columnFields
                         ' A computed field is never required, whatever the request says. An older
                         ' saved request can still carry one, so the refusal is here as well as in
@@ -2016,17 +2016,17 @@ Namespace SDC.Framework
                             placement.Nullable = nullableColumns.Contains(field)
                         ElseIf IsLookupField(field, lookupFields) Then
                             placement.Kind = PlacedFieldKind.ComboBox
-                            placement.Width = 320
+                            placement.Width = MaintenanceLayout.FieldWidth
                         Else
                             placement.Kind = PlacedFieldKind.TextBox
                         End If
 
                         placed.Add(placement)
-                        y += 42
+                        y += MaintenanceLayout.RowPitch
                     Next
                 End Sub
 
-            placeColumn(leftFields, 20)
+            placeColumn(leftFields, MaintenanceLayout.ColumnLeft)
             placeColumn(rightFields, columnTwoLeft)
 
             Return placed
@@ -2099,7 +2099,7 @@ Namespace SDC.Framework
             ' rather than guessed: the companion cannot work it out without knowing the column
             ' split, and a hard-coded number in that file would be wrong the moment a field is
             ' added - the exact drift the split exists to prevent.
-            output.AppendLine("        Protected ReadOnly GeneratedFieldsBottom As Integer = " & (20 + rowsDown * 42).ToString())
+            output.AppendLine("        Protected ReadOnly GeneratedFieldsBottom As Integer = " & (MaintenanceLayout.FirstRow + rowsDown * MaintenanceLayout.RowPitch).ToString())
             output.AppendLine("        Private record As DataRow")
             output.AppendLine("        Private ReadOnly formBindingSource As New BindingSource()")
             output.AppendLine("        Private originalRowVersion As Byte()")
@@ -2156,11 +2156,11 @@ Namespace SDC.Framework
             ' left and then down the right, and the tab order is that same sequence. There is no
             ' second ordering to keep in step with the first.
             ' A column is the label (120), the gap to its control (10) and the control (320).
-            Const ColumnWidth As Integer = 450
+            Const ColumnWidth As Integer = MaintenanceLayout.ColumnWidth
             ' The Zip Coder button sits past the right edge of the Zip box, so whichever column
             ' holds Zip needs the room: between the two columns, or past the edge of the form.
             Dim zipOnTheRight = wantsZipCoder AndAlso rightFields.Any(Function(field) String.Equals(field, zipField, StringComparison.OrdinalIgnoreCase))
-            Dim columnTwoLeft = 20 + ColumnWidth + If(wantsZipCoder AndAlso Not zipOnTheRight, 110, 40)
+            Dim columnTwoLeft = MaintenanceLayout.ColumnLeft + ColumnWidth + If(wantsZipCoder AndAlso Not zipOnTheRight, MaintenanceLayout.ZipColumnGap, MaintenanceLayout.PlainColumnGap)
             Dim formWidth = If(twoColumns, columnTwoLeft + ColumnWidth + If(zipOnTheRight, 140, 30), 600)
             ' Room below the fields for whatever the page's own file puts there. An employee
             ' page hosts the role selector; every other page leaves it empty and costs nothing,
@@ -2168,7 +2168,7 @@ Namespace SDC.Framework
             ' resize itself afterwards flickers on every open.
             Dim extraBelowFields = If(carriesLogin, EmployeeRolesSelector.PanelHeight + 16, 0)
 
-            output.AppendLine("            ClientSize = New Size(" & formWidth.ToString() & ", " & (Math.Max(120, 55 + rowsDown * 42) + extraBelowFields).ToString() & ")")
+            output.AppendLine("            ClientSize = New Size(" & formWidth.ToString() & ", " & (Math.Max(120, 55 + rowsDown * MaintenanceLayout.RowPitch) + extraBelowFields).ToString() & ")")
             output.AppendLine("            okButton.Location = New Point(ClientSize.Width - 270, ClientSize.Height - 46)")
             output.AppendLine("            cancelActionButton.Location = New Point(ClientSize.Width - 135, ClientSize.Height - 46)")
 
@@ -2204,7 +2204,7 @@ Namespace SDC.Framework
                         output.AppendLine("                .AutoSize = False,")
                         output.AppendLine("                .Text = String.Empty,")
                         output.AppendLine("                .Location = New Point(" & placement.Left.ToString() & ", " & placement.Top.ToString() & "),")
-                        output.AppendLine("                .Size = New Size(450, 2),")
+                        output.AppendLine("                .Size = New Size(" & MaintenanceLayout.ColumnWidth.ToString() & ", 2),")
                         output.AppendLine("                .BackColor = SystemColors.ControlDark")
                         output.AppendLine("            })")
                         output.AppendLine("            DeclareUnboundField(""" & dividerName & """, ""A dividing line between groups of fields. It names no column."")")

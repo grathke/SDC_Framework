@@ -1911,39 +1911,18 @@ Namespace SDC.Framework
         End Sub
 
         ''' <summary>
-        ''' The narrowest a field is allowed to get. Two characters' worth of text is not a
-        ''' comfortable click target, and a row of stubs reads as a broken layout rather than a
-        ''' set of short fields.
-        ''' </summary>
-        Private Const MinimumSizedFieldWidth As Integer = 44
-
-        ''' <summary>
         ''' Narrows a box towards what its column can hold.
         '''
         ''' A State that takes two characters and a Notes that takes 255 are the same 320 pixels
-        ''' wide today, which tells the reader nothing about either. The width is a hint, never a
-        ''' promise: the font is proportional, so a measured average is right for ordinary text
-        ''' and wrong for a field full of Ws.
+        ''' wide today, which tells the reader nothing about either.
         '''
-        ''' It only ever shrinks. Growing a box could push it over the Zip Coder button, past the
-        ''' edge of a two-column page, or over whatever a hand-written page put beside it - and
-        ''' the width the page chose is a deliberate statement that this cannot know better than.
-        ''' That also settles Registration_U, which sizes State and Zip by hand: the measurement
-        ''' agrees with it or is ignored.
-        '''
-        ''' Multiline boxes are left alone. Their size says how many lines to show, which has
-        ''' nothing to do with how many characters the column holds.
+        ''' The width itself is MaintenanceLayout's answer, not this method's, so a layout preview
+        ''' narrows a box exactly as the page does rather than approximating it. What stays here is
+        ''' the part that needs the page: applying the width, and moving the required border that
+        ''' sits one pixel outside the field it belongs to.
         ''' </summary>
         Private Sub SizeControlToColumnLength(ctrl As TextBoxBase, maxLength As Integer)
-            If maxLength <= 0 OrElse ctrl.Multiline OrElse ctrl.Width <= MinimumSizedFieldWidth Then Return
-
-            ' Measured rather than multiplied by a constant, so it follows the page's font and DPI
-            ' instead of assuming this machine's. Capped at 40 characters because anything longer
-            ' already exceeds the width the page gave the box and would be clamped away.
-            Dim sample As New String("n"c, Math.Min(maxLength, 40))
-            Dim measured = TextRenderer.MeasureText(sample, ctrl.Font).Width + 12
-
-            Dim sized = Math.Max(MinimumSizedFieldWidth, Math.Min(measured, ctrl.Width))
+            Dim sized = MaintenanceLayout.SizedFieldWidth(maxLength, ctrl.Font, ctrl.Width, ctrl.Multiline)
             If sized = ctrl.Width Then Return
 
             ctrl.Width = sized
@@ -1961,7 +1940,7 @@ Namespace SDC.Framework
                                          columnLengths As Dictionary(Of String, Integer),
                                          Optional sizeToColumnLength As Boolean = False)
             Dim textValue = If(ctrl.Text, String.Empty).Trim()
-            Dim maxLength = ResolveColumnMaxLength(ctrl.Name, controlMap, columnLengths)
+            Dim maxLength = MaintenanceLayout.ResolveColumnMaxLength(ctrl.Name, controlMap, columnLengths)
 
             If maxLength > 0 AndAlso textValue.Length > maxLength Then
                 textValue = textValue.Substring(0, maxLength)
@@ -1977,40 +1956,6 @@ Namespace SDC.Framework
 
             If sizeToColumnLength Then SizeControlToColumnLength(ctrl, maxLength)
         End Sub
-
-        Private Function ResolveColumnMaxLength(controlName As String,
-                                                controlMap As Dictionary(Of String, String),
-                                                columnLengths As Dictionary(Of String, Integer)) As Integer
-            Dim mappedColumn As String = Nothing
-            If controlMap IsNot Nothing AndAlso controlMap.TryGetValue(controlName, mappedColumn) AndAlso
-               Not String.IsNullOrWhiteSpace(mappedColumn) Then
-                If columnLengths.ContainsKey(mappedColumn) Then
-                    Return columnLengths(mappedColumn)
-                End If
-            End If
-
-            Dim fallbackColumn = InferColumnNameFromControlName(controlName)
-            If fallbackColumn <> String.Empty AndAlso columnLengths.ContainsKey(fallbackColumn) Then
-                Return columnLengths(fallbackColumn)
-            End If
-
-            Return 0
-        End Function
-
-        Private Function InferColumnNameFromControlName(controlName As String) As String
-            If String.IsNullOrWhiteSpace(controlName) Then
-                Return String.Empty
-            End If
-
-            Dim prefixes = New String() {"TextBox_", "MaskedTextBox_", "RichTextBox_"}
-            For Each prefix In prefixes
-                If controlName.StartsWith(prefix, StringComparison.OrdinalIgnoreCase) Then
-                    Return controlName.Substring(prefix.Length)
-                End If
-            Next
-
-            Return String.Empty
-        End Function
 
         ''' <summary>
         ''' Controls this page carries deliberately that are not columns of its own table.
@@ -2403,13 +2348,13 @@ Namespace SDC.Framework
         Protected Function AddComboField(caption As String, y As Integer,
                                          Optional required As Boolean = False,
                                          Optional fieldLeft As Integer = 20,
-                                         Optional fieldWidth As Integer = 320,
+                                         Optional fieldWidth As Integer = MaintenanceLayout.FieldWidth,
                                          Optional labelText As String = Nothing) As ComboBox
             Dim lbl As New Label() With {
                 .Name = "Label_" & caption,
                 .Text = If(String.IsNullOrWhiteSpace(labelText), ToPascalCaseDisplay(caption), labelText),
                 .Location = New Point(fieldLeft, y),
-                .Size = New Size(120, 26),
+                .Size = New Size(MaintenanceLayout.LabelWidth, MaintenanceLayout.FieldHeight),
                 .TextAlign = ContentAlignment.MiddleLeft
             }
 
@@ -2426,7 +2371,7 @@ Namespace SDC.Framework
 
             Dim combo As New ComboBox() With {
                 .Name = "ComboBox_" & caption,
-                .Location = New Point(fieldLeft + 130, y),
+                .Location = New Point(fieldLeft + MaintenanceLayout.ControlOffset, y),
                 .Size = New Size(fieldWidth, 26),
                 .DropDownStyle = ComboBoxStyle.DropDownList
             }
@@ -2480,7 +2425,7 @@ Namespace SDC.Framework
                 .Name = "Label_" & caption,
                 .Text = If(String.IsNullOrWhiteSpace(labelText), ToPascalCaseDisplay(caption), labelText),
                 .Location = New Point(fieldLeft, y),
-                .Size = New Size(120, 26),
+                .Size = New Size(MaintenanceLayout.LabelWidth, MaintenanceLayout.FieldHeight),
                 .TextAlign = ContentAlignment.MiddleLeft
             }
             Me.Controls.Add(lbl)
@@ -2495,7 +2440,7 @@ Namespace SDC.Framework
             ' glyph within it, which looks the same and is true.
             Dim box As New CheckBox() With {
                 .Name = "CheckBox_" & caption,
-                .Location = New Point(fieldLeft + 130, y),
+                .Location = New Point(fieldLeft + MaintenanceLayout.ControlOffset, y),
                 .Size = New Size(24, 26),
                 .CheckAlign = ContentAlignment.MiddleLeft,
                 .UseVisualStyleBackColor = True
@@ -2571,7 +2516,7 @@ Namespace SDC.Framework
                 .Name = "Label_" & caption,
                 .Text = If(String.IsNullOrWhiteSpace(labelText), ToPascalCaseDisplay(caption), labelText),
                 .Location = New Point(fieldLeft, y),
-                .Size = New Size(120, 26),
+                .Size = New Size(MaintenanceLayout.LabelWidth, MaintenanceLayout.FieldHeight),
                 .TextAlign = ContentAlignment.MiddleLeft
             }
 
@@ -2591,7 +2536,7 @@ Namespace SDC.Framework
 
             Dim picker As New DateTimePicker() With {
                 .Name = "DateTimePicker_" & caption,
-                .Location = New Point(fieldLeft + 130, y),
+                .Location = New Point(fieldLeft + MaintenanceLayout.ControlOffset, y),
                 .Size = New Size(pickerWidth, 26),
                 .ShowCheckBox = nullable
             }
@@ -2850,14 +2795,14 @@ Namespace SDC.Framework
                                     Optional required As Boolean = False,
                                     Optional fieldLeft As Integer = 20,
                                     Optional multiline As Boolean = False,
-                                    Optional fieldWidth As Integer = 320,
-                                    Optional fieldHeight As Integer = 26,
+                                    Optional fieldWidth As Integer = MaintenanceLayout.FieldWidth,
+                                    Optional fieldHeight As Integer = MaintenanceLayout.FieldHeight,
                                     Optional labelText As String = Nothing) As TextBox
             Dim lbl As New Label() With {
                 .Name = "Label_" & caption,
                 .Text = If(String.IsNullOrWhiteSpace(labelText), ToPascalCaseDisplay(caption), labelText),
                 .Location = New Point(fieldLeft, y),
-                .Size = New Size(120, 26),
+                .Size = New Size(MaintenanceLayout.LabelWidth, MaintenanceLayout.FieldHeight),
                 .TextAlign = ContentAlignment.MiddleLeft
             }
 
@@ -2877,7 +2822,7 @@ Namespace SDC.Framework
 
             Dim txt As New TextBox() With {
                 .Name = "TextBox_" & caption,
-                .Location = New Point(fieldLeft + 130, y),
+                .Location = New Point(fieldLeft + MaintenanceLayout.ControlOffset, y),
                 .Size = New Size(fieldWidth, If(multiline, fieldHeight, 26)),
                 .Multiline = multiline,
                 .ScrollBars = If(multiline, ScrollBars.Vertical, ScrollBars.None),
