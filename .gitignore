@@ -15,3 +15,6 @@ tests/**/obj/
 # Local safety snapshots. Some contain an old run-local.ps1 with a real password,
 # so they stay on disk and out of history.
 restore-points/
+
+# Saved layout previews - generated images, not source
+previews/

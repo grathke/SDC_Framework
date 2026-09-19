@@ -2538,7 +2538,9 @@ Namespace SDC.Framework
                 Next
                 seedingSelectionGrids = False
                 OrderSelectionGrid(maintenanceGrid, savedMaintenanceFields)
-                layout.Controls.Add(CreateSelectionPanel("_U Maintenance Fields", maintenanceGrid, Nothing, offerColumnSuggestion:=True), 1, 0)
+                layout.Controls.Add(CreateSelectionPanel("_U Maintenance Fields", maintenanceGrid, Nothing, offerColumnSuggestion:=True,
+                                                         previewHandler:=Sub(previewSender As Object, previewArgs As EventArgs) ShowLayoutPreview(maintenanceGrid, tableName),
+                                                         realPageHandler:=Sub(realSender As Object, realArgs As EventArgs) ShowRealPagePreview(maintenanceGrid)), 1, 0)
 
                 Dim actions As New FlowLayoutPanel With {.Dock = DockStyle.Fill, .FlowDirection = FlowDirection.RightToLeft}
                 Dim cancelButton As New Button With {.Text = "Cancel", .DialogResult = DialogResult.Cancel, .AutoSize = True}
@@ -2690,10 +2692,82 @@ Namespace SDC.Framework
         ''' Whether to offer the two-column split. Only the _U grid has a Column cell to fill, and
         ''' a button that did nothing on the _B grid would read as one that was broken.
         ''' </param>
+        ''' <summary>
+        ''' Shows what the _U page will look like, from the grid as it stands.
+        '''
+        ''' Deliberately reads the grid rather than the saved request: this is where a layout is
+        ''' arranged, and a preview that demanded a save first would mean saving to look, looking
+        ''' to decide, and saving again. Nothing is written and nothing is generated.
+        '''
+        ''' Modeless, so the grid stays reachable behind it - move a field to column 2, press
+        ''' Preview again, see it move.
+        ''' </summary>
+        Private Sub ShowLayoutPreview(grid As DataGridView, tableName As String)
+            ' A cell still being edited holds its old value until the edit is committed, so the
+            ' preview would draw the tick or the column choice you just replaced.
+            grid.EndEdit()
+
+            Dim included = grid.Rows.Cast(Of DataGridViewRow)().
+                Where(Function(row) Convert.ToBoolean(row.Cells("Include").Value)).
+                ToList()
+
+            If included.Count = 0 Then
+                WideMessage.Show(grid.FindForm(),
+                                 "TICK AT LEAST ONE _U MAINTENANCE FIELD TO PREVIEW THE LAYOUT.",
+                                 "Layout Preview")
+                Return
+            End If
+
+            Dim fields = included.Select(Function(row) Convert.ToString(row.Cells("FieldName").Value)).ToList()
+            Dim requiredFields = included.
+                Where(Function(row) Convert.ToBoolean(row.Cells("Required").Value)).
+                Select(Function(row) Convert.ToString(row.Cells("FieldName").Value)).ToList()
+            Dim columnTwo = included.
+                Where(Function(row) String.Equals(Convert.ToString(row.Cells("Column").Value), Column2Choice, StringComparison.Ordinal)).
+                Select(Function(row) Convert.ToString(row.Cells("FieldName").Value)).ToList()
+
+            Try
+                Dim placed = PageGenerator.PlaceMaintenancePage(tableName,
+                                                                fields,
+                                                                requiredFields,
+                                                                JoinLookupFields(grid),
+                                                                columnTwo)
+
+                Dim pageName = If(String.IsNullOrWhiteSpace(maintenancePageNameTextBox.Text),
+                                  tableName & "_U",
+                                  maintenancePageNameTextBox.Text.Trim())
+
+                Dim preview As New LayoutPreviewForm(placed, pageName, tableName)
+                preview.Show(grid.FindForm())
+            Catch ex As Exception
+                ' Never a window with nothing in it and no reason given.
+                WideMessage.Show(grid.FindForm(),
+                                 "THE LAYOUT PREVIEW COULD NOT BE BUILT." & Environment.NewLine & Environment.NewLine & ex.ToString(),
+                                 "Layout Preview",
+                                 MessageBoxIcon.Error)
+            End Try
+        End Sub
+
+        ''' <summary>
+        ''' Opens the compiled maintenance page read-only, for the things a layout preview cannot
+        ''' know: the role grids under an employee's fields, the Zip Coder button, anything else a
+        ''' companion file adds. It shows the page as it was last built, not the request on screen.
+        ''' </summary>
+        Private Sub ShowRealPagePreview(grid As DataGridView)
+            Dim pageName = If(maintenancePageNameTextBox.Text, String.Empty).Trim()
+            If pageName = String.Empty Then
+                WideMessage.Show(grid.FindForm(), "NAME THE _U PAGE FIRST.", "Real Page Preview")
+                Return
+            End If
+
+            RealPagePreview.Show(grid.FindForm(), pageName, currentUser)
+        End Sub
         Private Shared Function CreateSelectionPanel(caption As String,
                                                      grid As DataGridView,
                                                      Optional note As String = Nothing,
-                                                     Optional offerColumnSuggestion As Boolean = False) As Control
+                                                     Optional offerColumnSuggestion As Boolean = False,
+                                                     Optional previewHandler As EventHandler = Nothing,
+                                                     Optional realPageHandler As EventHandler = Nothing) As Control
             Dim hasNote = Not String.IsNullOrWhiteSpace(note)
             Dim panel As New TableLayoutPanel With {.Dock = DockStyle.Fill, .RowCount = If(hasNote, 4, 3), .ColumnCount = 1}
             panel.RowStyles.Add(New RowStyle(SizeType.Absolute, 28))
@@ -2732,6 +2806,19 @@ Namespace SDC.Framework
                 Dim suggestButton As New Button With {.Text = "Suggest Columns", .AutoSize = True, .Margin = New Padding(18, 3, 3, 3)}
                 AddHandler suggestButton.Click, Sub(sender As Object, e As EventArgs) SuggestColumns(grid)
                 actions.Controls.Add(suggestButton)
+            End If
+            If previewHandler IsNot Nothing Then
+                ' Under the grid that decides the layout, not on the request behind it. This is
+                ' where a field is moved between columns, and the preview answers the question
+                ' that move asks.
+                Dim previewButton As New Button With {.Text = "Preview Layout", .AutoSize = True, .Margin = New Padding(18, 3, 3, 3)}
+                AddHandler previewButton.Click, previewHandler
+                actions.Controls.Add(previewButton)
+            End If
+            If realPageHandler IsNot Nothing Then
+                Dim realPageButton As New Button With {.Text = "Real Page", .AutoSize = True, .Margin = New Padding(6, 3, 3, 3)}
+                AddHandler realPageButton.Click, realPageHandler
+                actions.Controls.Add(realPageButton)
             End If
             panel.Controls.Add(actions, 0, actionsRow)
             Return panel

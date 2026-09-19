@@ -1201,6 +1201,8 @@ Namespace SDC.Framework
         ''' here would create one without the SQL, alias and table name that give it meaning.
         ''' </summary>
         Public Shared Function SavePageBackgroundColor(windowOrPageName As String, argb As Integer, updatedBy As Integer) As Boolean
+            If ReadOnlyPreview.ShouldSkip() Then Return False
+
             If String.IsNullOrWhiteSpace(windowOrPageName) Then Return False
 
             Dim pageKey = windowOrPageName.Trim()
@@ -2063,6 +2065,10 @@ Namespace SDC.Framework
         End Function
 
         Public Shared Sub SaveTabOrderSettings(pageName As String, settings As List(Of TabOrderSetting), updatedBy As Integer)
+            ' A preview may be tabbed through; what that teaches the tab order manager is
+            ' not something the real page should inherit.
+            If ReadOnlyPreview.ShouldSkip() Then Return
+
             If String.IsNullOrWhiteSpace(pageName) Then
                 Return
             End If
@@ -2857,6 +2863,8 @@ Namespace SDC.Framework
         ''' </summary>
         Public Shared Sub SavePageZoom(userId As Integer, pageName As String, factor As Single,
                                        registrationId As Integer)
+            If ReadOnlyPreview.ShouldSkip() Then Return
+
             If userId <= 0 OrElse String.IsNullOrWhiteSpace(pageName) Then Return
 
             Using conn As New SqlConnection(ConnectionString)
@@ -3312,6 +3320,10 @@ Namespace SDC.Framework
                                                              values As Dictionary(Of String, Object),
                                                              originalRowVersion As Byte(),
                                                              userId As Integer) As Integer
+            ' The one write that must never be refused quietly: a page that thinks it saved
+            ' would close, and the edit would be gone with no record of it anywhere.
+            ReadOnlyPreview.Refuse("The record")
+
             Dim outcome As SaveResult
             Dim savedId = TrySaveGeneratedPageRecord(tableName, primaryKey, recordId, values, originalRowVersion, userId, outcome)
 
@@ -5782,6 +5794,10 @@ Namespace SDC.Framework
                                          Optional saveSucceeded As Boolean? = Nothing,
                                          Optional registrationId As Integer? = Nothing,
                                          Optional userId As Integer? = Nothing)
+            ' Refused, not recorded. An audit row for a save that never happened is worse
+            ' than no row at all - it asserts a change nobody made.
+            If ReadOnlyPreview.ShouldSkip() Then Return
+
             If String.IsNullOrWhiteSpace(pageName) OrElse String.IsNullOrWhiteSpace(operationType) OrElse String.IsNullOrWhiteSpace(phase) Then
                 Return
             End If
