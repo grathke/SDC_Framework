@@ -640,7 +640,15 @@ Namespace SDC.Framework
 
         Private Sub InitializeTabOrderManager()
             If Not SupportsTabOrderManager() Then Return
-            If Not IsApplicationAdminSession() OrElse tabOrderToggleButton IsNot Nothing Then Return
+            ' Reordering is the developer's, applying it is everybody's. Every page reads the saved
+            ' order on open whatever the session - that happens in ApplySavedTabOrder and is not
+            ' gated at all. This gate is only about who may change it.
+            '
+            ' App Admin is a role, and a customer's administrator can hold it over Thinfinity; a
+            ' developer is somebody running the application locally. So the test is the role and a
+            ' desktop session, which is the same line page generation draws when it refuses to open
+            ' in a browser.
+            If Not IsApplicationAdminSession() OrElse Program.InBrowserSession OrElse tabOrderToggleButton IsNot Nothing Then Return
 
             ' UseVisualStyleBackColor keeps the themed button face instead of the page tint, which
             ' is what KeepButtonsUntinted does for every other button on the page.
@@ -759,12 +767,51 @@ Namespace SDC.Framework
         Private Function ApplySavedTabOrder() As List(Of Control)
             Dim controls = GetTabOrderControls()
             Dim savedSettings = DataAccess.GetTabOrderSettings(GetPageName())
-            Dim savedByName = savedSettings.ToDictionary(Function(setting) setting.ControlName, StringComparer.OrdinalIgnoreCase)
+            ' Grouped rather than ToDictionary, which throws on a duplicate key. The save deletes
+            ' the page's rows and rewrites them in one transaction, so two rows for one control
+            ' should not exist - but a saved order is data, and a page that cannot open because of
+            ' a duplicate row would be a hard failure caused by something nobody can see. The first
+            ' row wins and the page opens.
+            '
+            ' A row naming a control that is not on the page needs nothing: the match below keeps
+            ' only rows that find their control, so one left behind by a removed field is ignored,
+            ' and one saved for a field not yet generated simply waits for it.
+            Dim savedByName = savedSettings.
+                GroupBy(Function(setting) setting.ControlName, StringComparer.OrdinalIgnoreCase).
+                ToDictionary(Function(group) group.Key, Function(group) group.First(), StringComparer.OrdinalIgnoreCase)
             Dim savedControls = controls.Where(Function(control) savedByName.ContainsKey(control.Name)).
                 OrderBy(Function(control) savedByName(control.Name).TabOrder).ToList()
             Dim newControls = controls.Where(Function(control) Not savedByName.ContainsKey(control.Name)).
                 OrderBy(Function(control) control.TabIndex).ToList()
-            Dim orderedControls = savedControls.Concat(newControls).ToList()
+
+            ' A control the saved order has never seen - one the page's own file added after
+            ' somebody last arranged the tab order - used to be appended, so it came last however
+            ' near the top of the page it sat. It is now put where its position says it belongs:
+            ' before the first saved control that is below it, or to its right on the same row.
+            '
+            ' Only when there is a saved order to insert into. With nothing saved, this list is
+            ' every control on the page and its TabIndex order is the sequence the generator
+            ' emitted - down one column and then the other, deliberately. Sorting that by position
+            ' would quietly re-tab every generated page.
+            '
+            ' The saved order still wins outright. Somebody who arranges the panel by hand is
+            ' answering a question position cannot, and this only decides where something lands
+            ' that they have not seen yet.
+            Dim orderedControls As List(Of Control)
+            If savedControls.Count = 0 Then
+                orderedControls = newControls.ToList()
+            Else
+                orderedControls = savedControls.ToList()
+
+                For Each added In newControls.OrderBy(Function(control) control.Top).ThenBy(Function(control) control.Left)
+                    Dim at = orderedControls.FindIndex(Function(existing) ComesAfterOnPage(existing, added))
+                    If at < 0 Then
+                        orderedControls.Add(added)
+                    Else
+                        orderedControls.Insert(at, added)
+                    End If
+                Next
+            End If
 
             Dim appliedTabIndex = 0
             For Each control In orderedControls
@@ -779,6 +826,23 @@ Namespace SDC.Framework
             Return orderedControls
         End Function
 
+        ''' <summary>
+        ''' Whether one control comes after another by where it sits: further down the page, or to
+        ''' its right on the same row.
+        '''
+        ''' Rows are compared with the same tolerance the layout uses everywhere else, because a
+        ''' label sits a few pixels below the top of its own box and an exact Top match would call
+        ''' them different rows.
+        ''' </summary>
+        Private Shared Function ComesAfterOnPage(candidate As Control, reference As Control) As Boolean
+            If candidate Is Nothing OrElse reference Is Nothing Then Return False
+
+            If Math.Abs(candidate.Top - reference.Top) > FieldRowTolerance Then
+                Return candidate.Top > reference.Top
+            End If
+
+            Return candidate.Left > reference.Left
+        End Function
         Private Function GetTabOrderControls() As List(Of Control)
             Dim allControls As New List(Of Control)()
             DataAccess.CollectAllControls(Me, allControls)
@@ -945,6 +1009,7 @@ Namespace SDC.Framework
         End Sub
 
         Private Sub TabOrderSaveButton_Click(sender As Object, e As EventArgs)
+
             Dim settings As New List(Of TabOrderSetting)()
             For index As Integer = 0 To tabOrderList.Items.Count - 1
                 Dim item = TryCast(tabOrderList.Items(index), TabOrderManagerItem)

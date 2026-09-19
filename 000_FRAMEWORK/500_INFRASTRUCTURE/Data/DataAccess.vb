@@ -2065,9 +2065,17 @@ Namespace SDC.Framework
         End Function
 
         Public Shared Sub SaveTabOrderSettings(pageName As String, settings As List(Of TabOrderSetting), updatedBy As Integer)
-            ' A preview may be tabbed through; what that teaches the tab order manager is
-            ' not something the real page should inherit.
-            If ReadOnlyPreview.ShouldSkip() Then Return
+            ' The one write a preview is allowed to make, decided deliberately.
+            '
+            ' Every other gated path either changes a record or is a convenience nobody asked for.
+            ' This is page configuration, it is pressed on purpose, and the moment somebody wants to
+            ' arrange a tab order is while looking at the layout it belongs to - which is what a
+            ' preview is. Blocking it meant a Save that appeared to do nothing.
+            '
+            ' A row saved for a field that is in the request but not yet generated is kept rather
+            ' than being a problem: ApplySavedTabOrder matches saved rows to controls by name and
+            ' ignores the ones it cannot find, so the order is simply waiting for the field to
+            ' exist.
 
             If String.IsNullOrWhiteSpace(pageName) Then
                 Return
