@@ -45,11 +45,18 @@ Namespace SDC.Framework
         ''' New(issueId, registrationId, page). A key of zero opens the page as a new record, which
         ''' also settles what happens on a table with no rows in it.
         ''' </summary>
-        Public Sub Show(owner As IWin32Window, pageName As String, user As UserContext)
-            Dim pageType = GetType(FW_Base_U).Assembly.
+        ''' <summary>The compiled page of that name, or nothing when it is not built yet.</summary>
+        Friend Function FindPageType(pageName As String) As Type
+            If String.IsNullOrWhiteSpace(pageName) Then Return Nothing
+
+            Return GetType(FW_Base_U).Assembly.
                 GetTypes().
-                FirstOrDefault(Function(candidate) String.Equals(candidate.Name, pageName, StringComparison.OrdinalIgnoreCase) AndAlso
+                FirstOrDefault(Function(candidate) String.Equals(candidate.Name, pageName.Trim(), StringComparison.OrdinalIgnoreCase) AndAlso
                                                    GetType(FW_Base_U).IsAssignableFrom(candidate))
+        End Function
+
+        Public Sub Show(owner As IWin32Window, pageName As String, user As UserContext)
+            Dim pageType = FindPageType(pageName)
 
             If pageType Is Nothing Then
                 WideMessage.Show(owner,
@@ -100,7 +107,7 @@ Namespace SDC.Framework
         ''' Constructs a page, filling each constructor argument from its type. The shortest
         ''' constructor wins: a page with an optional-argument overload is opened the simple way.
         ''' </summary>
-        Private Function BuildPage(pageType As Type, user As UserContext) As Form
+        Friend Function BuildPage(pageType As Type, user As UserContext) As Form
             Dim constructors = pageType.GetConstructors().
                 OrderBy(Function(candidate) candidate.GetParameters().Length).
                 ToList()

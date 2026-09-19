@@ -2737,8 +2737,10 @@ Namespace SDC.Framework
                                   tableName & "_U",
                                   maintenancePageNameTextBox.Text.Trim())
 
-                Dim preview As New LayoutPreviewForm(placed, pageName, tableName)
-                preview.Show(grid.FindForm())
+                ' One button, two answers. Not generated yet, and the whole page is drawn from the
+                ' grid. Generated, and the compiled page is opened and re-arranged to the grid -
+                ' which is the better answer, because the hand-written controls come with it.
+                MaintenancePreview.Show(grid.FindForm(), placed, pageName, tableName, currentUser)
             Catch ex As Exception
                 ' Never a window with nothing in it and no reason given.
                 WideMessage.Show(grid.FindForm(),
@@ -2811,7 +2813,7 @@ Namespace SDC.Framework
                 ' Under the grid that decides the layout, not on the request behind it. This is
                 ' where a field is moved between columns, and the preview answers the question
                 ' that move asks.
-                Dim previewButton As New Button With {.Text = "Preview Layout", .AutoSize = True, .Margin = New Padding(18, 3, 3, 3)}
+                Dim previewButton As New Button With {.Text = "Preview", .AutoSize = True, .Margin = New Padding(18, 3, 3, 3)}
                 AddHandler previewButton.Click, previewHandler
                 actions.Controls.Add(previewButton)
             End If

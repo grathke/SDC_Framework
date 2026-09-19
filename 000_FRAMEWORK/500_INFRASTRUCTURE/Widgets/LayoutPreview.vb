@@ -31,6 +31,7 @@ Namespace SDC.Framework
 
         Private ReadOnly page As PlacedPage
         Private ReadOnly tableName As String
+        Private ReadOnly columnLengths As Dictionary(Of String, Integer)
         Private saveButton As Button
         Private permissionsBox As CheckBox
         Private hiddenByRole As Integer
@@ -43,6 +44,14 @@ Namespace SDC.Framework
         Public Sub New(placedPage As PlacedPage, pageName As String, Optional table As String = "")
             page = placedPage
             tableName = If(table, String.Empty)
+
+            ' Asked once, here, rather than per field: the widths are the one thing a layout
+            ' preview cannot work out for itself, and one read answers every box on the page.
+            Try
+                columnLengths = DataAccess.GetTextColumnMaxLengths(tableName)
+            Catch
+                columnLengths = New Dictionary(Of String, Integer)(StringComparer.OrdinalIgnoreCase)
+            End Try
             subjectName = If(String.IsNullOrWhiteSpace(pageName), "Maintenance page", pageName.Trim())
 
             Text = PreviewTitle
@@ -101,96 +110,28 @@ Namespace SDC.Framework
             })
         End Sub
 
+        ''' <summary>
+        ''' Adds one placed field, shifted by the caption row the real page adds on Shown.
+        ''' The controls themselves come from PreviewControls, which the merged preview also
+        ''' uses, so a field drawn here and a field dropped onto a compiled page are the same
+        ''' field.
+        ''' </summary>
         Private Sub AddPlacement(placement As PlacedField)
-            Dim y = placement.Top + MaintenanceLayout.CaptionShift
-
-            If placement.Kind = PlacedFieldKind.BlankLine Then Return
-
-            If placement.Kind = PlacedFieldKind.Divider Then
-                Controls.Add(New Label() With {
-                    .AutoSize = False,
-                    .Text = String.Empty,
-                    .Location = New Point(placement.Left, y),
-                    .Size = New Size(MaintenanceLayout.ColumnWidth, 2),
-                    .BackColor = SystemColors.ControlDark
-                })
-                Return
-            End If
-
-            AddLabel(placement, y)
-
-            Dim controlLeft = placement.Left + MaintenanceLayout.ControlOffset
-
-            Select Case placement.Kind
-                Case PlacedFieldKind.CheckBox
-                    Controls.Add(New CheckBox() With {
-                        .Name = "CheckBox_" & placement.Field,
-                        .Text = String.Empty,
-                        .Location = New Point(controlLeft, y),
-                        .Size = New Size(24, MaintenanceLayout.FieldHeight),
-                        .TabStop = False
-                    })
-
-                Case PlacedFieldKind.DateTimePicker
-                    Controls.Add(New DateTimePicker() With {
-                        .Name = "DateTimePicker_" & placement.Field,
-                        .Location = New Point(controlLeft, y),
-                        .Size = New Size(If(placement.ShowTime, 200, 130) + If(placement.Nullable, 22, 0), MaintenanceLayout.FieldHeight),
-                        .Format = If(placement.ShowTime, DateTimePickerFormat.Long, DateTimePickerFormat.Short),
-                        .ShowCheckBox = placement.Nullable,
-                        .Checked = Not placement.Nullable,
-                        .TabStop = False
-                    })
-
-                Case PlacedFieldKind.ComboBox
-                    Dim combo As New ComboBox() With {
-                        .Name = "ComboBox_" & placement.Field,
-                        .Location = New Point(controlLeft, y),
-                        .Size = New Size(If(placement.Width > 0, placement.Width, MaintenanceLayout.FieldWidth), MaintenanceLayout.FieldHeight),
-                        .DropDownStyle = ComboBoxStyle.DropDownList,
-                        .TabStop = False
-                    }
-                    ' A list is never wider than its box - the rule ComboWidth.Narrow enforces
-                    ' everywhere else, applied here so the preview cannot show a shape the real
-                    ' page will not produce.
-                    combo.DropDownWidth = combo.Width
-                    combo.Items.Add(SampleValues.ForCombo(placement.Field))
-                    combo.SelectedIndex = 0
-                    Controls.Add(combo)
-
-                Case Else
-                    Controls.Add(New TextBox() With {
-                        .Name = "TextBox_" & placement.Field,
-                        .Location = New Point(controlLeft, y),
-                        .Size = New Size(If(placement.Width > 0, placement.Width, MaintenanceLayout.FieldWidth), MaintenanceLayout.FieldHeight),
-                        .BorderStyle = BorderStyle.FixedSingle,
-                        .BackColor = SystemColors.Window,
-                        .TabStop = False,
-                        .UseSystemPasswordChar = SampleValues.IsSecret(placement.Field),
-                        .Text = SampleValues.ForField(placement.Field)
-                    })
-            End Select
-        End Sub
-
-        Private Sub AddLabel(placement As PlacedField, y As Integer)
-            ' One formatter for display text, the same one the page uses. A second would drift.
-            Dim caption = DisplayNameFormatter.ToDisplayName(placement.Field, stripFrameworkPrefix:=False)
-            If placement.Required Then caption &= " *"
-
-            Dim label As New Label() With {
-                .Name = "Label_" & placement.Field,
-                .Text = caption,
-                .Location = New Point(placement.Left, y),
-                .Size = New Size(MaintenanceLayout.LabelWidth, MaintenanceLayout.FieldHeight),
-                .TextAlign = ContentAlignment.MiddleLeft
+            Dim shifted As New PlacedField() With {
+                .Field = placement.Field,
+                .Kind = placement.Kind,
+                .Left = placement.Left,
+                .Top = placement.Top + MaintenanceLayout.CaptionShift,
+                .Required = placement.Required,
+                .Width = placement.Width,
+                .Nullable = placement.Nullable,
+                .ShowTime = placement.ShowTime,
+                .PlaceholderNumber = placement.PlaceholderNumber
             }
 
-            ' The exact blue the page paints an App Admin required field. Borrowed, not matched by
-            ' eye: ShouldSkipBrRequiredStyling reads this ARGB to decide who owns required, and a
-            ' preview showing a different blue would teach the reader the wrong colour.
-            If placement.Required Then label.BackColor = FW_Base_U.AppAdminRequiredBackColor
-
-            Controls.Add(label)
+            For Each made In PreviewControls.Create(shifted, columnLengths, Font)
+                Controls.Add(made)
+            Next
         End Sub
 
         ''' <summary>
