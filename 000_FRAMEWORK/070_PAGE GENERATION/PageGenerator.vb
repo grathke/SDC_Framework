@@ -38,6 +38,44 @@ Namespace SDC.Framework
     End Enum
 
     ''' <summary>
+    ''' What kind of control a placed field gets. Decided from the schema, never from the field's
+    ''' name, and never overridden at a call site.
+    ''' </summary>
+    Public Enum PlacedFieldKind
+        TextBox
+        ComboBox
+        DateTimePicker
+        CheckBox
+        BlankLine
+        Divider
+    End Enum
+
+    ''' <summary>
+    ''' One control on a maintenance page, and where it goes.
+    '''
+    ''' The output of PlaceMaintenanceFields and the input to both the source emitter and the layout
+    ''' preview. Holding it as data is what stops those two computing positions separately and
+    ''' disagreeing.
+    ''' </summary>
+    Public NotInheritable Class PlacedField
+        ''' <summary>The column name, or the placeholder token for a blank line or divider.</summary>
+        Public Property Field As String = String.Empty
+        Public Property Kind As PlacedFieldKind = PlacedFieldKind.TextBox
+        ''' <summary>The left edge of the label. The control itself sits 130 further right.</summary>
+        Public Property Left As Integer
+        ''' <summary>The row's Top. Always on the row pitch - see CollapseHiddenFieldRows.</summary>
+        Public Property Top As Integer
+        Public Property Required As Boolean
+        ''' <summary>Set for a combo; a text box takes the helper's own default.</summary>
+        Public Property Width As Integer
+        ''' <summary>A date column that may be null gets its check box.</summary>
+        Public Property Nullable As Boolean
+        ''' <summary>A date column that carries a time shows one.</summary>
+        Public Property ShowTime As Boolean
+        ''' <summary>Which divider this is, for its control name.</summary>
+        Public Property PlaceholderNumber As Integer
+    End Class
+    ''' <summary>
     ''' The validated request plus the exact source that would be written. Generate writes this;
     ''' Preview shows it without touching disk or the database.
     ''' </summary>
@@ -1911,6 +1949,88 @@ Namespace SDC.Framework
             Return output.ToString()
         End Function
 
+        ''' <summary>
+        ''' Where every control on a maintenance page goes, as data.
+        '''
+        ''' Pure by design - fields in, positions out, no database read and no request row. The
+        ''' emitter in BuildMaintenanceSource turns this list into calls and does nothing else, and
+        ''' a layout preview draws the same page from the same list without generating anything.
+        ''' Two answers that could disagree is exactly what this exists to prevent.
+        '''
+        ''' Each column reads its own field list in the same order, so the page runs down the left
+        ''' and then down the right, and the tab order is that same sequence. A placeholder holds a
+        ''' row and no control.
+        ''' </summary>
+        Private Shared Function PlaceMaintenanceFields(leftFields As List(Of String),
+                                                       rightFields As List(Of String),
+                                                       columnTwoLeft As Integer,
+                                                       requiredFields As List(Of String),
+                                                       computedColumns As ICollection(Of String),
+                                                       lookupFields As List(Of LookupFieldSpec),
+                                                       dateFields As ICollection(Of String),
+                                                       bitFields As ICollection(Of String),
+                                                       dateKinds As IDictionary(Of String, String),
+                                                       nullableColumns As ICollection(Of String)) As List(Of PlacedField)
+            Dim placed As New List(Of PlacedField)()
+
+            Dim placeColumn =
+                Sub(columnFields As List(Of String), fieldLeft As Integer)
+                    Dim y = 20
+                    For Each field In columnFields
+                        ' A computed field is never required, whatever the request says. An older
+                        ' saved request can still carry one, so the refusal is here as well as in
+                        ' the grid that offers the tick - the page must not be generated with a
+                        ' rule it cannot satisfy.
+                        Dim isRequired = requiredFields.Any(Function(item) String.Equals(item, field, StringComparison.OrdinalIgnoreCase)) AndAlso
+                                         Not computedColumns.Contains(field)
+
+                        Dim placement As New PlacedField() With {
+                            .Field = field,
+                            .Left = fieldLeft,
+                            .Top = y,
+                            .Required = isRequired
+                        }
+
+                        If IsBlankLinePlaceholder(field) Then
+                            ' The row exists because y moves on, which is all a blank line is - and
+                            ' it costs the page no control to collapse, no name to map and nothing
+                            ' for the unmapped-field report to find.
+                            placement.Kind = PlacedFieldKind.BlankLine
+                            placement.Required = False
+                        ElseIf IsDividerPlaceholder(field) Then
+                            ' At exactly y, not centred in the row. The row's Top is the pitch:
+                            ' CollapseHiddenFieldRows consumes RowTop(next) - RowTop(current) when
+                            ' a row above is hidden, so a rule dropped 12 pixels to look centred
+                            ' would have that row consume 54 instead of 42 and pull every row
+                            ' below it out of step.
+                            placement.Kind = PlacedFieldKind.Divider
+                            placement.Required = False
+                            placement.PlaceholderNumber = PlaceholderNumber(field)
+                        ElseIf bitFields.Contains(field) Then
+                            placement.Kind = PlacedFieldKind.CheckBox
+                        ElseIf dateFields.Contains(field) Then
+                            ' Date-only unless the column carries a time. A hire date shown as
+                            ' "15/03/2026 00:00" puts a time on screen that nobody entered.
+                            placement.Kind = PlacedFieldKind.DateTimePicker
+                            placement.ShowTime = Not String.Equals(dateKinds(field), "date", StringComparison.OrdinalIgnoreCase)
+                            placement.Nullable = nullableColumns.Contains(field)
+                        ElseIf IsLookupField(field, lookupFields) Then
+                            placement.Kind = PlacedFieldKind.ComboBox
+                            placement.Width = 320
+                        Else
+                            placement.Kind = PlacedFieldKind.TextBox
+                        End If
+
+                        placed.Add(placement)
+                        y += 42
+                    Next
+                End Sub
+
+            placeColumn(leftFields, 20)
+            placeColumn(rightFields, columnTwoLeft)
+
+            Return placed
+        End Function
         Private Shared Function BuildMaintenanceSource(pageName As String, tableName As String, primaryKey As String, fields As List(Of String), requiredFields As List(Of String), lookupFields As List(Of LookupFieldSpec), Optional columnTwoFields As List(Of String) = Nothing) As String
             Dim computedColumns = DataAccess.GetComputedColumnNames(tableName)
             Dim computedOnPage = fields.Where(Function(field) computedColumns.Contains(field)).ToList()
@@ -2052,81 +2172,66 @@ Namespace SDC.Framework
             output.AppendLine("            okButton.Location = New Point(ClientSize.Width - 270, ClientSize.Height - 46)")
             output.AppendLine("            cancelActionButton.Location = New Point(ClientSize.Width - 135, ClientSize.Height - 46)")
 
-            Dim emitColumn =
-                Sub(columnFields As List(Of String), fieldLeft As Integer)
-                    Dim y = 20
-                    For Each field In columnFields
-                        ' A computed field is never required, whatever the request says. An older
-                        ' saved request can still carry one, so the refusal is here as well as in
-                        ' the grid that offers the tick - the page must not be generated with a
-                        ' rule it cannot satisfy.
-                        Dim isRequired = requiredFields.Any(Function(item) String.Equals(item, field, StringComparison.OrdinalIgnoreCase)) AndAlso
-                                         Not computedColumns.Contains(field)
+            ' Where every control goes, decided before a line of source is written. The loop below
+            ' turns that list into calls and does nothing else, which is what lets a layout preview
+            ' draw the same page without generating it.
+            Dim placedFields = PlaceMaintenanceFields(leftFields,
+                                                      If(twoColumns, rightFields, New List(Of String)()),
+                                                      columnTwoLeft,
+                                                      requiredFields,
+                                                      computedColumns,
+                                                      lookupFields,
+                                                      dateFields,
+                                                      bitFields,
+                                                      dateKinds,
+                                                      nullableColumns)
 
-                        If IsBlankLinePlaceholder(field) Then
-                            ' Nothing is emitted. The row exists because y moves on, which is all
-                            ' a blank line is - and it costs the page no control to collapse, no
-                            ' name to map and nothing for the unmapped-field report to find.
-                            output.AppendLine("            ' " & field & " - vertical space, no control")
-                            y += 42
-                            Continue For
-                        ElseIf IsDividerPlaceholder(field) Then
-                            Dim dividerName = "Label_Divider" & PlaceholderNumber(field).ToString()
+            For Each placement In placedFields
+                Select Case placement.Kind
+                    Case PlacedFieldKind.BlankLine
+                        ' Nothing is emitted at all - the row is the whole of it.
+                        output.AppendLine("            ' " & placement.Field & " - vertical space, no control")
 
-                            ' At exactly y, not centred in the row. The row's Top is the pitch:
-                            ' CollapseHiddenFieldRows consumes RowTop(next) - RowTop(current) when
-                            ' a row above is hidden, so a rule dropped 12 pixels to look centred
-                            ' would have that row consume 54 instead of 42 and pull every row
-                            ' below it out of step.
-                            '
-                            ' Named Label_ deliberately, though it names no column. IsFieldControl
-                            ' matches on that prefix, and a control the field grid does not
-                            ' recognise is treated as trailing furniture and moved as a block
-                            ' below the fields the moment a permission hides anything. The price
-                            ' is the unmapped-field report, which DeclareUnboundField answers.
-                            output.AppendLine("            Controls.Add(New Label() With {")
-                            output.AppendLine("                .Name = """ & dividerName & """,")
-                            output.AppendLine("                .AutoSize = False,")
-                            output.AppendLine("                .Text = String.Empty,")
-                            output.AppendLine("                .Location = New Point(" & fieldLeft.ToString() & ", " & y.ToString() & "),")
-                            output.AppendLine("                .Size = New Size(450, 2),")
-                            output.AppendLine("                .BackColor = SystemColors.ControlDark")
-                            output.AppendLine("            })")
-                            output.AppendLine("            DeclareUnboundField(""" & dividerName & """, ""A dividing line between groups of fields. It names no column."")")
-                            y += 42
-                            Continue For
-                        End If
+                    Case PlacedFieldKind.Divider
+                        ' Named Label_ deliberately, though it names no column. IsFieldControl
+                        ' matches on that prefix, and a control the field grid does not
+                        ' recognise is treated as trailing furniture and moved as a block
+                        ' below the fields the moment a permission hides anything. The price
+                        ' is the unmapped-field report, which DeclareUnboundField answers.
+                        Dim dividerName = "Label_Divider" & placement.PlaceholderNumber.ToString()
+                        output.AppendLine("            Controls.Add(New Label() With {")
+                        output.AppendLine("                .Name = """ & dividerName & """,")
+                        output.AppendLine("                .AutoSize = False,")
+                        output.AppendLine("                .Text = String.Empty,")
+                        output.AppendLine("                .Location = New Point(" & placement.Left.ToString() & ", " & placement.Top.ToString() & "),")
+                        output.AppendLine("                .Size = New Size(450, 2),")
+                        output.AppendLine("                .BackColor = SystemColors.ControlDark")
+                        output.AppendLine("            })")
+                        output.AppendLine("            DeclareUnboundField(""" & dividerName & """, ""A dividing line between groups of fields. It names no column."")")
 
-                        If bitFields.Contains(field) Then
-                            output.AppendLine("            " & CheckControlVariable(field) & " = AddCheckField(""" & EscapeLiteral(field) & """, " &
-                                              y.ToString() & ", " & fieldLeft.ToString() & ")")
-                        ElseIf dateFields.Contains(field) Then
-                            ' Date-only unless the column carries a time. A hire date shown as
-                            ' "15/03/2026 00:00" puts a time on screen that nobody entered.
-                            Dim showTime = Not String.Equals(dateKinds(field), "date", StringComparison.OrdinalIgnoreCase)
-                            Dim nullable = nullableColumns.Contains(field)
-                            output.AppendLine("            " & DateControlVariable(field) & " = AddDateField(""" & EscapeLiteral(field) & """, " & y.ToString() & ", " &
-                                              If(isRequired, "True", "False") & ", " & fieldLeft.ToString() & ", " &
-                                              If(nullable, "True", "False") & ", " & If(showTime, "True", "False") & ")")
-                        ElseIf IsLookupField(field, lookupFields) Then
-                            ' A foreign key goes through AddComboField for the same reason a plain
-                            ' field goes through AddField: the helper paints the App Admin blue
-                            ' when required, adds the marker, registers the required border and
-                            ' names both controls to the convention. Built by hand, as this used
-                            ' to be, a required lookup got the asterisk but never the blue - and
-                            ' since ShouldSkipBrRequiredStyling decides App Admin ownership by
-                            ' that blue, the field silently lost its precedence.
-                            output.AppendLine("            " & LookupControlVariable(field) & " = AddComboField(""" & EscapeLiteral(field) & """, " & y.ToString() & ", " & If(isRequired, "True", "False") & ", " & fieldLeft.ToString() & ", 320)")
-                        Else
-                            output.AppendLine("            " & ControlVariable(field) & " = AddField(""" & EscapeLiteral(field) & """, " & y.ToString() & ", False, " & If(isRequired, "True", "False") & ", " & fieldLeft.ToString() & ")")
-                        End If
+                    Case PlacedFieldKind.CheckBox
+                        output.AppendLine("            " & CheckControlVariable(placement.Field) & " = AddCheckField(""" & EscapeLiteral(placement.Field) & """, " &
+                                          placement.Top.ToString() & ", " & placement.Left.ToString() & ")")
 
-                        y += 42
-                    Next
-                End Sub
+                    Case PlacedFieldKind.DateTimePicker
+                        output.AppendLine("            " & DateControlVariable(placement.Field) & " = AddDateField(""" & EscapeLiteral(placement.Field) & """, " & placement.Top.ToString() & ", " &
+                                          If(placement.Required, "True", "False") & ", " & placement.Left.ToString() & ", " &
+                                          If(placement.Nullable, "True", "False") & ", " & If(placement.ShowTime, "True", "False") & ")")
 
-            emitColumn(leftFields, 20)
-            If twoColumns Then emitColumn(rightFields, columnTwoLeft)
+                    Case PlacedFieldKind.ComboBox
+                        ' A foreign key goes through AddComboField for the same reason a plain
+                        ' field goes through AddField: the helper paints the App Admin blue
+                        ' when required, adds the marker, registers the required border and
+                        ' names both controls to the convention. Built by hand, as this used
+                        ' to be, a required lookup got the asterisk but never the blue - and
+                        ' since ShouldSkipBrRequiredStyling decides App Admin ownership by
+                        ' that blue, the field silently lost its precedence.
+                        output.AppendLine("            " & LookupControlVariable(placement.Field) & " = AddComboField(""" & EscapeLiteral(placement.Field) & """, " & placement.Top.ToString() & ", " & If(placement.Required, "True", "False") & ", " & placement.Left.ToString() & ", " & placement.Width.ToString() & ")")
+
+                    Case Else
+                        output.AppendLine("            " & ControlVariable(placement.Field) & " = AddField(""" & EscapeLiteral(placement.Field) & """, " & placement.Top.ToString() & ", False, " & If(placement.Required, "True", "False") & ", " & placement.Left.ToString() & ")")
+                End Select
+            Next
 
             ' A single Role combo lived here briefly and came out again: one combo cannot show
             ' somebody holding two roles, and it put the question on the generator's side of the
