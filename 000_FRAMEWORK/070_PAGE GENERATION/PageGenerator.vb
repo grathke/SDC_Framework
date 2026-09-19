@@ -2267,6 +2267,7 @@ Namespace SDC.Framework
             output.AppendLine("        Private record As DataRow")
             output.AppendLine("        Private ReadOnly formBindingSource As New BindingSource()")
             output.AppendLine("        Private originalRowVersion As Byte()")
+            output.AppendLine("        Private lastSavedRecordId As Integer")
 
             ' The address controllers the page will wire, decided with the rest of the layout.
             Dim addressField = page.AddressField
@@ -2581,8 +2582,27 @@ Namespace SDC.Framework
             output.AppendLine("            If outcome <> SaveResult.Succeeded OrElse savedRecordId <= 0 Then Return False")
             output.AppendLine("            If record Is Nothing OrElse Not record.Table.Columns.Contains(primaryKey) Then Return False")
             output.AppendLine("            record(primaryKey) = savedRecordId")
+            output.AppendLine("            lastSavedRecordId = savedRecordId")
             output.AppendLine("            Return True")
             output.AppendLine("        End Function")
+            output.AppendLine()
+            ' What the browse page needs after a Create, and never had.
+            '
+            ' FW_Base_B reselects the created row through SavedRecordId, because the id does not
+            ' exist until the save - and no page has ever overridden it, so it returned 0 and the
+            ' new record was never selected. The comment saying otherwise has been in Base_B all
+            ' along; the three lines that would have made it true were missing.
+            '
+            ' An update needs none of this: the browse page already knows which row it opened.
+            output.AppendLine("        ''' <summary>")
+            output.AppendLine("        ''' The record this page saved, so a browse page can select it after a Create.")
+            output.AppendLine("        ''' Zero until something is saved, which is what FW_Base_B falls back on.")
+            output.AppendLine("        ''' </summary>")
+            output.AppendLine("        Public Overrides ReadOnly Property SavedRecordId As Integer")
+            output.AppendLine("            Get")
+            output.AppendLine("                Return lastSavedRecordId")
+            output.AppendLine("            End Get")
+            output.AppendLine("        End Property")
             output.AppendLine()
             output.AppendLine("        Protected Overrides Function ResolveAuditRecordKey() As String")
             output.AppendLine("            Return If(record Is Nothing OrElse record.Table Is Nothing OrElse Not record.Table.Columns.Contains(primaryKey) OrElse record.IsNull(primaryKey), String.Empty, Convert.ToString(record(primaryKey)))")

@@ -172,6 +172,13 @@ Namespace SDC.Framework
             Public SelectedRecordId As Integer
             Public SelectedRowOffsetFromTop As Integer
             Public FallbackFirstDisplayedIndex As Integer
+
+            ''' <summary>
+            ''' Whether the restored row should flash. Set only when a caller asked for a specific
+            ''' record - which happens when somebody has just saved one - and never on an ordinary
+            ''' refresh, where the selection is being put back rather than pointed at.
+            ''' </summary>
+            Public FlashSelection As Boolean
         End Structure
 
         Protected Sub New()
@@ -2027,6 +2034,12 @@ Namespace SDC.Framework
             If selectedRecordId.HasValue Then
                 viewState.HasSelection = True
                 viewState.SelectedRecordId = selectedRecordId.Value
+
+                ' A record was just saved and the grid is being pointed at it. Selecting it and
+                ' scrolling it into view already happens; the flash is what finishes the sentence,
+                ' because a row that was already on screen can be selected without anybody noticing
+                ' which one moved.
+                viewState.FlashSelection = True
             End If
 
             Try
@@ -3935,6 +3948,9 @@ Namespace SDC.Framework
                     Catch
                         ' Ignore if grid cannot set scroll position yet.
                     End Try
+
+                    ' After the scroll, not before: a row flashing off-screen says nothing.
+                    If state.FlashSelection Then GridRowFlash.Flash(browseGrid, browseGrid.Rows(selectedIndex))
                     Return
                 End If
             End If

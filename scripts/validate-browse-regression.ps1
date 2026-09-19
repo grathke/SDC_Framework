@@ -152,7 +152,11 @@ Assert-Pattern -Path ".\000_FRAMEWORK\070_PAGE GENERATION\PageGeneration_U.vb" -
 Assert-Pattern -Path ".\000_FRAMEWORK\070_PAGE GENERATION\PageGeneration_U.vb" -Pattern 'labelControl.Text &= " *"' -Description "Page Generation Admin Required labels show an asterisk"
 Assert-Pattern -Path ".\000_FRAMEWORK\070_PAGE GENERATION\PageGeneration_U.vb" -Pattern 'textBox.Tag = "Required"' -Description "Page Generation Admin Required controls participate in shared validation"
 Assert-Pattern -Path ".\000_FRAMEWORK\070_PAGE GENERATION\PageGeneration_U.vb" -Pattern 'borderPanel.BackColor = If(isEmpty, Color.Red, SystemColors.Control)' -Description "Page Generation Admin Required controls have red empty-value borders"
-Assert-Pattern -Path ".\000_FRAMEWORK\000_BASE CLASSES\FW_Base_U.vb" -Pattern '.Size = New Size(120, 26)' -Description "Shared _U captions match the 26-pixel edit-control height"
+# The height is MaintenanceLayout.FieldHeight now, not a literal 26. The contract is unchanged - a
+# caption is exactly as tall as the control beside it - but both are read from one place, so the
+# check reads the same place rather than a number that used to agree with it.
+Assert-Pattern -Path ".\000_FRAMEWORK\000_BASE CLASSES\FW_Base_U.vb" -Pattern '.Size = New Size(MaintenanceLayout.LabelWidth, MaintenanceLayout.FieldHeight)' -Description "Shared _U captions match the edit-control height"
+Assert-Pattern -Path ".\000_FRAMEWORK\500_INFRASTRUCTURE\Helpers\MaintenanceLayout.vb" -Pattern 'Public Const FieldHeight As Integer = 26' -Description "The shared edit-control height is still 26"
 Assert-Pattern -Path ".\000_FRAMEWORK\070_PAGE GENERATION\PageGeneration_U.vb" -Pattern 'caption height matches the height of its edit control' -Description "Page Generation directions document the shared _U caption-height rule"
 Assert-Pattern -Path ".\000_FRAMEWORK\070_PAGE GENERATION\PageGeneration_U.vb" -Pattern '1-pixel red outline' -Description "Page Generation directions document the shared _U required-border rule"
 Assert-Pattern -Path ".\000_FRAMEWORK\000_BASE CLASSES\FW_Base_U.vb" -Pattern 'RefreshLocalRequiredBorders()' -Description "Shared _U refreshes local required borders during validation"
