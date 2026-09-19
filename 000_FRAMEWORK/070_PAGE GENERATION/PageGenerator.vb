@@ -38,6 +38,57 @@ Namespace SDC.Framework
     End Enum
 
     ''' <summary>
+    ''' Everything decided about a maintenance page before a line of source is written: which
+    ''' control each field gets, where it goes, and how big the page has to be to hold it.
+    '''
+    ''' BuildMaintenanceSource emits from this, and the layout preview draws from it. Neither
+    ''' works any of it out for itself, which is the point - a preview that computed its own
+    ''' positions would agree with the generator only until one of them changed.
+    ''' </summary>
+    Public NotInheritable Class PlacedPage
+        Public ReadOnly Property Fields As New List(Of PlacedField)()
+
+        Public Property Width As Integer
+        Public Property Height As Integer
+        Public Property FieldsBottom As Integer
+        Public Property ExtraBelowFields As Integer
+        Public Property RowsDown As Integer
+        Public Property TwoColumns As Boolean
+        Public Property ColumnTwoLeft As Integer
+
+        Public Property LeftFields As List(Of String)
+        Public Property RightFields As List(Of String)
+        Public Property DateFields As List(Of String)
+        Public Property BitFields As List(Of String)
+        Public Property ComputedOnPage As List(Of String)
+
+        Public Property ComputedColumns As ICollection(Of String)
+        Public Property NullableColumns As ICollection(Of String)
+        Public Property DateKinds As IDictionary(Of String, String)
+
+        Public Property AddressField As String = String.Empty
+        Public Property CityField As String = String.Empty
+        Public Property StateField As String = String.Empty
+        Public Property ZipField As String = String.Empty
+        Public Property WantsZipCoder As Boolean
+        Public Property WantsSmarty As Boolean
+        Public Property ZipOnTheRight As Boolean
+        Public Property CarriesLogin As Boolean
+
+        ''' <summary>
+        ''' Where the page's own file will put something, and what. Zero when nothing is
+        ''' reserved. Worked out here rather than in the preview: the generator already knows
+        ''' which widget it left room for, and a preview that worked it out again would be a
+        ''' second opinion about the same space.
+        ''' </summary>
+        Public Property ReservedTop As Integer
+        Public Property ReservedLeft As Integer
+        Public Property ReservedWidth As Integer
+        Public Property ReservedHeight As Integer
+        Public Property ReservedCaption As String = String.Empty
+    End Class
+
+    ''' <summary>
     ''' What kind of control a placed field gets. Decided from the schema, never from the field's
     ''' name, and never overridden at a call site.
     ''' </summary>
@@ -1961,6 +2012,134 @@ Namespace SDC.Framework
         ''' and then down the right, and the tab order is that same sequence. A placeholder holds a
         ''' row and no control.
         ''' </summary>
+        ''' <summary>
+        ''' The same placement, for a caller holding a request's raw values rather than parsed
+        ''' ones - the field picker, which has the grid in front of it and nothing saved.
+        '''
+        ''' Lookups arrive as the spec string the request stores, so nothing outside this class
+        ''' needs to know what a LookupFieldSpec is. Anything unparseable is skipped rather than
+        ''' refused: a preview of a half-finished request is exactly what it is for.
+        ''' </summary>
+        Public Shared Function PlaceMaintenancePage(tableName As String,
+                                                    fields As List(Of String),
+                                                    requiredFields As List(Of String),
+                                                    lookupSpecs As String,
+                                                    columnTwoFields As List(Of String)) As PlacedPage
+            Dim ignored As New List(Of String)()
+            Return PlaceMaintenancePage(tableName,
+                                        If(fields, New List(Of String)()),
+                                        If(requiredFields, New List(Of String)()),
+                                        ParseLookupFields(If(lookupSpecs, String.Empty), ignored),
+                                        columnTwoFields)
+        End Function
+
+        ''' <summary>
+        ''' Everything about a maintenance page that is decided before anything is written.
+        '''
+        ''' Called by BuildMaintenanceSource, which emits from what comes back, and by the layout
+        ''' preview, which draws from it. It reads the schema - which columns are dates, bits,
+        ''' nullable or computed - and hands the pure placement the answers; it never writes
+        ''' anything and never touches the request row.
+        ''' </summary>
+        Friend Shared Function PlaceMaintenancePage(tableName As String,
+                                                    fields As List(Of String),
+                                                    requiredFields As List(Of String),
+                                                    lookupFields As List(Of LookupFieldSpec),
+                                                    columnTwoFields As List(Of String)) As PlacedPage
+            Dim page As New PlacedPage()
+
+            Dim computedColumns = DataAccess.GetComputedColumnNames(tableName)
+            page.ComputedColumns = computedColumns
+            page.ComputedOnPage = fields.Where(Function(field) computedColumns.Contains(field)).ToList()
+
+            ' The employee table carries a login, and a login is useless without a role. The page
+            ' therefore asks for one, which no column on the table could have told the field picker
+            ' - a role lives in FW_EmployeeRoles. Special-cased the same way the address block and
+            ' the password already are.
+            page.CarriesLogin = String.Equals(tableName.Trim(), "FW_Employees", StringComparison.OrdinalIgnoreCase)
+
+            ' Which fields are dates, from the schema rather than from their names. A date column
+            ' used to get a plain text box - which is how an empty Termination Date reached a
+            ' datetime parameter as "" and failed the save naming no field at all.
+            '
+            ' A lookup wins: a foreign key that happens to point at a date table is still a choice
+            ' from a list, and a computed date is never typed into.
+            Dim dateKinds = DataAccess.GetDateColumnKinds(tableName)
+            Dim nullableColumns = DataAccess.GetNullableColumnNames(tableName)
+            page.DateKinds = dateKinds
+            page.NullableColumns = nullableColumns
+            page.DateFields = fields.Where(Function(field) dateKinds.ContainsKey(field) AndAlso
+                                                           Not IsLookupField(field, lookupFields) AndAlso
+                                                           Not computedColumns.Contains(field)).ToList()
+
+            ' A bit column is a yes or a no, and it gets a check box. As a text box it asked
+            ' somebody to type True and would accept anything.
+            Dim bitColumns = DataAccess.GetBitColumnNames(tableName)
+            page.BitFields = fields.Where(Function(field) bitColumns.Contains(field) AndAlso
+                                                          Not IsLookupField(field, lookupFields) AndAlso
+                                                          Not computedColumns.Contains(field)).ToList()
+
+            page.RightFields = If(columnTwoFields Is Nothing,
+                                  New List(Of String)(),
+                                  fields.Where(Function(field) columnTwoFields.Any(Function(item) String.Equals(item, field, StringComparison.OrdinalIgnoreCase))).ToList())
+            page.LeftFields = fields.Where(Function(field) Not page.RightFields.Contains(field)).ToList()
+            page.TwoColumns = page.RightFields.Count > 0
+            page.RowsDown = Math.Max(page.LeftFields.Count, page.RightFields.Count)
+
+            ' An address page gets the address behaviour the framework already has, without anybody
+            ' remembering to ask for it: Smarty type-ahead on the street line, and the Zip Coder
+            ' button beside Zip for when Smarty is switched off.
+            page.AddressField = MatchField(fields, "Address1", "Address", "StreetAddress", "Street")
+            page.CityField = MatchField(fields, "City")
+            page.StateField = MatchField(fields, "State", "StateCode", "StateAbbrev")
+            page.ZipField = MatchField(fields, "Zip", "ZipCode", "PostalCode")
+
+            Dim hasCityStateZip = page.CityField <> String.Empty AndAlso page.StateField <> String.Empty AndAlso page.ZipField <> String.Empty
+            page.WantsZipCoder = hasCityStateZip AndAlso
+                                 Not IsLookupField(page.CityField, lookupFields) AndAlso
+                                 Not IsLookupField(page.StateField, lookupFields) AndAlso
+                                 Not IsLookupField(page.ZipField, lookupFields)
+            page.WantsSmarty = page.WantsZipCoder AndAlso page.AddressField <> String.Empty AndAlso Not IsLookupField(page.AddressField, lookupFields)
+
+            ' The Zip Coder button sits past the right edge of the Zip box, so whichever column
+            ' holds Zip needs the room: between the two columns, or past the edge of the form.
+            page.ZipOnTheRight = page.WantsZipCoder AndAlso page.RightFields.Any(Function(field) String.Equals(field, page.ZipField, StringComparison.OrdinalIgnoreCase))
+            page.ColumnTwoLeft = MaintenanceLayout.ColumnTwoLeft(page.WantsZipCoder, page.ZipOnTheRight)
+
+            ' Room below the fields for whatever the page's own file puts there. An employee page
+            ' hosts the role selector; every other page leaves it empty and costs nothing, because
+            ' the generator cannot know what a companion will add and a page that has to resize
+            ' itself afterwards flickers on every open.
+            page.ExtraBelowFields = If(page.CarriesLogin, EmployeeRolesSelector.PanelHeight + 16, 0)
+
+            page.Width = MaintenanceLayout.PageWidth(page.TwoColumns, page.ColumnTwoLeft, page.ZipOnTheRight)
+            page.Height = MaintenanceLayout.PageHeight(page.RowsDown, page.ExtraBelowFields)
+            page.FieldsBottom = MaintenanceLayout.FieldsBottom(page.RowsDown)
+
+            If page.CarriesLogin Then
+                ' Exactly where FW_Employees_U puts the selector in OnFieldsBuilt, so an outline
+                ' in the preview sits over the space the real thing will occupy.
+                page.ReservedTop = page.FieldsBottom + 8
+                page.ReservedLeft = EmployeeRolesSelector.CenteredLeft(page.Width)
+                page.ReservedWidth = EmployeeRolesSelector.PanelWidth
+                page.ReservedHeight = EmployeeRolesSelector.PanelHeight
+                page.ReservedCaption = "Roles selector - built by hand in the page's own file"
+            End If
+
+            page.Fields.AddRange(PlaceMaintenanceFields(page.LeftFields,
+                                                        If(page.TwoColumns, page.RightFields, New List(Of String)()),
+                                                        page.ColumnTwoLeft,
+                                                        requiredFields,
+                                                        computedColumns,
+                                                        lookupFields,
+                                                        page.DateFields,
+                                                        page.BitFields,
+                                                        dateKinds,
+                                                        nullableColumns))
+
+            Return page
+        End Function
+
         Private Shared Function PlaceMaintenanceFields(leftFields As List(Of String),
                                                        rightFields As List(Of String),
                                                        columnTwoLeft As Integer,
@@ -2032,42 +2211,25 @@ Namespace SDC.Framework
             Return placed
         End Function
         Private Shared Function BuildMaintenanceSource(pageName As String, tableName As String, primaryKey As String, fields As List(Of String), requiredFields As List(Of String), lookupFields As List(Of LookupFieldSpec), Optional columnTwoFields As List(Of String) = Nothing) As String
-            Dim computedColumns = DataAccess.GetComputedColumnNames(tableName)
-            Dim computedOnPage = fields.Where(Function(field) computedColumns.Contains(field)).ToList()
+            Dim page = PlaceMaintenancePage(tableName, fields, requiredFields, lookupFields, columnTwoFields)
 
-            ' Which fields are dates, from the schema rather than from their names. A date column
-            ' used to get a plain text box - which is how an empty Termination Date reached a
-            ' datetime parameter as "" and failed the save naming no field at all.
-            '
-            ' A lookup wins: a foreign key that happens to point at a date table is still a
-            ' choice from a list, and a computed date is never typed into.
-            ' The employee table carries a login, and a login is useless without a role. The
-            ' page therefore asks for one, which no column on the table could have told the
-            ' field picker - a role lives in FW_EmployeeRoles. Special-cased the same way the
-            ' address block and the password already are.
-            Dim carriesLogin = String.Equals(tableName.Trim(), "FW_Employees", StringComparison.OrdinalIgnoreCase)
-
-            Dim dateKinds = DataAccess.GetDateColumnKinds(tableName)
-            Dim nullableColumns = DataAccess.GetNullableColumnNames(tableName)
-            Dim dateFields = fields.Where(Function(field) dateKinds.ContainsKey(field) AndAlso
-                                                          Not IsLookupField(field, lookupFields) AndAlso
-                                                          Not computedColumns.Contains(field)).ToList()
-
-            ' A bit column is a yes or a no, and it gets a check box. As a text box it asked
-            ' somebody to type True and would accept anything.
-            Dim bitColumns = DataAccess.GetBitColumnNames(tableName)
-            Dim bitFields = fields.Where(Function(field) bitColumns.Contains(field) AndAlso
-                                                         Not IsLookupField(field, lookupFields) AndAlso
-                                                         Not computedColumns.Contains(field)).ToList()
-            ' Worked out before anything is written, because the class needs to declare where its
-            ' fields stop and that is a field declaration - it cannot wait for the layout section
-            ' further down.
-            Dim rightFields = If(columnTwoFields Is Nothing,
-                                 New List(Of String)(),
-                                 fields.Where(Function(field) columnTwoFields.Any(Function(item) String.Equals(item, field, StringComparison.OrdinalIgnoreCase))).ToList())
-            Dim leftFields = fields.Where(Function(field) Not rightFields.Contains(field)).ToList()
-            Dim twoColumns = rightFields.Count > 0
-            Dim rowsDown = Math.Max(leftFields.Count, rightFields.Count)
+            
+' Named locals for what the placement decided, so the emission below reads as it did
+            
+' when it worked these out for itself. It no longer does: one answer, two readers -
+            
+' this, and the layout preview.
+            Dim computedColumns = page.ComputedColumns
+            Dim computedOnPage = page.ComputedOnPage
+            Dim carriesLogin = page.CarriesLogin
+            Dim dateKinds = page.DateKinds
+            Dim nullableColumns = page.NullableColumns
+            Dim dateFields = page.DateFields
+            Dim bitFields = page.BitFields
+            Dim rightFields = page.RightFields
+            Dim leftFields = page.LeftFields
+            Dim twoColumns = page.TwoColumns
+            Dim rowsDown = page.RowsDown
 
             Dim output As New StringBuilder()
             output.AppendLine("' <auto-generated>")
@@ -2099,25 +2261,18 @@ Namespace SDC.Framework
             ' rather than guessed: the companion cannot work it out without knowing the column
             ' split, and a hard-coded number in that file would be wrong the moment a field is
             ' added - the exact drift the split exists to prevent.
-            output.AppendLine("        Protected ReadOnly GeneratedFieldsBottom As Integer = " & (MaintenanceLayout.FirstRow + rowsDown * MaintenanceLayout.RowPitch).ToString())
+            output.AppendLine("        Protected ReadOnly GeneratedFieldsBottom As Integer = " & page.FieldsBottom.ToString())
             output.AppendLine("        Private record As DataRow")
             output.AppendLine("        Private ReadOnly formBindingSource As New BindingSource()")
             output.AppendLine("        Private originalRowVersion As Byte()")
 
-            ' An address page gets the address behaviour the framework already has, without anybody
-            ' remembering to ask for it: Smarty type-ahead on the street line, and the Zip Coder
-            ' button beside Zip for when Smarty is switched off. Both exist as controllers and are
-            ' wired exactly as Registration_U wires them.
-            Dim addressField = MatchField(fields, "Address1", "Address", "StreetAddress", "Street")
-            Dim cityField = MatchField(fields, "City")
-            Dim stateField = MatchField(fields, "State", "StateCode", "StateAbbrev")
-            Dim zipField = MatchField(fields, "Zip", "ZipCode", "PostalCode")
-            Dim hasCityStateZip = cityField <> String.Empty AndAlso stateField <> String.Empty AndAlso zipField <> String.Empty
-            Dim wantsZipCoder = hasCityStateZip AndAlso
-                                Not IsLookupField(cityField, lookupFields) AndAlso
-                                Not IsLookupField(stateField, lookupFields) AndAlso
-                                Not IsLookupField(zipField, lookupFields)
-            Dim wantsSmarty = wantsZipCoder AndAlso addressField <> String.Empty AndAlso Not IsLookupField(addressField, lookupFields)
+            ' The address controllers the page will wire, decided with the rest of the layout.
+            Dim addressField = page.AddressField
+            Dim cityField = page.CityField
+            Dim stateField = page.StateField
+            Dim zipField = page.ZipField
+            Dim wantsZipCoder = page.WantsZipCoder
+            Dim wantsSmarty = page.WantsSmarty
 
             If wantsZipCoder Then
                 output.AppendLine("        Private zipCoderController As ZipCoderController")
@@ -2154,37 +2309,18 @@ Namespace SDC.Framework
             '
             ' Each column reads the same field list in the same order, so the page runs down the
             ' left and then down the right, and the tab order is that same sequence. There is no
-            ' second ordering to keep in step with the first.
-            ' A column is the label (120), the gap to its control (10) and the control (320).
-            Const ColumnWidth As Integer = MaintenanceLayout.ColumnWidth
-            ' The Zip Coder button sits past the right edge of the Zip box, so whichever column
-            ' holds Zip needs the room: between the two columns, or past the edge of the form.
-            Dim zipOnTheRight = wantsZipCoder AndAlso rightFields.Any(Function(field) String.Equals(field, zipField, StringComparison.OrdinalIgnoreCase))
-            Dim columnTwoLeft = MaintenanceLayout.ColumnLeft + ColumnWidth + If(wantsZipCoder AndAlso Not zipOnTheRight, MaintenanceLayout.ZipColumnGap, MaintenanceLayout.PlainColumnGap)
-            Dim formWidth = If(twoColumns, columnTwoLeft + ColumnWidth + If(zipOnTheRight, 140, 30), 600)
-            ' Room below the fields for whatever the page's own file puts there. An employee
-            ' page hosts the role selector; every other page leaves it empty and costs nothing,
-            ' because the generator cannot know what a companion will add and a page that has to
-            ' resize itself afterwards flickers on every open.
-            Dim extraBelowFields = If(carriesLogin, EmployeeRolesSelector.PanelHeight + 16, 0)
+            Dim columnTwoLeft = page.ColumnTwoLeft
+            Dim formWidth = page.Width
+            Dim extraBelowFields = page.ExtraBelowFields
 
-            output.AppendLine("            ClientSize = New Size(" & formWidth.ToString() & ", " & (Math.Max(120, 55 + rowsDown * MaintenanceLayout.RowPitch) + extraBelowFields).ToString() & ")")
+            output.AppendLine("            ClientSize = New Size(" & formWidth.ToString() & ", " & page.Height.ToString() & ")")
             output.AppendLine("            okButton.Location = New Point(ClientSize.Width - 270, ClientSize.Height - 46)")
             output.AppendLine("            cancelActionButton.Location = New Point(ClientSize.Width - 135, ClientSize.Height - 46)")
 
             ' Where every control goes, decided before a line of source is written. The loop below
             ' turns that list into calls and does nothing else, which is what lets a layout preview
             ' draw the same page without generating it.
-            Dim placedFields = PlaceMaintenanceFields(leftFields,
-                                                      If(twoColumns, rightFields, New List(Of String)()),
-                                                      columnTwoLeft,
-                                                      requiredFields,
-                                                      computedColumns,
-                                                      lookupFields,
-                                                      dateFields,
-                                                      bitFields,
-                                                      dateKinds,
-                                                      nullableColumns)
+            Dim placedFields = page.Fields
 
             For Each placement In placedFields
                 Select Case placement.Kind
@@ -2494,7 +2630,8 @@ Namespace SDC.Framework
         ''' documented in new-page-request-manual.md:
         '''     ManagerID -&gt; FW_Users.UserID displayed as FirstLast
         ''' </summary>
-        Private Class LookupFieldSpec
+        ''' <summary>A lookup a field is drawn from. Friend, not Private: the layout preview takes the same specs the emitter does.</summary>
+        Friend Class LookupFieldSpec
             Public Property FieldName As String
             Public Property LookupTable As String
             Public Property ValueColumn As String

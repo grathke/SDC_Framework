@@ -145,5 +145,48 @@ Namespace SDC.Framework
             Return String.Empty
         End Function
 
+        ''' <summary>A page with one column is this wide whatever it holds.</summary>
+        Public Const SingleColumnPageWidth As Integer = 600
+
+        ''' <summary>Room past the right column for the Zip Coder button when Zip is over there.</summary>
+        Public Const ZipButtonMargin As Integer = 140
+
+        ''' <summary>Room past the right column otherwise.</summary>
+        Public Const PageMargin As Integer = 30
+
+        ''' <summary>A page is never shorter than this, however few fields it has.</summary>
+        Public Const MinimumPageHeight As Integer = 120
+
+        ''' <summary>The band below the fields that holds OK and Cancel.</summary>
+        Public Const ButtonRowHeight As Integer = 55
+
+        ''' <summary>
+        ''' Where the second column starts. Wider apart when column one holds Zip, because the Zip
+        ''' Coder button sits past the right edge of that box and needs somewhere to be.
+        ''' </summary>
+        Public Function ColumnTwoLeft(wantsZipCoder As Boolean, zipOnTheRight As Boolean) As Integer
+            Return ColumnLeft + ColumnWidth + If(wantsZipCoder AndAlso Not zipOnTheRight, ZipColumnGap, PlainColumnGap)
+        End Function
+
+        ''' <summary>How wide the page is.</summary>
+        Public Function PageWidth(twoColumns As Boolean, columnTwoLeft As Integer, zipOnTheRight As Boolean) As Integer
+            If Not twoColumns Then Return SingleColumnPageWidth
+            Return columnTwoLeft + ColumnWidth + If(zipOnTheRight, ZipButtonMargin, PageMargin)
+        End Function
+
+        ''' <summary>
+        ''' How tall the page is, before the caption shift. A companion that hosts something under
+        ''' the fields asks for the room through extraBelowFields - the generator cannot know what
+        ''' a companion will add, and a page that resizes itself afterwards flickers on every open.
+        ''' </summary>
+        Public Function PageHeight(rowsDown As Integer, extraBelowFields As Integer) As Integer
+            Return Math.Max(MinimumPageHeight, ButtonRowHeight + rowsDown * RowPitch) + extraBelowFields
+        End Function
+
+        ''' <summary>Where the generated fields stop, for whatever a companion puts underneath.</summary>
+        Public Function FieldsBottom(rowsDown As Integer) As Integer
+            Return FirstRow + rowsDown * RowPitch
+        End Function
+
     End Module
 End Namespace
