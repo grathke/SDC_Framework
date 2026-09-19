@@ -2899,9 +2899,38 @@ Namespace SDC.Framework
             If selectedPosition < 0 OrElse targetPosition < 0 OrElse targetPosition >= includedFields.Count Then Return
 
             Dim targetField = includedFields(targetPosition)
+
+            ' The two trade columns as well as places.
+            '
+            ' Within a column that is a no-op. Across the boundary it is the whole point: the last
+            ' field of column one and the first of column two swap, so the moved field arrives in
+            ' the other column and the one it displaced comes back - which is what crossing a
+            ' boundary means, and the only thing Move Up could do that was not a dead press when
+            ' the neighbour was in the other column.
+            '
+            ' It also keeps membership contiguous by construction. The boundary is an index in this
+            ' list, and swapping across it never moves that index - so there is no arrangement where
+            ' a column two field sits above a column one field, and the page cannot be given a split
+            ' nobody chose.
+            Dim selectedColumnValue = Convert.ToString(grid.Rows(selectedIndex).Cells("Column").Value)
+            Dim targetRow = grid.Rows.Cast(Of DataGridViewRow)().
+                FirstOrDefault(Function(row) String.Equals(Convert.ToString(row.Cells("FieldName").Value), targetField, StringComparison.OrdinalIgnoreCase))
+            Dim targetColumnValue = If(targetRow Is Nothing, selectedColumnValue, Convert.ToString(targetRow.Cells("Column").Value))
+
             includedFields(targetPosition) = selectedField
             includedFields(selectedPosition) = targetField
             OrderSelectionGrid(grid, String.Join(", ", includedFields))
+
+            For Each row As DataGridViewRow In grid.Rows
+                Dim name = Convert.ToString(row.Cells("FieldName").Value)
+                If String.Equals(name, selectedField, StringComparison.OrdinalIgnoreCase) Then
+                    row.Cells("Column").Value = targetColumnValue
+                    ApplyColumnTint(row)
+                ElseIf String.Equals(name, targetField, StringComparison.OrdinalIgnoreCase) Then
+                    row.Cells("Column").Value = selectedColumnValue
+                    ApplyColumnTint(row)
+                End If
+            Next
 
             ' After the reorder, never before: the column is read from where the row has landed.
             ApplyPlaceholderColumnFromNeighbour(grid, selectedField)
@@ -2920,10 +2949,16 @@ Namespace SDC.Framework
         ''' A placeholder takes the column of the field it was dropped beside.
         '''
         ''' Grid order and the Column cell answer two different questions - where a row sits within
-        ''' its column, and which column that is - and for a field the answer to the second is
-        ''' deliberate. For a blank line it is not: nobody moves a divider under Termination Date
-        ''' meaning to put it at the foot of the other column, which is exactly what happened on
-        ''' 2026-09-15 and read as the feature being broken.
+        ''' its column, and which column that is. For a blank line the second is never deliberate:
+        ''' nobody moves a divider under Termination Date meaning to put it at the foot of the other
+        ''' column, which is exactly what happened on 2026-09-15 and read as the feature being
+        ''' broken.
+        '''
+        ''' A field used to be the opposite - its column was a deliberate answer that a move left
+        ''' alone. That changed on 2026-09-19: moving a field across the boundary now swaps its
+        ''' column with the field it displaced, so crossing is how a field changes column and
+        ''' membership stays contiguous. This still runs, because a placeholder is not a field and
+        ''' has nothing to swap with.
         '''
         ''' The cell stays editable, and an explicit answer holds until the row is moved again.
         ''' Moving it is the gesture that re-asks the question.

@@ -114,10 +114,24 @@ such a control stops a page saving. Here it is an expected state: a row saved fo
 the request but not yet generated simply waits for it.
 ### How a field is repositioned
 
-*Settled 2026-09-19. Not built.*
+*Settled and built 2026-09-19.*
 
-**Two buttons, not dragging.** Select a field in the preview; `Up` and `Down` move it one row and
-displace what is there.
+**Built 2026-09-19, and it needed nothing new.** The tool already existed: the maintenance grid in
+the field picker has `Move Up`, `Move Down` and a `Column` cell per field, so the order and the
+split were always editable — you change them there and press Preview to see the result.
+
+What was missing was only that crossing the boundary did nothing. `Move Up` moved one place in the
+whole included list, so when the neighbour belonged to the other column the button appeared dead,
+which on a two-column page is most presses. Now the two fields **trade columns as well as places**:
+within a column that is a no-op, across the boundary it is the crossing, and because the boundary is
+an index that never moves, membership stays contiguous by construction.
+
+Nothing goes on the preview. Buttons there would have added directness, not capability, and a third
+surface that reorders is how the three drift apart. Everything below stands as the reasoning for
+why, and is kept because the conclusion was reached twice from opposite ends.
+
+**Two buttons, not dragging.** Select a field; `Up` and `Down` move it one row and displace what is
+there.
 
 Dragging was the obvious idea and is the wrong one here. The delivery rules prefer discrete events
 over continuous pointer sampling — a button click always arrives, mouse movement is coalesced and
