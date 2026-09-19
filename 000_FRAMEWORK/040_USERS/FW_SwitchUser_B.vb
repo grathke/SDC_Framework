@@ -152,10 +152,20 @@ Namespace SDC.Framework
         '''
         ''' The permission this page needs is therefore Read, and QBE to search with. Nothing else.
         '''
+        ''' Double-click works again as of 2026-09-19, through DoubleClickCommandButton rather than
+        ''' by borrowing a command this page does not want: the gesture now invokes Read, which is
+        ''' "Switch To" here. The original objection was to the Update permission, never to the
+        ''' gesture.
+        '''
         ''' The selected row is identified by the PK alias, which this page's SQL aliases from
         ''' SwitchUserID - the snapshot row, not the login. PK is the row's identity to the
         ''' framework, so it is the table's own key; the login it stands for is read from it.
         ''' </summary>
+        ''' <summary>Double-clicking somebody means switching to them.</summary>
+        Protected Overrides Function DoubleClickCommandButton() As Button
+            Return readButton
+        End Function
+
         Protected Overrides Function HandleCustomReadAction() As Boolean
             Dim selected = GetSelectedRecordIdForCustomAction()
             If Not selected.HasValue OrElse selected.Value <= 0 Then

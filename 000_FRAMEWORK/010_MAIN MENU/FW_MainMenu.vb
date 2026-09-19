@@ -161,7 +161,6 @@ Namespace SDC.Framework
         Private ReadOnly ribbonPanel As Panel
         Private ReadOnly leftActionsFlow As FlowLayoutPanel
         Private ReadOnly rightPinnedActionsPanel As FlowLayoutPanel
-        Private ReadOnly headingLabel As Label
         Private ReadOnly timeZoneOverrideCombo As ComboBox
         Private ReadOnly timeZoneOverrideCaption As Label
         Private ReadOnly welcomeLabel As Label
@@ -329,6 +328,31 @@ Namespace SDC.Framework
         ''' has would be a second formatter in all but name, and would still be wrong for the first
         ''' product whose initials run to four.
         ''' </summary>
+        ''' <summary>
+        ''' What the title band says: the application, then the registration in capitals -
+        ''' "City Nexus: DEVELOPMENT TEAM".
+        '''
+        ''' Everybody, not only an App Admin. It was App Admin only for an afternoon, on the
+        ''' argument that a company knows who it is; the band is where it belongs and there it costs
+        ''' nothing, so the distinction bought complexity and no clarity. It also removed the
+        ''' registration at the worst moment - IsApplicationAdmin reads the session's role, and while
+        ''' viewing as somebody else that is their role, so switching made it vanish.
+        '''
+        ''' Rebuilt after a Switch User, because switching can move you to another registration and
+        ''' the band would otherwise still name the one signed in under.
+        ''' </summary>
+        Private Shared Function BuildTitleBandText() As String
+            Dim application = ResolveApplicationTitle()
+
+            Dim session = SessionState.Current
+            If Not session.HasValue Then Return application
+
+            Dim registrationName = If(String.IsNullOrWhiteSpace(session.Value.RegistrationName),
+                                      "DEVELOPMENT TEAM",
+                                      session.Value.RegistrationName)
+
+            Return application & ": " & registrationName.Trim().ToUpperInvariant()
+        End Function
         Private Shared Function ResolveApplicationTitle() As String
             Dim name = Application.ProductName
             If String.IsNullOrWhiteSpace(name) Then
@@ -445,7 +469,7 @@ Namespace SDC.Framework
                 .Location = New Point(8, 6),
                 .Size = New Size(Me.ClientSize.Width - 16, TitleBandHeight - 10),
                 .Anchor = AnchorStyles.Top Or AnchorStyles.Left Or AnchorStyles.Right,
-                .Text = ResolveApplicationTitle(),
+                .Text = BuildTitleBandText(),
                 .TextAlign = ContentAlignment.MiddleCenter,
                 .Font = New Font("Segoe UI", 18.0F, FontStyle.Regular),
                 .ForeColor = Color.FromArgb(52, 60, 70),
@@ -515,24 +539,6 @@ Namespace SDC.Framework
                 End If
             End If
 
-            ' The registration, down beside the zoom read-out and only for an App Admin.
-            '
-            ' It was 20pt bold under the ribbon, which made it the loudest thing on a page whose
-            ' subject is the menu - and it told an ordinary user something their own company
-            ' already knows. An App Admin is the exception: they move between registrations, and
-            ' this is the only thing on screen that says which one they are in. Same size and grey
-            ' as the zoom read-out it sits with, because both answer "where am I" rather than
-            ' asking to be read.
-            headingLabel = New Label() With {
-                .AutoSize = True,
-                .Location = New Point(12, Me.ClientSize.Height - 22),
-                .Anchor = AnchorStyles.Bottom Or AnchorStyles.Left,
-                .Text = registrationNameForHeader & " (" & registrationIdForHeader.ToString() & ")",
-                .Font = New Font("Segoe UI", 8.0F, FontStyle.Regular),
-                .ForeColor = Color.Gray,
-                .Visible = SessionState.IsApplicationAdmin
-            }
-
             ' A session-only time zone, on the registration name's baseline and under the pinned
             ' row. Nothing is stored: it exists for somebody working away from their usual zone,
             ' and signing in again returns to the employee's or the registration's.
@@ -575,9 +581,8 @@ Namespace SDC.Framework
             ' as the window narrows. It still carries the Viewing As notice and its red flash,
             ' which is why this label moved rather than being replaced: that signal has to survive.
             welcomeLabel = New Label() With {
-                .AutoSize = False,
-                .Location = New Point(12, 10),
-                .Size = New Size(460, 26),
+                .AutoSize = True,
+                .Location = New Point(12, 12),
                 .Anchor = AnchorStyles.Top Or AnchorStyles.Left,
                 .TextAlign = ContentAlignment.MiddleLeft,
                 .Font = New Font("Segoe UI", 14.0F, FontStyle.Regular),
@@ -730,7 +735,6 @@ Namespace SDC.Framework
             ribbonPanel.Controls.Add(rightPinnedActionsPanel)
 
             Me.Controls.Add(ribbonPanel)
-            Me.Controls.Add(headingLabel)
             Me.Controls.Add(timeZoneOverrideCaption)
             Me.Controls.Add(timeZoneOverrideCombo)
             timeZoneOverrideCaption.BringToFront()
@@ -772,9 +776,7 @@ Namespace SDC.Framework
             AddHandler Me.Load,
                 Sub(sender, e)
                     PageZoom.Attach(Me)
-                    PlaceRegistrationAfterZoom()
                 End Sub
-            AddHandler Me.ClientSizeChanged, Sub(sender, e) PlaceRegistrationAfterZoom()
 
             AddHandler Me.Shown,
                 Sub(sender, e)
@@ -788,29 +790,11 @@ Namespace SDC.Framework
         End Sub
 
         ''' <summary>
-        ''' Puts the registration on the same line as the zoom read-out, just after it.
-        '''
-        ''' Aligned to that label rather than to a guessed offset: PageZoom owns where it sits and
-        ''' moves it whenever the window resizes, so anything placed by arithmetic here would drift
-        ''' the first time somebody dragged an edge. Re-run on resize for the same reason.
-        ''' </summary>
-        Private Sub PlaceRegistrationAfterZoom()
-            If headingLabel Is Nothing OrElse headingLabel.IsDisposed Then Return
-
-            Dim found = Me.Controls.Find("Label_ZoomLevel", False)
-            If found.Length = 0 Then Return
-
-            Dim zoom = found(0)
-            headingLabel.Location = New Point(zoom.Right + 24, zoom.Top)
-            headingLabel.BringToFront()
-        End Sub
-        ''' <summary>
         ''' Ends the time zone combo exactly where the ribbon panel below it ends.
         '''
         ''' Measured from that panel rather than worked out from the window width. The arithmetic
         ''' agreed on paper and did not on screen, and a number that has to match another control
-        ''' should be taken from that control - the same reason the registration is placed from the
-        ''' zoom read-out rather than from an offset.
+        ''' should be taken from that control.
         ''' </summary>
         Private Sub AlignTimeZoneToRibbon()
             If ribbonPanel Is Nothing OrElse timeZoneOverrideCombo Is Nothing OrElse timeZoneOverrideCaption Is Nothing Then Return
@@ -818,6 +802,20 @@ Namespace SDC.Framework
 
             timeZoneOverrideCombo.Left = ribbonPanel.Right - timeZoneOverrideCombo.Width
             timeZoneOverrideCaption.Left = timeZoneOverrideCombo.Left - timeZoneOverrideCaption.Width - 8
+
+            ' The title takes what is left between the greeting and the time zone, and centres in
+            ' that rather than in the whole band. Centred across the full width it began under the
+            ' greeting - which is opaque - and lost its first characters the moment the registration
+            ' made it longer. Measured from the two neighbours, so it cannot collide with either
+            ' whatever the names turn out to be.
+            If titleLabel IsNot Nothing AndAlso welcomeLabel IsNot Nothing Then
+                Dim left = welcomeLabel.Right + 16
+                Dim right = timeZoneOverrideCaption.Left - 16
+                If right > left Then
+                    titleLabel.Location = New Point(left, titleLabel.Top)
+                    titleLabel.Size = New Size(right - left, titleLabel.Height)
+                End If
+            End If
         End Sub
         Private Sub UpdateRoleSelectionTile()
             Dim session = SessionState.Current
@@ -2461,11 +2459,8 @@ Namespace SDC.Framework
             Dim session = SessionState.Current
             If Not session.HasValue Then Return
 
-            If headingLabel IsNot Nothing Then
-                Dim registrationName = If(String.IsNullOrWhiteSpace(session.Value.RegistrationName), "DEVELOPMENT TEAM", session.Value.RegistrationName)
-                headingLabel.Text = registrationName & " (" & session.Value.RegistrationID.ToString() & ")"
-                headingLabel.Visible = SessionState.IsApplicationAdmin
-                headingLabel.Visible = SessionState.IsApplicationAdmin
+            If titleLabel IsNot Nothing Then
+                titleLabel.Text = BuildTitleBandText()
             End If
 
             If welcomeLabel IsNot Nothing Then
@@ -2473,6 +2468,11 @@ Namespace SDC.Framework
                 welcomeLabel.Text = "Welcome, " & welcomeName &
                                     If(SwitchedUser.IsActive, "  -  Viewing As This User", String.Empty)
             End If
+
+            ' Last, after both texts are set. The greeting sizes to its own text and the title is
+            ' measured from where the greeting ends, so aligning before the new name is in place
+            ' measures the old one and leaves the title where it was.
+            AlignTimeZoneToRibbon()
         End Sub
 
         ''' <summary>

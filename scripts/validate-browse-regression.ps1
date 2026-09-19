@@ -212,7 +212,17 @@ foreach ($page in $standardUpdatePages) {
 Assert-Pattern -Path ".\000_FRAMEWORK\500_INFRASTRUCTURE\Data\DataAccess.vb" -Pattern "Public Shared Function UpsertPageRecord" -Description "Data layer persists missing browse SQL records"
 Assert-Pattern -Path ".\000_FRAMEWORK\000_BASE CLASSES\FW_Base_B.vb" -Pattern "UpsertPageRecord" -Description "Base browse persists generated fallback SQL"
 Assert-Pattern -Path ".\000_FRAMEWORK\000_BASE CLASSES\FW_Base_B.vb" -Pattern "EnsureDefaultLayoutExists(registrationId)" -Description "Base browse ensures a shared default layout after the first successful grid load"
-Assert-Pattern -Path ".\000_FRAMEWORK\000_BASE CLASSES\FW_Base_B.vb" -Pattern "updateButton.PerformClick()" -Description "Base browse double-click invokes the visible Modify button"
+# Double-click invokes a command button rather than repeating what it does - still the contract, and
+# still checked. It is no longer always the Modify button: a page whose point is something else says
+# so by overriding DoubleClickCommandButton, which Switch User does. So the check is that the gesture
+# performs a click on the command, and that the default command is Modify.
+Assert-Pattern -Path ".\000_FRAMEWORK\000_BASE CLASSES\FW_Base_B.vb" -Pattern "command.PerformClick()" -Description "Base browse double-click invokes a visible command button"
+Assert-Pattern -Path ".\000_FRAMEWORK\000_BASE CLASSES\FW_Base_B.vb" -Pattern "Protected Overridable Function DoubleClickCommandButton() As Button" -Description "The double-click command is nameable by a page"
+Assert-Block -Path ".\000_FRAMEWORK\000_BASE CLASSES\FW_Base_B.vb" -Block @"
+        Protected Overridable Function DoubleClickCommandButton() As Button
+            Return updateButton
+        End Function
+"@ -Description "Base browse double-click still defaults to the Modify button"
 Assert-Pattern -Path ".\000_FRAMEWORK\060_ROLES\Roles_B.vb" -Pattern "modifyButton.PerformClick()" -Description "Roles double-click invokes its visible Modify button"
 Assert-Pattern -Path ".\000_FRAMEWORK\000_BASE CLASSES\FW_Base_B.vb" -Pattern "If Not layoutChanged AndAlso Not String.IsNullOrWhiteSpace(existingLastUsed) Then" -Description "Base browse does not rewrite Last Used without a user layout change"
 Assert-Pattern -Path ".\000_FRAMEWORK\000_BASE CLASSES\FW_Base_B.vb" -Pattern '"LastUsed",' -Description "Base browse upserts Last Used when the grid JSON changed"

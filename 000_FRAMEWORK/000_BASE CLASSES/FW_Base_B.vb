@@ -36,7 +36,7 @@ Namespace SDC.Framework
         Private ReadOnly browseGrid As DataGridView
         Private ReadOnly createButton As Button
         Private ReadOnly restoreButton As Button
-        Private ReadOnly readButton As Button
+        Protected ReadOnly readButton As Button
         Private ReadOnly updateButton As Button
         Private ReadOnly deleteButton As Button
         Private ReadOnly toggleQbeButton As Button
@@ -5037,10 +5037,26 @@ Namespace SDC.Framework
             browseGrid.Rows(e.RowIndex).Selected = True
             browseGrid.CurrentCell = browseGrid.Rows(e.RowIndex).Cells(e.ColumnIndex)
 
-            If updateButton.Visible AndAlso updateButton.Enabled Then
-                updateButton.PerformClick()
+            Dim command = DoubleClickCommandButton()
+            If command IsNot Nothing AndAlso command.Visible AndAlso command.Enabled Then
+                command.PerformClick()
             End If
         End Sub
+
+        ''' <summary>
+        ''' The command a double-click performs. Update for an ordinary browse page, because
+        ''' double-clicking a record means opening it.
+        '''
+        ''' A page whose point is something else says so by overriding this, rather than growing a
+        ''' second path that repeats the permission check, the selection and the open. Switch User
+        ''' is the case: it has no maintenance page at all, its command is Read - captioned "Switch
+        ''' To" - and double-clicking somebody plainly means switching to them. It used to borrow
+        ''' the Update command purely so this gesture worked, which put an Update permission on a
+        ''' table nothing updates and misdescribed the page to whoever granted it.
+        ''' </summary>
+        Protected Overridable Function DoubleClickCommandButton() As Button
+            Return updateButton
+        End Function
 
         Private Sub SaveQbeButton_Click(sender As Object, e As EventArgs)
             Dim activeSession = SessionState.Current
