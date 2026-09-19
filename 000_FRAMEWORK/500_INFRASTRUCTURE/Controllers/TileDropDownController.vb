@@ -49,6 +49,18 @@ Namespace SDC.Framework
         ''' </summary>
         Private ReadOnly menusByTile As New Dictionary(Of Control, ContextMenuStrip)()
 
+        ''' <summary>
+        ''' Raised when a tile menu opens and again when it closes, including the pointer-away
+        ''' close, so a shell can quieten whatever the menu drops over.
+        '''
+        ''' A notification, not a switch. This controller still decides how a menu opens and
+        ''' closes - a caller saying that is how two menus end up behaving differently for no
+        ''' reason anybody remembers - and a listener only gets told that it happened.
+        ''' </summary>
+        Public Event MenuOpened(tile As Control)
+
+        Public Event MenuClosed()
+
         Private openMenu As ContextMenuStrip
         Private openTile As Control
         Private pointerWatcher As Timer
@@ -96,6 +108,7 @@ Namespace SDC.Framework
             ' Anchored to the tile's bottom-left corner.
             menu.Show(tile, New Point(0, tile.Height))
             StartPointerWatcher()
+            RaiseEvent MenuOpened(tile)
         End Sub
 
         Private Function MenuFor(tile As Control,
@@ -130,6 +143,7 @@ Namespace SDC.Framework
                 openMenu = Nothing
                 openTile = Nothing
                 StopPointerWatcher()
+                RaiseEvent MenuClosed()
             End If
         End Sub
 

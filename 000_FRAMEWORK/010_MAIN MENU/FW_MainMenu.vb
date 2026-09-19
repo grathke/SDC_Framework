@@ -515,12 +515,22 @@ Namespace SDC.Framework
                 End If
             End If
 
+            ' The registration, down beside the zoom read-out and only for an App Admin.
+            '
+            ' It was 20pt bold under the ribbon, which made it the loudest thing on a page whose
+            ' subject is the menu - and it told an ordinary user something their own company
+            ' already knows. An App Admin is the exception: they move between registrations, and
+            ' this is the only thing on screen that says which one they are in. Same size and grey
+            ' as the zoom read-out it sits with, because both answer "where am I" rather than
+            ' asking to be read.
             headingLabel = New Label() With {
                 .AutoSize = True,
-                .Location = New Point(48, 158 + LayoutShift),
+                .Location = New Point(12, Me.ClientSize.Height - 22),
+                .Anchor = AnchorStyles.Bottom Or AnchorStyles.Left,
                 .Text = registrationNameForHeader & " (" & registrationIdForHeader.ToString() & ")",
-                .Font = New Font("Segoe UI", 20.0F, FontStyle.Bold),
-                .ForeColor = Color.FromArgb(24, 45, 78)
+                .Font = New Font("Segoe UI", 8.0F, FontStyle.Regular),
+                .ForeColor = Color.Gray,
+                .Visible = SessionState.IsApplicationAdmin
             }
 
             ' A session-only time zone, on the registration name's baseline and under the pinned
@@ -536,14 +546,14 @@ Namespace SDC.Framework
                 .Anchor = AnchorStyles.Top Or AnchorStyles.Right,
                 .ForeColor = Color.DimGray,
                 .Font = New Font("Segoe UI", 9.0F, FontStyle.Regular),
-                .Location = New Point(Me.ClientSize.Width - 380, 162 + LayoutShift)
+                .Location = New Point(Me.ClientSize.Width - 348, 16)
             }
 
             timeZoneOverrideCombo = New ComboBox() With {
                 .Name = "ComboBox_SessionTimeZone",
                 .DropDownStyle = ComboBoxStyle.DropDownList,
                 .Size = New Size(260, 26),
-                .Location = New Point(Me.ClientSize.Width - 300, 158 + LayoutShift),
+                .Location = New Point(Me.ClientSize.Width - 268, 12),
                 .Anchor = AnchorStyles.Top Or AnchorStyles.Right,
                 .Font = New Font("Segoe UI", 9.0F, FontStyle.Regular),
                 .TabStop = False
@@ -558,12 +568,21 @@ Namespace SDC.Framework
             ' AllowMessaging flag was the other candidate and was removed on 2026-09-15 - nothing
             ' ever read it, and two switches for one question is how they end up disagreeing.
 
+            ' Up in the title band beside the application name, and slightly smaller than it - the
+            ' application is what the window is, the person is who is in it.
+            '
+            ' Right aligned rather than centred, so it cannot collide with a long application name
+            ' as the window narrows. It still carries the Viewing As notice and its red flash,
+            ' which is why this label moved rather than being replaced: that signal has to survive.
             welcomeLabel = New Label() With {
                 .AutoSize = False,
-                .Location = New Point(52, 198 + LayoutShift),
-                .Size = New Size(540, 28),
-                .Font = New Font("Segoe UI", 12.0F, FontStyle.Regular),
-                .Text = "Welcome " & welcomeName & " (" & welcomeUserId.ToString() & ")"
+                .Location = New Point(12, 10),
+                .Size = New Size(460, 26),
+                .Anchor = AnchorStyles.Top Or AnchorStyles.Left,
+                .TextAlign = ContentAlignment.MiddleLeft,
+                .Font = New Font("Segoe UI", 14.0F, FontStyle.Regular),
+                .BackColor = Color.White,
+                .Text = "Welcome, " & welcomeName
             }
 
 
@@ -574,8 +593,8 @@ Namespace SDC.Framework
             ' further in on each side, which cost every region 32px of width for no reason anybody
             ' recorded, and showed up as white down both sides of the Home banner.
             contentHost = New Panel() With {
-                .Location = New Point(8, 236 + LayoutShift),
-                .Size = New Size(Me.ClientSize.Width - 16, Me.ClientSize.Height - 260 - LayoutShift),
+                .Location = New Point(8, 158 + LayoutShift),
+                .Size = New Size(Me.ClientSize.Width - 16, Me.ClientSize.Height - 182 - LayoutShift),
                 .Anchor = AnchorStyles.Top Or AnchorStyles.Left Or AnchorStyles.Right Or AnchorStyles.Bottom,
                 .BackColor = Color.White,
                 .Padding = New Padding(0),
@@ -716,6 +735,18 @@ Namespace SDC.Framework
             Me.Controls.Add(timeZoneOverrideCombo)
             timeZoneOverrideCaption.BringToFront()
             Me.Controls.Add(welcomeLabel)
+
+            ' The title label spans the whole band on an opaque white background and was added
+            ' first, so anything put in the band afterwards is behind it and invisible. These come
+            ' forward rather than the title being narrowed, because it is centred on the window and
+            ' narrowing it would move the centre.
+            welcomeLabel.BringToFront()
+            timeZoneOverrideCaption.BringToFront()
+            timeZoneOverrideCombo.BringToFront()
+
+            AlignTimeZoneToRibbon()
+            AddHandler Me.ClientSizeChanged, Sub(sender, e) AlignTimeZoneToRibbon()
+
             Me.Controls.Add(contentHost)
 
             ConfigureActionVisibility("application-settings", True, True)
@@ -738,7 +769,12 @@ Namespace SDC.Framework
             ' F9 larger, F10 smaller, F8 back to normal. On Load rather than Shown: a zoom applied
             ' after the window is up is seen to jump, and a remembered one has to be what the page
             ' opens as.
-            AddHandler Me.Load, Sub(sender, e) PageZoom.Attach(Me)
+            AddHandler Me.Load,
+                Sub(sender, e)
+                    PageZoom.Attach(Me)
+                    PlaceRegistrationAfterZoom()
+                End Sub
+            AddHandler Me.ClientSizeChanged, Sub(sender, e) PlaceRegistrationAfterZoom()
 
             AddHandler Me.Shown,
                 Sub(sender, e)
@@ -751,6 +787,38 @@ Namespace SDC.Framework
                 End Sub
         End Sub
 
+        ''' <summary>
+        ''' Puts the registration on the same line as the zoom read-out, just after it.
+        '''
+        ''' Aligned to that label rather than to a guessed offset: PageZoom owns where it sits and
+        ''' moves it whenever the window resizes, so anything placed by arithmetic here would drift
+        ''' the first time somebody dragged an edge. Re-run on resize for the same reason.
+        ''' </summary>
+        Private Sub PlaceRegistrationAfterZoom()
+            If headingLabel Is Nothing OrElse headingLabel.IsDisposed Then Return
+
+            Dim found = Me.Controls.Find("Label_ZoomLevel", False)
+            If found.Length = 0 Then Return
+
+            Dim zoom = found(0)
+            headingLabel.Location = New Point(zoom.Right + 24, zoom.Top)
+            headingLabel.BringToFront()
+        End Sub
+        ''' <summary>
+        ''' Ends the time zone combo exactly where the ribbon panel below it ends.
+        '''
+        ''' Measured from that panel rather than worked out from the window width. The arithmetic
+        ''' agreed on paper and did not on screen, and a number that has to match another control
+        ''' should be taken from that control - the same reason the registration is placed from the
+        ''' zoom read-out rather than from an offset.
+        ''' </summary>
+        Private Sub AlignTimeZoneToRibbon()
+            If ribbonPanel Is Nothing OrElse timeZoneOverrideCombo Is Nothing OrElse timeZoneOverrideCaption Is Nothing Then Return
+            If ribbonPanel.IsDisposed OrElse timeZoneOverrideCombo.IsDisposed Then Return
+
+            timeZoneOverrideCombo.Left = ribbonPanel.Right - timeZoneOverrideCombo.Width
+            timeZoneOverrideCaption.Left = timeZoneOverrideCombo.Left - timeZoneOverrideCaption.Width - 8
+        End Sub
         Private Sub UpdateRoleSelectionTile()
             Dim session = SessionState.Current
             Dim currentRoleName As String = "NO ROLE"
@@ -2396,11 +2464,13 @@ Namespace SDC.Framework
             If headingLabel IsNot Nothing Then
                 Dim registrationName = If(String.IsNullOrWhiteSpace(session.Value.RegistrationName), "DEVELOPMENT TEAM", session.Value.RegistrationName)
                 headingLabel.Text = registrationName & " (" & session.Value.RegistrationID.ToString() & ")"
+                headingLabel.Visible = SessionState.IsApplicationAdmin
+                headingLabel.Visible = SessionState.IsApplicationAdmin
             End If
 
             If welcomeLabel IsNot Nothing Then
                 Dim welcomeName = If(String.IsNullOrWhiteSpace(session.Value.FirstLast), currentUser.DisplayName, session.Value.FirstLast)
-                welcomeLabel.Text = "Welcome " & welcomeName & " (" & session.Value.UserID.ToString() & ")" &
+                welcomeLabel.Text = "Welcome, " & welcomeName &
                                     If(SwitchedUser.IsActive, "  -  Viewing As This User", String.Empty)
             End If
         End Sub
