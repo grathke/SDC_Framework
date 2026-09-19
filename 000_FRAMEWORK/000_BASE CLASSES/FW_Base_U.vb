@@ -1701,6 +1701,15 @@ Namespace SDC.Framework
         End Sub
 
         Private Sub OkButton_Click(sender As Object, e As EventArgs)
+            ' Before validation, not after it. A preview's fields are empty, so required-field
+            ' validation always failed first and the refusal was never reached - and telling
+            ' somebody which fields to fill in, on a page that could not save whatever they typed,
+            ' is worse than saying nothing.
+            If ReadOnlyPreview.IsActive Then
+                WideMessage.Show(Me, ReadOnlyPreview.RefusalMessage("The record"), "Preview")
+                Return
+            End If
+
             If IsViewOnly() Then
                 Me.DialogResult = DialogResult.OK
                 bypassCancelCloseCheck = True

@@ -16,9 +16,7 @@ Namespace SDC.Framework
         Inherits Exception
 
         Public Sub New(what As String)
-            MyBase.New("THIS PAGE IS OPEN AS A READ-ONLY PREVIEW." & Environment.NewLine & Environment.NewLine &
-                       what & " was not written, and nothing on this page has been saved." & Environment.NewLine & Environment.NewLine &
-                       "Close the preview and open the page normally to make changes.")
+            MyBase.New(ReadOnlyPreview.RefusalMessage(what))
         End Sub
     End Class
 
@@ -51,6 +49,16 @@ Namespace SDC.Framework
 
         <ThreadStatic>
         Private active As Boolean
+
+        ''' <summary>
+        ''' What a preview says when it refuses. One wording, because two callers say it: the
+        ''' exception thrown at the write, and the OK button, which says it before validating.
+        ''' </summary>
+        Public Function RefusalMessage(what As String) As String
+            Return "THIS PAGE IS OPEN AS A READ-ONLY PREVIEW." & Environment.NewLine & Environment.NewLine &
+                   what & " was not written, and nothing on this page has been saved." & Environment.NewLine & Environment.NewLine &
+                   "Close the preview and open the page normally to make changes."
+        End Function
 
         ''' <summary>Whether the current thread is inside a read-only preview.</summary>
         Public ReadOnly Property IsActive As Boolean
