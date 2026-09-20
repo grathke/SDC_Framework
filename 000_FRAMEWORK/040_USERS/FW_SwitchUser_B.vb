@@ -1,4 +1,4 @@
-Option Strict On
+﻿Option Strict On
 Option Explicit On
 
 Imports System.Windows.Forms
@@ -79,7 +79,8 @@ Namespace SDC.Framework
         Protected Overrides Sub PrepareBrowseSource()
             Try
                 DataAccess.RefreshSwitchUserSnapshot()
-            Catch
+            Catch telemetryEx As Exception
+                Telemetry.Error(telemetryEx, "FW_SwitchUser_B.PrepareBrowseSource")
             End Try
         End Sub
 

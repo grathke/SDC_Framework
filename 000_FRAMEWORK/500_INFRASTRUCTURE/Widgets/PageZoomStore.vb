@@ -1,4 +1,4 @@
-Option Strict On
+﻿Option Strict On
 Option Explicit On
 
 Imports System.Collections.Generic
@@ -70,7 +70,8 @@ Namespace SDC.Framework
             Try
                 DataAccess.SavePageZoom(currentUserId, page, factor, registrationId)
                 saved(page) = factor
-            Catch
+            Catch telemetryEx As Exception
+                Telemetry.Error(telemetryEx, "PageZoomStore.Remember")
             End Try
         End Sub
 

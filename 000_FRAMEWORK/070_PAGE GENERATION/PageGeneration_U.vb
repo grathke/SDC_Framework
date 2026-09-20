@@ -1,4 +1,4 @@
-Option Strict On
+﻿Option Strict On
 Option Explicit On
 
 Imports System
@@ -290,7 +290,7 @@ Namespace SDC.Framework
             ' the table is not in it, and going out to a dashboard to enable it and coming back is
             ' the long way round. App Admin only, being a decision about the whole application.
             enabledTablesButton = New Button With {
-                .Text = "Tables…",
+                .Text = "Tablesâ€¦",
                 .Size = New Size(80, 32),
                 .FlatStyle = FlatStyle.Standard,
                 .UseVisualStyleBackColor = True,
@@ -589,7 +589,8 @@ Namespace SDC.Framework
 
                 originalRowVersion = CType(DirectCast(row("RowVersion"), Byte()).Clone(), Byte())
                 CaptureOriginalRowVersion(originalRowVersion)
-            Catch
+            Catch telemetryEx As Exception
+                Telemetry.Error(telemetryEx, "PageGeneration_U.RecaptureRowVersion")
             End Try
         End Sub
 

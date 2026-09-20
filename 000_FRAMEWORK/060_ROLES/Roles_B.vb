@@ -1,4 +1,4 @@
-Option Strict On
+﻿Option Strict On
 Option Explicit On
 
 Imports System.Data
@@ -682,7 +682,8 @@ Namespace SDC.Framework
 
                     Try
                         rolesGrid.FirstDisplayedScrollingRowIndex = targetTop
-                    Catch
+                    Catch telemetryEx As Exception
+                        Telemetry.Error(telemetryEx, "Roles_B.RestoreGridViewState")
                     End Try
                     Return
                 End If
@@ -709,7 +710,8 @@ Namespace SDC.Framework
             Dim fallbackTop = Math.Max(0, Math.Min(state.FallbackFirstDisplayedIndex, rolesGrid.RowCount - 1))
             Try
                 rolesGrid.FirstDisplayedScrollingRowIndex = fallbackTop
-            Catch
+            Catch telemetryEx As Exception
+                Telemetry.Error(telemetryEx, "Roles_B.RestoreGridViewState")
             End Try
         End Sub
 

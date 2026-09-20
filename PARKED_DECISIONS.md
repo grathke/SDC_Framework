@@ -210,6 +210,32 @@ a contractor:
 
 ## Designed, specified, and deliberately not started
 
+### Telemetry: tickets from faults, and sending it off-machine
+
+*Parked 2026-09-19. The recording half is built; these two are not.*
+
+`FW_ErrorLog` and `Telemetry.vb` are live, and `HEALTH_DASHBOARD_SPEC.md` covers the page that
+reads them. Two further phases were designed at the same time and stopped on purpose.
+
+**A Help Desk ticket raised from a fault fingerprint.** Attractive - you learn about a fault before
+the customer rings - and dangerous in exactly one way: a crash loop on a page fifty people have open
+is fifty thousand tickets, and the thing built to protect the system takes it out instead. It needs
+a throttle and a deduplication rule before a line of it is written. The fingerprint already exists
+and is the right key: a fault already seen is not news. Open questions: which registration owns the
+ticket, since it is our ticket and not the customer's; and whether the trigger is first occurrence
+or crossing a threshold.
+
+**Sending telemetry somewhere we own.** The client side is easy. The two real questions are not
+technical. An exception message can carry record values, a user name, occasionally a connection
+string - so what leaves the building needs a deliberate allow-list, never `ex.ToString()`, and this
+is a multi-tenant system where that means one customer's data in a payload about another's bug. And
+the receiving end is server work, which is not done through Claude: stand up the endpoint, then the
+client is a small piece against it.
+
+Neither is blocked by anything. Both are waiting on a decision rather than on code.
+
+
+
 ### Runtime page layout and the form designer
 
 A `_U` page's layout moved out of generated code and into data the page reads at run time, plus the

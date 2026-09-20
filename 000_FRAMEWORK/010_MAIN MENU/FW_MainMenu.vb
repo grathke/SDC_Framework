@@ -1,4 +1,4 @@
-Option Strict On
+﻿Option Strict On
 Option Explicit On
 
 Imports System
@@ -1117,7 +1117,8 @@ Namespace SDC.Framework
                 End If
 
                 SetNewMessageIndicator(unread)
-            Catch
+            Catch telemetryEx As Exception
+                Telemetry.Error(telemetryEx, "FW_MainMenu.CheckForNewMessages")
             End Try
         End Sub
 

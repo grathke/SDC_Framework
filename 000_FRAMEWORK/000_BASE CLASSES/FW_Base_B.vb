@@ -1,4 +1,4 @@
-Option Strict On
+﻿Option Strict On
 Option Explicit On
 
 Imports System.Data
@@ -1657,7 +1657,8 @@ Namespace SDC.Framework
                             imageBox.Image = New Bitmap(loaded)
                         End Using
                     End Using
-                Catch
+                Catch telemetryEx As Exception
+                    Telemetry.Error(telemetryEx, "FW_Base_B.LoadReferenceImageFromAssets")
                 End Try
                 Return
             End If
@@ -1683,7 +1684,8 @@ Namespace SDC.Framework
                         imageBox.Image = New Bitmap(loaded)
                     End Using
                 End Using
-            Catch
+            Catch telemetryEx As Exception
+                Telemetry.Error(telemetryEx, "FW_Base_B.LoadReferenceImageFromAssets")
             End Try
         End Sub
 
@@ -5189,7 +5191,8 @@ Namespace SDC.Framework
                        String.Equals(rowField.ToString(), fieldName, StringComparison.OrdinalIgnoreCase) Then
                         Try
                             gridRow.Cells("Operator").Value = operatorStr
-                        Catch
+                        Catch telemetryEx As Exception
+                            Telemetry.Error(telemetryEx, "FW_Base_B.ApplyQbeDataToGrid")
                         End Try
                         gridRow.Cells("FieldValue").Value = valuePart
                         Exit For

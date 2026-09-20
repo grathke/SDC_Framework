@@ -1,4 +1,4 @@
-Option Strict On
+﻿Option Strict On
 Option Explicit On
 
 Imports System
@@ -2391,7 +2391,7 @@ Namespace SDC.Framework
         ''' The columns each computed column is built from, as ComputedColumn -> its sources.
         '''
         ''' Read from the expression SQL Server stores, not guessed: FirstLast is
-        ''' `isnull([FirstName],'') + … + isnull([LastName],'')`, so the bracketed names are the
+        ''' `isnull([FirstName],'') + â€¦ + isnull([LastName],'')`, so the bracketed names are the
         ''' answer. Only names that are really columns of the same table survive, which discards
         ''' the bracketed function and type names an expression can also contain.
         '''
@@ -3587,7 +3587,8 @@ Namespace SDC.Framework
                     ' act on, and swallowing it would report a save that did not happen.
                     Try
                         tx.Rollback()
-                    Catch
+                    Catch telemetryEx As Exception
+                        Telemetry.Error(telemetryEx, "DataAccess.TrySaveGeneratedPageRecord")
                     End Try
                     Throw
                   End Try
@@ -4057,7 +4058,8 @@ Namespace SDC.Framework
                         End Using
                     End Using
                 End Using
-            Catch
+            Catch telemetryEx As Exception
+                Telemetry.Error(telemetryEx, "DataAccess.GetEmployeeRoleIds")
             End Try
 
             Return held
@@ -8259,7 +8261,6 @@ Namespace SDC.Framework
         Public Shared Function FormatFieldName(name As String) As String
             If String.IsNullOrWhiteSpace(name) Then Return name
             
-            Dim debugOutput = $"FormatFieldName input: '{name}'"
             
             ' Handle snake_case first
             If name.Contains("_") Then
@@ -8274,11 +8275,6 @@ Namespace SDC.Framework
                     End If
                 Next
                 Dim finalSnakeResult = snakeResult.ToString()
-                debugOutput &= $" -> (snake_case) '{finalSnakeResult}'"
-                Try
-                    IO.File.AppendAllText(IO.Path.Combine(IO.Path.GetTempPath(), "format_debug.log"), debugOutput & vbCrLf)
-                Catch
-                End Try
                 Return finalSnakeResult
             End If
             
@@ -8311,11 +8307,6 @@ Namespace SDC.Framework
                 Next
                 
                 Dim finalUppercaseResult = uppercaseFormatted.ToString()
-                debugOutput &= $" -> (uppercase) '{finalUppercaseResult}'"
-                Try
-                    IO.File.AppendAllText(IO.Path.Combine(IO.Path.GetTempPath(), "format_debug.log"), debugOutput & vbCrLf)
-                Catch
-                End Try
                 Return finalUppercaseResult
             End If
             
@@ -8330,7 +8321,6 @@ Namespace SDC.Framework
                 If name.EndsWith(suf) AndAlso name.Length > suf.Length Then
                     nameToProcess = name.Substring(0, name.Length - suf.Length)
                     suffix = suf
-                    debugOutput &= $" [found suffix: '{suf}']"
                     Exit For
                 End If
             Next
@@ -8352,11 +8342,6 @@ Namespace SDC.Framework
             End If
             
             Dim pascalResult = pbufr.ToString()
-            debugOutput &= $" -> (pascalcase) '{pascalResult}'"
-            Try
-                IO.File.AppendAllText(IO.Path.Combine(IO.Path.GetTempPath(), "format_debug.log"), debugOutput & vbCrLf)
-            Catch
-            End Try
             Return pascalResult
         End Function
 
@@ -10137,7 +10122,8 @@ Namespace SDC.Framework
                             DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss") &
                             " SyncRoleFieldsWithSchema failed for schema " & schemaId.ToString(CultureInfo.InvariantCulture) &
                             ", role " & roleId.ToString(CultureInfo.InvariantCulture) & ": " & ex.Message & Environment.NewLine)
-                    Catch
+                    Catch telemetryEx As Exception
+                        Telemetry.Error(telemetryEx, "DataAccess.SyncRoleFieldsWithSchema")
                     End Try
                 End If
 
@@ -10694,7 +10680,11 @@ Namespace SDC.Framework
                         End Using
                     End Using
                 End Using
-            Catch
+            Catch telemetryEx As Exception
+                ' Swallowed so the page opens with no saved searches rather than not at all, but
+                ' recorded: from the outside this is indistinguishable from having saved none, and
+                ' "my searches disappeared" is not a report anybody can act on without this.
+                Telemetry.Error(telemetryEx, "DataAccess.GetSavedQbes")
             End Try
             Return results
         End Function

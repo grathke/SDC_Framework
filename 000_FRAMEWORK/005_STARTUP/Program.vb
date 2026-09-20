@@ -30,6 +30,7 @@ Namespace SDC.Framework
         ''' </summary>
         Private Sub OnThreadException(sender As Object, e As ThreadExceptionEventArgs)
             Log("ThreadException: " & e.Exception.ToString())
+            Telemetry.Error(e.Exception, "Program.OnThreadException", Telemetry.FaultOrigin.ThreadException)
 
             Try
                 Dim detail = If(e.Exception Is Nothing, "Unknown error.", e.Exception.Message)
@@ -47,8 +48,19 @@ Namespace SDC.Framework
             End Try
         End Sub
 
+        ''' <summary>
+        ''' Anything thrown off the UI thread. Usually terminal, which is why this flushes rather
+        ''' than queuing and hoping: the process may not be alive for the next flush.
+        ''' </summary>
         Private Sub OnUnhandledException(sender As Object, e As UnhandledExceptionEventArgs)
             Log("UnhandledException: " & e.ExceptionObject.ToString())
+
+            Dim thrown = TryCast(e.ExceptionObject, Exception)
+            If thrown IsNot Nothing Then
+                Telemetry.Error(thrown, "Program.OnUnhandledException", Telemetry.FaultOrigin.UnhandledException)
+            End If
+
+            Telemetry.Flush()
         End Sub
 
         ''' <summary>
@@ -380,7 +392,12 @@ Namespace SDC.Framework
                 Log("Main end")
             Catch ex As Exception
                 Log("Unhandled exception: " & ex.ToString())
+                Telemetry.Error(ex, "Program.Main", Telemetry.FaultOrigin.UnhandledException)
                 Throw
+            Finally
+                ' The last chance to write what was queued. A fault a second before the window
+                ' closes is the one worth having, and it is the one a timer would miss.
+                Telemetry.Flush()
             End Try
         End Sub
 

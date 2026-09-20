@@ -1,4 +1,4 @@
-Option Strict On
+﻿Option Strict On
 Option Explicit On
 
 Imports System
@@ -120,7 +120,8 @@ Namespace SDC.Framework
                 ' to fail an attachment the user has successfully chosen.
                 Try
                     File.Delete(uploadedPath)
-                Catch
+                Catch telemetryEx As Exception
+                    Telemetry.Error(telemetryEx, "HelpDeskAttachmentPicker.Pick")
                 End Try
             End Try
         End Function
@@ -188,7 +189,8 @@ Namespace SDC.Framework
             Finally
                 Try
                     Directory.Delete(folder, True)
-                Catch
+                Catch telemetryEx As Exception
+                    Telemetry.Error(telemetryEx, "HelpDeskAttachmentPicker.Deliver")
                 End Try
             End Try
         End Sub
