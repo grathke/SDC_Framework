@@ -93,30 +93,6 @@ Namespace SDC.Framework
         Private browsePageHasManualChanges As Boolean
         Private maintenancePageHasManualChanges As Boolean
 
-        ''' <summary>
-        ''' Set once the user has answered all three prompts to regenerate over their own edits.
-        ''' Lasts only while this page is open, and suppresses the ordinary overwrite prompt: the
-        ''' question it asks has already been answered, twice over and in stronger terms.
-        ''' </summary>
-        Private manualChangesOverridden As Boolean
-
-        ''' <summary>
-        ''' Set when the user declines to regenerate over their own edits. The page is loaded far
-        ''' enough to ask the question before it is shown, so declining cannot simply close a form
-        ''' that has not opened yet - the caller reads OpenCancelled instead and never shows it.
-        ''' </summary>
-        Private openWasCancelled As Boolean
-
-        ''' <summary>
-        ''' True when the page decided during construction that it should not open. The caller must
-        ''' check this before ShowDialog and dispose the page without showing it.
-        ''' </summary>
-        Public ReadOnly Property OpenCancelled As Boolean
-            Get
-                Return openWasCancelled
-            End Get
-        End Property
-
         Public Sub New(id As Integer, user As UserContext, Optional profile As AccessProfile = Nothing)
             MyBase.New()
             recordId = id
@@ -611,31 +587,12 @@ Namespace SDC.Framework
                 Return
             End If
 
-            Dim browsePagePath = PageGenerator.GeneratedPagePath(Environment.CurrentDirectory, browsePageNameTextBox.Text)
-            Dim maintenancePagePath = PageGenerator.GeneratedPagePath(Environment.CurrentDirectory, maintenancePageNameTextBox.Text)
-            Dim overwriteExistingPages = False
-            If manualChangesOverridden Then
-                ' Already authorised, three times over, when the page was opened.
-                overwriteExistingPages = True
-            ElseIf (generateBrowsePageCheckBox.Checked AndAlso File.Exists(browsePagePath)) OrElse
-                (generateMaintenancePageCheckBox.Checked AndAlso File.Exists(maintenancePagePath)) Then
-                Dim selectedTargets As New List(Of String)()
-                If generateBrowsePageCheckBox.Checked Then selectedTargets.Add("_B")
-                If generateMaintenancePageCheckBox.Checked Then selectedTargets.Add("_U")
-                Dim targetText = String.Join(" AND ", selectedTargets)
-                Dim targetFileText = If(selectedTargets.Count = 1, "TARGET PAGE FILE", "TARGET PAGE FILES")
-                Dim overwriteChoice = MessageBox.Show(Me,
-                                                       "ONE OR MORE SELECTED " & targetFileText & " ALREADY EXIST." & Environment.NewLine & Environment.NewLine &
-                                                       "YES: REGENERATE AND OVERWRITE THE " & targetText & " PAGE FILE" & If(selectedTargets.Count = 1, String.Empty, "S") & "." & Environment.NewLine &
-                                                       "NO: RETURN WITHOUT SAVING OR GENERATING.",
-                                                       "REGENERATE PAGES",
-                                                       MessageBoxButtons.YesNo,
-                                                       MessageBoxIcon.Question)
-                If overwriteChoice <> DialogResult.Yes Then
-                    Return
-                End If
-                overwriteExistingPages = True
-            End If
+            ' Always overwrite, and never ask. The only files generation rewrites are the
+            ' .Generated halves, which exist to be rewritten; the half named after the page holds
+            ' hand-written code and WriteCompanionPage leaves it alone. The prompt was guarding
+            ' something that has not been at risk since the split, and it stood between somebody
+            ' and the button they had already pressed.
+            Dim overwriteExistingPages = True
 
             suppressSaveConfirmation = True
             Try
@@ -802,7 +759,6 @@ Namespace SDC.Framework
             pageHasManualChanges = False
             browsePageHasManualChanges = False
             maintenancePageHasManualChanges = False
-            manualChangesOverridden = False
             If isNewRecord Then Return
 
             Dim pagePath = PageGenerator.GeneratedPagePath(Environment.CurrentDirectory, maintenancePageNameTextBox.Text)
@@ -816,10 +772,7 @@ Namespace SDC.Framework
             browsePageHasManualChanges = FileDiffersFromBaseline(dataRow, "GeneratedBrowseHash", browsePageNameTextBox.Text, generatedHalf:=True)
             pageHasManualChanges = maintenancePageHasManualChanges OrElse browsePageHasManualChanges
 
-            If Not File.Exists(pagePath) Then
-                ProtectManualPageChanges()
-                Return
-            End If
+            If Not File.Exists(pagePath) Then Return
 
             Dim savedFields = maintenanceFieldsTextBox.Text.Split({",", ";"}, StringSplitOptions.RemoveEmptyEntries).
                 Select(Function(field) field.Trim()).
@@ -831,184 +784,6 @@ Namespace SDC.Framework
             Next
 
             pageHasManualChanges = pageHasManualChanges OrElse pageFields.Any(Function(field) Not savedFields.Contains(field))
-
-            ' Every open of an existing request, not only the ones with something at risk. What the
-            ' two buttons do is the thing somebody needs to know before pressing one, and a page
-            ' with no hand-written code simply leaves out the line about custom code.
-            ProtectManualPageChanges()
-        End Sub
-
-        ''' <summary>
-        ''' The changed files, named, one per line, for a message.
-        ''' </summary>
-        Private Function ChangedPageFileList() As String
-            Dim changed As New List(Of String)()
-            If browsePageHasManualChanges Then changed.Add(browsePageNameTextBox.Text.Trim() & ".vb")
-            If maintenancePageHasManualChanges Then changed.Add(maintenancePageNameTextBox.Text.Trim() & ".Generated.vb")
-            Return String.Join(Environment.NewLine, changed)
-        End Function
-
-        ''' <summary>
-        ''' The hand-written half, named, when there is one on disk to name.
-        '''
-        ''' A maintenance page is two files: the .Generated half, rewritten in full every time, and
-        ''' the file named after the page, written once at birth and never read or rewritten again.
-        ''' Only the second survives a regeneration, and the message said so without naming it -
-        ''' which read as covering the file it did name, the one being replaced.
-        '''
-        ''' Nothing when the page has no such file, which is every browse page: a _B is a single
-        ''' generated file, so there is no untouched half and nothing reassuring to say.
-        ''' </summary>
-        Private Function UntouchedPageFileList() As String
-            Dim pageName = maintenancePageNameTextBox.Text.Trim()
-            If pageName = String.Empty Then Return String.Empty
-
-            Dim handWritten = PageGenerator.GeneratedPagePath(Environment.CurrentDirectory, pageName)
-            If String.IsNullOrWhiteSpace(handWritten) OrElse Not File.Exists(handWritten) Then Return String.Empty
-
-            Return "CUSTOM CODE IN " & IO.Path.GetFileName(handWritten).ToUpperInvariant() & " IS LEFT UNCHANGED."
-        End Function
-
-        ''' <summary>
-        ''' The browse page's hand-written half, named, when it exists and is really that half.
-        '''
-        ''' A page generated before 2026-09-18 is a single whole file at this path, which the split
-        ''' replaces rather than leaves alone - so it is only called untouched once it declares
-        ''' Partial, which is what the companion the generator writes looks like.
-        ''' </summary>
-        Private Function UntouchedBrowseFileList() As String
-            Dim pageName = browsePageNameTextBox.Text.Trim()
-            If pageName = String.Empty Then Return String.Empty
-
-            Dim handWritten = PageGenerator.GeneratedPagePath(Environment.CurrentDirectory, pageName)
-            If String.IsNullOrWhiteSpace(handWritten) OrElse Not File.Exists(handWritten) Then Return String.Empty
-
-            Dim name = IO.Path.GetFileName(handWritten).ToUpperInvariant()
-
-            If File.ReadAllText(handWritten).IndexOf("Partial Public Class", StringComparison.OrdinalIgnoreCase) < 0 Then
-                Return name & " IS A WHOLE PAGE FROM BEFORE THE SPLIT." & Environment.NewLine & Environment.NewLine &
-                       "IT WILL BE REPLACED BY A COMPANION, AND THE OLD FILE KEPT BESIDE IT."
-            End If
-
-            Return "CUSTOM CODE IN " & name & " IS LEFT UNCHANGED."
-        End Function
-
-        ''' <summary>
-        ''' Asks whether to regenerate over manual changes, then unlocks the page or abandons it.
-        '''
-        ''' One question, defaulting to No. Answering No abandons the open: the page never appears,
-        ''' the user is back on the browse list they started from, and their edits are untouched.
-        '''
-        ''' It was three escalating prompts until 2026-09-18, the second of which said "any code you
-        ''' added by hand is not in the page request" and "it cannot be put back" - which is not
-        ''' true. The file being replaced is the .Generated half, which the generator rewrites in
-        ''' full by design; the half named after the page holds hand-written code and is never
-        ''' rewritten at all. Three warnings, escalating to "PERMANENT - LAST CHANCE", were guarding
-        ''' something that was not at risk, at the moment somebody was trying to do something else.
-        ''' </summary>
-        ''' <summary>
-        ''' Whether the request asks for this half, read from the row rather than from the check box.
-        '''
-        ''' The boxes are data-bound and are still unticked while this runs - the check happens as
-        ''' the record loads, before binding has caught up. Reading them gave a message that named a
-        ''' file and then said nothing about what would happen to it.
-        ''' </summary>
-        Private Function RequestGenerates(columnName As String) As Boolean
-            Dim dataRow = TryCast(formBindingSource.Current, DataRowView)
-            If dataRow Is Nothing OrElse Not dataRow.Row.Table.Columns.Contains(columnName) Then Return True
-            If dataRow.Row.IsNull(columnName) Then Return True
-
-            Return Convert.ToBoolean(dataRow.Row(columnName))
-        End Function
-
-        Private Sub ProtectManualPageChanges()
-            ' The files that changed, then what happens to each kind, then the question. Named by
-            ' file rather than by whose work it was: the change may be the other developer's, or
-            ' from a generator that has since altered what it writes. All that is known, and all
-            ' that matters, is that the file no longer matches what was generated.
-            '
-            ' "Updated", never "regenerated". Regenerate describes what the tool does; update
-            ' describes what happens to the page, which is what the decision is about.
-            Dim message As New StringBuilder()
-
-            ' The file list can be empty: this dialog also opens when the page's fields no longer
-            ' match the saved request, where no file has been touched at all. Leading blank lines
-            ' for a list that is not there is how the message came to start with white space.
-            Dim changedFiles = ChangedPageFileList()
-            If changedFiles <> String.Empty Then
-                message.AppendLine(changedFiles)
-                message.AppendLine()
-            End If
-
-            Dim generatesMaintenance = RequestGenerates("GenerateMaintenancePage")
-            Dim generatesBrowse = RequestGenerates("GenerateBrowsePage")
-
-            ' One sentence, naming what the request actually asks for. Two lines saying the same
-            ' thing about two halves read as two separate warnings when they are one statement.
-            If generatesMaintenance OrElse generatesBrowse Then
-                Dim subject = If(generatesMaintenance AndAlso generatesBrowse,
-                                 "THE BROWSE AND MAINTENANCE PAGES WILL BE UPDATED FROM SELECTIONS MADE HERE.",
-                                 If(generatesMaintenance,
-                                    "THE MAINTENANCE PAGE WILL BE UPDATED FROM SELECTIONS MADE HERE.",
-                                    "THE BROWSE PAGE WILL BE UPDATED FROM SELECTIONS MADE HERE."))
-                message.AppendLine(subject)
-            End If
-
-            ' A maintenance page is two files and only one of them is rewritten, so hand-written
-            ' code survives. Said here because the dialog names the file that does not survive, and
-            ' unqualified reassurance read as covering that one.
-            If generatesMaintenance Then
-                Dim untouched = UntouchedPageFileList()
-                If untouched <> String.Empty Then
-                    message.AppendLine()
-                    message.AppendLine(untouched)
-                End If
-            End If
-
-            ' A browse page is two files as well since 2026-09-18, so its hand-written half is left
-            ' alone the same way the maintenance one is. It was a single generated file before that,
-            ' and the dialog had to warn that hand edits would be replaced.
-            If generatesBrowse Then
-                Dim browseUntouched = UntouchedBrowseFileList()
-                If browseUntouched <> String.Empty Then
-                    message.AppendLine()
-                    message.AppendLine(browseUntouched)
-                End If
-            End If
-
-            ' When, not just what. This dialog opens the request; nothing is written until Save &
-            ' Generate is pressed, and Save alone never touches a file. Without the line the message
-            ' reads as though answering Yes updates the page there and then.
-            message.AppendLine()
-            message.AppendLine("THIS HAPPENS WHEN SAVE & GENERATE IS PRESSED.")
-            message.AppendLine()
-            message.AppendLine("SAVE ON ITS OWN DOES NOT UPDATE ANY PAGE.")
-            message.AppendLine()
-            message.Append("CONTINUE?")
-
-            ' WideMessage rather than MessageBox: six sentences naming three files, and MessageBox
-            ' wrapped the longest of them mid-sentence, so a message written in lines was read in
-            ' fragments. It defaults to No the same way.
-            Dim proceed = WideMessage.Ask(Me,
-                                          message.ToString(),
-                                          If(generatesBrowse AndAlso generatesMaintenance,
-                                             "UPDATE THESE PAGES?",
-                                             "UPDATE THIS PAGE?"),
-                                          MessageBoxButtons.YesNo,
-                                          MessageBoxIcon.Question)
-
-            If proceed = DialogResult.Yes Then
-                ' Unlocked, and the overwrite prompt at generation is skipped: that question has
-                ' just been answered.
-                manualChangesOverridden = True
-                RefreshPageCaption()
-                Return
-            End If
-
-            ' Declined. The page used to open read-only with nothing on it but Close, which read
-            ' as the request having opened anyway. Nothing on it could be edited, saved or
-            ' generated, so there was nothing to stay for: abandon the open instead.
-            openWasCancelled = True
         End Sub
 
         ''' <summary>
