@@ -3568,6 +3568,23 @@ Namespace SDC.Framework
         End Function
 
         Private Sub PopulateQbeFromGridColumns()
+            ' A grid with no columns means no result is loaded, not that the page has no
+            ' searchable fields. Deriving from it would empty the QBE, which is never the right
+            ' answer - somebody would be left with a search panel and nothing to search on.
+            '
+            ' This is reached by a path that is not obvious. ClearBrowseGridForPendingQuery binds
+            ' an empty DataTable, which removes every column, which raises the column-state events,
+            ' which queue the coalesced BeginInvoke rebuild below. That rebuild runs after the
+            ' columns have gone. Pressing Clear on the QBE therefore emptied the QBE itself, a
+            ' moment later and with nothing connecting the two - reported 2026-09-20.
+            '
+            ' Guarded here rather than at the call sites because there are five of them and they
+            ' all want the same answer: derive from what is there, and leave the panel alone when
+            ' nothing is.
+            If browseGrid Is Nothing OrElse browseGrid.Columns.Count = 0 Then
+                Return
+            End If
+
             Dim existingQbeValues As New Dictionary(Of String, Tuple(Of String, String))(StringComparer.OrdinalIgnoreCase)
             For Each existingRow As DataGridViewRow In qbeGrid.Rows
                 If existingRow Is Nothing OrElse existingRow.IsNewRow Then
