@@ -72,9 +72,9 @@ if ($WhatIf) {
 Write-Host ""
 
 if ($File) {
-	sqlcmd -S $server -U $user -P $password -d $database -C -b -i $File
+	sqlcmd -S $server -U $user -P $password -d $database -C -b -I -i $File
 } else {
-	sqlcmd -S $server -U $user -P $password -d $database -C -b -W -Q $Query
+	sqlcmd -S $server -U $user -P $password -d $database -C -b -I -W -Q $Query
 }
 
 $code = $LASTEXITCODE

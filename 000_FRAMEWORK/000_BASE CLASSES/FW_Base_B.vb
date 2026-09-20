@@ -102,6 +102,16 @@ Namespace SDC.Framework
         Private suppressRegistrationSelectionChanged As Boolean = False
         Private lastSelectedRegistrationId As Integer = 0
         Private lastRefreshExceededRowLimit As Boolean = False
+
+        ''' <summary>
+        ''' How long the last grid refresh spent in SQL, as reported by the data layer.
+        '''
+        ''' Nothing when the last refresh did not reach the database - a page that prepares its own
+        ''' source, or one that returned before the fill. A counter recorded with no database time
+        ''' is honest about that rather than recording a zero, which would drag every average down
+        ''' and make a slow page look fast.
+        ''' </summary>
+        Private lastQueryMilliseconds As Integer? = Nothing
         Private suppressColumnsManagerSync As Boolean = False
         Private allowColumnsManagerCheckToggle As Boolean = False
         Private missingMaintenancePkInResult As Boolean = False
@@ -2095,6 +2105,15 @@ Namespace SDC.Framework
                 lastRefreshExceededRowLimit = maxRows > 0 AndAlso
                                               dt.ExtendedProperties.ContainsKey("BrowseRowsLimited") AndAlso
                                               Convert.ToBoolean(dt.ExtendedProperties("BrowseRowsLimited"))
+
+                ' How long the SQL alone took, handed back by the data layer. Kept for the caller
+                ' that started a stopwatch around the whole Find, so the two can be recorded
+                ' together - see UsageCounters and HEALTH_DASHBOARD_SPEC.md section 9.
+                lastQueryMilliseconds = Nothing
+                If dt.ExtendedProperties.ContainsKey("BrowseQueryMilliseconds") Then
+                    lastQueryMilliseconds = Convert.ToInt32(dt.ExtendedProperties("BrowseQueryMilliseconds"),
+                                                            Globalization.CultureInfo.InvariantCulture)
+                End If
                 ' Fields this role may not see are removed from the result before anything can bind
                 ' to them, so no later step can put them back on screen.
                 RemoveInvisibleRoleFieldColumns(dt)
@@ -4372,6 +4391,38 @@ Namespace SDC.Framework
         End Sub
 
         Private Sub FindButton_Click(sender As Object, e As EventArgs)
+            ' Started before anything, including the validation below. A Find that is refused took
+            ' the user's time too, and excluding the refusals would quietly measure only the happy
+            ' path - which is how a page comes to look faster than it is.
+            Dim findTimer = UsageCounters.StartTimer()
+
+            Try
+                RunFind()
+            Finally
+                RecordFind(findTimer)
+            End Try
+        End Sub
+
+        ''' <summary>
+        ''' Records what the Find cost, both halves of it.
+        '''
+        ''' Perceived time is a FLOOR on what the user experienced and must never be labelled
+        ''' response time: the stopwatch stops when the grid paints server-side, and over
+        ''' Thinfinity the pixels still have to reach the browser.
+        ''' </summary>
+        Private Sub RecordFind(findTimer As System.Diagnostics.Stopwatch)
+            Try
+                UsageCounters.Record(UsageCounters.UsageKind.Search,
+                                     Me.GetType().Name,
+                                     GetRegistrationIdForCaptions(),
+                                     lastQueryMilliseconds,
+                                     UsageCounters.ElapsedMillis(findTimer))
+            Catch
+                ' Counting must never cost somebody their Find.
+            End Try
+        End Sub
+
+        Private Sub RunFind()
             Dim selectedId = SelectedRecordId()
             Dim registrationId = GetRegistrationIdForQbeFind()
             If registrationId <= 0 Then

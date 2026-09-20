@@ -66,6 +66,48 @@ Namespace SDC.Framework
             Public Property Name As String = String.Empty
         End Class
 
+        ''' <summary>
+        ''' What Find cost, per page, over the window.
+        '''
+        ''' Two averages and two maxima, never merged. Section 9: a custom-SQL page applies its QBE
+        ''' filters client-side, so its database time stays flat while its perceived time grows
+        ''' with the table - and one blended number would hide exactly that.
+        ''' </summary>
+        Public NotInheritable Class SearchTiming
+            Public Property PageName As String = String.Empty
+            Public Property Searches As Integer
+            Public Property DbAverage As Double
+            Public Property DbMax As Integer
+            Public Property PerceivedAverage As Double
+            Public Property PerceivedMax As Integer
+
+            ''' <summary>
+            ''' Time spent outside the database - binding, hiding, fitting, painting, and on a
+            ''' custom-SQL page the client-side QBE filtering.
+            ''' </summary>
+            Public ReadOnly Property ClientAverage As Double
+                Get
+                    Return Math.Max(0, PerceivedAverage - DbAverage)
+                End Get
+            End Property
+
+            ''' <summary>
+            ''' Where the time is going, which decides whether Query Store is even the right tool.
+            '''
+            ''' Query Store sees the query and nothing else. On a page whose time is client-side it
+            ''' would show a fast, consistent query and send somebody down the wrong path entirely,
+            ''' so the page says which case this is rather than recommending a tool blindly.
+            ''' </summary>
+            Public ReadOnly Property Diagnosis As String
+                Get
+                    If Searches = 0 Then Return String.Empty
+                    If PerceivedAverage < 400 Then Return "fine"
+                    If DbAverage >= PerceivedAverage * 0.6 Then Return "the query is slow"
+                    Return "not the database - the time is client-side"
+                End Get
+            End Property
+        End Class
+
         Public NotInheritable Class FaultLine
             Public Property ErrorLogID As Integer
             Public Property ExceptionType As String = String.Empty
@@ -75,6 +117,9 @@ Namespace SDC.Framework
             Public Property LastSeen As Date
             Public Property Acknowledged As Boolean
             Public Property Origin As String = String.Empty
+            Public Property Resolved As Boolean
+            Public Property Resolution As String = String.Empty
+            Public Property RecurredAfterResolved As Boolean
 
             ''' <summary>"2h ago", "3d ago" - the age as somebody would say it.</summary>
             Public ReadOnly Property Age As String
@@ -112,6 +157,18 @@ Namespace SDC.Framework
             ''' <summary>Zero means every registration, which is the page's normal state.</summary>
             Public Property RegistrationID As Integer
 
+            ''' <summary>
+            ''' Whether SQL Server's Query Store is recording on this database.
+            '''
+            ''' A fact about the installation's health rather than a suggestion, which is why it is
+            ''' shown rather than recommended. Query Store is a flight recorder: it captures every
+            ''' query's text, its execution plan and its timings, and it is SQL Server's own - we
+            ''' write nothing and maintain nothing. Switched off, none of that is being kept, and
+            ''' switching it on after something turns slow gives no baseline and no record of when
+            ''' the regression began, which is most of its value.
+            ''' </summary>
+            Public Property QueryStoreState As String = String.Empty
+
             Public Property SaveTotal As Integer
             Public Property SaveSucceeded As Integer
 
@@ -133,6 +190,9 @@ Namespace SDC.Framework
             ''' populate a list that does not change while it is looked at.
             ''' </summary>
             Public Property Registrations As New List(Of RegistrationRow)()
+
+            ''' <summary>What Find cost, per page. Empty until the counters have something.</summary>
+            Public Property SearchTimings As New List(Of SearchTiming)()
 
             Public Property Failed As Boolean
             Public Property FailureMessage As String = String.Empty
@@ -212,6 +272,10 @@ Namespace SDC.Framework
                             If reader.NextResult() Then ReadActivity(reader, snapshot)
                             If reader.NextResult() Then ReadNeedsAttention(reader, snapshot)
                             If reader.NextResult() Then ReadRegistrations(reader, snapshot)
+                            If reader.NextResult() AndAlso reader.Read() Then
+                                snapshot.QueryStoreState = SafeString(reader, "QueryStoreState")
+                            End If
+                            If reader.NextResult() Then ReadSearchTimings(reader, snapshot)
                         End Using
                     End Using
                 End Using
@@ -256,6 +320,19 @@ Namespace SDC.Framework
             End While
         End Sub
 
+        Private Shared Sub ReadSearchTimings(reader As SqlDataReader, snapshot As HealthSnapshot)
+            While reader.Read()
+                snapshot.SearchTimings.Add(New SearchTiming With {
+                    .PageName = SafeString(reader, "PageName"),
+                    .Searches = SafeInt(reader, "Searches"),
+                    .DbAverage = SafeDouble(reader, "DbAverage"),
+                    .DbMax = SafeInt(reader, "DbMax"),
+                    .PerceivedAverage = SafeDouble(reader, "PerceivedAverage"),
+                    .PerceivedMax = SafeInt(reader, "PerceivedMax")
+                })
+            End While
+        End Sub
+
         Private Shared Sub ReadRegistrations(reader As SqlDataReader, snapshot As HealthSnapshot)
             While reader.Read()
                 snapshot.Registrations.Add(New RegistrationRow With {
@@ -275,7 +352,10 @@ Namespace SDC.Framework
                     .OccurrenceCount = SafeInt(reader, "OccurrenceCount"),
                     .LastSeen = SafeDate(reader, "LastSeen"),
                     .Acknowledged = SafeBool(reader, "Acknowledged"),
-                    .Origin = SafeString(reader, "Origin")
+                    .Origin = SafeString(reader, "Origin"),
+                    .Resolved = SafeBool(reader, "Resolved"),
+                    .Resolution = SafeString(reader, "Resolution"),
+                    .RecurredAfterResolved = SafeBool(reader, "RecurredAfterResolved")
                 })
             End While
         End Sub
@@ -359,6 +439,53 @@ Namespace SDC.Framework
         ''' does not soft-delete: an acknowledged fault is still a fault that happened, and the
         ''' record of it should survive somebody deciding it is known.
         ''' </summary>
+        ''' <summary>
+        ''' Records that a fault has been fixed, and what the fix was.
+        '''
+        ''' Resolving also acknowledges. A fault somebody has fixed is certainly one they have
+        ''' seen, and leaving it counting against the health score after it is fixed would be
+        ''' perverse - the two flags mean different things but resolution implies the weaker claim.
+        '''
+        ''' RecurredAfterResolved is deliberately NOT cleared. It is the history of this fault
+        ''' having come back before, and that stays true however many times it is fixed
+        ''' afterwards - it is the reason somebody should be sceptical of the next fix.
+        ''' </summary>
+        Public Shared Function Resolve(errorLogId As Integer,
+                                       userId As Integer,
+                                       resolution As String) As Boolean
+            If errorLogId <= 0 Then Return False
+
+            Try
+                Using conn As New SqlConnection(DataAccess.BuildConnectionStringForDatabase(String.Empty))
+                    conn.Open()
+
+                    Using cmd As New SqlCommand(
+                        "UPDATE dbo.FW_ErrorLog " &
+                        "SET Resolved = 1, ResolvedBy = @UserID, ResolvedOn = SYSUTCDATETIME(), " &
+                        "    Resolution = @Resolution, " &
+                        "    Acknowledged = 1, " &
+                        "    AcknowledgedBy = ISNULL(AcknowledgedBy, @UserID), " &
+                        "    AcknowledgedOn = ISNULL(AcknowledgedOn, SYSUTCDATETIME()) " &
+                        "WHERE ErrorLogID = @ID", conn)
+
+                        cmd.Parameters.Add("@ID", SqlDbType.Int).Value = errorLogId
+                        cmd.Parameters.Add("@UserID", SqlDbType.Int).Value =
+                            If(userId > 0, CType(userId, Object), DBNull.Value)
+                        cmd.Parameters.Add("@Resolution", SqlDbType.NVarChar, 1000).Value =
+                            If(String.IsNullOrWhiteSpace(resolution),
+                               CType(DBNull.Value, Object),
+                               resolution.Trim())
+
+                        Return cmd.ExecuteNonQuery() > 0
+                    End Using
+                End Using
+
+            Catch ex As Exception
+                Telemetry.Error(ex, "HealthDataAccess.Resolve")
+                Return False
+            End Try
+        End Function
+
         Public Shared Function Acknowledge(errorLogId As Integer, userId As Integer) As Boolean
             If errorLogId <= 0 Then Return False
 
@@ -449,14 +576,33 @@ Namespace SDC.Framework
             vbCrLf &
             "SELECT TOP 20 n.ErrorLogID, n.ExceptionType, ISNULL(n.PageName, '') AS PageName, " &
             "  ISNULL(n.Context, '') AS Context, n.OccurrenceCount, n.LastSeen, " &
-            "  ISNULL(n.Acknowledged, 0) AS Acknowledged, ISNULL(n.Origin, '') AS Origin " &
+            "  ISNULL(n.Acknowledged, 0) AS Acknowledged, ISNULL(n.Origin, '') AS Origin, " &
+            "  ISNULL(n.Resolved, 0) AS Resolved, ISNULL(n.Resolution, '') AS Resolution, " &
+            "  ISNULL(n.RecurredAfterResolved, 0) AS RecurredAfterResolved " &
             "FROM dbo.FW_ErrorLog n " &
             "WHERE n.LastSeen >= @Cutoff AND ISNULL(n.DeletedFlag, 0) = 0 " &
             "  AND " & Scoped("n") & " " &
             "ORDER BY ISNULL(n.Acknowledged, 0), n.LastSeen DESC;" &
             vbCrLf &
             "SELECT RegistrationID, ISNULL(RegName, '') AS RegName " &
-            "FROM dbo.FW_Registration ORDER BY RegName;"
+            "FROM dbo.FW_Registration ORDER BY RegName;" &
+            vbCrLf &
+            "SELECT ISNULL((SELECT TOP 1 actual_state_desc FROM sys.database_query_store_options), " &
+            "              'UNAVAILABLE') AS QueryStoreState;" &
+            vbCrLf &
+            "SELECT TOP 12 u.PageName, " &
+            "  SUM(u.EventCount) AS Searches, " &
+            "  CASE WHEN SUM(u.EventCount) = 0 THEN 0 " &
+            "       ELSE SUM(u.DbMillisTotal) * 1.0 / SUM(u.EventCount) END AS DbAverage, " &
+            "  ISNULL(MAX(u.DbMillisMax), 0) AS DbMax, " &
+            "  CASE WHEN SUM(u.EventCount) = 0 THEN 0 " &
+            "       ELSE SUM(u.PerceivedMillisTotal) * 1.0 / SUM(u.EventCount) END AS PerceivedAverage, " &
+            "  ISNULL(MAX(u.PerceivedMillisMax), 0) AS PerceivedMax " &
+            "FROM dbo.FW_UsageCounter u " &
+            "WHERE u.HourUtc >= @Cutoff AND u.Kind = 'Search' AND ISNULL(u.DeletedFlag, 0) = 0 " &
+            "  AND " & Scoped("u") & " " &
+            "GROUP BY u.PageName " &
+            "ORDER BY MAX(u.PerceivedMillisMax) DESC;"
 
         Private Shared Function Scoped(tableAlias As String) As String
             Return String.Format(CultureInfo.InvariantCulture, RegistrationFilter, tableAlias)

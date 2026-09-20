@@ -936,9 +936,23 @@ Namespace SDC.Framework
                             cmd.Parameters.AddWithValue("@RegistrationID", registrationId)
                         End If
                         Try
+                            ' Timed, and the figure carried back on the table itself - the same way
+                            ' BrowseRowsLimited already travels. This is the SQL alone: the caller
+                            ' times the whole Find separately, and the two numbers diverge on a
+                            ' custom-SQL page because the QBE filters are applied client-side after
+                            ' this returns. Database time flat while perceived time grows with the
+                            ' table is a completely different fault from "the query is slow", and
+                            ' invisible with only one of them.
+                            Dim queryTimer = UsageCounters.StartTimer()
+
                             Using da As New SqlDataAdapter(cmd)
                                 da.Fill(table)
                             End Using
+
+                            Dim queryMillis = UsageCounters.ElapsedMillis(queryTimer)
+                            If queryMillis.HasValue Then
+                                table.ExtendedProperties("BrowseQueryMilliseconds") = queryMillis.Value
+                            End If
                         Catch ex As Exception
                             ' The query that runs is not the query that was stored - the registration
                             ' value is substituted into it and a scope predicate may have been

@@ -348,6 +348,55 @@ A failed sign-in alert carries the attempted user name, the time and the reason,
 tenant's own administrator, who is entitled to it. People do type passwords into the user name box,
 so it must never travel beyond that recipient.
 
+### When a mail actually goes out
+
+**Added 2026-09-20.** The principle first, because every rule below follows from it: **mail on
+transitions, not on states.** A score that is 74 and stays 74 should produce one message, not one
+an hour. A condition you already know about is not news, and an alerting system that repeats itself
+is one people filter into a folder and stop reading.
+
+Four triggers, each of them a change rather than a condition:
+
+| Trigger | Why it earns a message | Goes to |
+|---|---|---|
+| A fingerprint never seen before | genuinely new. One arrived in the whole of 2026-09-20, so this is rare rather than noisy | App Admin |
+| A resolved fault recurring | a fix has already failed - louder than anything new | App Admin |
+| The health band dropping: green to amber, or amber to red | the page's own verdict changing | App Admin |
+| Three failed passwords for one user | as section 1 | that tenant's admin |
+
+**Two things deliberately do not trigger.** A fault recurring normally - that is what
+`OccurrenceCount` is for, and acknowledging exists precisely to silence it. And the score being low
+but steady, which is a condition somebody already knows about.
+
+### The band drop needs an evaluator, and the others do not
+
+The other three triggers fire where the thing happens: a fault is recorded, a password fails. The
+band is different - it is computed from a query, and **nothing computes it unless somebody opens
+the page.** An alert that only fires while being watched is not an alert.
+
+So it needs a periodic evaluation, and the shape of that matters:
+
+- **Not on every telemetry flush.** That is every thirty seconds, in every running instance, each
+  running the whole snapshot query. The measurement would cost more than the thing it measures.
+- **Once an hour, claimed.** One instance evaluates and the others do not, which needs the last
+  band and the time it was recorded held somewhere both can see - a single-row state table, updated
+  with the claim, so a second instance finds the hour already taken.
+
+That claim is the whole difficulty. Without it, ten browser sessions mean ten evaluations and ten
+identical emails, which is the flood the throttle exists to prevent arriving by a different door.
+
+### The one failure that cannot be emailed, and what covers it
+
+**If the database is unreachable there is nothing to send and nobody to send it to.** There is no
+`FW_ErrorLog` to write, no flush that succeeds, and no recipient list to read - the recipients live
+in `FW_Employees`. "Nobody can log in" is the worst outage this system has and it is exactly the one
+the application cannot report on its own.
+
+**Covered outside the application by RDS-Knight**, decided 2026-09-20. That is the correct shape:
+a watcher that does not depend on the thing it watches. Configuring it is server work and is not
+done through Claude. Nothing in this application should try to cover this case as well - a
+half-working internal version would read like protection that is not there.
+
 ### The throttle
 
 **One message per fingerprint per hour, and one failed-sign-in message per registration per hour.**
@@ -383,6 +432,13 @@ loses the lot at process exit anyway. The database switch rides the registration
 `SessionStarter` already loads, so it costs no extra round trip.
 
 ## 9. Timing the Find button
+
+**BUILT 2026-09-20.** `FW_UsageCounter` (sql/145), `UsageCounters.vb`, the timing carried back on the
+DataTable from `GetBrowseRowsByRegistration`, the stopwatch around `FindButton_Click`, and the
+SEARCH TIMING panel on the page. Two things nearly made it record nothing silently, both worth
+knowing: the flush timer started only on the first fault, so a healthy installation never started
+it; and `FindButton_Click` had to start its stopwatch before validation, or refused Finds would be
+excluded and the page would measure only the happy path.
 
 **Decided 2026-09-20: time both halves.** They diverge for a real reason, and neither is
 interpretable on its own.

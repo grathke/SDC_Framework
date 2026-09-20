@@ -41,12 +41,14 @@ Namespace SDC.Framework
         Private ReadOnly refreshButton As Button
         Private ReadOnly closeButton As Button
         Private ReadOnly asAtLabel As Label
+        Private ReadOnly queryStoreLabel As Label
 
         Private ReadOnly savesTile As Panel
         Private ReadOnly faultsTile As Panel
         Private ReadOnly fallbacksTile As Panel
 
         Private ReadOnly activityPanel As Panel
+        Private ReadOnly timingPanel As Panel
         Private ReadOnly attentionGrid As DataGridView
 
         Private snapshot As HealthDataAccess.HealthSnapshot
@@ -83,10 +85,12 @@ Namespace SDC.Framework
             refreshButton = New Button()
             closeButton = New Button()
             asAtLabel = New Label()
+            queryStoreLabel = New Label()
             savesTile = New Panel()
             faultsTile = New Panel()
             fallbacksTile = New Panel()
             activityPanel = New Panel()
+            timingPanel = New Panel()
             attentionGrid = New DataGridView()
 
             BuildHeader()
@@ -138,6 +142,18 @@ Namespace SDC.Framework
             registrationCombo.SelectedIndex = 0
 
             AddHandler registrationCombo.SelectedIndexChanged, AddressOf RegistrationCombo_Changed
+
+            ' A fact about the installation, not a suggestion. Query Store is SQL Server's own
+            ' flight recorder - every query's text, plan and timings - and with it off none of
+            ' that is being kept. Shown for the same reason telemetry being off would be shown:
+            ' an installation recording nothing looks identical to one with no problems.
+            queryStoreLabel.Text = String.Empty
+            queryStoreLabel.Font = New Font("Segoe UI", 9.0F, FontStyle.Regular)
+            queryStoreLabel.ForeColor = MutedColour
+            queryStoreLabel.Location = New Point(296, 50)
+            queryStoreLabel.Size = New Size(340, 20)
+            queryStoreLabel.TextAlign = ContentAlignment.MiddleLeft
+            Controls.Add(queryStoreLabel)
 
             periodCombo.DropDownStyle = ComboBoxStyle.DropDownList
             periodCombo.Font = New Font("Segoe UI", 10.0F)
@@ -252,11 +268,105 @@ Namespace SDC.Framework
             }
             Controls.Add(heading)
 
+            ' Narrowed from full width to make room for the timing beside it. Six operation types
+            ' in two rows still fit; a seventh would wrap to a third row and be clipped, which the
+            ' fill guards against by stopping rather than drawing off the bottom.
             activityPanel.Location = New Point(24, 410)
-            activityPanel.Size = New Size(PageWidth - 48, 92)
+            activityPanel.Size = New Size(700, 92)
             activityPanel.BackColor = Color.White
             activityPanel.BorderStyle = BorderStyle.FixedSingle
             Controls.Add(activityPanel)
+
+            Dim timingHeading As New Label() With {
+                .Text = "SEARCH TIMING",
+                .Font = New Font("Segoe UI", 9.5F, FontStyle.Bold),
+                .ForeColor = MutedColour,
+                .Location = New Point(742, 386),
+                .Size = New Size(250, 20),
+                .TextAlign = ContentAlignment.MiddleLeft
+            }
+            Controls.Add(timingHeading)
+
+            timingPanel.Location = New Point(740, 410)
+            timingPanel.Size = New Size(PageWidth - 764, 92)
+            timingPanel.BackColor = Color.White
+            timingPanel.BorderStyle = BorderStyle.FixedSingle
+            Controls.Add(timingPanel)
+        End Sub
+
+        ''' <summary>
+        ''' What Find costs, and where the time is going.
+        '''
+        ''' The slowest page by its worst case, not by its average: an average that looks
+        ''' acceptable while one Find in twenty takes four seconds is the shape of complaint this
+        ''' panel exists to catch.
+        '''
+        ''' Never labelled "response time". The stopwatch stops when the grid paints server-side,
+        ''' and over Thinfinity the pixels still have to reach the browser - so this is a floor on
+        ''' what the user experienced, not the thing itself.
+        ''' </summary>
+        Private Sub FillTiming()
+            timingPanel.Controls.Clear()
+
+            If snapshot Is Nothing OrElse snapshot.SearchTimings.Count = 0 Then
+                timingPanel.Controls.Add(New Label() With {
+                    .Text = "No searches recorded in this period.",
+                    .Font = New Font("Segoe UI", 9.5F, FontStyle.Italic),
+                    .ForeColor = MutedColour,
+                    .Location = New Point(12, 12),
+                    .Size = New Size(380, 22),
+                    .TextAlign = ContentAlignment.MiddleLeft
+                })
+                Return
+            End If
+
+            Dim worst = snapshot.SearchTimings(0)
+            Dim totalSearches = 0
+            For Each timing In snapshot.SearchTimings
+                totalSearches += timing.Searches
+            Next
+
+            timingPanel.Controls.Add(New Label() With {
+                .Text = totalSearches.ToString("N0", CultureInfo.CurrentCulture) & " searches   |   slowest: " & worst.PageName,
+                .Font = New Font("Segoe UI", 9.5F, FontStyle.Bold),
+                .ForeColor = HeadingColour,
+                .Location = New Point(12, 8),
+                .Size = New Size(timingPanel.Width - 24, 20),
+                .TextAlign = ContentAlignment.MiddleLeft
+            })
+
+            timingPanel.Controls.Add(New Label() With {
+                .Text = "database " & worst.DbAverage.ToString("0", CultureInfo.InvariantCulture) &
+                        "ms avg, " & worst.DbMax.ToString("N0", CultureInfo.CurrentCulture) & "ms worst",
+                .Font = New Font("Segoe UI", 9.0F),
+                .ForeColor = MutedColour,
+                .Location = New Point(12, 32),
+                .Size = New Size(timingPanel.Width - 24, 18),
+                .TextAlign = ContentAlignment.MiddleLeft
+            })
+
+            timingPanel.Controls.Add(New Label() With {
+                .Text = "whole find " & worst.PerceivedAverage.ToString("0", CultureInfo.InvariantCulture) &
+                        "ms avg, " & worst.PerceivedMax.ToString("N0", CultureInfo.CurrentCulture) & "ms worst",
+                .Font = New Font("Segoe UI", 9.0F),
+                .ForeColor = MutedColour,
+                .Location = New Point(12, 50),
+                .Size = New Size(timingPanel.Width - 24, 18),
+                .TextAlign = ContentAlignment.MiddleLeft
+            })
+
+            ' The diagnosis, which is the part worth reading. "Slow" is not actionable; "not the
+            ' database" is, because it says which half to go and look at.
+            Dim diagnosis = worst.Diagnosis
+
+            timingPanel.Controls.Add(New Label() With {
+                .Text = diagnosis,
+                .Font = New Font("Segoe UI", 9.0F, FontStyle.Bold),
+                .ForeColor = If(diagnosis = "fine", Color.FromArgb(35, 160, 85), Color.FromArgb(232, 160, 25)),
+                .Location = New Point(12, 68),
+                .Size = New Size(timingPanel.Width - 24, 18),
+                .TextAlign = ContentAlignment.MiddleLeft
+            })
         End Sub
 
         ''' <summary>
@@ -379,6 +489,15 @@ Namespace SDC.Framework
             }
             attentionGrid.Columns.Add(ackColumn)
 
+            Dim fixedColumn As New DataGridViewButtonColumn() With {
+                .Name = "Fixed",
+                .HeaderText = String.Empty,
+                .Text = "Fixed",
+                .UseColumnTextForButtonValue = True,
+                .Width = 75
+            }
+            attentionGrid.Columns.Add(fixedColumn)
+
             Dim idColumn = NewTextColumn("ErrorLogID", "ErrorLogID", 60)
             idColumn.Visible = False
             attentionGrid.Columns.Add(idColumn)
@@ -439,6 +558,46 @@ Namespace SDC.Framework
             End Using
         End Sub
 
+        ''' <summary>
+        ''' Records that a fault has been fixed, and what the fix was.
+        '''
+        ''' It asks for the text rather than offering to skip it. A resolution with no note is a
+        ''' tick that tells the next person nothing, and the next person is usually the same person
+        ''' three months later. A commit hash is the most useful thing to put there.
+        ''' </summary>
+        Private Sub MarkFaultFixed(rowIndex As Integer)
+            Dim errorLogId = FaultIdOnRow(rowIndex)
+            If errorLogId <= 0 Then Return
+
+            Dim row = attentionGrid.Rows(rowIndex)
+            Dim headline = Convert.ToString(row.Cells("Fault").Value, CultureInfo.InvariantCulture)
+
+            Using prompt As New FW_FaultResolution(headline)
+                If prompt.ShowDialog(Me) <> DialogResult.OK Then Return
+
+                If HealthDataAccess.Resolve(errorLogId, currentUser.UserId, prompt.Resolution) Then
+                    LoadSnapshot()
+                Else
+                    MessageBox.Show(Me, "THE FAULT COULD NOT BE MARKED AS FIXED.", "FIXED",
+                                    MessageBoxButtons.OK, MessageBoxIcon.Warning)
+                End If
+            End Using
+        End Sub
+
+        ''' <summary>
+        ''' What state a fault is in, said in a few words.
+        '''
+        ''' "Fixed - RECURRED" is the one worth reading. It is checked first because it outranks
+        ''' everything else: a fault that came back after a fix is not merely open, it is evidence
+        ''' that a fix did not hold.
+        ''' </summary>
+        Private Shared Function StateOf(fault As HealthDataAccess.FaultLine) As String
+            If fault.RecurredAfterResolved AndAlso Not fault.Resolved Then Return "RECURRED after fix"
+            If fault.Resolved Then Return "Fixed"
+            If fault.Acknowledged Then Return "Acknowledged"
+            Return "Open"
+        End Function
+
         ''' <summary>The fault on a row, or zero for the placeholder row that says there are none.</summary>
         Private Function FaultIdOnRow(rowIndex As Integer) As Integer
             If rowIndex < 0 OrElse rowIndex >= attentionGrid.Rows.Count Then Return 0
@@ -459,6 +618,11 @@ Namespace SDC.Framework
 
             If columnName = "Detail" Then
                 OpenFaultDetail(FaultIdOnRow(e.RowIndex))
+                Return
+            End If
+
+            If columnName = "Fixed" Then
+                MarkFaultFixed(e.RowIndex)
                 Return
             End If
 
@@ -536,6 +700,37 @@ Namespace SDC.Framework
             LoadSnapshot()
         End Sub
 
+        ''' <summary>
+        ''' Says whether SQL Server is keeping a record of its own queries.
+        '''
+        ''' Amber when off rather than red: nothing is broken, but nothing is being kept either,
+        ''' and the distinction matters. Plain grey when on, because a working flight recorder is
+        ''' not news.
+        ''' </summary>
+        Private Sub ShowQueryStoreState()
+            Dim state = If(snapshot Is Nothing, String.Empty, snapshot.QueryStoreState)
+
+            Select Case state.ToUpperInvariant()
+                Case "READ_WRITE"
+                    queryStoreLabel.Text = "Query Store: recording"
+                    queryStoreLabel.ForeColor = MutedColour
+
+                Case "READ_ONLY"
+                    ' It has stopped taking new data - almost always because it filled its quota.
+                    queryStoreLabel.Text = "Query Store: read only - it has stopped recording"
+                    queryStoreLabel.ForeColor = Color.FromArgb(232, 160, 25)
+
+                Case "OFF", "ERROR"
+                    queryStoreLabel.Text = "Query Store: off - no query history is being kept"
+                    queryStoreLabel.ForeColor = Color.FromArgb(232, 160, 25)
+
+                Case Else
+                    ' An older SQL Server, or no permission to read the view. Not worth shouting
+                    ' about, and not worth claiming either way.
+                    queryStoreLabel.Text = String.Empty
+            End Select
+        End Sub
+
         Private Function SelectedRegistrationId() As Integer
             Dim selected = TryCast(registrationCombo.SelectedItem, RegistrationOption)
             If selected Is Nothing Then Return 0
@@ -565,12 +760,15 @@ Namespace SDC.Framework
                     SetTile(fallbacksTile, "--", String.Empty, MutedColour)
                     attentionGrid.Rows.Clear()
                     activityPanel.Controls.Clear()
+                    timingPanel.Controls.Clear()
                     Return
                 End If
 
                 ' "as at", never "now". The figures are as old as the last refresh, and a page that
                 ' implies otherwise is claiming something it cannot know.
                 asAtLabel.Text = "as at " & snapshot.TakenAtUtc.ToLocalTime().ToString("HH:mm", CultureInfo.CurrentCulture)
+
+                ShowQueryStoreState()
 
                 If snapshot.HasData Then
                     gauge.Score = snapshot.Score
@@ -581,6 +779,7 @@ Namespace SDC.Framework
                 FillRegistrations(snapshot)
                 FillTiles()
                 FillActivity()
+                FillTiming()
                 FillNeedsAttention()
 
             Finally
@@ -643,10 +842,16 @@ Namespace SDC.Framework
                 row.Cells("Origin").Value = fault.Origin
                 row.Cells("Count").Value = fault.OccurrenceCount.ToString("N0", CultureInfo.CurrentCulture)
                 row.Cells("Age").Value = fault.Age
-                row.Cells("State").Value = If(fault.Acknowledged, "Acknowledged", "Open")
+                row.Cells("State").Value = StateOf(fault)
                 row.Cells("ErrorLogID").Value = fault.ErrorLogID.ToString(CultureInfo.InvariantCulture)
 
-                If fault.Acknowledged Then
+                ' A fault that came back after somebody fixed it is the loudest thing this panel
+                ' can show - louder than one nobody has seen before, because a fix has already
+                ' failed. It gets the colour, and it gets it even when acknowledged.
+                If fault.RecurredAfterResolved AndAlso Not fault.Resolved Then
+                    row.DefaultCellStyle.ForeColor = Color.FromArgb(200, 55, 50)
+                    row.DefaultCellStyle.Font = New Font("Segoe UI", 9.5F, FontStyle.Bold)
+                ElseIf fault.Resolved OrElse fault.Acknowledged Then
                     row.DefaultCellStyle.ForeColor = MutedColour
                 End If
             Next

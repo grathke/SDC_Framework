@@ -95,7 +95,16 @@ Namespace SDC.Framework
         Private ReadOnly timerLock As New Object()
         Private flushTimer As Timer
 
-        Private Sub EnsureFlushTimer()
+        ''' <summary>
+        ''' Starts the background flush if it is not already running.
+        '''
+        ''' Friend rather than private because the usage counters need it too, and they are the
+        ''' reason it cannot stay keyed to the first fault. It used to start only when something
+        ''' threw; on a healthy installation nothing ever does, so the timer never started and
+        ''' anything else riding it - counters, timings - would have sat in memory until the
+        ''' process ended. Whoever records first starts it.
+        ''' </summary>
+        Friend Sub EnsureFlushTimer()
             If flushTimer IsNot Nothing Then Return
 
             SyncLock timerLock
@@ -150,6 +159,16 @@ Namespace SDC.Framework
         ''' does something risky. Safe to call when there is nothing to write.
         ''' </summary>
         Public Sub Flush()
+            ' The usage counters ride this flush rather than owning a timer of their own. One timer
+            ' and one connection for everything recorded in the background: a second would be a
+            ' second copy of the same policy and twice the round trips. It goes first and outside
+            ' the fault-log guards, so a quiet fault queue does not stop the counters being written.
+            Try
+                UsageCounters.Flush()
+            Catch
+                ' Counting must never cost a fault its flush.
+            End Try
+
             If pending.IsEmpty Then Return
 
             SyncLock flushLock
@@ -186,6 +205,17 @@ Namespace SDC.Framework
         ''' A fault already seen increments its count and moves LastSeen; a new one is inserted.
         ''' MERGE by fingerprint does both in one round trip per note, against a unique index, and
         ''' the whole batch shares a connection.
+        '''
+        ''' **A repeat clears Resolved and raises RecurredAfterResolved.** Somebody said this was
+        ''' fixed and it has happened again, which is a louder signal than a fault nobody has seen
+        ''' before: the fix did not work, or worked and was undone. The Resolution text is kept
+        ''' rather than cleared - what somebody thought the fix was is exactly what makes the
+        ''' recurrence worth reading.
+        '''
+        ''' Acknowledged is deliberately NOT cleared on a repeat. Acknowledging means "I have seen
+        ''' this, stop counting it", and a known fault recurring is not news - clearing it would
+        ''' make every acknowledged fault shout again on its next occurrence, which is the opposite
+        ''' of what acknowledging is for.
         ''' </summary>
         Private Sub WriteBatch(batch As List(Of Note))
             ' An empty database name means "the configured one" - the builder only overrides the
@@ -209,7 +239,10 @@ Namespace SDC.Framework
                             "  RegistrationID = @RegistrationID, " &
                             "  UserID = @UserID, " &
                             "  SessionKind = @SessionKind, " &
-                            "  AppVersion = @AppVersion " &
+                            "  AppVersion = @AppVersion, " &
+                            "  RecurredAfterResolved = CASE WHEN target.Resolved = 1 THEN 1 " &
+                            "                               ELSE target.RecurredAfterResolved END, " &
+                            "  Resolved = 0 " &
                             "WHEN NOT MATCHED THEN INSERT " &
                             "  (Fingerprint, ExceptionType, PageName, Context, Message, StackTrace, " &
                             "   Origin, SessionKind, RegistrationID, UserID, MachineName, AppVersion, " &
