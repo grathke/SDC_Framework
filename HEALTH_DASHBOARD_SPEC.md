@@ -362,11 +362,38 @@ Four triggers, each of them a change rather than a condition:
 | A fingerprint never seen before | genuinely new. One arrived in the whole of 2026-09-20, so this is rare rather than noisy | App Admin |
 | A resolved fault recurring | a fix has already failed - louder than anything new | App Admin |
 | The health band dropping: green to amber, or amber to red | the page's own verdict changing | App Admin |
-| Three failed passwords for one user | as section 1 | that tenant's admin |
+| Three failed passwords for one user | as section 1 | that tenant's admin **and** App Admin |
 
 **Two things deliberately do not trigger.** A fault recurring normally - that is what
 `OccurrenceCount` is for, and acknowledging exists precisely to silence it. And the score being low
 but steady, which is a condition somebody already knows about.
+
+### Failed sign-ins go to both, and each copy says so
+
+**Amended 2026-09-20.** This alert was originally specified as the tenant's business alone. It goes
+to both: the tenant's administrator, because it is their user and their security, and App Admin,
+because a run of failed sign-ins is often the first visible symptom of something we have broken.
+
+**The App Admin copy says the tenant's administrator has also been told.** Without that line the
+same event produces two different mistakes - ringing a customer about something they are already
+looking at, or assuming somebody else has told them and nobody has. One sentence removes both.
+
+**One send, not two, for the throttle's purposes.** The rule stays one failed-sign-in message per
+registration per hour and covers both audiences: a tenant with four administrators and us is one
+event, not five.
+
+**The two copies do not carry the same detail, and the difference is deliberate.**
+
+| | Carries | Why |
+|---|---|---|
+| Tenant's administrator | the attempted user name, time and reason | their user, and they are entitled to it |
+| App Admin | the registration, how many accounts, how many attempts | a count is enough to know something is wrong |
+
+The attempted user name is left out of our copy on purpose. People type their password into the
+user name box, and a name typed at another company's login has no business sitting in our inbox in
+plaintext for ever. It is in `FW_ErrorLog`'s failed-attempt table, behind a login, for the case
+where somebody genuinely needs it - which is the same rule as section 7's allow-list, applied to
+the one payload where it is easiest to forget.
 
 ### The band drop needs an evaluator, and the others do not
 
