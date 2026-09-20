@@ -265,17 +265,37 @@ Two audiences, and they are not the same people:
 | App Admin | crashes, fault fingerprints, telemetry health | ours |
 
 **Two independent flags, not one exclusive choice.** A single preference was considered and does not
-fit: nothing stops a role carrying both `Typ_AppAdmin` and `Typ_CompanyAdmin` today, so a person can
-legitimately be both and want both kinds of mail. Whether a role being both is deliberate or merely
-unguarded is a `Roles_U` question, and it is open.
+fit, and the reason is in the data rather than in theory.
+
+Checked against the live database on 2026-09-20. **No single role carries both flags** - the three
+admin roles are Company Admin, Application Admin and City Admin, each exactly one type. Nothing
+prevents a role being flagged both, and `Roles_U` presents them as two plain checkboxes with no
+handler making them honour each other, but nobody has done it. Unguarded rather than deliberate,
+and not worth guarding on this evidence.
+
+**Two people hold one role of each kind**, which is what actually decides this: an Application Admin
+role and a Company Admin role at the same time. They are our administrators *and* a tenant's, and
+they want both kinds of mail. A single exclusive choice would make them pick.
 
 The flags live on the employee record beside Email, because the address is already there and needs no
 second copy to drift out of step. Required only while the person holds an admin role, which is the
 conditional rule `FW_Base_U.SetFieldRequired` already provides.
 
+**A registration has as many administrators as it has, and every one whose flag is true is a
+recipient.** The rule is not "find the administrator" - it is a query returning a list, and the list
+is often longer than one. A tenant with four company administrators where three have opted in sends
+to those three.
+
+**One message addressed to all of them, not one message each.** It keeps the throttle honest - one
+send per registration per hour means one send, whether that is to one recipient or to six - and it
+is what stops a tenant with six administrators costing six times the Zoho quota of a tenant with
+one. Every recipient of a given message belongs to the same registration, so they may be addressed
+openly; a message never spans tenants.
+
 **If nobody at a tenant is flagged, send nothing and do not fall back to us.** Quietly redirecting a
 customer's security alert into our inbox is the multi-tenant leak `PARKED_DECISIONS.md` warns about.
-Show it on this page as a gap instead, which is worth seeing anyway.
+Show it on this page as a gap instead, which is worth seeing anyway - a tenant with no recipient is
+a tenant whose security alerts are going nowhere, and nobody there knows it.
 
 ### What may leave the building
 
