@@ -11,9 +11,18 @@ Namespace SDC.Framework
     ''' <summary>
     ''' Scales a form's contents from the keyboard, and keeps them centred.
     '''
-    ''' F8 larger, F9 smaller, F10 back to normal. Not F11 or F12: a browser takes those for
-    ''' fullscreen and developer tools before VirtualUI ever sees them, and not Shift+F10, which is
-    ''' Windows' own context-menu key.
+    ''' F7 smaller, F8 larger, F9 back to normal - three adjacent keys, because a zoom somebody
+    ''' reaches for repeatedly should be one hand movement rather than three.
+    '''
+    ''' Smaller on the left, because the keys are a physical row and a row of controls that
+    ''' changes a magnitude should ascend left to right. Every zoom control anywhere puts the minus
+    ''' left of the plus, and getting it backwards costs a wrong press every time until it is
+    ''' learned.
+    '''
+    ''' Not F11 or F12: a browser takes those for fullscreen and developer tools before VirtualUI
+    ''' ever sees them, and not Shift+F10, which is Windows' own context-menu key. F10 was the
+    ''' reset until 2026-09-20 and is better off not being anything - Windows gives it to the menu
+    ''' bar, so it arrives already spoken for on a form that has one.
     '''
     ''' Every zoom is applied to a snapshot of the original layout rather than to whatever is on
     ''' screen. Scaling relatively - ten per cent of what is already there - compounds its rounding
@@ -121,14 +130,15 @@ Namespace SDC.Framework
 
             AddHandler form.KeyDown,
                 Sub(sender As Object, e As KeyEventArgs)
-                    ' F8 larger, F9 smaller, F10 reset. It was F9, F10, F8 until 2026-09-19, which
-                    ' put the reset before the pair it resets rather than after them.
+                    ' F7 smaller, F8 larger, F9 reset. It was F9, F10, F8 until 2026-09-19 and
+                    ' F8, F9, F10 until 2026-09-20. The reset still sits after the pair it resets;
+                    ' what changed is that the pair now ascends left to right.
                     Select Case e.KeyCode
+                        Case Keys.F7
+                            Apply(form, state.Factor - Increment)
                         Case Keys.F8
                             Apply(form, state.Factor + Increment)
                         Case Keys.F9
-                            Apply(form, state.Factor - Increment)
-                        Case Keys.F10
                             Apply(form, 1.0F)
                         Case Else
                             Return
@@ -477,7 +487,7 @@ Namespace SDC.Framework
             ' how to work it, and nothing else on screen says either - the keys are not on a menu,
             ' a toolbar or a tooltip. Discreet enough to ignore, in the same grey as the number.
             indicator.Text = CInt(Math.Round(state.Factor * 100)).ToString(Globalization.CultureInfo.InvariantCulture) &
-                             "%:  F8 larger   F9 smaller   F10 reset"
+                             "%:  F7 smaller   F8 larger   F9 reset"
             ' Scaled, because the band is a design measurement like every other one here: the gap
             ' below the page's content grows with the zoom, and a band fixed at its 100 per cent
             ' value would leave the read-out drifting towards the top of it as the space opened up.
