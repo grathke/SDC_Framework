@@ -211,6 +211,26 @@ compiled**.
 
 ---
 
+## HEALTH — The system health page
+
+`FW_Health_B`, App Admin only, cross-registration. Built 2026-09-19 and 2026-09-20.
+
+| ID | What | How | Result |
+|---|---|---|---|
+| HEALTH-1 | The score clears the needle | Open the page at any zoom. The number sits below the hub with air between them, and the word underneath is not clipped by the control's edge. **Was a defect:** the readout was anchored to the bottom with a two pixel margin and sized from the band reserved for it, so a large score reached into the needle and the word lost its descenders. It now measures down from the hub and sizes into what is left. | pass 2026-09-20 |
+| HEALTH-2 | The breakdown adds up to the needle | The two lines under the gauge itemise the penalties, and they are read from the same `SavePenalty`, `FaultPenalty` and `FallbackPenalty` the score subtracts. A gauge reading 99.3 with no faults showed `-0.7 saves`, which was three failed saves of 209. | pass 2026-09-20 |
+| HEALTH-3 | No grid header lights up | Open the page. Neither grid paints a blue header. **Was a defect:** with `EnableHeadersVisualStyles` off, a grid paints the header of whichever column holds the selected cell, and unset that is the system highlight - a solid blue first header the moment a grid filled. | pass 2026-09-20 |
+| HEALTH-4 | A selected row stays readable | Click any row in either grid. The text keeps its colour. **Was a defect:** `SelectionBackColor` was a pale tint and `SelectionForeColor` was left at the system white, so a selected row's text vanished. The fault rows set their own and were fine; the "nothing has been recorded" row returned before that code and was invisible always. | pass 2026-09-20 |
+| HEALTH-5 | Nothing is selected on open | Open the page. No row carries the selection tint until one is clicked. **Was a defect:** a `DataGridView` selects its first row the moment rows arrive, and the page opened claiming a choice nobody had made. Both the selection and the current cell are cleared. | pass 2026-09-20 |
+| HEALTH-6 | Colour never carries meaning alone | No row in either grid, or in the history window, is coloured to say something. State, Reason, Tries and `Held?` say it in words. A recurred fault is bold, which is weight rather than colour and survives a grey screenshot, a printer and a colour-blind reader. | pass 2026-09-20 |
+| HEALTH-7 | A fixed fault leaves the list | Resolve a fault. It disappears from Needs Attention rather than greying. A fault that recurs has `Resolved` cleared by `Telemetry` while its `Resolution` text is kept, so it returns carrying what was tried. | pass 2026-09-20 - the gauge crash was closed by `scripts\resolve-fault.ps1` and the list went empty |
+| HEALTH-8 | History says what was done and whether it held | `History` lists the fault, when it was dealt with, who or what decided, `Held?`, and the fix text with the whole of it on hover. `Decided by` reads `Code change` for `ResolvedSource = Claude` and the person's name otherwise. | pass 2026-09-20 |
+| HEALTH-9 | The Query Store tick shows and changes the state | Ticked means recording. Ticking turns it on without a confirmation; unticking confirms first and says the history is discarded; cancelling puts the tick back with nothing changed. The tick is set from what the server reports afterwards, never from what the click asked for. | pass 2026-09-20 - on, off and cancel |
+| HEALTH-10 | A login without ALTER DATABASE is told so | With a database login lacking `ALTER DATABASE`, the tick reports that it cannot change Query Store and names the database, rather than appearing to work. | untested - this machine connects as `sa`, which has the permission |
+| HEALTH-11 | The page zooms | F7 smaller, F8 larger, F9 reset. The gauge, the grids and the row heights all scale, the read-out sits under the fault grid, and the level survives closing and reopening the page. | pass 2026-09-20 |
+
+---
+
 ## SESSION — Sign-in, sign-out and how a session ended
 
 `FW_Session` takes one row per sign-in. The start is exact; the end is not always, and `EndReason`
