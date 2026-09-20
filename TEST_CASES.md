@@ -211,6 +211,24 @@ compiled**.
 
 ---
 
+## SESSION — Sign-in, sign-out and how a session ended
+
+`FW_Session` takes one row per sign-in. The start is exact; the end is not always, and `EndReason`
+says which kind it got. Read the rows with `.\scripts\sessions.ps1`.
+
+| ID | What | How | Result |
+|---|---|---|---|
+| SESSION-1 | A clean exit is exact | Sign in, close the application properly. The row gets `EndReason = Exit` and a connected time matching the wall clock. | pass 2026-09-20 — 169s and 39s on two desktop runs |
+| SESSION-2 | A closed browser tab writes `Disconnect` | Sign in over Thinfinity, close the browser tab, leave the application alone. After the disconnect grace the row gets `EndReason = Disconnect`, written at the moment `VirtualUISessionClosed` fires. **Was a defect:** the handler logged, started a forced-exit timer, asked the message loop to unwind and left the row to Main's `Finally`. VirtualUI takes the process down first, so the `Finally` never ran, no `Main end` was logged, and the session stayed open for ever. An earlier session the same evening unwound properly and wrote `Exit` — two paths, and the one that loses the row is the ordinary one. Found 2026-09-20 by running exactly this test. | pass 2026-09-20 — `Disconnect` after 187s, kind `Thinfinity` |
+| SESSION-3 | The forced-exit timer survives long enough to fire | With a modal dialog holding the process open, a VirtualUI close still exits within about three seconds and logs `forcing exit`. **Was a defect:** the timer was a local kept only by `GC.KeepAlive` at the end of its own method, so it was collectable the moment the method returned and a collected `Timer` never fires. It is now a field. | untested — needs a stuck modal to reproduce |
+| SESSION-4 | A killed process is closed by the next startup | Sign in, kill the process, start the application again. The startup sweep closes the row as `Crash`, logging how many it closed, and only for this machine. | pass 2026-09-20 — `Closed 1 abandoned session(s) from this machine` |
+| SESSION-5 | A crash reports its length as unknown | `sessions.ps1` prints `unknown` rather than a number for a `Crash` row, and `-Summary` counts it apart from the arithmetic. The end fell back to the last activity, or to the start where there was none, which understates rather than invents. | pass 2026-09-20 |
+| SESSION-6 | Activity is stamped as it happens | Sign in and run a search. `LastActivityOn` is set within the flush interval. **Was a defect:** it was derived at the end of a session from `MAX(FW_UsageCounter.HourUtc)` where the bucket was at or after `StartedOn`. A bucket carries the hour it opened, so a session starting at 20:40 never matched its own 20:00 bucket — null every time. The buckets are also keyed by registration rather than by user, which would have credited one person with another's searches. | pass 2026-09-20 — first non-null reading, 50s into an open session |
+| SESSION-7 | Switch User reads as two sessions | Sign in, switch to another user. The first row is ended and a second opened, carrying the new user, registration and role. | untested |
+| SESSION-8 | The disconnect grace is not a constant | Measured at 156s, about 210s, 197s and 187s on four occasions. Nothing may subtract a fixed figure from a `Disconnect` end to guess when the tab was really closed. | pass 2026-09-20 — four readings, no two alike |
+
+---
+
 ## Automated coverage
 
 These run without a database and are not duplicated above.
