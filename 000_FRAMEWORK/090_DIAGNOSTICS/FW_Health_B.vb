@@ -43,6 +43,15 @@ Namespace SDC.Framework
         Private ReadOnly asAtLabel As Label
         Private ReadOnly queryStoreLabel As Label
 
+        ''' <summary>
+        ''' Query Store on or off, shown and changed by the one control.
+        '''
+        ''' Ticked means recording. READ_ONLY - filled its quota and stopped - reads as unticked,
+        ''' because the tick answers "is anything being kept" and the honest answer there is no.
+        ''' It also leaves the person something to click: ticking names READ_WRITE and repairs it.
+        ''' </summary>
+        Private ReadOnly queryStoreCheck As CheckBox
+
         Private ReadOnly savesTile As Panel
         Private ReadOnly faultsTile As Panel
         Private ReadOnly fallbacksTile As Panel
@@ -87,6 +96,7 @@ Namespace SDC.Framework
             closeButton = New Button()
             asAtLabel = New Label()
             queryStoreLabel = New Label()
+            queryStoreCheck = New CheckBox()
             savesTile = New Panel()
             faultsTile = New Panel()
             fallbacksTile = New Panel()
@@ -155,10 +165,26 @@ Namespace SDC.Framework
             ' Moved under the title once the scope combo took its place on the top row. It reads
             ' better there anyway: a standing fact about the installation belongs with the heading,
             ' not among the controls somebody is about to change.
+            ' The tick is the control and the label is the commentary. Splitting them lets the
+            ' label say the thing a tick cannot - that it is on but has stopped recording - while
+            ' the tick stays a plain answer to "is anything being kept".
+            queryStoreCheck.Text = "Query Store"
+            queryStoreCheck.Font = New Font("Segoe UI", 9.0F, FontStyle.Regular)
+            queryStoreCheck.ForeColor = MutedColour
+            queryStoreCheck.Location = New Point(24, 48)
+            queryStoreCheck.Size = New Size(100, 22)
+            queryStoreCheck.TextAlign = ContentAlignment.MiddleLeft
+            queryStoreCheck.Visible = False
+            Controls.Add(queryStoreCheck)
+
+            ' Click rather than CheckedChanged. CheckedChanged fires when the page sets the tick
+            ' from the snapshot, which would have every refresh trying to alter the database.
+            AddHandler queryStoreCheck.Click, AddressOf QueryStoreCheck_Click
+
             queryStoreLabel.Text = String.Empty
             queryStoreLabel.Font = New Font("Segoe UI", 9.0F, FontStyle.Regular)
             queryStoreLabel.ForeColor = MutedColour
-            queryStoreLabel.Location = New Point(26, 50)
+            queryStoreLabel.Location = New Point(128, 50)
             queryStoreLabel.Size = New Size(420, 20)
             queryStoreLabel.TextAlign = ContentAlignment.MiddleLeft
             Controls.Add(queryStoreLabel)
@@ -853,27 +879,102 @@ Namespace SDC.Framework
         ''' not news.
         ''' </summary>
         Private Sub ShowQueryStoreState()
-            Dim state = If(snapshot Is Nothing, String.Empty, snapshot.QueryStoreState)
+            ShowQueryStoreState(If(snapshot Is Nothing, String.Empty, snapshot.QueryStoreState))
+        End Sub
 
-            Select Case state.ToUpperInvariant()
+        ''' <summary>
+        ''' Shows a Query Store state, whether it came from the snapshot or from having just
+        ''' changed it. Taking the state as an argument is what lets the checkbox report what the
+        ''' server says afterwards rather than what the click assumed.
+        ''' </summary>
+        Private Sub ShowQueryStoreState(state As String)
+            Dim known = If(state, String.Empty).ToUpperInvariant()
+
+            Select Case known
                 Case "READ_WRITE"
-                    queryStoreLabel.Text = "Query Store: recording"
+                    queryStoreCheck.Visible = True
+                    queryStoreCheck.Checked = True
+                    queryStoreLabel.Text = "recording"
                     queryStoreLabel.ForeColor = MutedColour
 
                 Case "READ_ONLY"
-                    ' It has stopped taking new data - almost always because it filled its quota.
-                    queryStoreLabel.Text = "Query Store: read only - it has stopped recording"
+                    ' On, and taking nothing new - almost always because it filled its quota. The
+                    ' tick is off because nothing is being kept, which is what the tick claims.
+                    ' Ticking it names READ_WRITE and puts it back.
+                    queryStoreCheck.Visible = True
+                    queryStoreCheck.Checked = False
+                    queryStoreLabel.Text = "read only - it has stopped recording"
                     queryStoreLabel.ForeColor = Color.FromArgb(232, 160, 25)
 
                 Case "OFF", "ERROR"
-                    queryStoreLabel.Text = "Query Store: off - no query history is being kept"
+                    queryStoreCheck.Visible = True
+                    queryStoreCheck.Checked = False
+                    queryStoreLabel.Text = "off - no query history is being kept"
                     queryStoreLabel.ForeColor = Color.FromArgb(232, 160, 25)
 
                 Case Else
                     ' An older SQL Server, or no permission to read the view. Not worth shouting
-                    ' about, and not worth claiming either way.
+                    ' about, and not worth claiming either way - and certainly not worth offering
+                    ' a tick that cannot be honoured.
+                    queryStoreCheck.Visible = False
                     queryStoreLabel.Text = String.Empty
             End Select
+        End Sub
+
+        ''' <summary>
+        ''' Turns Query Store on or off.
+        '''
+        ''' **Off is confirmed and on is not.** Turning it off throws away every query, plan and
+        ''' timing it has collected, and nothing archives them first. Turning it on costs storage
+        ''' and loses nothing, which is not worth a dialog.
+        '''
+        ''' The tick is set from what the server reports afterwards, never from what the click
+        ''' asked for. A refused change - no ALTER DATABASE permission, most likely - must leave
+        ''' the tick showing the truth rather than the intention.
+        ''' </summary>
+        Private Sub QueryStoreCheck_Click(sender As Object, e As EventArgs)
+            Dim turningOn = queryStoreCheck.Checked
+
+            If Not turningOn Then
+                Dim confirmed = MessageBox.Show(
+                    Me,
+                    "TURNING QUERY STORE OFF DISCARDS EVERY QUERY, PLAN AND TIMING IT HAS COLLECTED." & vbCrLf & vbCrLf &
+                    "NOTHING KEEPS A COPY. TURNING IT BACK ON STARTS FROM EMPTY." & vbCrLf & vbCrLf &
+                    "TURN IT OFF?",
+                    "Turn Query Store Off",
+                    MessageBoxButtons.YesNo,
+                    MessageBoxIcon.Warning,
+                    MessageBoxDefaultButton.Button2)
+
+                If confirmed <> DialogResult.Yes Then
+                    ' Put the tick back where it was. Nothing was changed.
+                    ShowQueryStoreState()
+                    Return
+                End If
+            End If
+
+            Dim result As HealthDataAccess.QueryStoreResult
+            queryStoreCheck.Enabled = False
+            Cursor = Cursors.WaitCursor
+            Try
+                result = HealthDataAccess.SetQueryStore(turningOn)
+            Finally
+                Cursor = Cursors.Default
+                queryStoreCheck.Enabled = True
+            End Try
+
+            ' The state the server reports, not the one the click asked for.
+            If Not String.IsNullOrWhiteSpace(result.State) Then
+                ShowQueryStoreState(result.State)
+                If snapshot IsNot Nothing Then snapshot.QueryStoreState = result.State
+            Else
+                ShowQueryStoreState()
+            End If
+
+            If Not result.Succeeded Then
+                MessageBox.Show(Me, result.Message.ToUpperInvariant(),
+                                "Query Store Unchanged", MessageBoxButtons.OK, MessageBoxIcon.Warning)
+            End If
         End Sub
 
         Private Function SelectedRegistrationId() As Integer

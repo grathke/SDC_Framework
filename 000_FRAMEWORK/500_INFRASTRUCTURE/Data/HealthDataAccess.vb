@@ -481,9 +481,16 @@ Namespace SDC.Framework
         ''' having come back before, and that stays true however many times it is fixed
         ''' afterwards - it is the reason somebody should be sceptical of the next fix.
         ''' </summary>
+        ''' <summary>
+        ''' <paramref name="resolvedSource"/> separates the two ways a fault stops mattering.
+        ''' "User" is somebody deciding it is acceptable; "Claude" is the code having been changed.
+        ''' Only the second predicts the fault will stop happening, which is why the next
+        ''' recurrence should be read very differently depending on which it was.
+        ''' </summary>
         Public Shared Function Resolve(errorLogId As Integer,
                                        userId As Integer,
-                                       resolution As String) As Boolean
+                                       resolution As String,
+                                       Optional resolvedSource As String = "User") As Boolean
             If errorLogId <= 0 Then Return False
 
             Try
@@ -493,7 +500,7 @@ Namespace SDC.Framework
                     Using cmd As New SqlCommand(
                         "UPDATE dbo.FW_ErrorLog " &
                         "SET Resolved = 1, ResolvedBy = @UserID, ResolvedOn = SYSUTCDATETIME(), " &
-                        "    Resolution = @Resolution, " &
+                        "    Resolution = @Resolution, ResolvedSource = @Source, " &
                         "    Acknowledged = 1, " &
                         "    AcknowledgedBy = ISNULL(AcknowledgedBy, @UserID), " &
                         "    AcknowledgedOn = ISNULL(AcknowledgedOn, SYSUTCDATETIME()) " &
@@ -506,6 +513,10 @@ Namespace SDC.Framework
                             If(String.IsNullOrWhiteSpace(resolution),
                                CType(DBNull.Value, Object),
                                resolution.Trim())
+                        cmd.Parameters.Add("@Source", SqlDbType.VarChar, 20).Value =
+                            If(String.IsNullOrWhiteSpace(resolvedSource),
+                               CType(DBNull.Value, Object),
+                               resolvedSource.Trim())
 
                         Return cmd.ExecuteNonQuery() > 0
                     End Using
@@ -540,6 +551,114 @@ Namespace SDC.Framework
             Catch ex As Exception
                 Telemetry.Error(ex, "HealthDataAccess.Acknowledge")
                 Return False
+            End Try
+        End Function
+
+        ''' <summary>What happened when the health page asked to change Query Store.</summary>
+        Public Class QueryStoreResult
+            Public Property Succeeded As Boolean
+            Public Property Message As String = String.Empty
+
+            ''' <summary>The state as it stands after the attempt, read back rather than assumed.</summary>
+            Public Property State As String = String.Empty
+        End Class
+
+        ''' <summary>
+        ''' Turns SQL Server's Query Store on or off for this database.
+        '''
+        ''' **The database name cannot be a parameter.** ALTER DATABASE takes an identifier, not a
+        ''' value, so this is the one place here that builds its statement as text. It is built from
+        ''' DB_NAME() through QUOTENAME on the server, never from anything typed or passed in -
+        ''' there is no input to inject through.
+        '''
+        ''' **ON also repairs READ_ONLY.** Query Store that has filled its quota stops recording and
+        ''' reads as on, which is the worst of the three states because it looks healthy. Turning it
+        ''' on names OPERATION_MODE = READ_WRITE explicitly, which puts it back. SIZE_BASED_CLEANUP_MODE
+        ''' = AUTO is what stops it happening again: without it, full means stopped for ever.
+        '''
+        ''' **OFF discards what has been collected.** The history is not archived anywhere; switching
+        ''' off throws it away. The page confirms before calling this, and that confirmation is the
+        ''' only thing standing between a click and losing it.
+        '''
+        ''' **It needs ALTER DATABASE permission**, which the application's own login may not have.
+        ''' A refusal is reported as a refusal rather than swallowed - a button that appears to work
+        ''' and changes nothing is worse than one that says it cannot.
+        '''
+        ''' The state is read back from sys.database_query_store_options afterwards rather than
+        ''' assumed from the statement having succeeded.
+        ''' </summary>
+        Public Shared Function SetQueryStore(enable As Boolean) As QueryStoreResult
+            Dim result As New QueryStoreResult()
+
+            Dim alterSql As String =
+                If(enable,
+                   "SET QUERY_STORE = ON (" &
+                   "OPERATION_MODE = READ_WRITE, " &
+                   "QUERY_CAPTURE_MODE = AUTO, " &
+                   "MAX_STORAGE_SIZE_MB = 1024, " &
+                   "SIZE_BASED_CLEANUP_MODE = AUTO, " &
+                   "CLEANUP_POLICY = (STALE_QUERY_THRESHOLD_DAYS = 30))",
+                   "SET QUERY_STORE = OFF")
+
+            Try
+                Using conn As New SqlConnection(DataAccess.BuildConnectionStringForDatabase(String.Empty))
+                    conn.Open()
+
+                    Using cmd As New SqlCommand(
+                        "DECLARE @stmt nvarchar(max) = " &
+                        "  N'ALTER DATABASE ' + QUOTENAME(DB_NAME()) + N' " & alterSql & "';" &
+                        "EXEC sp_executesql @stmt;", conn)
+
+                        ' ALTER DATABASE is not instant on a busy database - it waits for the
+                        ' database to be quiet enough to change an option. Left at the default
+                        ' timeout this reads as a hung page.
+                        cmd.CommandTimeout = 60
+                        cmd.ExecuteNonQuery()
+                    End Using
+
+                    result.Succeeded = True
+                    result.Message = If(enable,
+                                        "Query Store is now recording.",
+                                        "Query Store is off and its history has been discarded.")
+
+                    Using stateCmd As New SqlCommand(
+                        "SELECT ISNULL((SELECT TOP 1 actual_state_desc FROM sys.database_query_store_options), " &
+                        "              'UNAVAILABLE') AS QueryStoreState;", conn)
+
+                        Dim state = stateCmd.ExecuteScalar()
+                        If state IsNot Nothing AndAlso Not Convert.IsDBNull(state) Then
+                            result.State = Convert.ToString(state, CultureInfo.InvariantCulture)
+                        End If
+                    End Using
+                End Using
+
+            Catch ex As SqlException
+                ' 262 and 15151 are the two ways SQL Server says "not yours to change". Named
+                ' rather than folded into the general failure, because the answer is completely
+                ' different: nothing is broken, the login simply cannot do this.
+                result.Succeeded = False
+                result.Message = If(ex.Number = 262 OrElse ex.Number = 15151,
+                                    "This database login does not have permission to change Query Store. " &
+                                    "It needs ALTER DATABASE on " & SafeDatabaseName() & ".",
+                                    "SQL Server refused the change: " & ex.Message)
+                Telemetry.Error(ex, "HealthDataAccess.SetQueryStore")
+
+            Catch ex As Exception
+                result.Succeeded = False
+                result.Message = "The change could not be made: " & ex.Message
+                Telemetry.Error(ex, "HealthDataAccess.SetQueryStore")
+            End Try
+
+            Return result
+        End Function
+
+        ''' <summary>The database being reported on, for a message that has to name it.</summary>
+        Private Shared Function SafeDatabaseName() As String
+            Try
+                Dim builder As New SqlConnectionStringBuilder(DataAccess.BuildConnectionStringForDatabase(String.Empty))
+                Return builder.InitialCatalog
+            Catch
+                Return "this database"
             End Try
         End Function
 
@@ -612,6 +731,7 @@ Namespace SDC.Framework
             "  ISNULL(n.RecurredAfterResolved, 0) AS RecurredAfterResolved " &
             "FROM dbo.FW_ErrorLog n " &
             "WHERE n.LastSeen >= @Cutoff AND ISNULL(n.DeletedFlag, 0) = 0 " &
+            "  AND ISNULL(n.Resolved, 0) = 0 " &
             "  AND " & Scoped("n") & " " &
             "ORDER BY ISNULL(n.Acknowledged, 0), n.LastSeen DESC;" &
             vbCrLf &

@@ -545,7 +545,74 @@ user experienced, not the thing itself.
 No `Stopwatch` exists anywhere in the codebase today, so this is a new shared helper rather than an
 extension of one.
 
-## 10. What it needs before it can be built
+## 10. Query Store, and closing a fault
+
+Built 2026-09-20.
+
+### 10.1 The tick
+
+Query Store's state was a label under the title, and a label is a statement about something
+nobody could act on. It is now a checkbox beside that label.
+
+**Ticked means recording.** The three states SQL Server reports do not map onto two, and the
+awkward one is `READ_ONLY`: Query Store filled its quota and stopped taking new data. It is on,
+and it is keeping nothing new. The tick reads that as **off**, because the tick answers "is
+anything being kept" and there the honest answer is no. Showing it ticked would be the worst of
+the three - a control claiming everything is fine about the one state that looks fine and is not.
+Leaving it unticked also leaves something to click: ticking names `OPERATION_MODE = READ_WRITE`,
+which repairs it.
+
+**Turning it on sets `SIZE_BASED_CLEANUP_MODE = AUTO`**, with a 1 GB cap and a 30-day stale
+threshold. Without that, full means stopped for ever, and the `READ_ONLY` state comes straight
+back.
+
+**Turning it off is confirmed; turning it on is not.** Off discards every query, plan and timing
+collected, and nothing archives them first. On costs storage and loses nothing.
+
+**The tick is set from what the server reports afterwards, never from what the click asked for.**
+`ALTER DATABASE` needs a permission the application's login may not have - `sa` has it here, a
+real deployment may not - and a refusal must leave the tick showing the truth. A control that
+appears to work and changes nothing is worse than one that says it cannot.
+
+`ALTER DATABASE` takes an identifier rather than a value, so this is the one statement here built
+as text. It is built from `DB_NAME()` through `QUOTENAME` on the server; there is no input to
+inject through.
+
+### 10.2 A fault leaves the list when it is fixed
+
+The Needs Attention query returned everything in the window, resolved rows included and greyed.
+It now excludes `Resolved = 1`. Nothing is lost by that: `Telemetry` clears `Resolved` when a
+fault recurs while **keeping** the `Resolution` text, so a fix that did not hold comes back
+carrying what was already tried.
+
+### 10.3 Who decided it was finished with
+
+`sql/152` adds `FW_ErrorLog.ResolvedSource` - `User` or `Claude`.
+
+`ResolvedBy` is a `FW_Users` id, and a developer working from a script is not signed in. There is
+no id to write and writing somebody else's would be a lie in a column somebody will one day
+trust. `ResolvedSource` carries the distinction instead, and it is not bookkeeping: "the
+administrator decided this is acceptable" and "the code was changed" are different claims, and
+only the second predicts the fault stops happening. A recurrence after a code change deserves far
+more scepticism than one after a shrug.
+
+Existing rows are null rather than `User`. They were resolved before the column existed, and
+defaulting them would invent an answer.
+
+### 10.4 The loop, and what deliberately is not in it
+
+`scripts/needs-attention.ps1` prints what the page is showing. `scripts/resolve-fault.ps1` marks
+one fixed with what was changed. Both name the database at the top, every time - the application
+writes to whatever database its server points at, these read `run-local.ps1`, and the day those
+differ an empty list would look exactly like nothing being wrong.
+
+**A per-fault "ask to fix" button was designed and dropped on 2026-09-20.** It would have added
+four columns and a button so an administrator could flag individual rows for a developer, with a
+session hook to deliver the flags. The objection that killed it was the right one: if the
+instruction is "fix what needs attention", that *is* the instruction, and a button asking the
+person to repeat it row by row is filing work. The list is the queue. Do not rebuild this.
+
+## 11. What it needs before it can be built
 
 1. A `FW_RoleSchema` row so Roles can offer it, a `FW_RoleDetails` row granting Read to the
    Application Admin role, and an entry in `ICON_CATALOG.md` for the tile that opens it.
@@ -553,7 +620,7 @@ extension of one.
 3. Enough real data to be worth looking at. The table was created on 2026-09-19 with no rows, so the
    fault panel will be empty for a while - which is the correct reading, not a bug.
 
-## 11. Deliberately not in version one
+## 12. Deliberately not in version one
 
 - Row-level read counting, as section 1. Search counts are in, and need a small table of hourly
   buckets plus one call in `FW_Base_B`'s find handler - neither exists yet, so the Activity panel

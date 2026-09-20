@@ -21,13 +21,7 @@ param(
 
 $ErrorActionPreference = "Stop"
 
-$root = Split-Path -Parent $PSScriptRoot
-$configPath = Join-Path $root "run-local.ps1"
-
-if (-not (Test-Path $configPath)) {
-	Write-Error "run-local.ps1 not found. Copy run-local.ps1.example and fill in your values."
-	exit 2
-}
+. "$PSScriptRoot\db-config.ps1"
 
 if (-not $File -and -not $Query) {
 	Write-Error "Give either -File <path.sql> or -Query <statement>."
@@ -39,16 +33,11 @@ if ($File -and -not (Test-Path $File)) {
 	exit 2
 }
 
-$config   = Get-Content $configPath -Raw
-$server   = [regex]::Match($config, '\$Server\s*=\s*"([^"]+)"').Groups[1].Value
-$user     = [regex]::Match($config, '\$User\s*=\s*"([^"]+)"').Groups[1].Value
-$password = [regex]::Match($config, '\$Password\s*=\s*"([^"]+)"').Groups[1].Value
-$database = [regex]::Match($config, '\$Database\s*=\s*"([^"]+)"').Groups[1].Value
-
-if (-not $server -or -not $user -or -not $password -or -not $database) {
-	Write-Error "Could not read Server, User, Password and Database from run-local.ps1."
-	exit 2
-}
+$config   = Get-SdcDbConfig
+$server   = $config.Server
+$user     = $config.User
+$password = $config.Password
+$database = $config.Database
 
 # The password is deliberately absent. Everything else is worth seeing before a migration runs
 # against the wrong database, which is the mistake this line exists to prevent.
