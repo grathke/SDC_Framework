@@ -126,10 +126,13 @@ Namespace SDC.Framework
             ' The scope is a control rather than a caption, because it can now be narrowed. It
             ' still opens on every registration, which is what this page is for - narrowing is for
             ' answering "is it just them?" and the page should not start by assuming it is.
+            ' Beside the period combo and on its baseline, because the two are one thought: the
+            ' slice of the installation being looked at. Under the title they read as a caption on
+            ' the page rather than as a control somebody can change.
             registrationCombo.DropDownStyle = ComboBoxStyle.DropDownList
-            registrationCombo.Font = New Font("Segoe UI", 9.0F)
-            registrationCombo.Location = New Point(24, 48)
-            registrationCombo.Size = New Size(260, 24)
+            registrationCombo.Font = New Font("Segoe UI", 10.0F)
+            registrationCombo.Location = New Point(PageWidth - 660, 22)
+            registrationCombo.Size = New Size(220, 28)
             registrationCombo.DropDownWidth = registrationCombo.Width
             Controls.Add(registrationCombo)
 
@@ -147,11 +150,14 @@ Namespace SDC.Framework
             ' flight recorder - every query's text, plan and timings - and with it off none of
             ' that is being kept. Shown for the same reason telemetry being off would be shown:
             ' an installation recording nothing looks identical to one with no problems.
+            ' Moved under the title once the scope combo took its place on the top row. It reads
+            ' better there anyway: a standing fact about the installation belongs with the heading,
+            ' not among the controls somebody is about to change.
             queryStoreLabel.Text = String.Empty
             queryStoreLabel.Font = New Font("Segoe UI", 9.0F, FontStyle.Regular)
             queryStoreLabel.ForeColor = MutedColour
-            queryStoreLabel.Location = New Point(296, 50)
-            queryStoreLabel.Size = New Size(340, 20)
+            queryStoreLabel.Location = New Point(26, 50)
+            queryStoreLabel.Size = New Size(420, 20)
             queryStoreLabel.TextAlign = ContentAlignment.MiddleLeft
             Controls.Add(queryStoreLabel)
 
@@ -465,11 +471,21 @@ Namespace SDC.Framework
             attentionGrid.EnableHeadersVisualStyles = False
             attentionGrid.ColumnHeadersDefaultCellStyle.BackColor = Color.FromArgb(245, 246, 248)
 
-            attentionGrid.Columns.Add(NewTextColumn("Fault", "Fault", 520))
-            attentionGrid.Columns.Add(NewTextColumn("Origin", "Origin", 150))
-            attentionGrid.Columns.Add(NewTextColumn("Count", "Count", 80))
-            attentionGrid.Columns.Add(NewTextColumn("Age", "Last seen", 120))
-            attentionGrid.Columns.Add(NewTextColumn("State", "State", 130))
+            ' Selection is a pale tint rather than the system's inverted blue. Nothing on this
+            ' panel acts on the selected row - the buttons act on their own row - so a full-width
+            ' band of blue is loud about something that means nothing. The foreground is left to
+            ' each row, so an acknowledged row stays grey and a recurred one stays red when the
+            ' cursor happens to be on it.
+            attentionGrid.DefaultCellStyle.SelectionBackColor = Color.FromArgb(232, 240, 250)
+
+            ' Widths add up to less than the grid, so the buttons sit in view rather than being
+            ' pushed off the right edge by a Fault column wide enough for the longest name anybody
+            ' might ever see. A long fault ellipses; the whole of it is a Detail click away.
+            attentionGrid.Columns.Add(NewTextColumn("Fault", "Fault", 380))
+            attentionGrid.Columns.Add(NewTextColumn("Origin", "Origin", 140))
+            attentionGrid.Columns.Add(NewTextColumn("Count", "Count", 70))
+            attentionGrid.Columns.Add(NewTextColumn("Age", "Last seen", 110))
+            attentionGrid.Columns.Add(NewTextColumn("State", "State", 150))
 
             Dim detailColumn As New DataGridViewButtonColumn() With {
                 .Name = "Detail",
@@ -854,6 +870,11 @@ Namespace SDC.Framework
                 ElseIf fault.Resolved OrElse fault.Acknowledged Then
                     row.DefaultCellStyle.ForeColor = MutedColour
                 End If
+
+                ' Selected text keeps the colour the row earned. Without this the grid inverts it
+                ' to white and a recurred fault stops looking like one the moment it is clicked.
+                row.DefaultCellStyle.SelectionForeColor =
+                    If(row.DefaultCellStyle.ForeColor.IsEmpty, HeadingColour, row.DefaultCellStyle.ForeColor)
             Next
         End Sub
 
