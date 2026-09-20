@@ -395,6 +395,34 @@ plaintext for ever. It is in `FW_ErrorLog`'s failed-attempt table, behind a logi
 where somebody genuinely needs it - which is the same rule as section 7's allow-list, applied to
 the one payload where it is easiest to forget.
 
+### Which tenant a failed sign-in belongs to, which is not always knowable
+
+**Added 2026-09-20**, from the obvious question: nobody has logged in, so how is the tenant known?
+It splits in two, and only one half has an answer.
+
+**A known user with a wrong password resolves cleanly.** `FW_Users` carries its own
+`RegistrationID` column - no join, no inference - so the registration is known before the password
+is even checked. Since the three-attempt rule counts wrong passwords against one account, the case
+the rule was written for always knows who to tell.
+
+**An unknown user name resolves to nobody.** There is no user, so no registration, so no tenant
+administrator exists to notify. Those go to App Admin alone, and the message says the tenant could
+not be determined rather than leaving a silence to be read either way.
+
+That second case is the more interesting one anyway: a wrong password against a real account is
+usually somebody's caps lock, while a run of names that do not exist is somebody trying names.
+
+**Inferring the tenant from an email domain was considered and is not the default.** Matching what
+was typed against `FW_Registration.MainEMail`'s domain would resolve most real attempts, because
+somebody guessing names at a company uses that company's domain. It is still an inference, and a
+wrong one routes one company's security alert to another company - the precise leak this document
+guards against everywhere else. A shared or generic domain is all it takes.
+
+If it is ever wanted, the safe shape is narrow: match only against `MainEMail`'s domain, require
+**exactly one** registration to match, and say in the message that the tenant was inferred from the
+domain rather than known. Ambiguous, or no match, means App Admin alone. Anything looser is a guess
+wearing a fact's clothes.
+
 ### The band drop needs an evaluator, and the others do not
 
 The other three triggers fire where the thing happens: a fault is recorded, a password fails. The
