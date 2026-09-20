@@ -41,6 +41,20 @@ Namespace SDC.Framework
         End Enum
 
         Private NotInheritable Class Note
+            ''' <summary>
+            ''' When the fault happened, not when it was written.
+            '''
+            ''' FW_ErrorLog's FirstSeen and LastSeen default to SYSUTCDATETIME(), which is the
+            ''' moment of the INSERT - and notes are queued and flushed on a thirty-second timer,
+            ''' so every fault was being stamped up to thirty seconds late. Worse on the paths that
+            ''' matter: a fault flushed from Main's Finally or from the VirtualUI close handler
+            ''' could be recorded minutes after it happened, and the page would then say "2h ago"
+            ''' about something with no way of knowing how far out it was.
+            '''
+            ''' Measured on 2026-09-20: a crash logged at 08:56:53 was stored as 08:57:23.
+            ''' </summary>
+            Public Property OccurredUtc As Date = Date.UtcNow
+
             Public Property Fingerprint As String = String.Empty
             Public Property ExceptionType As String = String.Empty
             Public Property PageName As String = String.Empty
@@ -188,7 +202,8 @@ Namespace SDC.Framework
                             "ON target.Fingerprint = source.Fingerprint " &
                             "WHEN MATCHED THEN UPDATE SET " &
                             "  OccurrenceCount = target.OccurrenceCount + 1, " &
-                            "  LastSeen = SYSUTCDATETIME(), " &
+                            "  LastSeen = CASE WHEN @OccurredUtc > target.LastSeen " &
+                            "                  THEN @OccurredUtc ELSE target.LastSeen END, " &
                             "  Message = @Message, " &
                             "  StackTrace = @StackTrace, " &
                             "  RegistrationID = @RegistrationID, " &
@@ -197,9 +212,17 @@ Namespace SDC.Framework
                             "  AppVersion = @AppVersion " &
                             "WHEN NOT MATCHED THEN INSERT " &
                             "  (Fingerprint, ExceptionType, PageName, Context, Message, StackTrace, " &
-                            "   Origin, SessionKind, RegistrationID, UserID, MachineName, AppVersion) " &
+                            "   Origin, SessionKind, RegistrationID, UserID, MachineName, AppVersion, " &
+                            "   FirstSeen, LastSeen) " &
                             "  VALUES (@Fingerprint, @ExceptionType, @PageName, @Context, @Message, @StackTrace, " &
-                            "          @Origin, @SessionKind, @RegistrationID, @UserID, @MachineName, @AppVersion);", conn)
+                            "          @Origin, @SessionKind, @RegistrationID, @UserID, @MachineName, @AppVersion, " &
+                            "          @OccurredUtc, @OccurredUtc);", conn)
+
+                            ' LastSeen only ever moves forward. A batch is not guaranteed to be in
+                            ' time order - the queue is concurrent, and a flush can carry notes from
+                            ' before one already written - so taking the later of the two stops an
+                            ' out-of-order note dragging a fault's age backwards.
+                            cmd.Parameters.AddWithValue("@OccurredUtc", note.OccurredUtc)
 
                             cmd.Parameters.AddWithValue("@Fingerprint", note.Fingerprint)
                             cmd.Parameters.AddWithValue("@ExceptionType", Clip(note.ExceptionType, 200))
@@ -235,6 +258,7 @@ Namespace SDC.Framework
             Dim session = SessionState.Current
 
             Return New Note With {
+                .OccurredUtc = Date.UtcNow,
                 .Fingerprint = ComputeFingerprint(exceptionType, resolvedContext, stack),
                 .ExceptionType = exceptionType,
                 .PageName = ResolvePageName(resolvedContext),

@@ -227,12 +227,47 @@ The start is exact. The end is not always, and the row records which kind it got
 210 - it is not a constant, and shaving a fixed figure off would invent a precision the measurement
 does not have. Record the reason, and let the report say the end is approximate.
 
+**The app is told, and does not merely die.** Worth saying because the opposite is the natural
+assumption. Thinfinity notifies the process and `Program.VirtualUISessionClosed` handles it - forms
+close through their own Closing handlers, telemetry flushes, then the process exits. There is a
+real moment at which the end can be written. It is simply a late one.
+
 **There is no heartbeat.** It is the classic round-trip multiplier - every user, every interval, for
 ever, whether or not anything changed - and it would not even work here: the process keeps running
 for those three minutes with no browser attached, so the heartbeat keeps beating.
 
 `SessionStarter` owns the write. It is already the single place that runs everything a sign-in does
 once the person is known, and Switch User goes through it too.
+
+### Two durations, because the session end is the wrong measure of when somebody stopped
+
+**Added 2026-09-20.** A session row alone answers "how long was this session open", which is not the
+same question as "how long was the user in the system", and on this application the two come apart
+badly.
+
+Somebody signs in at 10:00, reads a page, walks away at 10:05 and closes the tab at 15:00. The
+session end lands at about 15:03, and the row claims a five-hour session of which four and a half
+were an empty chair. That is not hypothetical - on 2026-09-20 the health page sat open on this
+machine from 09:05 to 13:00 while nobody was at the desk.
+
+So the row carries both:
+
+| | Measured from | Answers |
+|---|---|---|
+| **Connected** | start to session end | what the server and the licence were carrying |
+| **Active** | start to the person's last recorded action | how long the person was actually there |
+
+**Active is derived, not written.** Its input is the last of the usage counters in section 1 -
+`Search`, `BrowseOpen`, `RecordOpen` - which are being recorded anyway. The last one of those is
+when somebody was demonstrably present, and nothing new has to be captured to know it.
+
+This also rescues the `Crash` case. A killed process - a reboot, Task Manager, a server restart -
+never reaches `OnClose`, so there is no end at all. The last recorded action is then the only
+estimate available, which is a further reason to record it and the reason the reconciler should
+use it rather than guessing from the start time.
+
+**Report the pair, never an average of them.** Connected is generous and Active is strict, and a
+figure between the two would be a number describing nothing.
 
 ### The panel
 
@@ -385,8 +420,17 @@ extension of one.
 - Row-level read counting, as section 1. Search counts are in, and need a small table of hourly
   buckets plus one call in `FW_Base_B`'s find handler - neither exists yet, so the Activity panel
   shows writes only until they do.
-- Per-registration breakdown. It invites using this page to look at a customer, which section 5 says
-  it is not for.
+- ~~Per-registration breakdown.~~ **Built 2026-09-20, reversing this.** It was excluded on the
+  grounds that it invites using the page to look at a customer. What is built is narrower than a
+  breakdown and does not: a single scope selector that filters the whole page at once, defaulting
+  to every registration, so narrowing is a deliberate act and the page never opens on one customer.
+  Section 5 still holds - this page is our view of the installation, and a customer-facing version
+  is a different page with the predicate in place. The filter answers "is it just them?", which is
+  a question about the installation.
+
+  One consequence to know: `FW_ErrorLog.RegistrationID` is nullable, because a fault during login
+  or startup happens before anybody has a registration. Filtering to one registration correctly
+  hides those; they are visible only with the filter off, which is the page's normal state.
 - Trend lines and history. The needle is "now". A history panel is a second page over the same data
   and can wait until there is history worth plotting.
 - Alerting. Help Desk tickets raised from a fault fingerprint were designed alongside the telemetry
