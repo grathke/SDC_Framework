@@ -206,6 +206,16 @@ Namespace SDC.Framework
                                       registrationTimeZone,
                                       messageRetrievalMinutes)
 
+            ' Recorded after the session is established rather than before, so the row carries the
+            ' registration and role the person actually ended up in - a role prompt can change both
+            ' - and so a sign-in that was refused above leaves no session behind.
+            '
+            ' Here rather than in LoginForm because Switch User comes through this same method, and
+            ' a switch is a different person doing different things under different permissions.
+            ' SessionTracking.Begin ends any session still open for this process before starting
+            ' the new one, so a switch reads as two sessions rather than one long confusing one.
+            SessionTracking.Begin(user.UserId, sessionRegistrationId, selectedRole.RoleID)
+
             If loginWarnings.Count > 0 Then
                 MessageBox.Show(owner, String.Join(vbCrLf & vbCrLf, loginWarnings).ToUpperInvariant(),
                                 "Login Warnings", MessageBoxButtons.OK, MessageBoxIcon.Warning)

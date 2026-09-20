@@ -256,6 +256,7 @@ Namespace SDC.Framework
 
             Dim killer As New System.Threading.Timer(Sub()
                                                          Log("VirtualUI session closed - forcing exit")
+                                                         SessionTracking.End(SessionTracking.EndReason.Disconnect)
                                                          Telemetry.Flush()
                                                          Environment.Exit(0)
                                                      End Sub, Nothing, 3000, System.Threading.Timeout.Infinite)
@@ -270,6 +271,7 @@ Namespace SDC.Framework
             Catch ex As Exception
                 Log("VirtualUI session close handler failed: " & ex.Message)
                 Telemetry.Error(ex, "Program.VirtualUISessionClosed", Telemetry.FaultOrigin.Swallowed)
+                SessionTracking.End(SessionTracking.EndReason.Disconnect)
                 Telemetry.Flush()
                 Environment.Exit(0)
             End Try
@@ -390,6 +392,16 @@ Namespace SDC.Framework
                 ' through the login window because that is the first thing on screen.
                 SchemaDriftWatch.StartInBackground(args)
 
+                ' A process that was killed - Task Manager, a reboot, the machine going down -
+                ' never reached the end of its session, so its row would show somebody connected
+                ' for ever. This process starting is proof the earlier ones on this machine are
+                ' not running.
+                '
+                ' Before the login form, so a session opened a moment later is not caught by its
+                ' own sweep, and only this machine's rows: another server's open sessions may be
+                ' perfectly alive.
+                SessionTracking.CloseAbandonedSessions()
+
                 ' What is on the other end. A probe only - nothing acts on the answer yet.
                 ClientDevice.Probe()
 
@@ -407,6 +419,9 @@ Namespace SDC.Framework
             Finally
                 ' The last chance to write what was queued. A fault a second before the window
                 ' closes is the one worth having, and it is the one a timer would miss.
+                ' Ended before the flush, because closing the session writes a row and the flush is
+                ' the last thing that runs. A session left open reads as somebody still connected.
+                SessionTracking.End(SessionTracking.EndReason.[Exit])
                 Telemetry.Flush()
             End Try
         End Sub

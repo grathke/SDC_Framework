@@ -61,6 +61,21 @@ Namespace SDC.Framework
             Public Property Count As Integer
         End Class
 
+        ''' <summary>
+        ''' A run of failed sign-ins against one name.
+        '''
+        ''' Grouped by name and reason rather than listed one per row: the pattern is what matters,
+        ''' and forty rows of the same person mistyping their password says less than one row
+        ''' saying forty.
+        ''' </summary>
+        Public NotInheritable Class LoginFailure
+            Public Property AttemptedUserName As String = String.Empty
+            Public Property Reason As String = String.Empty
+            Public Property Attempts As Integer
+            Public Property LastAttempt As Date
+            Public Property RegistrationName As String = String.Empty
+        End Class
+
         Public NotInheritable Class RegistrationRow
             Public Property ID As Integer
             Public Property Name As String = String.Empty
@@ -194,6 +209,9 @@ Namespace SDC.Framework
             ''' <summary>What Find cost, per page. Empty until the counters have something.</summary>
             Public Property SearchTimings As New List(Of SearchTiming)()
 
+            ''' <summary>Failed sign-ins in the window, worst first.</summary>
+            Public Property LoginFailures As New List(Of LoginFailure)()
+
             Public Property Failed As Boolean
             Public Property FailureMessage As String = String.Empty
 
@@ -276,6 +294,7 @@ Namespace SDC.Framework
                                 snapshot.QueryStoreState = SafeString(reader, "QueryStoreState")
                             End If
                             If reader.NextResult() Then ReadSearchTimings(reader, snapshot)
+                            If reader.NextResult() Then ReadLoginFailures(reader, snapshot)
                         End Using
                     End Using
                 End Using
@@ -316,6 +335,18 @@ Namespace SDC.Framework
                 snapshot.Activity.Add(New ActivityCount With {
                     .OperationType = SafeString(reader, "OperationType"),
                     .Count = SafeInt(reader, "Total")
+                })
+            End While
+        End Sub
+
+        Private Shared Sub ReadLoginFailures(reader As SqlDataReader, snapshot As HealthSnapshot)
+            While reader.Read()
+                snapshot.LoginFailures.Add(New LoginFailure With {
+                    .AttemptedUserName = SafeString(reader, "AttemptedUserName"),
+                    .Reason = SafeString(reader, "Reason"),
+                    .Attempts = SafeInt(reader, "Attempts"),
+                    .LastAttempt = SafeDate(reader, "LastAttempt"),
+                    .RegistrationName = SafeString(reader, "RegistrationName")
                 })
             End While
         End Sub
@@ -602,7 +633,16 @@ Namespace SDC.Framework
             "WHERE u.HourUtc >= @Cutoff AND u.Kind = 'Search' AND ISNULL(u.DeletedFlag, 0) = 0 " &
             "  AND " & Scoped("u") & " " &
             "GROUP BY u.PageName " &
-            "ORDER BY MAX(u.PerceivedMillisMax) DESC;"
+            "ORDER BY MAX(u.PerceivedMillisMax) DESC;" &
+            vbCrLf &
+            "SELECT TOP 12 la.AttemptedUserName, la.Reason, COUNT(*) AS Attempts, " &
+            "  MAX(la.AttemptedOn) AS LastAttempt, ISNULL(MAX(r.RegName), '') AS RegistrationName " &
+            "FROM dbo.FW_LoginAttempt la " &
+            "LEFT JOIN dbo.FW_Registration r ON r.RegistrationID = la.RegistrationID " &
+            "WHERE la.AttemptedOn >= @Cutoff AND ISNULL(la.DeletedFlag, 0) = 0 " &
+            "  AND " & Scoped("la") & " " &
+            "GROUP BY la.AttemptedUserName, la.Reason " &
+            "ORDER BY COUNT(*) DESC, MAX(la.AttemptedOn) DESC;"
 
         Private Shared Function Scoped(tableAlias As String) As String
             Return String.Format(CultureInfo.InvariantCulture, RegistrationFilter, tableAlias)

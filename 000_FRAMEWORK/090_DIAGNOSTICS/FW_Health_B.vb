@@ -50,6 +50,7 @@ Namespace SDC.Framework
         Private ReadOnly activityPanel As Panel
         Private ReadOnly timingPanel As Panel
         Private ReadOnly attentionGrid As DataGridView
+        Private ReadOnly loginGrid As DataGridView
 
         Private snapshot As HealthDataAccess.HealthSnapshot
 
@@ -92,6 +93,7 @@ Namespace SDC.Framework
             activityPanel = New Panel()
             timingPanel = New Panel()
             attentionGrid = New DataGridView()
+            loginGrid = New DataGridView()
 
             BuildHeader()
             BuildGaugeAndTiles()
@@ -326,52 +328,81 @@ Namespace SDC.Framework
                 Return
             End If
 
-            Dim worst = snapshot.SearchTimings(0)
+            Dim slowest = snapshot.SearchTimings(0)
             Dim totalSearches = 0
             For Each timing In snapshot.SearchTimings
                 totalSearches += timing.Searches
             Next
 
+            ' No verdict line. There was one - "not the database, the time is client-side" - and it
+            ' came out on 2026-09-20 for two reasons. The two figures below already say which half
+            ' the time is in, more precisely than a sentence can; and it passed judgement on a
+            ' 729ms Find that feels instant, against a threshold picked with no data behind it.
+            ' A panel that cries wolf about something nobody can feel teaches people to ignore it.
             timingPanel.Controls.Add(New Label() With {
-                .Text = totalSearches.ToString("N0", CultureInfo.CurrentCulture) & " searches   |   slowest: " & worst.PageName,
+                .Text = totalSearches.ToString("N0", CultureInfo.CurrentCulture) &
+                        If(totalSearches = 1, " search", " searches"),
                 .Font = New Font("Segoe UI", 9.5F, FontStyle.Bold),
                 .ForeColor = HeadingColour,
-                .Location = New Point(12, 8),
+                .Location = New Point(12, 6),
                 .Size = New Size(timingPanel.Width - 24, 20),
                 .TextAlign = ContentAlignment.MiddleLeft
             })
 
+            ' Labelled once, across the top. Repeating "average" and "slowest" on every row is
+            ' noise when the numbers already line up under their heading.
+            AddTimingRow(slowest.PageName, "average", "slowest", 28, FontStyle.Regular, MutedColour)
+
+            AddTimingRow("database",
+                         slowest.DbAverage.ToString("0", CultureInfo.InvariantCulture) & " ms",
+                         slowest.DbMax.ToString("N0", CultureInfo.CurrentCulture) & " ms",
+                         46, FontStyle.Regular, HeadingColour)
+
+            AddTimingRow("whole find",
+                         slowest.PerceivedAverage.ToString("0", CultureInfo.InvariantCulture) & " ms",
+                         slowest.PerceivedMax.ToString("N0", CultureInfo.CurrentCulture) & " ms",
+                         64, FontStyle.Regular, HeadingColour)
+        End Sub
+
+        ''' <summary>
+        ''' One row of the timing panel: a label on the left and two figures right-aligned under
+        ''' their heading, so a column of numbers reads down rather than being re-labelled on every
+        ''' line.
+        ''' </summary>
+        Private Sub AddTimingRow(caption As String,
+                                 average As String,
+                                 slowest As String,
+                                 top As Integer,
+                                 style As FontStyle,
+                                 colour As Color)
+            Dim rowFont = New Font("Segoe UI", 9.0F, style)
+
             timingPanel.Controls.Add(New Label() With {
-                .Text = "database " & worst.DbAverage.ToString("0", CultureInfo.InvariantCulture) &
-                        "ms avg, " & worst.DbMax.ToString("N0", CultureInfo.CurrentCulture) & "ms worst",
-                .Font = New Font("Segoe UI", 9.0F),
+                .Text = caption,
+                .Font = rowFont,
                 .ForeColor = MutedColour,
-                .Location = New Point(12, 32),
-                .Size = New Size(timingPanel.Width - 24, 18),
+                .Location = New Point(12, top),
+                .Size = New Size(170, 18),
+                .AutoEllipsis = True,
                 .TextAlign = ContentAlignment.MiddleLeft
             })
 
             timingPanel.Controls.Add(New Label() With {
-                .Text = "whole find " & worst.PerceivedAverage.ToString("0", CultureInfo.InvariantCulture) &
-                        "ms avg, " & worst.PerceivedMax.ToString("N0", CultureInfo.CurrentCulture) & "ms worst",
-                .Font = New Font("Segoe UI", 9.0F),
-                .ForeColor = MutedColour,
-                .Location = New Point(12, 50),
-                .Size = New Size(timingPanel.Width - 24, 18),
-                .TextAlign = ContentAlignment.MiddleLeft
+                .Text = average,
+                .Font = rowFont,
+                .ForeColor = colour,
+                .Location = New Point(186, top),
+                .Size = New Size(100, 18),
+                .TextAlign = ContentAlignment.MiddleRight
             })
 
-            ' The diagnosis, which is the part worth reading. "Slow" is not actionable; "not the
-            ' database" is, because it says which half to go and look at.
-            Dim diagnosis = worst.Diagnosis
-
             timingPanel.Controls.Add(New Label() With {
-                .Text = diagnosis,
-                .Font = New Font("Segoe UI", 9.0F, FontStyle.Bold),
-                .ForeColor = If(diagnosis = "fine", Color.FromArgb(35, 160, 85), Color.FromArgb(232, 160, 25)),
-                .Location = New Point(12, 68),
-                .Size = New Size(timingPanel.Width - 24, 18),
-                .TextAlign = ContentAlignment.MiddleLeft
+                .Text = slowest,
+                .Font = rowFont,
+                .ForeColor = colour,
+                .Location = New Point(292, top),
+                .Size = New Size(110, 18),
+                .TextAlign = ContentAlignment.MiddleRight
             })
         End Sub
 
@@ -455,8 +486,11 @@ Namespace SDC.Framework
             }
             Controls.Add(heading)
 
+            ' Narrowed to make room for failed sign-ins beside it. Faults and failed logins are
+            ' both "what needs looking at", and side by side they are read in one glance rather
+            ' than one scrolled past to reach the other.
             attentionGrid.Location = New Point(24, 542)
-            attentionGrid.Size = New Size(PageWidth - 48, PageHeight - 562)
+            attentionGrid.Size = New Size(760, PageHeight - 562)
             attentionGrid.AllowUserToAddRows = False
             attentionGrid.AllowUserToDeleteRows = False
             attentionGrid.AllowUserToResizeRows = False
@@ -530,7 +564,102 @@ Namespace SDC.Framework
             AddHandler attentionGrid.CellDoubleClick, AddressOf AttentionGrid_CellDoubleClick
 
             Controls.Add(attentionGrid)
+
+            Dim loginHeading As New Label() With {
+                .Text = "FAILED SIGN-INS",
+                .Font = New Font("Segoe UI", 9.5F, FontStyle.Bold),
+                .ForeColor = MutedColour,
+                .Location = New Point(802, 518),
+                .Size = New Size(260, 20),
+                .TextAlign = ContentAlignment.MiddleLeft
+            }
+            Controls.Add(loginHeading)
+
+            loginGrid.Location = New Point(800, 542)
+            loginGrid.Size = New Size(PageWidth - 824, PageHeight - 562)
+            loginGrid.AllowUserToAddRows = False
+            loginGrid.AllowUserToDeleteRows = False
+            loginGrid.AllowUserToResizeRows = False
+            loginGrid.ReadOnly = True
+            loginGrid.RowHeadersVisible = False
+            loginGrid.SelectionMode = DataGridViewSelectionMode.FullRowSelect
+            loginGrid.MultiSelect = False
+            loginGrid.BackgroundColor = Color.White
+            loginGrid.BorderStyle = BorderStyle.FixedSingle
+            loginGrid.Font = New Font("Segoe UI", 9.5F)
+            loginGrid.ColumnHeadersDefaultCellStyle.Font = New Font("Segoe UI", 9.5F, FontStyle.Bold)
+            loginGrid.EnableHeadersVisualStyles = False
+            loginGrid.ColumnHeadersDefaultCellStyle.BackColor = Color.FromArgb(245, 246, 248)
+            loginGrid.DefaultCellStyle.SelectionBackColor = Color.FromArgb(232, 240, 250)
+
+            loginGrid.Columns.Add(NewTextColumn("Name", "Name tried", 150))
+            loginGrid.Columns.Add(NewTextColumn("Reason", "Reason", 110))
+            loginGrid.Columns.Add(NewTextColumn("Attempts", "Tries", 55))
+            loginGrid.Columns.Add(NewTextColumn("LoginAge", "Last", 80))
+
+            Controls.Add(loginGrid)
         End Sub
+
+        ''' <summary>
+        ''' Failed sign-ins, grouped by name and reason, worst first.
+        '''
+        ''' Three tries against one name is the trigger the spec names, so the count is what the eye
+        ''' should land on. A name that does not exist is coloured: somebody mistyping their own
+        ''' password is routine, a run of names that were never real is somebody trying names.
+        ''' </summary>
+        Private Sub FillLoginFailures()
+            loginGrid.Rows.Clear()
+
+            If snapshot Is Nothing OrElse snapshot.LoginFailures.Count = 0 Then
+                Dim emptyIndex = loginGrid.Rows.Add()
+                loginGrid.Rows(emptyIndex).Cells("Name").Value = "None in this period."
+                loginGrid.Rows(emptyIndex).DefaultCellStyle.ForeColor = MutedColour
+                loginGrid.Rows(emptyIndex).DefaultCellStyle.Font = New Font("Segoe UI", 9.5F, FontStyle.Italic)
+                Return
+            End If
+
+            For Each failure In snapshot.LoginFailures
+                Dim index = loginGrid.Rows.Add()
+                Dim row = loginGrid.Rows(index)
+
+                row.Cells("Name").Value = failure.AttemptedUserName
+                row.Cells("Reason").Value = FriendlyLoginReason(failure.Reason)
+                row.Cells("Attempts").Value = failure.Attempts.ToString("N0", CultureInfo.CurrentCulture)
+                row.Cells("LoginAge").Value = AgeOf(failure.LastAttempt)
+
+                Dim colour = HeadingColour
+
+                If String.Equals(failure.Reason, "UnknownUser", StringComparison.OrdinalIgnoreCase) Then
+                    colour = Color.FromArgb(200, 55, 50)
+                ElseIf failure.Attempts >= 3 Then
+                    colour = Color.FromArgb(232, 160, 25)
+                End If
+
+                row.DefaultCellStyle.ForeColor = colour
+                row.DefaultCellStyle.SelectionForeColor = colour
+            Next
+        End Sub
+
+        ''' <summary>The stored reason as somebody would say it.</summary>
+        Private Shared Function FriendlyLoginReason(reason As String) As String
+            Select Case If(reason, String.Empty).ToUpperInvariant()
+                Case "UNKNOWNUSER" : Return "No such name"
+                Case "WRONGPASSWORD" : Return "Wrong password"
+                Case "INACTIVE" : Return "Not active"
+                Case "NOPASSWORD" : Return "No password set"
+                Case "DATABASEDOWN" : Return "Database down"
+                Case Else : Return reason
+            End Select
+        End Function
+
+        ''' <summary>"2h ago", "3d ago" - the same wording the fault list uses.</summary>
+        Private Shared Function AgeOf(value As Date) As String
+            Dim span = Date.UtcNow - value
+            If span.TotalMinutes < 1 Then Return "just now"
+            If span.TotalMinutes < 60 Then Return CInt(span.TotalMinutes).ToString(CultureInfo.InvariantCulture) & "m ago"
+            If span.TotalHours < 24 Then Return CInt(span.TotalHours).ToString(CultureInfo.InvariantCulture) & "h ago"
+            Return CInt(span.TotalDays).ToString(CultureInfo.InvariantCulture) & "d ago"
+        End Function
 
         Private Shared Function NewTextColumn(name As String, header As String, width As Integer) As DataGridViewTextBoxColumn
             Return New DataGridViewTextBoxColumn() With {
@@ -775,6 +904,7 @@ Namespace SDC.Framework
                     SetTile(faultsTile, "--", String.Empty, MutedColour)
                     SetTile(fallbacksTile, "--", String.Empty, MutedColour)
                     attentionGrid.Rows.Clear()
+                    loginGrid.Rows.Clear()
                     activityPanel.Controls.Clear()
                     timingPanel.Controls.Clear()
                     Return
@@ -797,6 +927,7 @@ Namespace SDC.Framework
                 FillActivity()
                 FillTiming()
                 FillNeedsAttention()
+                FillLoginFailures()
 
             Finally
                 Cursor = Cursors.Default
