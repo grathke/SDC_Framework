@@ -670,13 +670,15 @@ Namespace SDC.Framework
                     Dim storedPasswordHash As String = String.Empty
 
                     Dim isActive As Boolean
+                    Dim attemptRegistrationId As Integer = 0
 
                     ' A deleted account is not found at all - the view filters it - so it reports the
                     ' same "no user" as an address that never existed. Confirming that a deleted
                     ' account was once real tells an attacker something and tells an honest user
                     ' nothing they can act on.
-                    If Not TryGetCurrentUserRecord(conn, userNameLookup, userId, dbEmail, firstName, lastName, storedPasswordHash, isActive) Then
+                    If Not TryGetCurrentUserRecord(conn, userNameLookup, userId, dbEmail, firstName, lastName, storedPasswordHash, isActive, attemptRegistrationId) Then
                         errorMessage = "No user found for that user name."
+                        RecordLoginAttempt(emailInput, "UnknownUser", 0, 0)
                         Return False
                     End If
 
@@ -689,11 +691,13 @@ Namespace SDC.Framework
                     ' that it should be refused while sitting untested.
                     If Not isActive Then
                         errorMessage = "This account is not active."
+                        RecordLoginAttempt(emailInput, "Inactive", attemptRegistrationId, userId)
                         Return False
                     End If
 
                     If String.IsNullOrWhiteSpace(storedPasswordHash) Then
                         errorMessage = "Password is not configured for this user."
+                        RecordLoginAttempt(emailInput, "NoPassword", attemptRegistrationId, userId)
                         Return False
                     End If
 
@@ -701,6 +705,7 @@ Namespace SDC.Framework
                     Dim passwordMatches = ValidateComputedHashAgainstStored(hashInput, userId, storedPasswordHash)
                     If Not passwordMatches Then
                         errorMessage = "Invalid user name or password."
+                        RecordLoginAttempt(emailInput, "WrongPassword", attemptRegistrationId, userId)
                         Return False
                     End If
 
@@ -715,6 +720,7 @@ Namespace SDC.Framework
                 End Using
             Catch ex As Exception
                 errorMessage = "Login failed: " & ex.Message
+                RecordLoginAttempt(emailInput, "DatabaseDown", 0, 0)
                 Return False
             End Try
         End Function
@@ -851,13 +857,97 @@ Namespace SDC.Framework
 
             Return found
         End Function
-        Private Shared Function TryGetCurrentUserRecord(conn As SqlConnection, userNameLookup As String, ByRef userId As Integer, ByRef dbEmail As String, ByRef firstName As String, ByRef lastName As String, ByRef storedPasswordHash As String, ByRef isActive As Boolean) As Boolean
+        ''' <summary>
+        ''' Records a failed sign-in, with the reason kept separate from the message on screen.
+        '''
+        ''' **Written immediately rather than queued.** Everything else recorded in the background
+        ''' rides Telemetry's thirty-second flush, and this deliberately does not: a failed sign-in
+        ''' is rare, so the round trip costs nothing worth saving, and it is the one record that
+        ''' most needs to survive the process ending badly straight afterwards.
+        '''
+        ''' **It never throws and never blocks the login.** Somebody who cannot get in must not
+        ''' also be told the audit failed - that is two problems where there was one. A write that
+        ''' fails is lost on purpose.
+        '''
+        ''' **The reason must never reach the login screen.** "Unknown user" rather than "wrong
+        ''' password" tells an attacker which names are real. It is recorded here, where only an
+        ''' App Admin reads it, and the screen goes on saying the one thing it says today.
+        '''
+        ''' DatabaseDown is recorded on a best-effort basis and will usually fail, because the
+        ''' reason it is being recorded is that the database could not be reached. It is written
+        ''' for the partial case - a query that failed while the connection still works - and the
+        ''' complete case is covered from outside the application. Nothing here should pretend
+        ''' otherwise.
+        ''' </summary>
+        Private Shared Sub RecordLoginAttempt(attemptedUserName As String,
+                                              reason As String,
+                                              registrationId As Integer,
+                                              userId As Integer)
+            Try
+                Using conn As New SqlConnection(BuildConnectionStringForDatabase(String.Empty))
+                    conn.Open()
+
+                    Using cmd As New SqlCommand(
+                        "INSERT INTO dbo.FW_LoginAttempt " &
+                        "  (AttemptedUserName, Reason, RegistrationID, UserID, MachineName, SessionKind, AppVersion) " &
+                        "VALUES (@UserName, @Reason, @RegistrationID, @UserID, @MachineName, @SessionKind, @AppVersion)", conn)
+
+                        ' Bounded rather than rejected. What was typed is what gets recorded, and
+                        ' somebody who pastes a paragraph into the box should not cost a failed
+                        ' write on top of a failed login.
+                        cmd.Parameters.Add("@UserName", SqlDbType.VarChar, 100).Value =
+                            DbValueBounded(If(attemptedUserName, String.Empty), 100)
+
+                        cmd.Parameters.Add("@Reason", SqlDbType.VarChar, 20).Value = reason
+
+                        cmd.Parameters.Add("@RegistrationID", SqlDbType.Int).Value =
+                            If(registrationId > 0, CType(registrationId, Object), DBNull.Value)
+
+                        cmd.Parameters.Add("@UserID", SqlDbType.Int).Value =
+                            If(userId > 0, CType(userId, Object), DBNull.Value)
+
+                        cmd.Parameters.Add("@MachineName", SqlDbType.VarChar, 100).Value =
+                            DbValueBounded(SafeMachineNameForAudit(), 100)
+
+                        cmd.Parameters.Add("@SessionKind", SqlDbType.VarChar, 20).Value =
+                            If(Program.InBrowserSession, "Thinfinity", "Desktop")
+
+                        cmd.Parameters.Add("@AppVersion", SqlDbType.VarChar, 40).Value =
+                            DbValueBounded(SafeAppVersionForAudit(), 40)
+
+                        cmd.ExecuteNonQuery()
+                    End Using
+                End Using
+
+            Catch
+                ' Lost on purpose. See the summary: a failure to record a failure is not worth a
+                ' second failure, and least of all in front of somebody who cannot sign in.
+            End Try
+        End Sub
+
+        Private Shared Function SafeMachineNameForAudit() As String
+            Try
+                Return Environment.MachineName
+            Catch
+                Return String.Empty
+            End Try
+        End Function
+
+        Private Shared Function SafeAppVersionForAudit() As String
+            Try
+                Return Reflection.Assembly.GetExecutingAssembly().GetName().Version?.ToString()
+            Catch
+                Return String.Empty
+            End Try
+        End Function
+
+        Private Shared Function TryGetCurrentUserRecord(conn As SqlConnection, userNameLookup As String, ByRef userId As Integer, ByRef dbEmail As String, ByRef firstName As String, ByRef lastName As String, ByRef storedPasswordHash As String, ByRef isActive As Boolean, ByRef registrationId As Integer) As Boolean
             ' Every column is null-guarded, Email included. It was the one that was not, from when
             ' an email was how people signed in and could not be missing. An account created from
             ' an employee has no email at all - the person's address lives on FW_Employees - and
             ' login died on reader.GetString with "Data is Null", which names neither the column
             ' nor the account and reads like a broken password.
-            Using cmd As New SqlCommand("SELECT TOP 1 v.UserId, ISNULL(v.Email, ''), ISNULL(v.FirstName, ''), ISNULL(v.LastName, ''), ISNULL(v.PasswordHash, ''), ISNULL(v.IsActive, 0) " &
+            Using cmd As New SqlCommand("SELECT TOP 1 v.UserId, ISNULL(v.Email, ''), ISNULL(v.FirstName, ''), ISNULL(v.LastName, ''), ISNULL(v.PasswordHash, ''), ISNULL(v.IsActive, 0), ISNULL(u.RegistrationID, 0) " &
                                         "FROM dbo.vw_FW_CurrentUser v " &
                                         "INNER JOIN dbo.FW_Users u ON u.UserId = v.UserId " &
                                         "WHERE LOWER(REPLACE(ISNULL(u.UserName, ''), ' ', '')) = @UserNameLookup", conn)
@@ -874,6 +964,11 @@ Namespace SDC.Framework
                     lastName = reader.GetString(3)
                     storedPasswordHash = reader.GetString(4)
                     isActive = Convert.ToBoolean(reader.GetValue(5))
+
+                    ' The tenant a failed sign-in belongs to, known before the password is checked.
+                    ' FW_Users carries its own RegistrationID, so a wrong password against a real
+                    ' account is attributable without a second query - see FW_LoginAttempt.
+                    registrationId = Convert.ToInt32(reader.GetValue(6), CultureInfo.InvariantCulture)
                     Return True
                 End Using
             End Using
@@ -986,7 +1081,15 @@ Namespace SDC.Framework
                             Try
                                 Dim view As New DataView(table)
                                 view.RowFilter = filterExpr
-                                Return view.ToTable()
+                                ' ToTable builds a fresh DataTable and ExtendedProperties do not
+                                ' travel with it, so the query timing measured at the fill was lost
+                                ' on exactly the searches that had a QBE criterion.
+                                Dim filtered = view.ToTable()
+                                CarryBrowseProperties(table, filtered)
+
+                                ' Limited here too. This path returned before LimitBrowseRows and
+                                ' so ignored the row cap entirely.
+                                Return LimitBrowseRows(filtered, maxRows)
                             Catch ex As Exception
                                 ' Never fall back to the unfiltered table. A filter that was silently
                                 ' dropped returns every row, which reads as "everything matched" - the
@@ -1018,6 +1121,27 @@ Namespace SDC.Framework
                     "Open the page's row in Role Tables and give it a SELECT that aliases its key AS PK.")
             End Using
         End Function
+
+        ''' <summary>
+        ''' Carries the notes a browse result travels with onto a table that replaced it.
+        '''
+        ''' DataView.ToTable builds a fresh DataTable and ExtendedProperties do not come with it, so
+        ''' anything the data layer told the caller through them is silently dropped by a filter.
+        ''' That cost the query timing on every search that had a QBE criterion - which is most of
+        ''' them - and the health page showed a database figure from whichever unfiltered search
+        ''' happened to record one.
+        '''
+        ''' Copied rather than merged: the new table is the same result, so it carries the same
+        ''' notes. Nothing here interprets them, which is why it survives a new one being added.
+        ''' </summary>
+        Private Shared Sub CarryBrowseProperties(source As DataTable, target As DataTable)
+            If source Is Nothing OrElse target Is Nothing Then Return
+            If source.ExtendedProperties Is Nothing OrElse source.ExtendedProperties.Count = 0 Then Return
+
+            For Each key In source.ExtendedProperties.Keys
+                target.ExtendedProperties(key) = source.ExtendedProperties(key)
+            Next
+        End Sub
 
         Private Shared Function LimitBrowseRows(source As DataTable, maxRows As Integer) As DataTable
             If source Is Nothing OrElse maxRows <= 0 OrElse source.Rows.Count <= maxRows Then
@@ -6433,7 +6557,9 @@ Namespace SDC.Framework
                             Try
                                 Dim view As New DataView(table)
                                 view.RowFilter = filterExpr
-                                Return view.ToTable()
+                                Dim filteredUsers = view.ToTable()
+                                CarryBrowseProperties(table, filteredUsers)
+                                Return filteredUsers
                             Catch ex As Exception
                                 ' Never fall back to the unfiltered table. A filter that was silently
                                 ' dropped returns every row, which reads as "everything matched" - the

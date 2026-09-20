@@ -113,14 +113,6 @@ Namespace SDC.Framework
         ''' </summary>
         Private lastQueryMilliseconds As Integer? = Nothing
 
-        ''' <summary>
-        ''' Whether the last RefreshGrid ran to the end rather than returning early or throwing.
-        '''
-        ''' Only a completed refresh is worth timing. The early returns are a missing registration,
-        ''' missing SQL and the view-only-my-records refusal, and two of those show a modal dialog
-        ''' the stopwatch would otherwise count - as would the failure handler.
-        ''' </summary>
-        Private lastRefreshCompleted As Boolean = False
         Private suppressColumnsManagerSync As Boolean = False
         Private allowColumnsManagerCheckToggle As Boolean = False
         Private missingMaintenancePkInResult As Boolean = False
@@ -2066,10 +2058,6 @@ Namespace SDC.Framework
                 maxRows = GetEmptyQbeRowLimit()
             End If
 
-            ' Cleared here and set at the very end, so anything that returns early or throws leaves
-            ' it false. Only a refresh that reached the end is worth timing - see RecordFind.
-            lastRefreshCompleted = False
-
             SetColumnsPanelVisible(False)
             ApplyCrudButtonCaptions(GetRegistrationIdForCaptions())
 
@@ -2207,9 +2195,6 @@ Namespace SDC.Framework
                     hasBaselineLayoutSnapshot = True
                 End If
 
-                ' Last statement of the Try on purpose. Anything above that returns or throws
-                ' leaves this false, and an unfinished refresh is not a speed measurement.
-                lastRefreshCompleted = True
             Catch ex As Exception
                 ' The message alone says what went wrong but never where. The first stack frame
                 ' names the method, which is the difference between reading this and guessing at it.
@@ -4486,17 +4471,39 @@ Namespace SDC.Framework
         ''' </summary>
         Private Sub RecordFind(findTimer As System.Diagnostics.Stopwatch)
             Try
-                If Not lastRefreshCompleted Then Return
+                Dim elapsed = UsageCounters.ElapsedMillis(findTimer)
+
+                ' Anything past the cap was a modal dialog, not a search. The three blocking
+                ' MessageBox calls inside the timed region - missing SQL, the view-only refusal and
+                ' the load-failure handler - each hold the thread until somebody clicks, and the
+                ' stopwatch would otherwise report how long they took to read it. One such reading
+                ' was 83 seconds against 51 milliseconds of database time.
+                '
+                ' A cap rather than a completion flag, which is what this was first. The flag
+                ' rejected searches that had plainly worked - one recorded out of several - and a
+                ' guard that silently drops good data is worse than the contamination it prevents.
+                ' A cap can only ever drop an outlier, and it does so visibly: a genuinely
+                ' minute-long search goes unrecorded, which is a trade worth making to keep every
+                ' ordinary one.
+                If Not elapsed.HasValue OrElse elapsed.Value > ModalContaminationCapMs Then Return
 
                 UsageCounters.Record(UsageCounters.UsageKind.Search,
                                      Me.GetType().Name,
                                      GetRegistrationIdForCaptions(),
                                      lastQueryMilliseconds,
-                                     UsageCounters.ElapsedMillis(findTimer))
+                                     elapsed)
             Catch
                 ' Counting must never cost somebody their Find.
             End Try
         End Sub
+
+        ''' <summary>
+        ''' Longer than this and the time was spent in a dialog rather than in a search.
+        '''
+        ''' Thirty seconds is well past anything this application does and well short of how long a
+        ''' message box sits on screen while it is read.
+        ''' </summary>
+        Private Const ModalContaminationCapMs As Integer = 30000
 
         Private Sub RunFind()
             Dim selectedId = SelectedRecordId()
