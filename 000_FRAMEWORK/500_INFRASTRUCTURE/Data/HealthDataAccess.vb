@@ -61,6 +61,11 @@ Namespace SDC.Framework
             Public Property Count As Integer
         End Class
 
+        Public NotInheritable Class RegistrationRow
+            Public Property ID As Integer
+            Public Property Name As String = String.Empty
+        End Class
+
         Public NotInheritable Class FaultLine
             Public Property ErrorLogID As Integer
             Public Property ExceptionType As String = String.Empty
@@ -119,6 +124,15 @@ Namespace SDC.Framework
 
             Public Property Activity As New List(Of ActivityCount)()
             Public Property NeedsAttention As New List(Of FaultLine)()
+
+            ''' <summary>
+            ''' Every registration, for the scope selector.
+            '''
+            ''' Carried on the snapshot rather than fetched separately, because a second query
+            ''' returning a dozen names is a second round trip on every open of the page to
+            ''' populate a list that does not change while it is looked at.
+            ''' </summary>
+            Public Property Registrations As New List(Of RegistrationRow)()
 
             Public Property Failed As Boolean
             Public Property FailureMessage As String = String.Empty
@@ -197,6 +211,7 @@ Namespace SDC.Framework
                             If reader.NextResult() Then ReadFallbackTotals(reader, snapshot)
                             If reader.NextResult() Then ReadActivity(reader, snapshot)
                             If reader.NextResult() Then ReadNeedsAttention(reader, snapshot)
+                            If reader.NextResult() Then ReadRegistrations(reader, snapshot)
                         End Using
                     End Using
                 End Using
@@ -237,6 +252,15 @@ Namespace SDC.Framework
                 snapshot.Activity.Add(New ActivityCount With {
                     .OperationType = SafeString(reader, "OperationType"),
                     .Count = SafeInt(reader, "Total")
+                })
+            End While
+        End Sub
+
+        Private Shared Sub ReadRegistrations(reader As SqlDataReader, snapshot As HealthSnapshot)
+            While reader.Read()
+                snapshot.Registrations.Add(New RegistrationRow With {
+                    .ID = SafeInt(reader, "RegistrationID"),
+                    .Name = SafeString(reader, "RegName")
                 })
             End While
         End Sub
@@ -429,7 +453,10 @@ Namespace SDC.Framework
             "FROM dbo.FW_ErrorLog n " &
             "WHERE n.LastSeen >= @Cutoff AND ISNULL(n.DeletedFlag, 0) = 0 " &
             "  AND " & Scoped("n") & " " &
-            "ORDER BY ISNULL(n.Acknowledged, 0), n.LastSeen DESC;"
+            "ORDER BY ISNULL(n.Acknowledged, 0), n.LastSeen DESC;" &
+            vbCrLf &
+            "SELECT RegistrationID, ISNULL(RegName, '') AS RegName " &
+            "FROM dbo.FW_Registration ORDER BY RegName;"
 
         Private Shared Function Scoped(tableAlias As String) As String
             Return String.Format(CultureInfo.InvariantCulture, RegistrationFilter, tableAlias)

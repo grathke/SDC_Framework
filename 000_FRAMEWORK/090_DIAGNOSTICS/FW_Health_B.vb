@@ -2,7 +2,6 @@ Option Strict On
 Option Explicit On
 
 Imports System
-Imports System.Data
 Imports System.Drawing
 Imports System.Globalization
 Imports System.Windows.Forms
@@ -57,6 +56,9 @@ Namespace SDC.Framework
 
         Private Shared ReadOnly HeadingColour As Color = Color.FromArgb(45, 48, 52)
         Private Shared ReadOnly MutedColour As Color = Color.FromArgb(110, 118, 126)
+
+        ''' <summary>The scope entry that means no filter, which is how the page opens.</summary>
+        Private Shared ReadOnly EveryRegistration As New RegistrationOption With {.ID = 0, .Name = "All registrations"}
         Private Shared ReadOnly PanelBorder As Color = Color.FromArgb(222, 226, 230)
 
         Public Sub New(user As UserContext, Optional profile As AccessProfile = Nothing)
@@ -127,11 +129,15 @@ Namespace SDC.Framework
             registrationCombo.DropDownWidth = registrationCombo.Width
             Controls.Add(registrationCombo)
 
-            ' Filled before the handler is attached, on purpose. LoadRegistrations selects the
-            ' first item, and a handler already wired would fire LoadSnapshot here - during the
-            ' constructor, before the grid has its columns and before the tiles have their labels.
-            LoadRegistrations()
-            AddHandler registrationCombo.SelectedIndexChanged, Sub(s, e) LoadSnapshot()
+            ' Only the "everything" entry is added here. The rest arrive with the first snapshot,
+            ' which carries them - see HealthDataAccess. Reading them in the constructor would be
+            ' a database round trip before the form has painted, which is the very thing the
+            ' snapshot load was moved to Shown to avoid, and over Thinfinity that delay is the
+            ' network as well as the query.
+            registrationCombo.Items.Add(EveryRegistration)
+            registrationCombo.SelectedIndex = 0
+
+            AddHandler registrationCombo.SelectedIndexChanged, AddressOf RegistrationCombo_Changed
 
             periodCombo.DropDownStyle = ComboBoxStyle.DropDownList
             periodCombo.Font = New Font("Segoe UI", 10.0F)
@@ -499,31 +505,35 @@ Namespace SDC.Framework
         End Class
 
         ''' <summary>
-        ''' Fills the scope list. "All registrations" is first and selected, so the page opens on
-        ''' the whole installation and narrowing is a deliberate act.
+        ''' Fills the scope list from a snapshot, once.
         '''
-        ''' A failure here leaves the list with only "All registrations" in it, which is the
-        ''' page's normal state - a scope selector that cannot be read should not stop the page
-        ''' reporting.
+        ''' Refilled on every load would be wasteful and worse than wasteful: replacing the items
+        ''' fires SelectedIndexChanged, which would call LoadSnapshot again, from inside
+        ''' LoadSnapshot. So it runs only while the list holds nothing but "All registrations".
+        '''
+        ''' A snapshot that carries none leaves the list as it is, which is the page's normal
+        ''' state - a scope selector that could not be read should not stop the page reporting.
         ''' </summary>
-        Private Sub LoadRegistrations()
-            registrationCombo.Items.Clear()
-            registrationCombo.Items.Add(New RegistrationOption With {.ID = 0, .Name = "All registrations"})
+        Private Sub FillRegistrations(loaded As HealthDataAccess.HealthSnapshot)
+            If registrationCombo.Items.Count > 1 Then Return
+            If loaded Is Nothing OrElse loaded.Registrations.Count = 0 Then Return
 
-            ' DataAccess.GetAllRegistrations already exists and is what the rest of the application
-            ' uses. A second query returning the same list would be a duplicate path to maintain.
+            RemoveHandler registrationCombo.SelectedIndexChanged, AddressOf RegistrationCombo_Changed
+
             Try
-                For Each row As DataRow In DataAccess.GetAllRegistrations().Rows
+                For Each registration In loaded.Registrations
                     registrationCombo.Items.Add(New RegistrationOption With {
-                        .ID = Convert.ToInt32(row("RegistrationID"), CultureInfo.InvariantCulture),
-                        .Name = Convert.ToString(row("RegName"), CultureInfo.InvariantCulture)
+                        .ID = registration.ID,
+                        .Name = registration.Name
                     })
                 Next
-            Catch ex As Exception
-                Telemetry.Error(ex, "FW_Health_B.LoadRegistrations")
+            Finally
+                AddHandler registrationCombo.SelectedIndexChanged, AddressOf RegistrationCombo_Changed
             End Try
+        End Sub
 
-            registrationCombo.SelectedIndex = 0
+        Private Sub RegistrationCombo_Changed(sender As Object, e As EventArgs)
+            LoadSnapshot()
         End Sub
 
         Private Function SelectedRegistrationId() As Integer
@@ -568,6 +578,7 @@ Namespace SDC.Framework
                     gauge.ClearScore()
                 End If
 
+                FillRegistrations(snapshot)
                 FillTiles()
                 FillActivity()
                 FillNeedsAttention()
