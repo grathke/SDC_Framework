@@ -13,6 +13,16 @@ Namespace SDC.Framework
     Friend Module Program
         Private ReadOnly logPath As String = Path.Combine(AppContext.BaseDirectory, "startup.log")
 
+        ''' <summary>
+        ''' The timer that forces the process out when a tidy shutdown does not happen.
+        '''
+        ''' A field rather than a local inside the handler that creates it. A Timer held only by a
+        ''' local is collectable the moment the method returns, and a collected Timer never fires -
+        ''' GC.KeepAlive at the end of the method does not help, because the danger begins after
+        ''' that point. It cost a forced exit that silently never ran.
+        ''' </summary>
+        Private forcedExitTimer As System.Threading.Timer
+
         Friend Sub Log(message As String)
             File.AppendAllText(logPath, DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss") & " - " & message & Environment.NewLine)
         End Sub
@@ -254,12 +264,32 @@ Namespace SDC.Framework
         Private Sub VirtualUISessionClosed(sender As Object, e As Cybele.Thinfinity.CloseArgs)
             Log("VirtualUI session closed - exiting")
 
-            Dim killer As New System.Threading.Timer(Sub()
-                                                         Log("VirtualUI session closed - forcing exit")
-                                                         SessionTracking.End(SessionTracking.EndReason.Disconnect)
-                                                         Telemetry.Flush()
-                                                         Environment.Exit(0)
-                                                     End Sub, Nothing, 3000, System.Threading.Timeout.Infinite)
+            ' FIRST, BEFORE ANYTHING ELSE TRIES TO SHUT DOWN TIDILY.
+            '
+            ' This used to rely on Main's Finally, on the reasoning that Application.Exit unwinds
+            ' the message loop and the Finally then runs. It does, sometimes. On 2026-09-20 a
+            ' closed browser tab produced this log and nothing after it - no "Main end", no
+            ' "forcing exit" - and left the session row open for ever: VirtualUI had already taken
+            ' the process down. An earlier session the same evening unwound perfectly and wrote its
+            ' end. Two paths, and the one that loses the row is the ordinary one.
+            '
+            ' Both calls are safe to repeat. End finds nothing open the second time and does
+            ' nothing; Flush never throws and never blocks on a database that is down. Repeating
+            ' them costs a round trip on the way out and buys the row surviving whichever path the
+            ' process actually takes.
+            SessionTracking.End(SessionTracking.EndReason.Disconnect)
+            Telemetry.Flush()
+
+            ' Held in a field, not a local. GC.KeepAlive at the end of a method keeps the timer
+            ' alive only until the method returns - after that it is collectable, and a collected
+            ' Timer never fires. That is why there was no "forcing exit" line to go with the
+            ' missing "Main end".
+            forcedExitTimer = New System.Threading.Timer(Sub()
+                                                             Log("VirtualUI session closed - forcing exit")
+                                                             SessionTracking.End(SessionTracking.EndReason.Disconnect)
+                                                             Telemetry.Flush()
+                                                             Environment.Exit(0)
+                                                         End Sub, Nothing, 3000, System.Threading.Timeout.Infinite)
 
             Try
                 Dim form = If(Application.OpenForms.Count > 0, Application.OpenForms(0), Nothing)
@@ -271,12 +301,9 @@ Namespace SDC.Framework
             Catch ex As Exception
                 Log("VirtualUI session close handler failed: " & ex.Message)
                 Telemetry.Error(ex, "Program.VirtualUISessionClosed", Telemetry.FaultOrigin.Swallowed)
-                SessionTracking.End(SessionTracking.EndReason.Disconnect)
                 Telemetry.Flush()
                 Environment.Exit(0)
             End Try
-
-            GC.KeepAlive(killer)
         End Sub
 
         ''' <summary>

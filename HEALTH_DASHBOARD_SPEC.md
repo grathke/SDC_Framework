@@ -225,7 +225,23 @@ The start is exact. The end is not always, and the row records which kind it got
 
 **Do not subtract a constant for `Disconnect`.** The grace was measured at 156 seconds and at about
 210 - it is not a constant, and shaving a fixed figure off would invent a precision the measurement
-does not have. Record the reason, and let the report say the end is approximate.
+does not have. Record the reason, and let the report say the end is approximate. A third
+measurement on 2026-09-20 came in at 197 seconds, which is consistent with both and with neither
+being a figure to rely on.
+
+**`VirtualUISessionClosed` writes the end itself, before it tries to shut down tidily.** It used
+to start a forced-exit timer, ask the message loop to unwind, and leave the row to Main's
+`Finally`. That works when the loop actually unwinds. On 2026-09-20 a closed browser tab produced
+`VirtualUI session closed - exiting` and nothing after it - no `Main end`, no `forcing exit` - and
+left the session open for ever, because VirtualUI had already taken the process down. An earlier
+session the same evening unwound perfectly and wrote `Exit`. **Two paths, and the one that loses
+the row is the ordinary one.** Anything that must survive a VirtualUI close belongs in the handler
+itself, not in a `Finally` downstream of it.
+
+The forced-exit timer also has to be held in a field. A `Timer` kept only in a local is
+collectable the moment the method returns - `GC.KeepAlive` at the end of the method does not help,
+because the risk starts after that point - and a collected timer never fires. That is why there
+was no `forcing exit` line to accompany the missing `Main end`.
 
 **The app is told, and does not merely die.** Worth saying because the opposite is the natural
 assumption. Thinfinity notifies the process and `Program.VirtualUISessionClosed` handles it - forms
