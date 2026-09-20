@@ -702,9 +702,10 @@ Namespace SDC.Framework
             If snapshot Is Nothing OrElse snapshot.LoginFailures.Count = 0 Then
                 Dim emptyIndex = loginGrid.Rows.Add()
                 loginGrid.Rows(emptyIndex).Cells("Name").Value = "None in this period."
-                loginGrid.Rows(emptyIndex).DefaultCellStyle.ForeColor = MutedColour
-                loginGrid.Rows(emptyIndex).DefaultCellStyle.SelectionForeColor = MutedColour
+                loginGrid.Rows(emptyIndex).DefaultCellStyle.ForeColor = HeadingColour
+                loginGrid.Rows(emptyIndex).DefaultCellStyle.SelectionForeColor = HeadingColour
                 loginGrid.Rows(emptyIndex).DefaultCellStyle.Font = New Font("Segoe UI", 9.5F, FontStyle.Italic)
+                ClearGridSelection(loginGrid)
                 Return
             End If
 
@@ -717,17 +718,15 @@ Namespace SDC.Framework
                 row.Cells("Attempts").Value = failure.Attempts.ToString("N0", CultureInfo.CurrentCulture)
                 row.Cells("LoginAge").Value = AgeOf(failure.LastAttempt)
 
-                Dim colour = HeadingColour
-
-                If String.Equals(failure.Reason, "UnknownUser", StringComparison.OrdinalIgnoreCase) Then
-                    colour = Color.FromArgb(200, 55, 50)
-                ElseIf failure.Attempts >= 3 Then
-                    colour = Color.FromArgb(232, 160, 25)
-                End If
-
-                row.DefaultCellStyle.ForeColor = colour
-                row.DefaultCellStyle.SelectionForeColor = colour
+                ' Black, whatever the reason. A name that does not exist and a name tried four
+                ' times were red and amber, and the Reason and Tries columns already say both in
+                ' words - the colour was the same fact a second time, in the one form somebody
+                ' cannot read aloud, cannot search for, and may not be able to distinguish.
+                row.DefaultCellStyle.ForeColor = HeadingColour
+                row.DefaultCellStyle.SelectionForeColor = HeadingColour
             Next
+
+            ClearGridSelection(loginGrid)
         End Sub
 
         ''' <summary>The stored reason as somebody would say it.</summary>
@@ -1201,12 +1200,13 @@ Namespace SDC.Framework
 
                 row.Cells("Fault").Value = "Nothing has been recorded in this period."
                 row.Cells("ErrorLogID").Value = "0"
-                row.DefaultCellStyle.ForeColor = MutedColour
-
-                ' Muted whether selected or not. It is a note rather than a row, and it should not
-                ' darken into looking like one when the grid puts the cursor on it.
-                row.DefaultCellStyle.SelectionForeColor = MutedColour
+                ' Black and italic. The grey said "this is a note, not a fault" and said it by
+                ' being hard to read, which is a poor way to say anything. The italic carries it
+                ' on its own.
+                row.DefaultCellStyle.ForeColor = HeadingColour
+                row.DefaultCellStyle.SelectionForeColor = HeadingColour
                 row.DefaultCellStyle.Font = New Font("Segoe UI", 9.5F, FontStyle.Italic)
+                ClearGridSelection(attentionGrid)
                 Return
             End If
 
@@ -1221,21 +1221,41 @@ Namespace SDC.Framework
                 row.Cells("State").Value = StateOf(fault)
                 row.Cells("ErrorLogID").Value = fault.ErrorLogID.ToString(CultureInfo.InvariantCulture)
 
-                ' A fault that came back after somebody fixed it is the loudest thing this panel
-                ' can show - louder than one nobody has seen before, because a fix has already
-                ' failed. It gets the colour, and it gets it even when acknowledged.
-                If fault.RecurredAfterResolved AndAlso Not fault.Resolved Then
-                    row.DefaultCellStyle.ForeColor = Color.FromArgb(200, 55, 50)
-                    row.DefaultCellStyle.Font = New Font("Segoe UI", 9.5F, FontStyle.Bold)
-                ElseIf fault.Resolved OrElse fault.Acknowledged Then
-                    row.DefaultCellStyle.ForeColor = MutedColour
-                End If
+                ' Every row black, selected or not. A recurred fault was red and an acknowledged
+                ' one grey, and the State column says "RECURRED after fix" and "Acknowledged" in
+                ' as many words - the colour repeated what the text already said, in the one form
+                ' that cannot be read aloud, cannot be searched for and is not available to
+                ' everybody who has to read this page.
+                '
+                ' A recurred fault keeps its bold. Weight is not colour: it survives a screenshot
+                ' in grey, a colour-blind reader and a printer, and a fix that has already failed
+                ' once is worth the emphasis.
+                row.DefaultCellStyle.ForeColor = HeadingColour
+                row.DefaultCellStyle.SelectionForeColor = HeadingColour
 
-                ' Selected text keeps the colour the row earned. Without this the grid inverts it
-                ' to white and a recurred fault stops looking like one the moment it is clicked.
-                row.DefaultCellStyle.SelectionForeColor =
-                    If(row.DefaultCellStyle.ForeColor.IsEmpty, HeadingColour, row.DefaultCellStyle.ForeColor)
+                If fault.RecurredAfterResolved AndAlso Not fault.Resolved Then
+                    row.DefaultCellStyle.Font = New Font("Segoe UI", 9.5F, FontStyle.Bold)
+                End If
             Next
+
+            ClearGridSelection(attentionGrid)
+        End Sub
+
+        ''' <summary>
+        ''' Leaves a freshly filled grid with nothing selected.
+        '''
+        ''' A DataGridView selects its first row the moment rows arrive, and the tint that follows
+        ''' reads as a choice somebody made. On these panels nobody chose anything - the buttons
+        ''' act on their own row - so the page opened claiming a selection that was never made.
+        '''
+        ''' CurrentCell as well as the selection: clearing one leaves the other's focus rectangle
+        ''' sitting on the first cell, which is the same false claim in a thinner line.
+        ''' </summary>
+        Private Shared Sub ClearGridSelection(grid As DataGridView)
+            If grid Is Nothing OrElse grid.Rows.Count = 0 Then Return
+
+            grid.ClearSelection()
+            grid.CurrentCell = Nothing
         End Sub
 
         Private Shared Function BuildCurrentUserFromSession() As UserContext
