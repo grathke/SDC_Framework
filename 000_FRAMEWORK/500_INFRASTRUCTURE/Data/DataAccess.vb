@@ -6703,29 +6703,47 @@ Namespace SDC.Framework
                 Return result
             End If
 
-            Dim uniqueIds As New HashSet(Of Integer)(ids)
-            ids = New List(Of Integer)(uniqueIds)
+            Dim onPage As New HashSet(Of Integer)(ids)
 
             Using conn As New SqlConnection(ConnectionString)
                 conn.Open()
 
-                Dim parameterNames As New List(Of String)()
                 Using cmd As New SqlCommand()
                     cmd.Connection = conn
 
-                    For i As Integer = 0 To ids.Count - 1
-                        Dim paramName = "@ID" & i.ToString(CultureInfo.InvariantCulture)
-                        parameterNames.Add(paramName)
-                        cmd.Parameters.AddWithValue(paramName, ids(i))
-                    Next
-
+                    ' Asked the other way round on 2026-09-20, and it is not a tidy-up.
+                    '
+                    ' This used to send one parameter per row on the page - "WHERE key IN (@ID0,
+                    ' @ID1, ... )" - which SQL Server refuses past 2,100 of them. A browse page
+                    ' showing ten thousand rows therefore failed outright with "the incoming
+                    ' request has too many parameters", and it failed on open rather than on a
+                    ' search, so the page could not be reached at all. Found with 10,000 test
+                    ' employees; it would have found a real customer the same way.
+                    '
+                    ' Asking which rows of the table are deleted needs no parameters and no
+                    ' chunking, and the answer is intersected in memory. It is also fewer round
+                    ' trips than batching would have been - one, always, rather than one per two
+                    ' thousand rows.
+                    '
+                    ' The trade: this reads every deleted key of the table rather than only the
+                    ' ones on the page. Deleted rows are the small set in every table here, and an
+                    ' integer key costs four bytes - a table would need millions of deleted rows
+                    ' before that mattered, and one with millions of deleted rows has a different
+                    ' problem.
                     cmd.CommandText =
-                        "SELECT " & sourceKeyColumnName & " FROM dbo." & sourceTableName & " WHERE ISNULL(DeletedFlag, 0) = 1 AND " & sourceKeyColumnName & " IN (" &
-                        String.Join(",", parameterNames) & ")"
+                        "SELECT " & sourceKeyColumnName & " FROM dbo." & sourceTableName &
+                        " WHERE ISNULL(DeletedFlag, 0) = 1"
 
                     Using reader = cmd.ExecuteReader()
                         While reader.Read()
-                            result.Add(Convert.ToInt32(reader.GetValue(0), CultureInfo.InvariantCulture))
+                            If reader.IsDBNull(0) Then Continue While
+
+                            Dim deletedId = Convert.ToInt32(reader.GetValue(0), CultureInfo.InvariantCulture)
+
+                            ' Only the ones actually on the page. The caller asks "which of these
+                            ' are deleted", and answering with more than it asked about would make
+                            ' the set wrong for any caller that measures it.
+                            If onPage.Contains(deletedId) Then result.Add(deletedId)
                         End While
                     End Using
                 End Using

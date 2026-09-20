@@ -2038,6 +2038,25 @@ Namespace SDC.Framework
                      Optional reevaluateQbe As Boolean = False,
                      Optional maxRows As Integer = 0,
                      Optional registrationIdOverride As Integer? = Nothing)
+
+            ' An unfiltered grid is capped wherever it is refreshed from, not only from Find.
+            '
+            ' The cap already existed and already worked - GetEmptyQbeRowLimit, from the role - but
+            ' only two of this method's eight callers passed it. Every other refresh, the initial
+            ' load included, asked for every row in the table. With 10,000 employees on 2026-09-20
+            ' that meant the page could not be opened at all: the deleted-flag hydration sent one
+            ' parameter per row and SQL Server refuses past 2,100.
+            '
+            ' Making it the rule rather than the exception needs no caller to change and no list of
+            ' pages to exempt. A page somebody opens simply to look at still opens; it opens with
+            ' the top N and says so.
+            '
+            ' Only when there are no filters. A Find with criteria returns everything that matches,
+            ' which is what somebody who typed a criterion asked for.
+            If maxRows <= 0 AndAlso (currentFilters Is Nothing OrElse currentFilters.Count = 0) Then
+                maxRows = GetEmptyQbeRowLimit()
+            End If
+
             SetColumnsPanelVisible(False)
             ApplyCrudButtonCaptions(GetRegistrationIdForCaptions())
 
@@ -2105,6 +2124,16 @@ Namespace SDC.Framework
                 lastRefreshExceededRowLimit = maxRows > 0 AndAlso
                                               dt.ExtendedProperties.ContainsKey("BrowseRowsLimited") AndAlso
                                               Convert.ToBoolean(dt.ExtendedProperties("BrowseRowsLimited"))
+
+                ' Said here rather than only in the Find handler, because the cap now applies to
+                ' every unfiltered refresh and a grid that is quietly showing the top N of ten
+                ' thousand reads as a grid showing everything. The Find handler sets the same
+                ' message again on its own path, which changes nothing.
+                If lastRefreshExceededRowLimit Then
+                    SetRetrievalStatus("Only showing the top " & maxRows &
+                                       " records. Enter at least one QBE criterion to see more.",
+                                       False, True)
+                End If
 
                 ' How long the SQL alone took, handed back by the data layer. Kept for the caller
                 ' that started a stopwatch around the whole Find, so the two can be recorded
