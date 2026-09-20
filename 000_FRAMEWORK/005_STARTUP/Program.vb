@@ -243,12 +243,20 @@ Namespace SDC.Framework
         ''' with cleanup gets to run. The timer behind it is not defensive decoration: Exit will
         ''' not return while a modal dialog is on screen, and in a session whose browser has gone
         ''' there is nobody to dismiss one. Three seconds, then the process goes regardless.
+        '''
+        ''' Both hard exits flush telemetry first. Environment.Exit does not run Finally blocks, so
+        ''' the flush in Main's never happens on either of these paths and everything queued since
+        ''' the last thirty-second tick is lost. It is a narrow window and the wrong one to lose:
+        ''' these are the paths taken when a session has already gone wrong, or when a modal dialog
+        ''' nobody can reach is holding the process open. Flush never throws and never blocks on a
+        ''' database that is down, so it is safe on the way out.
         ''' </summary>
         Private Sub VirtualUISessionClosed(sender As Object, e As Cybele.Thinfinity.CloseArgs)
             Log("VirtualUI session closed - exiting")
 
             Dim killer As New System.Threading.Timer(Sub()
                                                          Log("VirtualUI session closed - forcing exit")
+                                                         Telemetry.Flush()
                                                          Environment.Exit(0)
                                                      End Sub, Nothing, 3000, System.Threading.Timeout.Infinite)
 
@@ -261,6 +269,8 @@ Namespace SDC.Framework
                 End If
             Catch ex As Exception
                 Log("VirtualUI session close handler failed: " & ex.Message)
+                Telemetry.Error(ex, "Program.VirtualUISessionClosed", Telemetry.FaultOrigin.Swallowed)
+                Telemetry.Flush()
                 Environment.Exit(0)
             End Try
 
