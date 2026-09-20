@@ -22,10 +22,16 @@ Namespace SDC.Framework
     ''' covering its whole width. Changing the font instead works but can clip a fixed-height row,
     ''' and a grid that sizes to its rows would jump while being read.
     '''
-    ''' Amber, deliberately. It is not the red the Switch User notice uses, because nothing has gone
-    ''' wrong - a field changed column, a record was added. An earlier version alternated between
-    ''' the two column colours, which said more and showed less: both are blue, so the alternation
-    ''' was almost invisible.
+    ''' It introduces no colour of its own. The bar alternates between the selection colour the row
+    ''' already has and the background of the page the grid is sitting on, so the row reads as
+    ''' blinking on and off rather than as turning a third colour that means nothing. Every page
+    ''' therefore flashes in its own palette, and a page restyled later follows without being told.
+    '''
+    ''' It was a hard-coded amber until 2026-09-20. The reason it was amber is worth keeping,
+    ''' because it still governs the choice: an earlier version than that alternated between the two
+    ''' column colours and was almost invisible, both being blue. Contrast is the whole mechanism,
+    ''' which is why the off state is the page background - the one colour on screen guaranteed to
+    ''' differ from a selection bar - and not another shade of the bar.
     '''
     ''' Shared because two callers want it - the field picker when a field crosses between columns,
     ''' and a browse page when a row is inserted, where selecting and scrolling to the new record
@@ -33,12 +39,35 @@ Namespace SDC.Framework
     ''' </summary>
     Public Module GridRowFlash
 
-        ''' <summary>What a flashing row shows, and the text on it.</summary>
-        Public ReadOnly FlashBackColor As Color = Color.FromArgb(255, 193, 7)
-        Public ReadOnly FlashForeColor As Color = Color.FromArgb(32, 32, 32)
-
         Private Const Steps As Integer = 8
         Private Const StepInterval As Integer = 190
+
+        ''' <summary>
+        ''' The page behind the grid, which is what the bar blinks to.
+        '''
+        ''' The form rather than the grid's own BackgroundColor: the grid's is the empty area below
+        ''' the last row, which on a full grid is never on screen, and on several pages is left at
+        ''' the default while the form carries the page's actual colour. Falls back to the grid and
+        ''' then to Control, so a grid not yet on a form still flashes rather than throwing.
+        ''' </summary>
+        Private Function PageBackColorFor(grid As DataGridView) As Color
+            Dim host = grid.FindForm()
+            If host IsNot Nothing Then Return host.BackColor
+            If Not grid.BackgroundColor.IsEmpty Then Return grid.BackgroundColor
+            Return SystemColors.Control
+        End Function
+
+        ''' <summary>
+        ''' Text that stays readable against the page background for the off half of the blink.
+        '''
+        ''' The row's own unselected colour where it has one - a tinted or deleted row has earned
+        ''' that colour and should keep it - then the grid's default, then ControlText.
+        ''' </summary>
+        Private Function PageForeColorFor(grid As DataGridView, row As DataGridViewRow) As Color
+            If Not row.DefaultCellStyle.ForeColor.IsEmpty Then Return row.DefaultCellStyle.ForeColor
+            If Not grid.DefaultCellStyle.ForeColor.IsEmpty Then Return grid.DefaultCellStyle.ForeColor
+            Return SystemColors.ControlText
+        End Function
 
         ''' <summary>
         ''' Flashes the row and restores what it had. The colours it settles back to are read before
@@ -53,6 +82,12 @@ Namespace SDC.Framework
 
             Dim settledBack = row.DefaultCellStyle.SelectionBackColor
             Dim settledText = row.DefaultCellStyle.SelectionForeColor
+
+            ' Read once, before the first tick. Resolving it per tick would read the colour the
+            ' flash itself has just written half the time.
+            Dim pageBack = PageBackColorFor(grid)
+            Dim pageText = PageForeColorFor(grid, row)
+
             Dim stepsLeft = Steps
 
             Dim flashTimer As New Timer With {.Interval = StepInterval}
@@ -62,6 +97,8 @@ Namespace SDC.Framework
                     If grid.IsDisposed OrElse row.Index < 0 Then
                         flashTimer.Stop()
                         flashTimer.Dispose()
+                        row.DefaultCellStyle.SelectionBackColor = settledBack
+                        row.DefaultCellStyle.SelectionForeColor = settledText
                         Return
                     End If
 
@@ -75,9 +112,13 @@ Namespace SDC.Framework
                         Return
                     End If
 
-                    Dim lit = row.DefaultCellStyle.SelectionBackColor <> FlashBackColor
-                    row.DefaultCellStyle.SelectionBackColor = If(lit, FlashBackColor, settledBack)
-                    row.DefaultCellStyle.SelectionForeColor = If(lit, FlashForeColor, settledText)
+                    ' Driven by the step count rather than by comparing the current colour against
+                    ' the one being set. The comparison worked only because the off state was a
+                    ' constant; with the off state read from the page, a page whose background
+                    ' happens to equal the selection colour would never alternate at all.
+                    Dim off = (stepsLeft Mod 2) = 1
+                    row.DefaultCellStyle.SelectionBackColor = If(off, pageBack, settledBack)
+                    row.DefaultCellStyle.SelectionForeColor = If(off, pageText, settledText)
                 End Sub
 
             flashTimer.Start()
