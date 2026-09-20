@@ -299,22 +299,49 @@ Two audiences, and they are not the same people:
 | Company Admin | failed sign-ins for their own tenant | theirs |
 | App Admin | crashes, fault fingerprints, telemetry health | ours |
 
-**Two independent flags, not one exclusive choice.** A single preference was considered and does not
-fit, and the reason is in the data rather than in theory.
+**One optional checkbox, `FW_Employees.ReceivesHealthAlerts`** - not two flags, and not required.
+Settled 2026-09-20 after going round the houses, and the simplification is worth recording because
+the long way round nearly cost a framework change.
 
-Checked against the live database on 2026-09-20. **No single role carries both flags** - the three
-admin roles are Company Admin, Application Admin and City Admin, each exactly one type. Nothing
-prevents a role being flagged both, and `Roles_U` presents them as two plain checkboxes with no
-handler making them honour each other, but nobody has done it. Unguarded rather than deliberate,
-and not worth guarding on this evidence.
+**The role decides which mail somebody gets; the checkbox decides only whether they get any.** That
+is the whole idea. A Company Admin who ticks it hears about failed sign-ins at their own company; an
+App Admin who ticks it hears about faults; somebody holding both roles hears both, which is what
+they would want. Two independent flags made that person answer the same question twice.
 
-**Two people hold one role of each kind**, which is what actually decides this: an Application Admin
-role and a Company Admin role at the same time. They are our administrators *and* a tenant's, and
-they want both kinds of mail. A single exclusive choice would make them pick.
+It sits on the employee record beside Email, because the address is already there and a second copy
+would drift.
 
-The flags live on the employee record beside Email, because the address is already there and needs no
-second copy to drift out of step. Required only while the person holds an admin role, which is the
-conditional rule `FW_Base_U.SetFieldRequired` already provides.
+**What the two-flag version cost, and why one checkbox avoids it.** Two flags needed "asked and
+declined" to be distinguishable from "never asked", which needs a three-state control. The page
+generator renders every `bit` column as a `CheckBox` and has no way to emit anything else, so the
+design pushed toward either teaching the generator a new field kind or hand-building the controls in
+the companion half.
+
+Teaching the generator looked reasonable until the schema was checked: **80 of the bit columns in
+this database are nullable**, including `IsActive`, `Inspector` and every `Can_` and `Typ_` flag.
+Nullable is this schema's default, not a statement of intent, so a rule of "nullable bit becomes a
+three-state combo" would have turned `IsActive` on the employee page into a dropdown. The rule would
+have had to be an explicit list on the generation request instead - a new column, a new field kind,
+a new control on the Page Generation screen.
+
+One optional checkbox needs none of it. The generator already does exactly this, so the field is
+added to the request and the page regenerated with no framework code at all. **The simpler
+requirement was not a compromise; it was the one the tool could already express.**
+
+Required-when-admin was considered too and dropped with it. `FW_Base_U.SetFieldRequired` provides
+that rule and Email uses it, but a flag nobody has to tick needs no validation - and requiring it
+would force an answer from every employee who will never receive anything.
+
+**Who may tick it is a `FW_RoleFields` question, not a code one.** Hide the field from the roles
+that have no business setting it and show it to the ones that do, per role, in Roles - no page
+change, no regeneration, and adjustable afterwards by somebody who is not a developer.
+
+That works here for a reason worth noting, because the same mechanism was wrong two paragraphs
+earlier. `FW_RoleFields` is keyed to the **session role** - the person doing the editing, not the
+person being edited. For Email that is backwards: it would have made the address required for every
+employee an administrator opened and for none that a manager opened, which is why that rule had to
+be code. For this checkbox it is precisely right: the question is who may grant somebody alerts, and
+that is a question about the person doing the granting.
 
 **A registration has as many administrators as it has, and every one whose flag is true is a
 recipient.** The rule is not "find the administrator" - it is a query returning a list, and the list
