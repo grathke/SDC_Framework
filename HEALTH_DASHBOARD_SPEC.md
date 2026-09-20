@@ -30,6 +30,39 @@ single owner in `FW_Base_B`'s find handler, so it is one instrumentation point r
 scattering. And it answers a question worth asking: how much are people actually using this, and
 which pages.
 
+### Logins, which are not a usage counter
+
+Added 2026-09-19. **Nothing records a login today** - no audit row, no telemetry. `LoginForm` holds
+a `failedAttempts` field but it is in memory, drives the screen, resets when the form closes and
+persists nowhere. There is no lockout.
+
+Two holes follow. `FW_AuditTrail` can prove who changed a row but not when they signed in, so the
+session that produced a change is unrecorded. And a run of failed attempts - somebody guessing, or
+a whole tenant locked out the morning after a password change - leaves no trace at all. "Nobody can
+log in" is the worst outage this system can have and it is currently invisible.
+
+Successes and failures want different storage, so they are two things rather than one:
+
+| | Shape | Why |
+|---|---|---|
+| Successful | Hourly bucket, as the counters below | Volume and trend, not a row per sign-in |
+| Failed | One row per attempt | The pattern is the point - one user repeatedly, or everybody at once |
+
+A failed row holds the attempted user name, the time, the registration where one resolves, and the
+**reason kept separate**: unknown user, wrong password, inactive account, database unreachable.
+That separation is what turns "I cannot log in" from a guessing game into a diagnosis.
+
+**It must not leak back to the login screen.** Telling a user "unknown user" rather than "wrong
+password" tells an attacker which names are real. The distinction belongs in the table, which only
+an App Admin reads, and never in the message on screen. The current screen already separates
+credential failures from other failures and should stay as it is.
+
+A lockout after N failures is the obvious neighbour of this and is deliberately **not** part of it.
+Recording is safe; locking people out is a policy decision with a support cost, and it should be
+argued on its own.
+
+### The three usage counters
+
 Three kinds, all of them a person deciding to look at something:
 
 | Kind | Raised when | Owner |
