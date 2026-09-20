@@ -60,15 +60,6 @@ Namespace SDC.Framework
         ''' <summary>Every role the registration offers, by id, so a moved row keeps its name.</summary>
         Private ReadOnly roleNames As New Dictionary(Of Integer, String)()
 
-        ''' <summary>
-        ''' Which roles carry Typ_AppAdmin or Typ_CompanyAdmin, by id.
-        '''
-        ''' Read from the flags on FW_Roles and never from the role's name. A name is a caption a
-        ''' registration can change, and two registrations are free to call their administrator
-        ''' role different things; the flags are what the framework itself tests everywhere else.
-        ''' </summary>
-        Private ReadOnly adminRoles As New HashSet(Of Integer)()
-
         Private ReadOnly assigned As New List(Of Integer)()
         Private ReadOnly available As New List(Of Integer)()
 
@@ -171,7 +162,6 @@ Namespace SDC.Framework
             assigned.Clear()
             available.Clear()
             roleDisplayOrder.Clear()
-            adminRoles.Clear()
 
             Dim offered = DataAccess.GetSelectableRolesByRegistration(registrationId)
             If offered IsNot Nothing Then
@@ -179,7 +169,6 @@ Namespace SDC.Framework
                     Dim id = Convert.ToInt32(row("ID"))
                     roleNames(id) = Convert.ToString(row("RoleName"))
                     roleDisplayOrder(id) = Convert.ToInt32(row("DisplayOrder"))
-                    If Convert.ToInt32(row("IsAdminRole")) = 1 Then adminRoles.Add(id)
                     available.Add(id)
                 Next
             End If
@@ -191,7 +180,6 @@ Namespace SDC.Framework
                 For Each held In DataAccess.GetEmployeeRoleIds(employeeId)
                     If Not roleNames.ContainsKey(held.RoleId) Then roleNames(held.RoleId) = held.RoleName
                     roleDisplayOrder(held.RoleId) = held.DisplayOrder
-                    If held.IsAdminRole Then adminRoles.Add(held.RoleId)
                     available.Remove(held.RoleId)
                     If Not assigned.Contains(held.RoleId) Then assigned.Add(held.RoleId)
                 Next
@@ -224,7 +212,6 @@ Namespace SDC.Framework
             End If
 
             Refill()
-            RaiseEvent SelectionChanged(Me, EventArgs.Empty)
         End Sub
 
         Private Function OrderOf(roleId As Integer) As Integer
@@ -252,24 +239,10 @@ Namespace SDC.Framework
             grid.ClearSelection()
         End Sub
 
-        ''' <summary>Raised whenever a role moves between the two grids.</summary>
-        Public Event SelectionChanged As EventHandler
-
         ''' <summary>The roles on the right, which is what the employee will have after the save.</summary>
         Public ReadOnly Property SelectedRoleIds As List(Of Integer)
             Get
                 Return New List(Of Integer)(assigned)
-            End Get
-        End Property
-
-        ''' <summary>
-        ''' Whether the employee would hold an administrator role after the save.
-        '''
-        ''' Decided by Typ_AppAdmin and Typ_CompanyAdmin on FW_Roles, never by the role's name.
-        ''' </summary>
-        Public ReadOnly Property HasAdminRole As Boolean
-            Get
-                Return assigned.Any(Function(id) adminRoles.Contains(id))
             End Get
         End Property
 

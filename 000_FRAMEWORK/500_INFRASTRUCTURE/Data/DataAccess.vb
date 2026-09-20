@@ -2405,7 +2405,7 @@ Namespace SDC.Framework
         ''' The columns each computed column is built from, as ComputedColumn -> its sources.
         '''
         ''' Read from the expression SQL Server stores, not guessed: FirstLast is
-        ''' `isnull([FirstName],'') + â€¦ + isnull([LastName],'')`, so the bracketed names are the
+        ''' `isnull([FirstName],'') + ... + isnull([LastName],'')`, so the bracketed names are the
         ''' answer. Only names that are really columns of the same table survive, which discards
         ''' the bracketed function and type names an expression can also contain.
         '''
@@ -4050,16 +4050,15 @@ Namespace SDC.Framework
         ''' Looking it up from the offered list would leave it blank, or drop it, and a role
         ''' that cannot be seen cannot be taken away.
         ''' </summary>
-        Public Shared Function GetEmployeeRoleIds(employeeId As Integer) As List(Of (RoleId As Integer, RoleName As String, DisplayOrder As Integer, IsAdminRole As Boolean))
-            Dim held As New List(Of (RoleId As Integer, RoleName As String, DisplayOrder As Integer, IsAdminRole As Boolean))()
+        Public Shared Function GetEmployeeRoleIds(employeeId As Integer) As List(Of (RoleId As Integer, RoleName As String, DisplayOrder As Integer))
+            Dim held As New List(Of (RoleId As Integer, RoleName As String, DisplayOrder As Integer))()
             If employeeId <= 0 Then Return held
 
             Try
                 Using conn As New SqlConnection(ConnectionString)
                     conn.Open()
                     Using cmd As New SqlCommand(
-                        "SELECT er.RoleID, ISNULL(r.RoleName, '') AS RoleName, ISNULL(r.DisplayOrder, 0) AS DisplayOrder, " &
-                        "       CASE WHEN ISNULL(r.Typ_AppAdmin, 0) = 1 OR ISNULL(r.Typ_CompanyAdmin, 0) = 1 THEN 1 ELSE 0 END AS IsAdminRole " &
+                        "SELECT er.RoleID, ISNULL(r.RoleName, '') AS RoleName, ISNULL(r.DisplayOrder, 0) AS DisplayOrder " &
                         "FROM dbo.FW_EmployeeRoles er " &
                         "INNER JOIN dbo.FW_Roles r ON r.ID = er.RoleID " &
                         "WHERE er.EmployeeID = @ID AND ISNULL(er.IsActive, 1) = 1 AND ISNULL(er.DeletedFlag, 0) = 0 " &
@@ -4069,8 +4068,7 @@ Namespace SDC.Framework
                             While reader.Read()
                                 held.Add((Convert.ToInt32(reader("RoleID"), CultureInfo.InvariantCulture),
                                           Convert.ToString(reader("RoleName")),
-                                          Convert.ToInt32(reader("DisplayOrder"), CultureInfo.InvariantCulture),
-                                          Convert.ToInt32(reader("IsAdminRole"), CultureInfo.InvariantCulture) = 1))
+                                          Convert.ToInt32(reader("DisplayOrder"), CultureInfo.InvariantCulture)))
                             End While
                         End Using
                     End Using
@@ -7561,8 +7559,7 @@ Namespace SDC.Framework
             Using conn As New SqlConnection(ConnectionString)
                 conn.Open()
                 Using cmd As New SqlCommand(
-                    "SELECT ID, RegistrationID, RoleName, ISNULL(DisplayOrder, 0) AS DisplayOrder, " &
-                    "       CASE WHEN ISNULL(Typ_CompanyAdmin, 0) = 1 THEN 1 ELSE 0 END AS IsAdminRole " &
+                    "SELECT ID, RegistrationID, RoleName, ISNULL(DisplayOrder, 0) AS DisplayOrder " &
                     "FROM dbo.FW_Roles " &
                     "WHERE RegistrationID = @RegistrationID " &
                     "  AND ISNULL(IsActive, 1) = 1 AND ISNULL(DeletedFlag, 0) = 0 " &

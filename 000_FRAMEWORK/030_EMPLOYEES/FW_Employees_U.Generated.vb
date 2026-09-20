@@ -18,7 +18,7 @@ Namespace SDC.Framework
         Private ReadOnly tableName As String = "FW_Employees"
         Private ReadOnly primaryKey As String = "EmployeeID"
         Private ReadOnly computedFields As New HashSet(Of String)(StringComparer.OrdinalIgnoreCase)
-        Protected ReadOnly GeneratedFieldsBottom As Integer = 608
+        Protected ReadOnly GeneratedFieldsBottom As Integer = 566
         Private record As DataRow
         Private ReadOnly formBindingSource As New BindingSource()
         Private originalRowVersion As Byte()
@@ -36,6 +36,7 @@ Namespace SDC.Framework
         Private passwordTextBox As TextBox
         Private genderIDComboBox As ComboBox
         Private emailTextBox As TextBox
+        Private receivesHealthAlertsCheckBox As CheckBox
         Private isActiveCheckBox As CheckBox
         Private birthDateDateTimePicker As DateTimePicker
         Private hireDateDateTimePicker As DateTimePicker
@@ -51,7 +52,7 @@ Namespace SDC.Framework
         ''' Every control on the page, laid out. Called from the constructor in FW_Employees_U.vb.
         ''' </summary>
         Private Sub BuildGeneratedFields()
-            ClientSize = New Size(1060, 841)
+            ClientSize = New Size(1060, 799)
             okButton.Location = New Point(ClientSize.Width - 270, ClientSize.Height - 46)
             cancelActionButton.Location = New Point(ClientSize.Width - 135, ClientSize.Height - 46)
             firstNameTextBox = AddField("FirstName", 20, False, True, 20)
@@ -65,27 +66,28 @@ Namespace SDC.Framework
             userNameTextBox = AddField("UserName", 356, False, True, 20)
             passwordTextBox = AddField("Password", 398, False, True, 20)
             genderIDComboBox = AddComboField("GenderID", 440, False, 20, 320)
-            emailTextBox = AddField("Email", 482, False, False, 20)
-            isActiveCheckBox = AddCheckField("IsActive", 524, 20)
-            birthDateDateTimePicker = AddDateField("BirthDate", 566, False, 20, True, False)
-            hireDateDateTimePicker = AddDateField("HireDate", 20, False, 580, True, False)
-            terminationDateDateTimePicker = AddDateField("TerminationDate", 62, False, 580, True, False)
+            emailTextBox = AddField("Email", 482, False, True, 20)
+            receivesHealthAlertsCheckBox = AddCheckField("ReceivesHealthAlerts", 524, 20)
+            isActiveCheckBox = AddCheckField("IsActive", 20, 580)
+            birthDateDateTimePicker = AddDateField("BirthDate", 62, False, 580, True, False)
+            hireDateDateTimePicker = AddDateField("HireDate", 104, False, 580, True, False)
+            terminationDateDateTimePicker = AddDateField("TerminationDate", 146, False, 580, True, False)
             Controls.Add(New Label() With {
                 .Name = "Label_Divider1",
                 .AutoSize = False,
                 .Text = String.Empty,
-                .Location = New Point(580, 104),
+                .Location = New Point(580, 188),
                 .Size = New Size(450, 2),
                 .BackColor = SystemColors.ControlDark
             })
             DeclareUnboundField("Label_Divider1", "A dividing line between groups of fields. It names no column.")
-            homePhoneTextBox = AddField("HomePhone", 146, False, False, 580)
-            cellPhoneTextBox = AddField("CellPhone", 188, False, False, 580)
-            workPhoneTextBox = AddField("WorkPhone", 230, False, False, 580)
-            extensionTextBox = AddField("Extension", 272, False, False, 580)
-            assignedManagerIDComboBox = AddComboField("AssignedManagerID", 314, False, 580, 320)
-            timeZoneIDComboBox = AddComboField("TimeZoneID", 356, False, 580, 320)
-            SetManualTabOrder(firstNameTextBox, lastNameTextBox, address1TextBox, address2TextBox, cityTextBox, stateTextBox, zipTextBox, userNameTextBox, passwordTextBox, genderIDComboBox, emailTextBox, isActiveCheckBox, birthDateDateTimePicker, hireDateDateTimePicker, terminationDateDateTimePicker, homePhoneTextBox, cellPhoneTextBox, workPhoneTextBox, extensionTextBox, assignedManagerIDComboBox, timeZoneIDComboBox, okButton, cancelActionButton)
+            homePhoneTextBox = AddField("HomePhone", 230, False, False, 580)
+            cellPhoneTextBox = AddField("CellPhone", 272, False, False, 580)
+            workPhoneTextBox = AddField("WorkPhone", 314, False, False, 580)
+            extensionTextBox = AddField("Extension", 356, False, False, 580)
+            assignedManagerIDComboBox = AddComboField("AssignedManagerID", 398, False, 580, 320)
+            timeZoneIDComboBox = AddComboField("TimeZoneID", 440, False, 580, 320)
+            SetManualTabOrder(firstNameTextBox, lastNameTextBox, address1TextBox, address2TextBox, cityTextBox, stateTextBox, zipTextBox, userNameTextBox, passwordTextBox, genderIDComboBox, emailTextBox, receivesHealthAlertsCheckBox, isActiveCheckBox, birthDateDateTimePicker, hireDateDateTimePicker, terminationDateDateTimePicker, homePhoneTextBox, cellPhoneTextBox, workPhoneTextBox, extensionTextBox, assignedManagerIDComboBox, timeZoneIDComboBox, okButton, cancelActionButton)
             BindToForm()
             ApplyMode()
             smartyAddressLookupController = New SmartyAddressLookupController(
@@ -125,6 +127,7 @@ Namespace SDC.Framework
             If record.Table.Columns.Contains("BirthDate") Then SetDateField(birthDateDateTimePicker, record("BirthDate"))
             If record.Table.Columns.Contains("HireDate") Then SetDateField(hireDateDateTimePicker, record("HireDate"))
             If record.Table.Columns.Contains("TerminationDate") Then SetDateField(terminationDateDateTimePicker, record("TerminationDate"))
+            If record.Table.Columns.Contains("ReceivesHealthAlerts") Then SetCheckField(receivesHealthAlertsCheckBox, record("ReceivesHealthAlerts"))
             If record.Table.Columns.Contains("IsActive") Then SetCheckField(isActiveCheckBox, record("IsActive"))
             ConfigureLookupCombo(genderIDComboBox, DataAccess.GetLookupTable("FW_Gender", "GenderID", "GenderDescription", True, CurrentLookupId("GenderID")), "GenderID", "GenderDescription", CurrentLookupId("GenderID"))
             ConfigureLookupCombo(assignedManagerIDComboBox, DataAccess.GetLookupTable("FW_Employees", "EmployeeID", "FirstLast", True, CurrentLookupId("AssignedManagerID")), "EmployeeID", "FirstLast", CurrentLookupId("AssignedManagerID"))
@@ -186,6 +189,7 @@ Namespace SDC.Framework
             values("Password") = passwordTextBox.Text
             values("GenderID") = GetComboSelectedIdOrNull(genderIDComboBox)
             values("Email") = emailTextBox.Text
+            values("ReceivesHealthAlerts") = CheckFieldValue(receivesHealthAlertsCheckBox)
             values("IsActive") = CheckFieldValue(isActiveCheckBox)
             values("BirthDate") = DateFieldValue(birthDateDateTimePicker)
             values("HireDate") = DateFieldValue(hireDateDateTimePicker)

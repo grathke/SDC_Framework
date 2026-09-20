@@ -96,29 +96,21 @@ Namespace SDC.Framework
                                                      registrationId,
                                                      recordId)
 
-            AddHandler roleSelector.SelectionChanged, Sub(s, e) ApplyAdminEmailRule()
-            ApplyAdminEmailRule()
         End Sub
 
-        ''' <summary>
-        ''' An administrator must have an email address; anybody else need not.
-        '''
-        ''' The framework's two required paths cannot express this. AddField decides once at build
-        ''' time, and FW_RoleFields.IsRequired is keyed to the signed-in user's role - the person
-        ''' doing the editing, not the person being edited - so it would make Email required for
-        ''' every employee an administrator opened, and for none of the ones a manager opened.
-        '''
-        ''' Called when the picker changes and once after it is built, so an employee who already
-        ''' holds an admin role shows the requirement on opening rather than only after a move.
-        '''
-        ''' Enforcement is not repeated here. SetFieldRequired sets the Tag that
-        ''' ValidateRequiredControls already tests, so the existing save path refuses it.
-        ''' </summary>
-        Private Sub ApplyAdminEmailRule()
-            If roleSelector Is Nothing OrElse emailTextBox Is Nothing Then Return
-
-            SetFieldRequired(emailTextBox, roleSelector.HasAdminRole)
-        End Sub
+        ' Email's requirement is declared in the generation request, not here.
+        '
+        ' ApplyAdminEmailRule used to sit at this point: it made Email required only while the
+        ' person held an admin role, because neither of the framework's required paths could say
+        ' that. AddField decides once at build time, and FW_RoleFields.IsRequired is keyed to the
+        ' signed-in user's role - the person editing, not the person edited - which would have made
+        ' Email required for every employee an administrator opened and for none a manager opened.
+        '
+        ' Email is now in the request's AdminRequiredFields, so AddField declares it required for
+        ' every employee. The conditional rule had to go rather than merely stop mattering: it ran
+        ' after AddField, from OnFieldsBuilt, and would have CLEARED the requirement for anybody
+        ' without an admin role. The setting would have looked right and the page would have
+        ' behaved otherwise, which is the worst shape a bug can take.
 
         ''' <summary>
         ''' A new employee starts in their registration's time zone. Null on the employee means
