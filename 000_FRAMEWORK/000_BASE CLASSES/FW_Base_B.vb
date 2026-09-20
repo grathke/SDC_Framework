@@ -112,6 +112,15 @@ Namespace SDC.Framework
         ''' and make a slow page look fast.
         ''' </summary>
         Private lastQueryMilliseconds As Integer? = Nothing
+
+        ''' <summary>
+        ''' Whether the last RefreshGrid ran to the end rather than returning early or throwing.
+        '''
+        ''' Only a completed refresh is worth timing. The early returns are a missing registration,
+        ''' missing SQL and the view-only-my-records refusal, and two of those show a modal dialog
+        ''' the stopwatch would otherwise count - as would the failure handler.
+        ''' </summary>
+        Private lastRefreshCompleted As Boolean = False
         Private suppressColumnsManagerSync As Boolean = False
         Private allowColumnsManagerCheckToggle As Boolean = False
         Private missingMaintenancePkInResult As Boolean = False
@@ -2057,6 +2066,10 @@ Namespace SDC.Framework
                 maxRows = GetEmptyQbeRowLimit()
             End If
 
+            ' Cleared here and set at the very end, so anything that returns early or throws leaves
+            ' it false. Only a refresh that reached the end is worth timing - see RecordFind.
+            lastRefreshCompleted = False
+
             SetColumnsPanelVisible(False)
             ApplyCrudButtonCaptions(GetRegistrationIdForCaptions())
 
@@ -2193,6 +2206,10 @@ Namespace SDC.Framework
                     baselineLayoutSnapshot = BuildCurrentLayoutSnapshotJson()
                     hasBaselineLayoutSnapshot = True
                 End If
+
+                ' Last statement of the Try on purpose. Anything above that returns or throws
+                ' leaves this false, and an unfinished refresh is not a speed measurement.
+                lastRefreshCompleted = True
             Catch ex As Exception
                 ' The message alone says what went wrong but never where. The first stack frame
                 ' names the method, which is the difference between reading this and guessing at it.
@@ -4452,12 +4469,25 @@ Namespace SDC.Framework
         ''' <summary>
         ''' Records what the Find cost, both halves of it.
         '''
-        ''' Perceived time is a FLOOR on what the user experienced and must never be labelled
+        ''' **Only a Find that completed.** A refused or failed one is not a measurement of speed,
+        ''' and counting it produces a number that is worse than missing. Three blocking
+        ''' MessageBox calls sit inside the timed region - the missing-SQL warning, the
+        ''' view-only-my-records warning and the load-failure handler - and a stopwatch running
+        ''' across a modal dialog measures how long somebody left it on screen.
+        '''
+        ''' That is not hypothetical. On 2026-09-20 this recorded a Find of 83 seconds against 51
+        ''' milliseconds of database time, and the 83 seconds was the parameter-limit error dialog
+        ''' sitting open while it was read. The figure was believed for as long as it took somebody
+        ''' to say that nothing takes 83 seconds.
+        '''
+        ''' Perceived time is still a FLOOR on what the user experienced and must never be labelled
         ''' response time: the stopwatch stops when the grid paints server-side, and over
         ''' Thinfinity the pixels still have to reach the browser.
         ''' </summary>
         Private Sub RecordFind(findTimer As System.Diagnostics.Stopwatch)
             Try
+                If Not lastRefreshCompleted Then Return
+
                 UsageCounters.Record(UsageCounters.UsageKind.Search,
                                      Me.GetType().Name,
                                      GetRegistrationIdForCaptions(),
