@@ -266,7 +266,7 @@ Namespace SDC.Framework
             ' the table is not in it, and going out to a dashboard to enable it and coming back is
             ' the long way round. App Admin only, being a decision about the whole application.
             enabledTablesButton = New Button With {
-                .Text = "Tablesâ€¦",
+                .Text = "Tables...",
                 .Size = New Size(80, 32),
                 .FlatStyle = FlatStyle.Standard,
                 .UseVisualStyleBackColor = True,

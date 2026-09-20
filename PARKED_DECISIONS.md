@@ -4,7 +4,7 @@ What has been decided but not built, and what is deliberately waiting. Written d
 otherwise lives only in the memory of whoever was in the conversation.
 
 **Nothing here is a task list.** Every item is parked on purpose, most of them waiting on the new
-schema. Do not start any of it without asking â€” several were argued at length and stopped for
+schema. Do not start any of it without asking — several were argued at length and stopped for
 reasons that are not obvious from the code.
 
 `CLAUDE.md` holds the rules. This holds the state.
@@ -18,24 +18,24 @@ reasons that are not obvious from the code.
 *Stated 2026-09-18. Not started.*
 
 The framework always runs. A user logs in, what they are permitted decides which modules they get,
-and those become the buttons. Today the ribbon is written in code â€” `MenuFormInitializer` calls
-`UpsertActionTile` once per tile and permissions hide some â€” which is why the page generator has a
+and those become the buttons. Today the ribbon is written in code — `MenuFormInitializer` calls
+`UpsertActionTile` once per tile and permissions hide some — which is why the page generator has a
 hook that inserts a tile for a newly generated page.
 
 **The menu is data, the pages stay classes.** A row names a page; the framework resolves that name
-to the class at run time. No hand-maintained registry â€” that was rejected â€” and no reflection
+to the class at run time. No hand-maintained registry — that was rejected — and no reflection
 registry to keep in step, because a page class is named exactly what the row says.
 
 Why classes rather than rows: the reuse already lives in `FW_Base_B` and `FW_Base_U`, so a page
 class is thin and the generator writes it anyway. A class is checked by the compiler, gives
-behaviour somewhere to live the moment one page needs it â€” `FW_SwitchUser_B` needed five overrides â€”
+behaviour somewhere to live the moment one page needs it — `FW_SwitchUser_B` needed five overrides —
 and appears in stack traces and IntelliSense. A row cannot hold behaviour.
 
 **Its weakness, and the answer.** Resolving by name means a typo in a menu row is not caught until
 somebody clicks. Walk the table at startup, or in the preflight script, and report any row naming a
 page that does not exist. A dead button becomes a report rather than a surprise.
 
-**What the initializer keeps:** only what an application alone can say â€” its surface name, its home
+**What the initializer keeps:** only what an application alone can say — its surface name, its home
 graphic, which tiles are anchored.
 
 ### Which control opens in the left-hand region
@@ -47,10 +47,10 @@ of yes/no flags but *which control opens there*, falling back to the default whe
 permitted it.
 
 Three registration fields circle this and two do nothing today: `AllowMessaging` and
-`DisplayDashboardOnStartUp` are consumed by nothing, and a third â€” "show messages on load" â€” does
+`DisplayDashboardOnStartUp` are consumed by nothing, and a third — "show messages on load" — does
 not exist. Settle them together rather than adding a third flag that means the same as the first two.
 *Refined 2026-09-19.* Name the **tile**, not the region. A tile's click handler already checks the
-permission, builds the control, puts it in the right region and sets the chrome â€” so a startup
+permission, builds the control, puts it in the right region and sets the chrome — so a startup
 setting holding an `ActionKey` invokes what already exists and the question "which region gets
 what" disappears. It also collapses the three flags above into one value: `DisplayDashboardOnStartUp`
 becomes *startup tile = Dashboard*, `AllowMessaging` and the absent "show messages on load" become
@@ -76,12 +76,12 @@ it is stored:
 | `_U` control positions | one per page | developer only |
 
 A browse grid is somebody arranging their own working view. A maintenance page's field order and
-positions are the page's *design*, which everybody then receives â€” so there is one set, and no
+positions are the page's *design*, which everybody then receives — so there is one set, and no
 per-user variant. That closes the open question in `PAGE_LAYOUT_RUNTIME_SPEC.md` section 8: there is
 no conflict between a developer's layout and a user's, because there is no user's.
 
 **"Developer" is a session, not only a role.** App Admin is a role a customer's administrator can
-hold over Thinfinity. The test is the role **and** a desktop session â€” the same line page generation
+hold over Thinfinity. The test is the role **and** a desktop session — the same line page generation
 draws when it refuses to open in a browser. Applied to the tab order manager on 2026-09-19; the
 positions would use the same gate.
 
@@ -92,7 +92,7 @@ for every user, in every session. Only the writing is gated.
 
 *Settled 2026-09-19. Not built.*
 
-In the preview opened from page generation, and nowhere else â€” not on a normally opened page, even
+In the preview opened from page generation, and nowhere else — not on a normally opened page, even
 for an App Admin.
 
 - Page generation refuses to open in a browser session, so a preview can never be dragged over
@@ -109,7 +109,7 @@ for an App Admin.
 **Saving replaces the page's whole set**, in one transaction, as `SaveTabOrderSettings` already does:
 delete the page's rows, write the current ones. It changes rarely, nothing is gained by merging row
 by row, and a replace cannot leave a stale row behind. A saved row naming a control that is not on
-the page is ignored rather than reported â€” unlike the unmapped-field report, which exists because
+the page is ignored rather than reported — unlike the unmapped-field report, which exists because
 such a control stops a page saving. Here it is an expected state: a row saved for a field that is in
 the request but not yet generated simply waits for it.
 ### How a field is repositioned
@@ -118,7 +118,7 @@ the request but not yet generated simply waits for it.
 
 **Built 2026-09-19, and it needed nothing new.** The tool already existed: the maintenance grid in
 the field picker has `Move Up`, `Move Down` and a `Column` cell per field, so the order and the
-split were always editable â€” you change them there and press Preview to see the result.
+split were always editable — you change them there and press Preview to see the result.
 
 What was missing was only that crossing the boundary did nothing. `Move Up` moved one place in the
 whole included list, so when the neighbour belonged to the other column the button appeared dead,
@@ -134,13 +134,13 @@ why, and is kept because the conclusion was reached twice from opposite ends.
 there.
 
 Dragging was the obvious idea and is the wrong one here. The delivery rules prefer discrete events
-over continuous pointer sampling â€” a button click always arrives, mouse movement is coalesced and
+over continuous pointer sampling — a button click always arrives, mouse movement is coalesced and
 degrades by acting late rather than failing. Buttons also match what already exists: `Up` and `Down`
 in the tab order manager, `Move Up` and `Move Down` in the field picker. A third surface that
 reordered by mouse would make the same operation work two ways depending on where you were standing.
 
-Snapping disappears with the drag. One press is one row slot, so the rule that a row is the unit â€”
-`IsRowLayoutControl` and `CollapseHiddenFieldRows` decide what a row *is* by comparing `Top` â€” is
+Snapping disappears with the drag. One press is one row slot, so the rule that a row is the unit —
+`IsRowLayoutControl` and `CollapseHiddenFieldRows` decide what a row *is* by comparing `Top` — is
 enforced by construction rather than by a snap that has to be correct. Nothing can land between rows
 because nothing is ever placed by pixel.
 
@@ -150,26 +150,26 @@ long moves hurt, they hurt in all three places and get added to all three.
 
 **Down past the end of a column wraps to the top of the next one**, and `Up` at the top of a column
 goes back to the bottom of the previous. Moving a field across columns is not a separate command,
-it is what happens when you keep pressing â€” which is also the order the page tabs in, down one
+it is what happens when you keep pressing — which is also the order the page tabs in, down one
 column and then the next.
 
 The consequence is that **column membership is always contiguous**: everything before the wrap point
 is in one column, everything after in the next. That is accepted. The model today allows an
-interleaved arrangement â€” `Column2Fields` is any subset â€” but nothing produces one and nothing wants
+interleaved arrangement — `Column2Fields` is any subset — but nothing produces one and nothing wants
 one.
 
 **Written as "the next column", not "the other column".** There may one day be a column 3, and the
 interaction costs nothing to generalise. The layout does not generalise for free: `PlaceMaintenancePage`
 holds `TwoColumns`, a single `ColumnTwoLeft` and a `leftFields`/`rightFields` pair,
 `MaintenanceLayout.PageWidth` chooses between a one-column and a two-column width, and the request
-stores `Column2Fields` rather than a column number per field. None of it is hard â€” placement is one
-function now, so columns become a loop over an index â€” but it is a change, not a flag. And three
+stores `Column2Fields` rather than a column number per field. None of it is hard — placement is one
+function now, so columns become a loop over an index — but it is a change, not a flag. And three
 columns is roughly 1400 wide against a 1260 minimum window, so it is also a decision about the
 window.
 
 **A field's row is its ordinal within its column, not a coordinate.** So `Up` on the page moves it
 past the previous field *in its own column*, which may be several steps in the underlying ordered
-list when the fields between belong elsewhere. That is not what the field picker's `Move Up` does â€”
+list when the fields between belong elsewhere. That is not what the field picker's `Move Up` does —
 that moves one place in the whole included list, and can appear to do nothing when the neighbour is
 in another column. The page moves by rows because rows are what you are looking at; the two are not
 the same operation and should not be written as though they are.
@@ -240,7 +240,7 @@ Neither is blocked by anything. Both are waiting on a decision rather than on co
 
 A `_U` page's layout moved out of generated code and into data the page reads at run time, plus the
 drag-and-drop designer that would edit it. Fully specified in `PAGE_LAYOUT_RUNTIME_SPEC.md` and
-`FORM_DESIGNER_SPEC.md`, parked 2026-09-15. **Not to be started unasked** â€” it is a large change to
+`FORM_DESIGNER_SPEC.md`, parked 2026-09-15. **Not to be started unasked** — it is a large change to
 how every maintenance page is built.
 
 ### A phone gets its own menu, login and pages
@@ -259,7 +259,7 @@ through Claude.
 ### The login database timeout
 
 Login waits around ten seconds when the database server is down. The fix is to probe the SQL port
-before connecting â€” TCP, not ICMP, since a machine can answer a ping with SQL Server stopped.
+before connecting — TCP, not ICMP, since a machine can answer a ping with SQL Server stopped.
 
 ---
 
@@ -272,7 +272,7 @@ Built, verified and committed 2026-09-16, and extended since: writes are refused
 
 The distinction that took the longest and must be preserved: `CreatedBy`, `UpdatedBy`,
 `ModifiedBy`, `DeletedBy` and `FW_AuditTrail.UserID` are **authorship** and follow the
-administrator. A `UserID` that is a **row key** stays the viewed user â€” table layouts, saved QBE,
+administrator. A `UserID` that is a **row key** stays the viewed user — table layouts, saved QBE,
 page zooms, UI hints, message recipients, `FW_Messages.FromUserID`, `FW_HD_Issues.ReporterUserID`.
 
 Still open: the search does not match first or last names, so "alan" matches every address at one
@@ -329,10 +329,10 @@ it is load-bearing.
 
 ## Rejected, or dropped
 
-- **Zoom flicker** â€” dropped 2026-09-18. Do not raise it again.
-- **A sandbox folder for generated pages** â€” rejected 2026-09-18 as too complicated. Each owner has
+- **Zoom flicker** — dropped 2026-09-18. Do not raise it again.
+- **A sandbox folder for generated pages** — rejected 2026-09-18 as too complicated. Each owner has
   its own `999_GENERATED` waiting room instead.
-- **A hand-maintained page registry** â€” rejected 2026-09-18 in favour of resolving a page class by
+- **A hand-maintained page registry** — rejected 2026-09-18 in favour of resolving a page class by
   the name the menu row holds.
 
 ---
@@ -341,5 +341,5 @@ it is load-bearing.
 
 Commits protect against bad edits, not against losing the machine. As of 2026-09-18 there is **no
 git remote**, so everything lives here only. `restore-points/` and `project-backup/` are excluded
-from the repository â€” some restore points contain an old `run-local.ps1` with a real password, and
+from the repository — some restore points contain an old `run-local.ps1` with a real password, and
 they stay out of history for that reason.
