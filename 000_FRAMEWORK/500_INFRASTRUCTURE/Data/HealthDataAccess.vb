@@ -662,11 +662,22 @@ Namespace SDC.Framework
                 End Using
 
             Catch ex As SqlException
-                ' 262 and 15151 are the two ways SQL Server says "not yours to change". Named
-                ' rather than folded into the general failure, because the answer is completely
-                ' different: nothing is broken, the login simply cannot do this.
+                ' 5011 is the one ALTER DATABASE actually returns - "User does not have permission
+                ' to alter database ... the database does not exist, or the database is not in a
+                ' state that allows access checks", followed by 5069, "ALTER DATABASE statement
+                ' failed". 262 and 15151 are the generic permission refusals and are kept for the
+                ' shapes that raise those instead.
+                '
+                ' The list was 262 and 15151 alone until 2026-09-20, guessed rather than observed,
+                ' and a probe login with no ALTER DATABASE proved it wrong on the first try. A
+                ' refusal would have shown the raw server text - honest, and far worse than the
+                ' sentence written for it.
+                '
+                ' Named rather than folded into the general failure, because the answer is
+                ' completely different: nothing is broken, the login simply cannot do this.
                 result.Succeeded = False
-                result.Message = If(ex.Number = 262 OrElse ex.Number = 15151,
+                result.Message = If(ex.Number = 5011 OrElse ex.Number = 5069 OrElse
+                                    ex.Number = 262 OrElse ex.Number = 15151,
                                     "This database login does not have permission to change Query Store. " &
                                     "It needs ALTER DATABASE on " & SafeDatabaseName() & ".",
                                     "SQL Server refused the change: " & ex.Message)
