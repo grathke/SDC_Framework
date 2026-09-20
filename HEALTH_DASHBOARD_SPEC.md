@@ -37,9 +37,27 @@ a `failedAttempts` field but it is in memory, drives the screen, resets when the
 persists nowhere. There is no lockout.
 
 Two holes follow. `FW_AuditTrail` can prove who changed a row but not when they signed in, so the
-session that produced a change is unrecorded. And a run of failed attempts - somebody guessing, or
-a whole tenant locked out the morning after a password change - leaves no trace at all. "Nobody can
-log in" is the worst outage this system can have and it is currently invisible.
+session that produced a change is unrecorded. And a run of failed attempts - somebody guessing at
+one account - leaves no trace at all. "Nobody can log in" is the worst outage this system can have
+and it is currently invisible.
+
+**Corrected 2026-09-20.** This section used to offer "a whole tenant locked out the morning after a
+password change" as the second example. There is no such thing: authentication is per user, and
+`ComputePasswordHashForUser` keys its HMACSHA512 with **that user's own UserId**, so a tenant's
+users share no password, no secret and not even a salt. Nothing can break them all at once.
+
+What genuinely takes everybody out is worth naming instead, because it is what the alerting has to
+catch:
+
+- **`dbo.vw_FW_CurrentUser`.** Every sign-in in the installation joins through that view. Change it,
+  break it, or drop a column beneath it and every login fails everywhere. It is a fair part of why
+  views are a Protected Area in `CLAUDE.md`.
+- **The database unreachable.** Everyone fails, though with a distinct reason rather than looking
+  like a bad password.
+
+Both are installation-wide rather than tenant-wide, which is the shape the alerting should follow.
+Neither reaches the failed-password counter at all, because in both cases no password was ever
+checked - so a mass outage never floods a rule that counts wrong passwords.
 
 Successes and failures want different storage, so they are two things rather than one:
 
