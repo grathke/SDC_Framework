@@ -346,7 +346,6 @@ Namespace SDC.Framework
                     Using cmd As New SqlCommand(
                         "SELECT FieldName, " &
                         "ISNULL(LTRIM(RTRIM(OverrideCaption)), '') AS OverrideCaption, " &
-                        "ISNULL(LTRIM(RTRIM(FriendlyFieldName)), '') AS FriendlyFieldName, " &
                         "ISNULL(Make_Invisible, 0) AS Make_Invisible, " &
                         "ISNULL(IsActive, 1) AS IsActive " &
                         "FROM dbo.FW_RoleFields " &
@@ -363,9 +362,19 @@ Namespace SDC.Framework
                                     Continue While
                                 End If
 
-                                Dim overrideCaption = SafeString(reader("OverrideCaption"))
-                                Dim friendlyName = SafeString(reader("FriendlyFieldName"))
-                                Dim caption = If(overrideCaption <> String.Empty, overrideCaption, friendlyName)
+                                ' The override and nothing else. An override is an override: where
+                                ' one is present it is the caption, and where there is none the
+                                ' caller derives the name from the field itself through
+                                ' DisplayNameFormatter, which is the better answer anyway.
+                                '
+                                ' FriendlyFieldName used to sit between those two and earned its
+                                ' place on exactly one field in the whole database. It is seeded by
+                                ' FormatFieldName, which has no acronym handling, so what it mostly
+                                ' contributed was BTN_Create_Caption as "B T N Create Caption" and
+                                ' CA_CanChange as "C A Can Change" - waiting on columns no page
+                                ' happened to select. The column is still there and Roles still
+                                ' edits it; nothing is named from it.
+                                Dim caption = SafeString(reader("OverrideCaption"))
 
                                 If caption <> String.Empty Then
                                     result.FieldCaptions(fieldName) = caption

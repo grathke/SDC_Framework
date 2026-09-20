@@ -90,6 +90,21 @@ Assert-Pattern -Path ".\000_FRAMEWORK\000_BASE CLASSES\FW_Base_B.vb" -Pattern "D
 Assert-Pattern -Path ".\000_FRAMEWORK\000_BASE CLASSES\FW_Base_B.vb" -Pattern "If col Is Nothing OrElse Not col.Visible Then" -Description "QBE derives fields only from visible browse columns"
 Assert-Pattern -Path ".\000_FRAMEWORK\000_BASE CLASSES\FW_Base_B.vb" -Pattern "If IsPkAliasColumn(col) OrElse IsSoftDeleteColumnName(fieldName) Then" -Description "Grid-derived QBE excludes the internal PK alias"
 Assert-Pattern -Path ".\000_FRAMEWORK\000_BASE CLASSES\FW_Base_B.vb" -Pattern 'String.Equals(dc.ColumnName, "PK", StringComparison.OrdinalIgnoreCase)' -Description "Start Empty QBE excludes the internal PK alias"
+
+# A QBE row is captioned by the grid column above it, not by asking the caption map a second time.
+# ApplyFriendlyColumnHeaders has already resolved the caption into HeaderText; going back to the map
+# discarded any header a page had set for itself and captioned the QBE row differently from the
+# column it filters. The Start Empty path keeps ResolveQbeFieldCaption - it runs before a grid
+# exists, so there is no header to read.
+Assert-Pattern -Path ".\000_FRAMEWORK\000_BASE CLASSES\FW_Base_B.vb" -Pattern 'Dim displayName = If(String.IsNullOrWhiteSpace(col.HeaderText), ToFriendlyCaption(fieldName), col.HeaderText.Trim())' -Description "Grid-derived QBE captions come from the grid header"
+Assert-Pattern -Path ".\000_FRAMEWORK\000_BASE CLASSES\FW_Base_B.vb" -Pattern 'Dim displayName = ResolveQbeFieldCaption(dc.ColumnName, ToFriendlyCaption(dc.ColumnName))' -Description "Start Empty QBE still resolves captions through the role caption map"
+
+# An override is purely an override. Where FW_RoleFields carries one it is the caption; where it
+# does not, the name is derived from the field through DisplayNameFormatter. FriendlyFieldName is
+# not a tier in between - it is seeded by FormatFieldName, which has no acronym handling, and it
+# earned its place on one field in the whole database.
+Assert-Pattern -Path ".\000_FRAMEWORK\500_INFRASTRUCTURE\Data\DataAccess.vb" -Pattern 'Dim caption = SafeString(reader("OverrideCaption"))' -Description "Field captions come from the override alone"
+Assert-NotPattern -Path ".\000_FRAMEWORK\500_INFRASTRUCTURE\Data\DataAccess.vb" -Pattern 'AS FriendlyFieldName, " &' -Description "The caption query does not read FriendlyFieldName"
 if (Select-String -Path ".\000_FRAMEWORK\000_BASE CLASSES\FW_Base_B.vb" -Pattern 'AssignedManagerID' -SimpleMatch -Quiet) {
     throw "Base_B must not seed page-specific QBE fields; QBE fields must come from the active page grid. AssignedManagerID was the original offender, from the since-removed FW_Entity."
 }

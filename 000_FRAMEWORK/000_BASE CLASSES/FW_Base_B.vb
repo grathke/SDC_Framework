@@ -3558,7 +3558,16 @@ Namespace SDC.Framework
                     Continue For
                 End If
 
-                Dim displayName = ResolveQbeFieldCaption(fieldName, If(String.IsNullOrWhiteSpace(col.HeaderText), ToFriendlyCaption(fieldName), col.HeaderText.Trim()))
+                ' The header, not the caption map. ApplyFriendlyColumnHeaders has already resolved
+                ' this column's caption from that map and written it here, so asking the map again
+                ' returned the same string twice - except where a page had set the header itself,
+                ' which ApplyFriendlyColumnHeaders is overridable to allow. There the map won and
+                ' QBE captioned a row differently from the column immediately above it.
+                '
+                ' Reading the header makes QBE agree with the grid by construction rather than by
+                ' both happening to ask the same question. The schema path below still resolves
+                ' through the map, because it runs before a grid exists and has no header to read.
+                Dim displayName = If(String.IsNullOrWhiteSpace(col.HeaderText), ToFriendlyCaption(fieldName), col.HeaderText.Trim())
                 Dim fieldKind = InferFieldKind(col)
                 Dim rowIndex As Integer
 
