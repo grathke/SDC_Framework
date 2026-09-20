@@ -326,6 +326,27 @@ anywhere and no caller — see Gaps.
 
 ---
 
+## FW_Health_B
+
+- placement: **Application dashboard only** (`Dashboard_Application.vb`), grid cell 3,5
+- ActionKey: `ActionKey_SystemHealth`
+- ActionType: Navigation / dialog
+- target: `FW_Health_B`, opened with `ShowDialog`
+- caption source: **the coded caption**, `System Health`. The button deliberately carries no
+  `.PageName`, so the caption chain does not apply: the page has no `FW_Pages` row and no
+  `Table_Alias` to resolve against, because it browses no table.
+- icon file: `dashboard.png`, falling back to `SystemIcons.Information`
+- visibility rule: always shown on the Application dashboard, which is the access gate. The page
+  reports across **every** registration by design, so it must never be added to the Company
+  dashboard — `HEALTH_DASHBOARD_SPEC.md` section 5 records why, and a customer-facing version
+  would be a different page with the registration predicate in place rather than a flag on this one.
+- click behavior: passes the dashboard's `currentUser` and `accessProfile` to the page
+
+Not on the Company dashboard, unlike its neighbours in this catalog. That is the one thing to
+check before copying this entry for anything else.
+
+---
+
 ## Gaps
 
 - `assets/images/helpdesk.png` exists but no catalogued action uses it. Either the Help Desk icon

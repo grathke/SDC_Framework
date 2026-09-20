@@ -28,6 +28,7 @@ Namespace SDC.Framework
         Private ReadOnly closeIconButton As Button
         Private ReadOnly generatedFW_Employees_BButton As DashboardIconButton
         Private ReadOnly userAccessDiagnosticButton As DashboardIconButton
+        Private ReadOnly systemHealthButton As DashboardIconButton
         Private iconDragController As DashboardIconDragController
         Private iconImageController As IconImageController
 
@@ -254,6 +255,25 @@ Namespace SDC.Framework
             userAccessDiagnosticButton.FlatAppearance.MouseOverBackColor = Color.Transparent
             userAccessDiagnosticButton.FlatAppearance.MouseDownBackColor = Color.Transparent
 
+            systemHealthButton = New DashboardIconButton() With {
+                .Name = "ActionKey_SystemHealth",
+                .Text = "System Health",
+                .Location = DashboardGridLayout.CellLocation(3, 5),
+                .Size = New Size(DashboardGridLayout.IconWidth, DashboardGridLayout.IconHeight),
+                .BackColor = Color.Transparent,
+                .UseVisualStyleBackColor = False,
+                .FlatStyle = FlatStyle.Flat,
+                .Font = New Font("Segoe UI", 13.0F, FontStyle.Regular),
+                .Image = LoadDashboardIcon("dashboard.png", SystemIcons.Information.ToBitmap()),
+                .TextImageRelation = TextImageRelation.ImageAboveText,
+                .ImageAlign = ContentAlignment.TopCenter,
+                .TextAlign = ContentAlignment.BottomCenter,
+                .TabStop = False
+            }
+            systemHealthButton.FlatAppearance.BorderSize = 0
+            systemHealthButton.FlatAppearance.MouseOverBackColor = Color.Transparent
+            systemHealthButton.FlatAppearance.MouseDownBackColor = Color.Transparent
+
 
 
 
@@ -349,11 +369,13 @@ Namespace SDC.Framework
             AddHandler userAccessDiagnosticButton.MouseEnter, AddressOf IconButton_MouseEnter
             AddHandler userAccessDiagnosticButton.MouseLeave, AddressOf IconButton_MouseLeave
             AddHandler userAccessDiagnosticButton.Click, AddressOf UserAccessDiagnosticButton_Click
+            AddHandler systemHealthButton.Click, AddressOf SystemHealthButton_Click
             AddHandler generatedFW_Employees_BButton.MouseEnter, AddressOf IconButton_MouseEnter
             AddHandler generatedFW_Employees_BButton.MouseLeave, AddressOf IconButton_MouseLeave
             AddHandler generatedFW_Employees_BButton.Click, AddressOf GeneratedFW_Employees_BButton_Click
             AddHandler closeIconButton.Click, AddressOf CloseButton_Click
             Me.Controls.Add(userAccessDiagnosticButton)
+            Me.Controls.Add(systemHealthButton)
             Me.Controls.Add(generatedFW_Employees_BButton)
             Me.Controls.Add(topStripLabel)
             Me.Controls.Add(closeIconButton)
@@ -433,6 +455,8 @@ Namespace SDC.Framework
             newPageRequestsButton.Top = DashboardGridLayout.CellTop(3)
             enabledTablesButton.Left = DashboardGridLayout.CellLeft(4)
             enabledTablesButton.Top = DashboardGridLayout.CellTop(3)
+            systemHealthButton.Left = DashboardGridLayout.CellLeft(5)
+            systemHealthButton.Top = DashboardGridLayout.CellTop(3)
 
             ' Last, because everything above pins icons to the cells written in this file. Anything
             ' that has been dragged elsewhere is laid back over the top; anything untouched keeps
@@ -636,6 +660,18 @@ Namespace SDC.Framework
         Private Sub UserAccessDiagnosticButton_Click(sender As Object, e As EventArgs)
             ResetIconButtonVisuals()
             Using page As New FW_UserAccessDiagnostic_B(currentUser, accessProfile)
+                page.ShowDialog(Me)
+            End Using
+        End Sub
+
+        ''' <summary>
+        ''' Opens the health page, carrying this dashboard's own user and access profile rather
+        ''' than letting the page build its own - the Action Icon Guardrail's rule, and the reason
+        ''' a parameterless constructor would be wrong here.
+        ''' </summary>
+        Private Sub SystemHealthButton_Click(sender As Object, e As EventArgs)
+            ResetIconButtonVisuals()
+            Using page As New FW_Health_B(currentUser, accessProfile)
                 page.ShowDialog(Me)
             End Using
         End Sub
