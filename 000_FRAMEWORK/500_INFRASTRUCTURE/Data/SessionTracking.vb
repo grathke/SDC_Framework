@@ -128,12 +128,53 @@ Namespace SDC.Framework
         End Sub
 
         ''' <summary>
-        ''' Writes the end, and derives the last activity from what was already being counted.
+        ''' Stamps this process's session as active, on a connection somebody else already has open.
         '''
-        ''' LastActivityOn comes from FW_UsageCounter rather than from a write per click. The
-        ''' counters bucket by hour, so this is the hour somebody last did something rather than
-        ''' the minute - good enough to tell an afternoon at the desk from an afternoon away, which
-        ''' is the question Active duration answers.
+        ''' Called from UsageCounters.WriteBatch, which runs only when there is something to write.
+        ''' That batch is itself the proof somebody did something, so the stamp costs one statement
+        ''' on a connection that was being opened anyway - no timer, no heartbeat, no round trip
+        ''' that would not otherwise have happened.
+        '''
+        ''' **This replaced deriving LastActivityOn from FW_UsageCounter at the end of a session,
+        ''' which was wrong twice.** A bucket is keyed to the hour it opened, so a session starting
+        ''' at 20:40 was compared against a 20:00 bucket and never matched its own activity -
+        ''' LastActivityOn came out null every time, and the crash sweep then dated an abandoned
+        ''' session to the moment it started, reporting four minutes of work as zero seconds. And
+        ''' the buckets are keyed by registration rather than by user, so with two people signed
+        ''' in to one registration each would have been credited with the other's searches.
+        '''
+        ''' Never throws. A failure to stamp must not cost the batch it was riding.
+        ''' </summary>
+        Friend Sub StampActivity(conn As SqlConnection)
+            Dim id As Integer
+
+            SyncLock gate
+                id = currentSessionId
+            End SyncLock
+
+            If id <= 0 Then Return
+
+            Try
+                Using cmd As New SqlCommand(
+                    "UPDATE dbo.FW_Session SET LastActivityOn = SYSUTCDATETIME() " &
+                    "WHERE SessionID = @ID AND EndedOn IS NULL", conn)
+
+                    cmd.Parameters.Add("@ID", SqlDbType.Int).Value = id
+                    cmd.ExecuteNonQuery()
+                End Using
+
+            Catch ex As Exception
+                ' Deliberately silent. Recording it here would mean a telemetry write inside a
+                ' telemetry write, and the thing that failed is a convenience column.
+            End Try
+        End Sub
+
+        ''' <summary>
+        ''' Writes the end and the reason.
+        '''
+        ''' LastActivityOn is not touched. It is written as the session runs, by StampActivity,
+        ''' which is the only thing that knows when activity actually happened - see the note
+        ''' there for why deriving it at this point could not work.
         '''
         ''' Guarded on EndedOn being null so a session closed by the reconciler is not reopened and
         ''' closed again with a worse reason.
@@ -143,14 +184,10 @@ Namespace SDC.Framework
                 conn.Open()
 
                 Using cmd As New SqlCommand(
-                    "UPDATE s SET " &
+                    "UPDATE dbo.FW_Session SET " &
                     "  EndedOn = SYSUTCDATETIME(), " &
-                    "  EndReason = @Reason, " &
-                    "  LastActivityOn = (SELECT MAX(u.HourUtc) FROM dbo.FW_UsageCounter u " &
-                    "                    WHERE u.HourUtc >= s.StartedOn " &
-                    "                      AND ISNULL(u.RegistrationID, -1) = ISNULL(s.RegistrationID, -1)) " &
-                    "FROM dbo.FW_Session s " &
-                    "WHERE s.SessionID = @ID AND s.EndedOn IS NULL", conn)
+                    "  EndReason = @Reason " &
+                    "WHERE SessionID = @ID AND EndedOn IS NULL", conn)
 
                     cmd.Parameters.Add("@ID", SqlDbType.Int).Value = sessionId
                     cmd.Parameters.Add("@Reason", SqlDbType.VarChar, 20).Value = reason.ToString()

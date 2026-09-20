@@ -35,6 +35,14 @@ Namespace SDC.Framework
         Private Const GreenFloor As Double = 90
         Private Const AmberFloor As Double = 75
 
+        ''' <summary>Air between the hub and the top of the score. Without it the number reads as
+        ''' part of the needle.</summary>
+        Private Const HubGap As Single = 12.0F
+
+        ''' <summary>Room under the word for its descenders. At two pixels they were cut off by
+        ''' the control's edge.</summary>
+        Private Const BottomMargin As Single = 6.0F
+
         Private Shared ReadOnly GreenColour As Color = Color.FromArgb(35, 160, 85)
         Private Shared ReadOnly AmberColour As Color = Color.FromArgb(232, 160, 25)
         Private Shared ReadOnly RedColour As Color = Color.FromArgb(200, 55, 50)
@@ -145,7 +153,7 @@ Namespace SDC.Framework
                 DrawHub(g, centre, radius)
             End If
 
-            DrawReadout(g, centre, radius, readoutBand)
+            DrawReadout(g, centre, radius, HubRadius(radius))
         End Sub
 
         ''' <summary>
@@ -244,8 +252,18 @@ Namespace SDC.Framework
             End Using
         End Sub
 
+        ''' <summary>
+        ''' The hub's radius, which is also the thing the readout has to clear.
+        '''
+        ''' Said once rather than in each place that needs it. DrawHub and DrawReadout working
+        ''' from different numbers is how the score ended up sitting against the needle.
+        ''' </summary>
+        Private Shared Function HubRadius(radius As Single) As Single
+            Return Math.Max(6.0F, radius * 0.09F)
+        End Function
+
         Private Sub DrawHub(g As Graphics, centre As PointF, radius As Single)
-            Dim hub = Math.Max(6.0F, radius * 0.09F)
+            Dim hub = HubRadius(radius)
 
             Using brush As New SolidBrush(ColourFor(scoreValue))
                 g.FillEllipse(brush, centre.X - hub, centre.Y - hub, hub * 2, hub * 2)
@@ -260,18 +278,30 @@ Namespace SDC.Framework
         ''' <summary>
         ''' The number, and the band said in words beneath it.
         '''
-        ''' Both are sized from the band reserved for them rather than from the radius, so they
-        ''' cannot outgrow the space the arc left behind. The band is split roughly two to one
-        ''' between the number and the word.
+        ''' **It starts below the hub, and it is sized into what is left.** The readout used to be
+        ''' anchored to the bottom of the control with a two pixel margin and sized from the band
+        ''' reserved for it. Two things went wrong with that: a large score reached up into the
+        ''' needle, and the word underneath had its descenders clipped by the control's own edge.
+        ''' Measuring down from the hub instead makes the gap a fact of the layout rather than
+        ''' something that happens to work at one font size.
+        '''
+        ''' The block is then centred in the space between the hub and the bottom margin, so the
+        ''' air above and below it matches.
         ''' </summary>
-        Private Sub DrawReadout(g As Graphics, centre As PointF, radius As Single, readoutBand As Single)
+        Private Sub DrawReadout(g As Graphics, centre As PointF, radius As Single, hubRadius As Single)
             Dim scoreText = If(hasScoreValue,
                                scoreValue.ToString("0.0", Globalization.CultureInfo.InvariantCulture),
                                "--")
 
-            ' 0.62 of the band for the number, converted from pixels to points. The word takes a
-            ' little over a third of what is left.
-            Dim scorePoints = Math.Max(12.0F, (readoutBand * 0.62F) * 72.0F / g.DpiY)
+            ' Everything from the hub down, less a margin at the bottom, is what the readout has
+            ' to live in. The gap below the hub is the separation the needle needs; the margin at
+            ' the bottom is what stops the word being clipped by the control's edge.
+            Dim readoutTop = centre.Y + hubRadius + HubGap
+            Dim available = Math.Max(24.0F, Height - readoutTop - BottomMargin)
+
+            ' 0.58 of the space for the number, converted from pixels to points. The word takes a
+            ' little under a third of that.
+            Dim scorePoints = Math.Max(11.0F, (available * 0.58F) * 72.0F / g.DpiY)
             Dim bandPoints = Math.Max(7.5F, scorePoints * 0.30F)
 
             Dim scoreFont = New Font(Font.FontFamily, scorePoints, FontStyle.Bold)
@@ -282,11 +312,11 @@ Namespace SDC.Framework
                 Dim bandText = BandName
                 Dim bandSize = g.MeasureString(bandText, bandFont)
 
-                ' Anchored to the bottom of the control rather than measured down from the centre.
-                ' The arc's own size varies with the aspect ratio; the band does not, so the
-                ' readout sits in the same place whatever shape the control is given.
                 Dim blockHeight = scoreSize.Height + bandSize.Height - (scoreSize.Height * 0.18F)
-                Dim blockTop = Height - blockHeight - 2.0F
+
+                ' Centred in the space below the hub. Never above readoutTop, whatever the
+                ' measured height turns out to be - that clearance is the whole point.
+                Dim blockTop = Math.Max(readoutTop, readoutTop + ((available - blockHeight) / 2.0F))
 
                 Using brush As New SolidBrush(If(hasScoreValue, ColourFor(scoreValue), TextColour))
                     g.DrawString(scoreText, scoreFont, brush,

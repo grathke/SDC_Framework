@@ -612,6 +612,55 @@ session hook to deliver the flags. The objection that killed it was the right on
 instruction is "fix what needs attention", that *is* the instruction, and a button asking the
 person to repeat it row by row is filing work. The list is the queue. Do not rebuild this.
 
+### 10.5 Why the needle is not at 100, and what has been done about it
+
+Built 2026-09-20, from the question the gauge provoked the first time it was read: *after the
+items are fixed, does the meter go back to 100?*
+
+**It depends which input, and that is the whole problem.** Marking a fault fixed also
+acknowledges it, and acknowledged faults leave the pressure sum outright - not decayed, removed.
+Saves and fallbacks do not work that way at all. A failed save is a fact inside a rolling window;
+nothing marks one resolved and no amount of fixing removes it. It ages out.
+
+On 2026-09-20 the gauge read **99.3 with an empty fault list**. The missing seven tenths were
+three failed saves out of 209 over seven days: `3/209 x 50 = 0.72`. Correct arithmetic, and
+unreadable from the page - which is how a number stops being believed.
+
+**The breakdown** is two lines under the gauge. The first itemises the penalties in the order
+section 3 lists the inputs. The second says which of them recover by being worked on and which
+recover by waiting, because the first line invites exactly that question and cannot answer it:
+
+```
+-0.7 saves   0.0 faults   0.0 fallbacks
+Faults clear when they are fixed. Saves and fallbacks age out of the window.
+```
+
+`0.0` is written without a minus sign. `-0.0` against an input costing nothing reads as a problem
+rounded away rather than as no problem.
+
+Each figure comes from the snapshot's own `SavePenalty`, `FaultPenalty` and `FallbackPenalty`
+properties, which `Score` now subtracts rather than recomputing its own locals. **A breakdown that
+does not add up to the needle above it would be worse than no breakdown**, and two copies of the
+arithmetic is how that happens.
+
+**The history** is `FW_FixHistory`, opened by a `History` button above the fault list: what was
+wrong, when it was dealt with, who or what decided, and what was done. Every column was already
+being written and none was displayed anywhere.
+
+It is **not filtered to `Resolved = 1`**. A fault that recurs has `Resolved` cleared by `Telemetry`
+while its `Resolution` text is kept, and that row - fixed on the 14th, here is how, and it came
+back - is the most useful entry in the list. Filtering on the flag would hide precisely those.
+`ResolvedOn` being set is what makes a row history; `Resolved` says whether it is still true.
+Recurred rows are red.
+
+`Decided by` reads `Code change` for `ResolvedSource = 'Claude'`, the person's name where there is
+one, and `(not recorded)` for rows resolved before the column existed. Guessing at those would put
+an invention in a column somebody will one day trust.
+
+The window and registration scope are the page's, passed in rather than chosen again. History over
+a different period from the number that prompted it is the kind of quiet mismatch nobody notices
+for months.
+
 ## 11. What it needs before it can be built
 
 1. A `FW_RoleSchema` row so Roles can offer it, a `FW_RoleDetails` row granting Read to the

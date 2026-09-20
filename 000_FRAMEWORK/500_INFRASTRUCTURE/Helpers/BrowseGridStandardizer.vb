@@ -22,6 +22,31 @@ Namespace SDC.Framework
             grid.ColumnHeadersDefaultCellStyle.SelectionForeColor = HeaderTextColor
         End Sub
 
+        ''' <summary>
+        ''' A header that does not react to selection at all.
+        '''
+        ''' With EnableHeadersVisualStyles off, a DataGridView paints the header of whichever
+        ''' column holds the selected cell using SelectionBackColor, and left unset that is the
+        ''' system highlight - a solid blue header on the first column the moment a grid fills,
+        ''' which reads as a sort order or a chosen column rather than as a side effect.
+        '''
+        ''' A browse grid wants the light blue: the user picked that row, and the highlight tracks
+        ''' them. A reporting grid does not - nothing there acts on the selected row, so a header
+        ''' changing colour is saying something that is not true. Those pass their resting colours
+        ''' here and get a header that stays put.
+        ''' </summary>
+        Friend Sub ApplyStaticHeaderStyle(grid As DataGridView, background As Color, foreground As Color)
+            If grid Is Nothing Then
+                Return
+            End If
+
+            grid.EnableHeadersVisualStyles = False
+            grid.ColumnHeadersDefaultCellStyle.BackColor = background
+            grid.ColumnHeadersDefaultCellStyle.ForeColor = foreground
+            grid.ColumnHeadersDefaultCellStyle.SelectionBackColor = background
+            grid.ColumnHeadersDefaultCellStyle.SelectionForeColor = foreground
+        End Sub
+
         Friend Sub ApplyBrowseGridStandard(grid As DataGridView)
             If grid Is Nothing Then
                 Return

@@ -36,6 +36,17 @@ Namespace SDC.Framework
         Private ReadOnly accessProfile As AccessProfile
 
         Private ReadOnly gauge As HealthGauge
+
+        ''' <summary>
+        ''' The arithmetic behind the needle, itemised.
+        '''
+        ''' A gauge reading 99.3 with an empty fault list looks broken. It is not - the missing
+        ''' seven tenths were three failed saves out of 209 - but nothing on the page said so, and
+        ''' a number nobody can account for stops being believed.
+        ''' </summary>
+        Private ReadOnly breakdownLabel As Label
+
+        Private ReadOnly historyButton As Button
         Private ReadOnly periodCombo As ComboBox
         Private ReadOnly registrationCombo As ComboBox
         Private ReadOnly refreshButton As Button
@@ -73,6 +84,9 @@ Namespace SDC.Framework
         Private Shared ReadOnly EveryRegistration As New RegistrationOption With {.ID = 0, .Name = "All registrations"}
         Private Shared ReadOnly PanelBorder As Color = Color.FromArgb(222, 226, 230)
 
+        ''' <summary>The resting colour of a grid header here, and its selected colour too.</summary>
+        Private Shared ReadOnly GridHeaderColour As Color = Color.FromArgb(245, 246, 248)
+
         Public Sub New(user As UserContext, Optional profile As AccessProfile = Nothing)
             currentUser = If(user, BuildCurrentUserFromSession())
             accessProfile = If(profile,
@@ -90,6 +104,8 @@ Namespace SDC.Framework
             BackColor = Color.White
 
             gauge = New HealthGauge()
+            breakdownLabel = New Label()
+            historyButton = New Button()
             periodCombo = New ComboBox()
             registrationCombo = New ComboBox()
             refreshButton = New Button()
@@ -109,6 +125,23 @@ Namespace SDC.Framework
             BuildGaugeAndTiles()
             BuildActivity()
             BuildNeedsAttention()
+
+            ' Zoom on Load rather than Shown, so a remembered zoom is what the window opens as.
+            ' From Shown the reader sees the unzoomed page for a frame and watches it jump. Every
+            ' control here is placed with an explicit Location and Size in the constructor, which
+            ' is what makes the layout snapshot safe this early.
+            '
+            ' The grids get their columns in the constructor too, so the snapshot has them. Rows
+            ' arriving later on Shown take RowTemplate.Height, which PageZoom has already scaled.
+            AddHandler Load,
+                Sub(s, e)
+                    PageZoom.Attach(Me)
+
+                    ' The read-out lines up under the fault grid rather than in the form's
+                    ' corner, which puts it in the gap that already exists below the lowest
+                    ' panel instead of hard against the window edge.
+                    PageZoom.SetIndicatorAnchor(Me, attentionGrid)
+                End Sub
 
             AddHandler Shown, AddressOf Health_Shown
         End Sub
@@ -228,9 +261,20 @@ Namespace SDC.Framework
         End Sub
 
         Private Sub BuildGaugeAndTiles()
+            ' Twenty-four pixels shorter than it was, to give the breakdown a line under it. The
+            ' readout sizes itself into whatever the arc leaves, so the gauge takes the loss
+            ' without anything being clipped.
             gauge.Location = New Point(60, 90)
-            gauge.Size = New Size(420, 270)
+            gauge.Size = New Size(420, 246)
             Controls.Add(gauge)
+
+            breakdownLabel.Text = String.Empty
+            breakdownLabel.Font = New Font("Segoe UI", 8.5F, FontStyle.Regular)
+            breakdownLabel.ForeColor = MutedColour
+            breakdownLabel.Location = New Point(26, 340)
+            breakdownLabel.Size = New Size(516, 42)
+            breakdownLabel.TextAlign = ContentAlignment.TopCenter
+            Controls.Add(breakdownLabel)
 
             StyleTile(savesTile, "SAVES", 560, 95)
             StyleTile(faultsTile, "FAULTS", 560, 190)
@@ -512,6 +556,17 @@ Namespace SDC.Framework
             }
             Controls.Add(heading)
 
+            ' Sits above the grid's right edge rather than in the header. The history is the
+            ' history of this list, and a button for it anywhere else would have to explain
+            ' itself.
+            historyButton.Text = "History"
+            historyButton.Font = New Font("Segoe UI", 9.0F)
+            historyButton.Location = New Point(700, 516)
+            historyButton.Size = New Size(84, 24)
+            historyButton.FlatStyle = FlatStyle.System
+            Controls.Add(historyButton)
+            AddHandler historyButton.Click, AddressOf HistoryButton_Click
+
             ' Narrowed to make room for failed sign-ins beside it. Faults and failed logins are
             ' both "what needs looking at", and side by side they are read in one glance rather
             ' than one scrolled past to reach the other.
@@ -528,8 +583,10 @@ Namespace SDC.Framework
             attentionGrid.BorderStyle = BorderStyle.FixedSingle
             attentionGrid.Font = New Font("Segoe UI", 9.5F)
             attentionGrid.ColumnHeadersDefaultCellStyle.Font = New Font("Segoe UI", 9.5F, FontStyle.Bold)
-            attentionGrid.EnableHeadersVisualStyles = False
-            attentionGrid.ColumnHeadersDefaultCellStyle.BackColor = Color.FromArgb(245, 246, 248)
+
+            ' Nothing on this panel acts on the selected row - the buttons act on their own - so a
+            ' header that lights up when a row is selected is claiming something that is not true.
+            BrowseGridStandardizer.ApplyStaticHeaderStyle(attentionGrid, GridHeaderColour, HeadingColour)
 
             ' Selection is a pale tint rather than the system's inverted blue. Nothing on this
             ' panel acts on the selected row - the buttons act on their own row - so a full-width
@@ -537,6 +594,12 @@ Namespace SDC.Framework
             ' each row, so an acknowledged row stays grey and a recurred one stays red when the
             ' cursor happens to be on it.
             attentionGrid.DefaultCellStyle.SelectionBackColor = Color.FromArgb(232, 240, 250)
+
+            ' And a foreground to go with it. Left unset, a selected row paints in the system's
+            ' selection colour - white - which over a pale tint is invisible. The fault rows set
+            ' their own and were fine; the "nothing recorded" row returns before that code and
+            ' vanished the moment the grid selected it, which is always.
+            attentionGrid.DefaultCellStyle.SelectionForeColor = HeadingColour
 
             ' Widths add up to less than the grid, so the buttons sit in view rather than being
             ' pushed off the right edge by a Fault column wide enough for the longest name anybody
@@ -614,9 +677,9 @@ Namespace SDC.Framework
             loginGrid.BorderStyle = BorderStyle.FixedSingle
             loginGrid.Font = New Font("Segoe UI", 9.5F)
             loginGrid.ColumnHeadersDefaultCellStyle.Font = New Font("Segoe UI", 9.5F, FontStyle.Bold)
-            loginGrid.EnableHeadersVisualStyles = False
-            loginGrid.ColumnHeadersDefaultCellStyle.BackColor = Color.FromArgb(245, 246, 248)
+            BrowseGridStandardizer.ApplyStaticHeaderStyle(loginGrid, GridHeaderColour, HeadingColour)
             loginGrid.DefaultCellStyle.SelectionBackColor = Color.FromArgb(232, 240, 250)
+            loginGrid.DefaultCellStyle.SelectionForeColor = HeadingColour
 
             loginGrid.Columns.Add(NewTextColumn("Name", "Name tried", 150))
             loginGrid.Columns.Add(NewTextColumn("Reason", "Reason", 110))
@@ -640,6 +703,7 @@ Namespace SDC.Framework
                 Dim emptyIndex = loginGrid.Rows.Add()
                 loginGrid.Rows(emptyIndex).Cells("Name").Value = "None in this period."
                 loginGrid.Rows(emptyIndex).DefaultCellStyle.ForeColor = MutedColour
+                loginGrid.Rows(emptyIndex).DefaultCellStyle.SelectionForeColor = MutedColour
                 loginGrid.Rows(emptyIndex).DefaultCellStyle.Font = New Font("Segoe UI", 9.5F, FontStyle.Italic)
                 Return
             End If
@@ -1008,6 +1072,7 @@ Namespace SDC.Framework
                     loginGrid.Rows.Clear()
                     activityPanel.Controls.Clear()
                     timingPanel.Controls.Clear()
+                    breakdownLabel.Text = String.Empty
                     Return
                 End If
 
@@ -1023,6 +1088,8 @@ Namespace SDC.Framework
                     gauge.ClearScore()
                 End If
 
+                ShowBreakdown()
+
                 FillRegistrations(snapshot)
                 FillTiles()
                 FillActivity()
@@ -1033,6 +1100,63 @@ Namespace SDC.Framework
             Finally
                 Cursor = Cursors.Default
             End Try
+        End Sub
+
+        ''' <summary>
+        ''' Says what the needle is made of, and which parts of it can be recovered.
+        '''
+        ''' Two lines. The first is the arithmetic, itemised in the same order the spec lists the
+        ''' inputs. The second exists because the first invites a question it cannot answer on its
+        ''' own - somebody who has just fixed everything and still sees 99.3 needs to be told that
+        ''' saves and fallbacks come back with time rather than with work.
+        '''
+        ''' Each figure is read from the snapshot's own penalty properties rather than recomputed
+        ''' here. A breakdown that does not add up to the needle above it would be worse than none.
+        ''' </summary>
+        Private Sub ShowBreakdown()
+            If snapshot Is Nothing OrElse Not snapshot.HasData Then
+                breakdownLabel.Text = String.Empty
+                Return
+            End If
+
+            Dim saves = snapshot.SavePenalty
+            Dim faults = snapshot.FaultPenalty
+            Dim fallbacks = snapshot.FallbackPenalty
+            Dim total = saves + faults + fallbacks
+
+            If total < 0.05 Then
+                breakdownLabel.Text = "Nothing is costing the score."
+                Return
+            End If
+
+            Dim parts As New List(Of String)()
+            parts.Add(Penalty(saves) & " saves")
+            parts.Add(Penalty(faults) & " faults")
+            parts.Add(Penalty(fallbacks) & " fallbacks")
+
+            breakdownLabel.Text = String.Join("   ", parts) & vbCrLf &
+                                  "Faults clear when they are fixed. Saves and fallbacks age out of the window."
+        End Sub
+
+        ''' <summary>
+        ''' A penalty as it should be read: a minus sign only where something was actually lost.
+        ''' "-0.0" against an input costing nothing reads as a rounded-away problem rather than as
+        ''' no problem.
+        ''' </summary>
+        Private Shared Function Penalty(value As Double) As String
+            If value < 0.05 Then Return "0.0"
+            Return "-" & value.ToString("0.0", CultureInfo.CurrentCulture)
+        End Function
+
+        ''' <summary>
+        ''' Opens the history of what has been dealt with, over the same window and scope the page
+        ''' is showing. Reading the history of a different period from the number above it would be
+        ''' the kind of quiet mismatch nobody notices for months.
+        ''' </summary>
+        Private Sub HistoryButton_Click(sender As Object, e As EventArgs)
+            Using history As New FW_FixHistory(SelectedWindowDays(), SelectedRegistrationId())
+                history.ShowDialog(Me)
+            End Using
         End Sub
 
         Private Sub FillTiles()
@@ -1078,6 +1202,10 @@ Namespace SDC.Framework
                 row.Cells("Fault").Value = "Nothing has been recorded in this period."
                 row.Cells("ErrorLogID").Value = "0"
                 row.DefaultCellStyle.ForeColor = MutedColour
+
+                ' Muted whether selected or not. It is a note rather than a row, and it should not
+                ' darken into looking like one when the grid puts the cursor on it.
+                row.DefaultCellStyle.SelectionForeColor = MutedColour
                 row.DefaultCellStyle.Font = New Font("Segoe UI", 9.5F, FontStyle.Italic)
                 Return
             End If

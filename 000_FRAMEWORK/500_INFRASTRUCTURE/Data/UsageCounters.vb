@@ -245,6 +245,14 @@ Namespace SDC.Framework
                         ' One bad bucket does not cost the rest of the batch.
                     End Try
                 Next
+
+                ' This batch existing is proof somebody did something, so the session it came from
+                ' is stamped on the same connection rather than derived afterwards from these
+                ' rows. Deriving it did not work: a bucket is keyed to the hour it opened, so a
+                ' session starting at 20:40 could never match its own 20:00 bucket, and the
+                ' buckets are keyed by registration rather than by user, which would have credited
+                ' one person with another's searches.
+                SessionTracking.StampActivity(conn)
             End Using
         End Sub
 

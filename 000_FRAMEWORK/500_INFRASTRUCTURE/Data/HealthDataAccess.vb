@@ -239,19 +239,48 @@ Namespace SDC.Framework
             ''' 100 minus penalties, floored at zero. Three inputs, each capped at its own maximum so
             ''' one bad input cannot swamp the other two and leave the number saying only one thing.
             ''' </summary>
+            ''' <summary>
+            ''' What failed saves are costing. Nothing clears this but time: a failed save is a
+            ''' fact inside the window, and nothing marks one resolved.
+            ''' </summary>
+            Public ReadOnly Property SavePenalty As Double
+                Get
+                    If Not HasData Then Return 0
+                    Return (1.0 - SaveSuccessRate) * SavePenaltyMax
+                End Get
+            End Property
+
+            ''' <summary>
+            ''' What unacknowledged faults are costing. This is the one that recovers on being
+            ''' dealt with - acknowledging or fixing removes a fault from the sum outright.
+            ''' </summary>
+            Public ReadOnly Property FaultPenalty As Double
+                Get
+                    If Not HasData Then Return 0
+                    Return Math.Min(FaultPenaltyMax, (FaultPressure / FaultPressureAtMax) * FaultPenaltyMax)
+                End Get
+            End Property
+
+            ''' <summary>What fallbacks are costing. Ages out of the window like saves.</summary>
+            Public ReadOnly Property FallbackPenalty As Double
+                Get
+                    If Not HasData Then Return 0
+                    Return Math.Min(FallbackPenaltyMax, (FallbackRatePer100 / FallbackRateAtMax) * FallbackPenaltyMax)
+                End Get
+            End Property
+
+            ''' <summary>
+            ''' 100 minus penalties, floored at zero. Three inputs, each capped at its own maximum so
+            ''' one bad input cannot swamp the other two and leave the number saying only one thing.
+            '''
+            ''' The three are properties rather than locals so the page can itemise the same
+            ''' arithmetic instead of recomputing it. A breakdown that does not add up to the
+            ''' needle is worse than no breakdown.
+            ''' </summary>
             Public ReadOnly Property Score As Double
                 Get
                     If Not HasData Then Return 0
-
-                    Dim savePenalty = (1.0 - SaveSuccessRate) * SavePenaltyMax
-
-                    Dim faultPenalty = Math.Min(FaultPenaltyMax,
-                                                (FaultPressure / FaultPressureAtMax) * FaultPenaltyMax)
-
-                    Dim fallbackPenalty = Math.Min(FallbackPenaltyMax,
-                                                   (FallbackRatePer100 / FallbackRateAtMax) * FallbackPenaltyMax)
-
-                    Return Math.Max(0, 100.0 - savePenalty - faultPenalty - fallbackPenalty)
+                    Return Math.Max(0, 100.0 - SavePenalty - FaultPenalty - FallbackPenalty)
                 End Get
             End Property
         End Class
@@ -650,6 +679,84 @@ Namespace SDC.Framework
             End Try
 
             Return result
+        End Function
+
+        ''' <summary>One fault that was dealt with, for the history window.</summary>
+        Public Class FixHistoryLine
+            Public Property ErrorLogID As Integer
+            Public Property ExceptionType As String = String.Empty
+            Public Property PageName As String = String.Empty
+            Public Property ResolvedOn As Date
+            Public Property ResolvedSource As String = String.Empty
+            Public Property ResolvedByName As String = String.Empty
+            Public Property Resolution As String = String.Empty
+            Public Property OccurrenceCount As Integer
+            Public Property RecurredAfterResolved As Boolean
+            Public Property StillResolved As Boolean
+        End Class
+
+        ''' <summary>
+        ''' Everything that has been fixed or accepted, newest first.
+        '''
+        ''' **Not filtered to Resolved = 1.** A fault that came back has its Resolved flag cleared
+        ''' by Telemetry while its Resolution text is kept, and that row is the most useful one in
+        ''' the list - it is a fix that did not hold. Filtering on the flag would hide exactly the
+        ''' entries somebody opens this window to find. ResolvedOn being set is what makes a row
+        ''' history; Resolved says whether it is still true.
+        '''
+        ''' The window is the page's window, and the registration filter is the page's filter, so
+        ''' the history is the history of what the page has been showing.
+        ''' </summary>
+        Public Shared Function GetFixHistory(days As Integer, registrationId As Integer) As List(Of FixHistoryLine)
+            Dim lines As New List(Of FixHistoryLine)()
+
+            Try
+                Using conn As New SqlConnection(DataAccess.BuildConnectionStringForDatabase(String.Empty))
+                    conn.Open()
+
+                    Using cmd As New SqlCommand(
+                        "SELECT TOP 200 e.ErrorLogID, e.ExceptionType, ISNULL(e.PageName, '') AS PageName, " &
+                        "  e.ResolvedOn, ISNULL(e.ResolvedSource, '') AS ResolvedSource, " &
+                        "  ISNULL(u.UserName, '') AS ResolvedByName, " &
+                        "  ISNULL(e.Resolution, '') AS Resolution, e.OccurrenceCount, " &
+                        "  ISNULL(e.RecurredAfterResolved, 0) AS RecurredAfterResolved, " &
+                        "  ISNULL(e.Resolved, 0) AS StillResolved " &
+                        "FROM dbo.FW_ErrorLog e " &
+                        "LEFT JOIN dbo.FW_Users u ON u.UserId = e.ResolvedBy " &
+                        "WHERE e.ResolvedOn IS NOT NULL " &
+                        "  AND e.ResolvedOn >= DATEADD(day, -@Days, SYSUTCDATETIME()) " &
+                        "  AND ISNULL(e.DeletedFlag, 0) = 0 " &
+                        "  AND (@RegistrationID IS NULL OR e.RegistrationID = @RegistrationID) " &
+                        "ORDER BY e.ResolvedOn DESC", conn)
+
+                        cmd.Parameters.Add("@Days", SqlDbType.Int).Value = Math.Max(1, days)
+                        cmd.Parameters.Add("@RegistrationID", SqlDbType.Int).Value =
+                            If(registrationId > 0, CType(registrationId, Object), DBNull.Value)
+
+                        Using reader = cmd.ExecuteReader()
+                            While reader.Read()
+                                lines.Add(New FixHistoryLine With {
+                                    .ErrorLogID = SafeInt(reader, "ErrorLogID"),
+                                    .ExceptionType = SafeString(reader, "ExceptionType"),
+                                    .PageName = SafeString(reader, "PageName"),
+                                    .ResolvedOn = SafeDate(reader, "ResolvedOn"),
+                                    .ResolvedSource = SafeString(reader, "ResolvedSource"),
+                                    .ResolvedByName = SafeString(reader, "ResolvedByName"),
+                                    .Resolution = SafeString(reader, "Resolution"),
+                                    .OccurrenceCount = SafeInt(reader, "OccurrenceCount"),
+                                    .RecurredAfterResolved = SafeBool(reader, "RecurredAfterResolved"),
+                                    .StillResolved = SafeBool(reader, "StillResolved")
+                                })
+                            End While
+                        End Using
+                    End Using
+                End Using
+
+            Catch ex As Exception
+                Telemetry.Error(ex, "HealthDataAccess.GetFixHistory")
+            End Try
+
+            Return lines
         End Function
 
         ''' <summary>The database being reported on, for a message that has to name it.</summary>
