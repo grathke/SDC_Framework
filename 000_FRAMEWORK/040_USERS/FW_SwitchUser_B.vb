@@ -191,6 +191,28 @@ Namespace SDC.Framework
                 Return True
             End If
 
+            ' Asked before the switch, where Delete and Restore ask before theirs.
+            '
+            ' The main menu already says whose account is in use and flashes when it changes, and
+            ' that is the control that matters - the risk is not switching by accident, it is
+            ' forgetting an hour later. This is the other half: the label answers "am I switched",
+            ' and this answers "did you mean to". Rare enough that it is read rather than clicked
+            ' through, which is the usual objection to a confirmation and does not apply here.
+            '
+            ' It names the person, because the grid row and the account are not always the same
+            ' thing to the eye - two employees with one surname, a stale snapshot row - and the
+            ' name in the dialog is read from the account that will actually be assumed.
+            Dim prompt = "View the application as " & target.DisplayName & "?"
+            If MessageBox.Show(Me,
+                               (prompt & Environment.NewLine & Environment.NewLine &
+                                "You will not be able to save, delete or restore while switched, " &
+                                "and anything you do is recorded against your own account.").ToUpperInvariant(),
+                               "CONFIRM SWITCH USER",
+                               MessageBoxButtons.YesNo,
+                               MessageBoxIcon.Question) <> DialogResult.Yes Then
+                Return True
+            End If
+
             chosen = target
             DialogResult = DialogResult.OK
             Close()
