@@ -2992,6 +2992,90 @@ Namespace SDC.Framework
             RefreshLocalRequiredBorders()
         End Sub
 
+        ''' <summary>
+        ''' Turns a field's required-ness on or off after the page has been built.
+        '''
+        ''' AddField decides required once, when the control is created. That is right for a field
+        ''' that is always required and cannot express one that depends on something else on the
+        ''' same form - an email that is required only because the person being edited holds an
+        ''' admin role. That condition is not known at build time and changes while the page is open.
+        '''
+        ''' The switch is the Tag and nothing else. ValidateRequiredControls selects on
+        ''' Tag = "Required", so clearing it takes the field out of the save check, and
+        ''' IsEmptyRequiredControl stops reporting it. The label and the border follow so that what
+        ''' is on screen agrees with what will be enforced.
+        '''
+        ''' The border panel is created on first use and then kept. Hiding it costs nothing, and
+        ''' rebuilding it on each toggle would lose the hover and change handlers wired alongside it.
+        '''
+        ''' The blue is load-bearing, not decoration. A field switched required here is styled by
+        ''' the page from then on and never by FW_RoleFields.IsRequired, because
+        ''' ShouldSkipBrRequiredStyling reads that exact ARGB and ApplyControlUpdates has already
+        ''' run by the time anything can toggle. That is the documented exception for a
+        ''' conditionally required field.
+        ''' </summary>
+        Protected Sub SetFieldRequired(field As Control, required As Boolean)
+            If field Is Nothing Then Return
+
+            Dim caption = field.Name
+            Dim underscore = caption.IndexOf("_"c)
+            If underscore >= 0 Then caption = caption.Substring(underscore + 1)
+
+            Dim labelMatches = Me.Controls.Find("Label_" & caption, True)
+            Dim lbl = If(labelMatches.Length > 0, TryCast(labelMatches(0), Label), Nothing)
+
+            If required Then
+                field.Tag = "Required"
+
+                If lbl IsNot Nothing Then
+                    If Not lbl.Text.EndsWith(" *", StringComparison.Ordinal) Then lbl.Text &= " *"
+                    lbl.BackColor = AppAdminRequiredBackColor
+                End If
+
+                If Not requiredBorderPanels.ContainsKey(field) AndAlso field.Parent IsNot Nothing Then
+                    Dim borderPanel As New Panel() With {
+                        .BackColor = SystemColors.Control,
+                        .Location = New Point(field.Left - 1, field.Top - 1),
+                        .Size = New Size(field.Width + 2, field.Height + 2),
+                        .Tag = "LocalRequiredBorder_" & caption
+                    }
+
+                    field.Parent.Controls.Add(borderPanel)
+                    borderPanel.Visible = False
+                    borderPanel.BringToFront()
+                    field.BringToFront()
+                    requiredBorderPanels(field) = borderPanel
+                    WatchRequiredHover(field)
+
+                    Dim watched = field
+                    Dim refresh = Sub(s As Object, e As EventArgs)
+                                      If Not loading Then MarkRequiredTouched(watched)
+                                      RefreshLocalRequiredBorders()
+                                  End Sub
+
+                    AddHandler watched.TextChanged, refresh
+                    Dim combo = TryCast(watched, ComboBox)
+                    If combo IsNot Nothing Then AddHandler combo.SelectedIndexChanged, refresh
+                End If
+            Else
+                field.Tag = Nothing
+
+                If lbl IsNot Nothing Then
+                    If lbl.Text.EndsWith(" *", StringComparison.Ordinal) Then
+                        lbl.Text = lbl.Text.Substring(0, lbl.Text.Length - 2)
+                    End If
+                    lbl.BackColor = Color.Transparent
+                End If
+
+                ' The visit is forgotten along with the requirement. Otherwise the field comes back
+                ' red the moment it is required again, without the user having touched it since.
+                touchedRequiredControls.Remove(field)
+                hoveredRequiredControls.Remove(field)
+            End If
+
+            RefreshLocalRequiredBorders()
+        End Sub
+
         Protected Sub ConfigureLookupCombo(combo As ComboBox,
                                            source As DataTable,
                                            valueMember As String,

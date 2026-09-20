@@ -4036,15 +4036,17 @@ Namespace SDC.Framework
         ''' Looking it up from the offered list would leave it blank, or drop it, and a role
         ''' that cannot be seen cannot be taken away.
         ''' </summary>
-        Public Shared Function GetEmployeeRoleIds(employeeId As Integer) As List(Of (RoleId As Integer, RoleName As String, DisplayOrder As Integer))
-            Dim held As New List(Of (RoleId As Integer, RoleName As String, DisplayOrder As Integer))()
+        Public Shared Function GetEmployeeRoleIds(employeeId As Integer) As List(Of (RoleId As Integer, RoleName As String, DisplayOrder As Integer, IsAdminRole As Boolean))
+            Dim held As New List(Of (RoleId As Integer, RoleName As String, DisplayOrder As Integer, IsAdminRole As Boolean))()
             If employeeId <= 0 Then Return held
 
             Try
                 Using conn As New SqlConnection(ConnectionString)
                     conn.Open()
                     Using cmd As New SqlCommand(
-                        "SELECT er.RoleID, ISNULL(r.RoleName, '') AS RoleName, ISNULL(r.DisplayOrder, 0) AS DisplayOrder FROM dbo.FW_EmployeeRoles er " &
+                        "SELECT er.RoleID, ISNULL(r.RoleName, '') AS RoleName, ISNULL(r.DisplayOrder, 0) AS DisplayOrder, " &
+                        "       CASE WHEN ISNULL(r.Typ_AppAdmin, 0) = 1 OR ISNULL(r.Typ_CompanyAdmin, 0) = 1 THEN 1 ELSE 0 END AS IsAdminRole " &
+                        "FROM dbo.FW_EmployeeRoles er " &
                         "INNER JOIN dbo.FW_Roles r ON r.ID = er.RoleID " &
                         "WHERE er.EmployeeID = @ID AND ISNULL(er.IsActive, 1) = 1 AND ISNULL(er.DeletedFlag, 0) = 0 " &
                         "ORDER BY CASE WHEN ISNULL(r.DisplayOrder, 0) = 0 THEN 1 ELSE 0 END, ISNULL(r.DisplayOrder, 255), r.RoleName", conn)
@@ -4053,7 +4055,8 @@ Namespace SDC.Framework
                             While reader.Read()
                                 held.Add((Convert.ToInt32(reader("RoleID"), CultureInfo.InvariantCulture),
                                           Convert.ToString(reader("RoleName")),
-                                          Convert.ToInt32(reader("DisplayOrder"), CultureInfo.InvariantCulture)))
+                                          Convert.ToInt32(reader("DisplayOrder"), CultureInfo.InvariantCulture),
+                                          Convert.ToInt32(reader("IsAdminRole"), CultureInfo.InvariantCulture) = 1))
                             End While
                         End Using
                     End Using
@@ -7526,7 +7529,9 @@ Namespace SDC.Framework
             Using conn As New SqlConnection(ConnectionString)
                 conn.Open()
                 Using cmd As New SqlCommand(
-                    "SELECT ID, RegistrationID, RoleName, ISNULL(DisplayOrder, 0) AS DisplayOrder FROM dbo.FW_Roles " &
+                    "SELECT ID, RegistrationID, RoleName, ISNULL(DisplayOrder, 0) AS DisplayOrder, " &
+                    "       CASE WHEN ISNULL(Typ_CompanyAdmin, 0) = 1 THEN 1 ELSE 0 END AS IsAdminRole " &
+                    "FROM dbo.FW_Roles " &
                     "WHERE RegistrationID = @RegistrationID " &
                     "  AND ISNULL(IsActive, 1) = 1 AND ISNULL(DeletedFlag, 0) = 0 " &
                     "  AND ISNULL(Typ_AppAdmin, 0) = 0 " &

@@ -95,6 +95,29 @@ Namespace SDC.Framework
                                                      GeneratedFieldsBottom + 8,
                                                      registrationId,
                                                      recordId)
+
+            AddHandler roleSelector.SelectionChanged, Sub(s, e) ApplyAdminEmailRule()
+            ApplyAdminEmailRule()
+        End Sub
+
+        ''' <summary>
+        ''' An administrator must have an email address; anybody else need not.
+        '''
+        ''' The framework's two required paths cannot express this. AddField decides once at build
+        ''' time, and FW_RoleFields.IsRequired is keyed to the signed-in user's role - the person
+        ''' doing the editing, not the person being edited - so it would make Email required for
+        ''' every employee an administrator opened, and for none of the ones a manager opened.
+        '''
+        ''' Called when the picker changes and once after it is built, so an employee who already
+        ''' holds an admin role shows the requirement on opening rather than only after a move.
+        '''
+        ''' Enforcement is not repeated here. SetFieldRequired sets the Tag that
+        ''' ValidateRequiredControls already tests, so the existing save path refuses it.
+        ''' </summary>
+        Private Sub ApplyAdminEmailRule()
+            If roleSelector Is Nothing OrElse emailTextBox Is Nothing Then Return
+
+            SetFieldRequired(emailTextBox, roleSelector.HasAdminRole)
         End Sub
 
         ''' <summary>
