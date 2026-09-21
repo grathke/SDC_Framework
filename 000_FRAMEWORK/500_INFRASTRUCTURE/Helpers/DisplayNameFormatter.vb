@@ -99,5 +99,26 @@ Namespace SDC.Framework
             Return text
         End Function
 
+        ''' <summary>
+        ''' What a QBE comparison operator is called on screen.
+        '''
+        ''' The enum name is a developer's spelling - GreaterThanOrEqual - and was shown raw in the
+        ''' operator list until 2026-09-21. It goes through the same splitter as every other name.
+        ''' The list then reads as words: Not Equals, Starts With, Greater Than Or Equal.
+        '''
+        ''' EqualsTo is the one exception. It is spelled that way because Equals is a reserved
+        ''' member name on every type in .NET, not because anybody wants to read "Equals To".
+        '''
+        ''' Display only. The stored value stays the enum name, because it is written into saved
+        ''' searches (FW_SavedQbe) and into the filter keys FW_Base_B builds.
+        ''' </summary>
+        Public Function ToOperatorDisplayName(comparisonOperator As QbeComparisonOperator) As String
+            If comparisonOperator = QbeComparisonOperator.EqualsTo Then
+                Return "Equals"
+            End If
+
+            Return ToDisplayName(comparisonOperator.ToString(), stripFrameworkPrefix:=False)
+        End Function
+
     End Module
 End Namespace

@@ -4999,7 +4999,8 @@ Namespace SDC.Framework
                 Dim pieces = kvp.Key.Split("|"c)
                 Dim fieldName = pieces(0)
                 Dim operatorText = If(pieces.Length > 1, pieces(1), QbeComparisonOperator.EqualsTo.ToString())
-                parts.Add(fieldName & " " & operatorText & " """ & kvp.Value & """")
+                Dim operatorCaption = DisplayNameFormatter.ToOperatorDisplayName(ParseOperatorValue(operatorText))
+                parts.Add(fieldName & " " & operatorCaption & " """ & kvp.Value & """")
             Next
 
             activeFilterLabel.Text = "Active Filter: " & String.Join("; ", parts)
@@ -5067,9 +5068,8 @@ Namespace SDC.Framework
             ' to contain a digit, which is never what somebody picking from a list means.
             Dim operatorCell = TryCast(row.Cells("Operator"), DataGridViewComboBoxCell)
             If operatorCell IsNot Nothing Then
-                operatorCell.Items.Clear()
-                operatorCell.Items.Add(QbeComparisonOperator.EqualsTo.ToString())
-                operatorCell.Items.Add(QbeComparisonOperator.NotEquals.ToString())
+                BindOperatorCell(operatorCell,
+                                 {QbeComparisonOperator.EqualsTo, QbeComparisonOperator.NotEquals})
                 operatorCell.Value = QbeComparisonOperator.EqualsTo.ToString()
             End If
         End Sub
@@ -5173,11 +5173,39 @@ Namespace SDC.Framework
         End Sub
 
         Protected Overridable Sub ConfigureOperatorCellItems(operatorCell As DataGridViewComboBoxCell, fieldKind As QbeFieldKind)
-            operatorCell.Items.Clear()
+            BindOperatorCell(operatorCell, GetAllowedOperators(fieldKind))
+        End Sub
 
-            For Each op In GetAllowedOperators(fieldKind)
-                operatorCell.Items.Add(op.ToString())
+        ''' <summary>
+        ''' Puts an operator list into a cell: the spelled-out caption on screen, the enum name as
+        ''' the value.
+        '''
+        ''' A list of plain Items shows its own values, which is how this column came to read
+        ''' GreaterThanOrEqual at a user. Binding separates the two, and what the grid hands back
+        ''' is unchanged - the same string that goes into a filter key, into a saved search, and
+        ''' into Enum.Parse.
+        '''
+        ''' DataSource is cleared before Items, because a cell will not hold both at once.
+        ''' </summary>
+        Private Shared Sub BindOperatorCell(operatorCell As DataGridViewComboBoxCell,
+                                            operators As IEnumerable(Of QbeComparisonOperator))
+            If operatorCell Is Nothing OrElse operators Is Nothing Then
+                Return
+            End If
+
+            Dim choices As New DataTable()
+            choices.Columns.Add("Value", GetType(String))
+            choices.Columns.Add("Display", GetType(String))
+
+            For Each op In operators
+                choices.Rows.Add(op.ToString(), DisplayNameFormatter.ToOperatorDisplayName(op))
             Next
+
+            operatorCell.DataSource = Nothing
+            operatorCell.Items.Clear()
+            operatorCell.DataSource = choices
+            operatorCell.DisplayMember = "Display"
+            operatorCell.ValueMember = "Value"
         End Sub
 
         ''' <summary>
@@ -5291,7 +5319,14 @@ Namespace SDC.Framework
                 Return QbeComparisonOperator.EqualsTo
             End If
 
-            Dim raw = operatorObj.ToString()
+            ' The cell hands back the enum name, as does a saved search. A caption reaches here
+            ' only if something bypassed the bound list, and accepting one costs two lines:
+            ' spaces removed, and Equals read as EqualsTo.
+            Dim raw = operatorObj.ToString().Replace(" ", String.Empty)
+            If String.Equals(raw, "Equals", StringComparison.OrdinalIgnoreCase) Then
+                Return QbeComparisonOperator.EqualsTo
+            End If
+
             Dim parsed As QbeComparisonOperator
             If [Enum].TryParse(raw, True, parsed) Then
                 Return parsed

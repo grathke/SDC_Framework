@@ -64,6 +64,21 @@ Namespace SDC.Framework.Tests
             Assert.AreEqual(String.Empty, DisplayNameFormatter.ToDisplayName(Nothing))
         End Sub
 
+
+        <TestMethod>
+        Public Sub OperatorCaptions_ReadAsWords()
+            ' What the QBE operator list shows. The value behind each caption is still the enum
+            ' name, which is what saved searches and filter keys hold.
+            Assert.AreEqual("Equals", DisplayNameFormatter.ToOperatorDisplayName(QbeComparisonOperator.EqualsTo))
+            Assert.AreEqual("Not Equals", DisplayNameFormatter.ToOperatorDisplayName(QbeComparisonOperator.NotEquals))
+            Assert.AreEqual("Contains", DisplayNameFormatter.ToOperatorDisplayName(QbeComparisonOperator.Contains))
+            Assert.AreEqual("Starts With", DisplayNameFormatter.ToOperatorDisplayName(QbeComparisonOperator.StartsWith))
+            Assert.AreEqual("Ends With", DisplayNameFormatter.ToOperatorDisplayName(QbeComparisonOperator.EndsWith))
+            Assert.AreEqual("Greater Than", DisplayNameFormatter.ToOperatorDisplayName(QbeComparisonOperator.GreaterThan))
+            Assert.AreEqual("Greater Than Or Equal", DisplayNameFormatter.ToOperatorDisplayName(QbeComparisonOperator.GreaterThanOrEqual))
+            Assert.AreEqual("Less Than", DisplayNameFormatter.ToOperatorDisplayName(QbeComparisonOperator.LessThan))
+            Assert.AreEqual("Less Than Or Equal", DisplayNameFormatter.ToOperatorDisplayName(QbeComparisonOperator.LessThanOrEqual))
+        End Sub
     End Class
 
 End Namespace
