@@ -6,6 +6,34 @@ Read this before changing `DataAccess.GetBrowseRowsByRegistration`, the QBE filt
 row cap. Section 4 is the part that makes this harder than it looks, and section 6 is why it must
 not be done in one pass.
 
+## Raised again and dropped again — 2026-09-21
+
+Re-measured on `WX_Framework` and left unbuilt on purpose. Opening the Employees browse fetches
+**10,014 rows to display 11**, filters them in memory, and trims last; the database answered in
+5 ms with 0 ms of CPU. No `TOP` is ever sent — `LimitBrowseRows` is a client-side copy of the
+first N rows of a `DataTable` that has already been built in full.
+
+**The reason it was dropped is the deployment, not the code.** The database and the application
+run on the same server, so those 10,014 rows never cross a network. The waste is materialisation
+and garbage collection, measured in tens of milliseconds, against a table that is already the
+largest in the database.
+
+That reason expires the day the database moves to a machine of its own, or a table reaches a
+size where materialising all of it is the cost rather than moving it. Nothing in the code will
+say when that happens. **Raise it again on either of those, not before.**
+
+### Raised again the same afternoon, and taken up — see section 9
+
+It did not survive the day. Two things changed it: the whole refresh was instrumented rather than
+a part of it, which showed the fetch to be 94-97% of everything; and Glenn said the deployment is
+same-machine **for now**, with AWS a live possibility, so the target is the fewest rows that
+answer the question rather than "fast enough on this box".
+
+Section 9 holds the staged plan, what each stage is worth, and the one design decision that has
+to be settled before any of it is built. The paragraphs above stay because the reasoning was
+sound on the facts it had - and because the fact that changed was a deployment question, not a
+measurement.
+
 ---
 
 ## 1. What happens today
@@ -208,3 +236,152 @@ every problem described here.
 
 **Not a performance project.** The current numbers are tolerable. This is about what happens at
 ten times the data, and about a `WHERE` clause being in the place where a database can act on it.
+
+---
+
+## 9. The staged plan, and what each stage is worth — 2026-09-21
+
+Written after instrumenting the whole refresh rather than a part of it, and after Glenn said the
+target is the fewest rows that answer the question, **because AWS is a possibility even though
+the database and application share a machine today**. That reverses the reason section 4a gave
+for leaving this alone.
+
+### What was measured
+
+`FW_Base_B` now times the whole of `RefreshGrid` and reports what its named steps do not account
+for. One session, eight refreshes of `FW_Employees_B` (10,014 rows, cap 11):
+
+```
+833ms  fetch=779 strip=5 bind=6 fit=3 buttons=4 layout=32 other=4   <- first load
+237ms  fetch=232 bind=4 other=1
+177ms  fetch=174 bind=2 other=1
+160ms  fetch=157 bind=2 other=1
+166ms  fetch=160 strip=1 bind=2 fit=2 other=1
+188ms  fetch=162 strip=1 bind=3 fit=20 other=2   <- a date search
+151ms  fetch=145 bind=4 other=2
+```
+
+**`fetch` is 94-97% of every refresh.** Binding, headers, hiding, fitting, buttons, layout, the
+QBE rebuild and the view-state restore together come to 5-15ms. `other` is 1-4ms, so the line
+accounts for the whole refresh.
+
+Splitting `fetch` further, using the data layer's own `BrowseQueryMilliseconds` against the same
+session's counters: about **125ms is the `Fill`** - transferring and materialising the rows - and
+**20-35ms is what happens after it**: the deleted-flag hydration, the full `DataTable` copy that
+hydration makes, the QBE filter and the row trim.
+
+Two corrections to what was said earlier the same day, recorded so they are not repeated:
+
+- The `layout` step is not the problem. It was the largest of the steps *being measured*, which
+  is not the same as being large: 32ms on a first load and zero afterwards.
+- A Find does not average 481ms. That was a mean over 49 searches across four days, carried by
+  two searches at 1,908ms on 2026-09-20 - from before the row cap became the rule. The current
+  hourly figure is **252ms average, 835ms worst**, and the worst is the first load of a session.
+
+### Stage 1 - the deleted state decided in SQL, not after the fetch
+
+**What it buys.** A browse result with no `DeletedFlag` column is hydrated: one extra query for
+every deleted key in the table, a `source.Copy()` of the entire result - a second full
+materialisation - a per-row loop, then a filter. Five of the eight browse pages take that path
+(`FW_Employees_B`, `FW_Registration_B`, `FW_SwitchUser_B`, `FW_UserAccessDiagnostic_B`,
+`Roles_B`), and every future page will too, because it comes from the generator's SQL template.
+Worth roughly 20-35ms and one round trip per refresh.
+
+**Why it comes first.** While rows are removed after the fetch, no `TOP` can be correct. This is
+the prerequisite, not an optimisation standing on its own.
+
+**Verdict: worth doing, and do it first.** Its own saving is modest; it unlocks the stage that
+matters.
+
+### Stage 2 - `TOP cap + 1` when nothing filters afterwards
+
+**What it buys.** The ~125ms `Fill`, and on AWS ten thousand rows not crossing a network. The
+page shows the same eleven rows and the same message; only the fetch changes.
+
+**Why `cap + 1`.** The framework knows the list is longer than the cap because more rows came
+back than it asked for. Ask for exactly eleven and that signal is gone - eleven rows, and no way
+to say whether there are twelve or twelve thousand. Twelve preserves "showing the first 11 of a
+longer list" exactly as truthfully as today.
+
+**When it is safe.** All three: no QBE criteria, the registration scoped in the SQL rather than
+in memory, and no deleted-flag filtering after the fetch. `FW_Employees_B` already meets the
+middle one - `WHERE E.[RegistrationID] = @RegistrationID` - and has `ORDER BY E.[EmployeeID]`,
+its own clustered key, so the `TOP` is both deterministic and cheap for the server.
+
+**Verdict: the one to do.** Largest measured saving for the least risk, and it is the shape the
+whole chain should have had.
+
+### Stage 3 - the criteria in the `WHERE`
+
+**What it buys.** The filtered case, which stage 2 cannot touch: with criteria the cap is 200 and
+all 10,014 rows are still fetched, filtered in memory and trimmed. This is what a user does when
+they are actually searching.
+
+**What it costs.** Section 4 is why wrapping arbitrary page SQL is harder than it looks, and
+section 6 is why it must not be done in one pass. It also has to reach the Users browse, whose
+inline SQL names its parameter after the field.
+
+**What it does not buy.** `Contains` stays a scan. `LIKE '%x%'` cannot seek an index at any
+scale, and `FW_Employees` has no index on a name column anyway - only `PK_Employees` on
+`EmployeeID` and `IX_FW_Employees_UserId`. Today every text operator scans equally, so the
+operator costs nothing.
+
+**Verdict: worth it, last, and measure again first.** After stages 1 and 2 the numbers will be
+different, and this is the stage whose risk is real.
+
+### What not to do
+
+- **Do not remove `Contains` for performance.** It buys nothing while no name column is indexed,
+  and it is what makes the search usable. If name search ever needs to be fast the order is:
+  index the column, and only then does the operator matter. `FirstLast` is a persisted computed
+  column and can be indexed like any other.
+- **Do not turn the grid into a pager.** Fewest rows per *round trip*, not fewest rows: latency
+  does not shrink with row count, and on AWS eight fetches of 25 will lose to one fetch of 200.
+- **Do not require a criterion before showing data.** Decided 2026-09-21: an empty grid on open
+  teaches nobody what the page holds. The cap plus its message is the answer, and the cap is
+  `FW_Registration.MaxRecordsNoQBE` - per registration, not a constant, and free to raise to
+  whatever fills the grid. Note that after stage 2 the cap **is** the fetch, so it becomes a real
+  lever rather than a number that changes nothing.
+
+### The one unresolved design decision
+
+The framework cannot append `ISNULL(DeletedFlag, 0) = 0` to a page's SQL, because it does not
+know the alias. `FW_Employees_B` joins `FW_Employees` to itself for the manager, so an unqualified
+`DeletedFlag` is ambiguous and SQL Server rejects the batch - a page that will not open. The
+generator knows the alias when it writes the SQL; the framework does not when it reads it back.
+
+Three candidates, none chosen: the generator emits the predicate into the SQL and the framework
+rewrites it for Show Deleted; the base alias is recorded in `FW_Pages` beside the SQL; or the
+alias is parsed out of the `FROM` clause. **This has to be settled before stage 1 is built**, and
+it is the decision most likely to be got wrong quietly.
+
+### Decision — 2026-09-21, later the same day
+
+**Build the wrapper. Do not build stages 1 and 2 separately.**
+
+Glenn: AWS is a strong possibility and coming. The criterion set out above was "go straight to the
+wrapper if the move is near-term or stage 3 is happening regardless", and both now hold.
+
+What that settles:
+
+- **The `FW_Pages` alias column and the `-- base: E` comment marker are both dead.** Inside a
+  wrapper every column is `q.<name>`, so the ambiguity that made stage 1 awkward does not arise.
+  Neither idea needs building, and neither leaves anything behind.
+- **Stages 1 and 2 are not skipped, they are subsumed.** The wrapper supplies the `TOP`, the
+  deleted predicate and the criteria in one construct.
+- **It is not an AWS-only optimisation.** Every part of it is faster on this machine too: the
+  ~125ms `Fill` goes, the hydration query and its full `DataTable` copy go, and SQL Server scans
+  its own rows instead of shipping them here to be scanned. AWS raises the value, not the shape.
+
+**The safety valve is what makes going straight at it acceptable.** Any page whose SQL cannot be
+wrapped with confidence falls back to exactly today's path and writes a `FW_FallbackUsageLog` row
+naming the page and the reason. The transformation is therefore opt-in per page by construction,
+and the log says which pages declined instead of leaving somebody to discover it.
+
+**Known risk to check rather than assume:** a filter on a computed alias — `WHERE q.GenderID = 3`
+where that is really `G.[GenderDescription]` — can stop SQL Server pushing the predicate into the
+join, so it computes the join and then filters. Still far cheaper than shipping every row, but it
+belongs in an execution plan check on the pages that alias a joined column.
+
+**Not a risk:** the `ORDER BY` cost is unchanged. The server already sorts the whole result today,
+`TOP` or no `TOP`.
