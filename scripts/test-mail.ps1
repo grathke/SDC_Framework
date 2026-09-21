@@ -110,8 +110,9 @@ This is a test of the health alert path, sent by scripts\test-mail.ps1.
 Nothing is wrong. No fault was recorded and nothing was written to the database.
 
 A real alert arrives only when a fault appears in Needs Attention for the first time,
-or when one that was marked fixed happens again. It names the machine, the page, where
-it was caught and the message.
+or when one that was marked fixed happens again. It names the machine, where the fault
+was caught and what it said - and the page as well, on the occasions where that is not
+already the same thing.
 
 You are receiving this because Receives Health Alerts is ticked on your employee record.
 "@

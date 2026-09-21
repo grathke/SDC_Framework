@@ -180,9 +180,25 @@ Namespace SDC.Framework
             For Each item In items
                 body.AppendLine(If(item.Recurred, "BACK AFTER A FIX  ", "NEW  ") & item.Headline)
 
-                If item.PageName <> String.Empty Then body.AppendLine("    Page     " & item.PageName)
+                ' THE PAGE LINE EARNS ITS PLACE ONLY WHEN IT SAYS SOMETHING Caught DOES NOT.
+                '
+                ' PageName is whatever precedes the first dot of the context, so it is the page on
+                ' FW_Employees_B.LoadRows and the class on Program.OnThreadException - where it
+                ' printed "Page  Program" above "Caught  Program.OnThreadException": the same fact
+                ' twice, and the first of them untrue, because Program is not a page.
+                '
+                ' Tested against the context rather than special-cased on "Program", so it stays
+                ' right for whatever the next non-page caller is called.
+                Dim pageAddsSomething = item.PageName <> String.Empty AndAlso
+                                        Not item.Context.StartsWith(item.PageName & ".",
+                                                                    StringComparison.OrdinalIgnoreCase)
+
+                If pageAddsSomething Then body.AppendLine("    Page     " & item.PageName)
                 If item.Context <> String.Empty Then body.AppendLine("    Caught   " & item.Context)
-                If item.Message <> String.Empty Then body.AppendLine("    " & item.Message)
+
+                ' Labelled. It was the one unlabelled line, so on a phone the exception's own
+                ' words read as a stray sentence rather than as what the fault actually said.
+                If item.Message <> String.Empty Then body.AppendLine("    Said     " & item.Message)
 
                 body.AppendLine()
             Next

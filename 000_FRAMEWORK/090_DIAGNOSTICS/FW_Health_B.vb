@@ -54,17 +54,11 @@ Namespace SDC.Framework
         Private ReadOnly asAtLabel As Label
         Private ReadOnly queryStoreLabel As Label
 
-        ''' <summary>
-        ''' How many people are signed in, and the way into the list of who.
-        '''
-        ''' A label rather than a tile because the tile column is full and the three that are in it
-        ''' measure the window the period combo selects. This measures right now, which is a
-        ''' different kind of fact, and putting it beside the "as at" stamp says so.
-        ''' </summary>
-        Private ReadOnly connectedLabel As LinkLabel
-
         ''' <summary>Who is on, beside the tiles. The dialog carries what will not fit here.</summary>
         Private ReadOnly connectedGrid As DataGridView
+
+        ''' <summary>"3 CONNECTED" - the heading is where the count lives.</summary>
+        Private ReadOnly connectedHeading As Label
 
         ''' <summary>
         ''' Query Store on or off, shown and changed by the one control.
@@ -157,8 +151,8 @@ Namespace SDC.Framework
             refreshButton = New Button()
             closeButton = New Button()
             asAtLabel = New Label()
-            connectedLabel = New LinkLabel()
             connectedGrid = New DataGridView()
+            connectedHeading = New Label()
             queryStoreLabel = New Label()
             queryStoreCheck = New CheckBox()
             savesTile = New Panel()
@@ -297,20 +291,10 @@ Namespace SDC.Framework
             asAtLabel.TextAlign = ContentAlignment.MiddleLeft
             Controls.Add(asAtLabel)
 
-            ' The gap between the Query Store text, which ends at x=548, and the "as at" stamp,
-            ' which begins at x=750. The page is FixedDialog at 1180 wide with every band spoken
-            ' for, and this is the one piece of header that was free.
-            connectedLabel.Text = String.Empty
-            connectedLabel.Font = New Font("Segoe UI", 9.0F, FontStyle.Regular)
-            connectedLabel.LinkColor = Color.FromArgb(28, 90, 168)
-            connectedLabel.ActiveLinkColor = Color.FromArgb(28, 90, 168)
-            connectedLabel.VisitedLinkColor = Color.FromArgb(28, 90, 168)
-            connectedLabel.LinkBehavior = LinkBehavior.HoverUnderline
-            connectedLabel.Location = New Point(556, 50)
-            connectedLabel.Size = New Size(186, 20)
-            connectedLabel.TextAlign = ContentAlignment.MiddleLeft
-            AddHandler connectedLabel.LinkClicked, AddressOf ConnectedLabel_LinkClicked
-            Controls.Add(connectedLabel)
+            ' A count used to sit here, in the gap between the Query Store text and the "as at"
+            ' stamp. It was written before the grid existed and earned its place only while
+            ' nothing else said who was on. The heading above the grid now carries the number, so
+            ' the header is back to what it was.
 
             refreshButton.Text = "Refresh"
             refreshButton.Font = New Font("Segoe UI", 10.0F)
@@ -364,15 +348,15 @@ Namespace SDC.Framework
         ''' and are what the dialog is for; this answers "who is on" without a click.
         ''' </summary>
         Private Sub BuildConnectedGrid()
-            Dim heading As New Label() With {
-                .Text = "CONNECTED",
-                .Font = New Font("Segoe UI", 9.5F, FontStyle.Bold),
-                .ForeColor = MutedColour,
-                .Location = New Point(ConnectedGridLeft, 74),
-                .Size = New Size(200, 18),
-                .TextAlign = ContentAlignment.MiddleLeft
-            }
-            Controls.Add(heading)
+            ' The heading carries the count - "3 CONNECTED" - so the number and the rows it
+            ' describes are one thing that cannot drift apart, and the header needs nothing.
+            connectedHeading.Text = "CONNECTED"
+            connectedHeading.Font = New Font("Segoe UI", 9.5F, FontStyle.Bold)
+            connectedHeading.ForeColor = MutedColour
+            connectedHeading.Location = New Point(ConnectedGridLeft, 74)
+            connectedHeading.Size = New Size(200, 18)
+            connectedHeading.TextAlign = ContentAlignment.MiddleLeft
+            Controls.Add(connectedHeading)
 
             connectedGrid.Location = New Point(ConnectedGridLeft, 95)
             connectedGrid.Size = New Size(ConnectedGridWidth, 270)
@@ -407,7 +391,7 @@ Namespace SDC.Framework
             ' The Existing Owner Gate: double-click performs the same action the visible command
             ' does, by calling it, rather than opening the dialog a second way.
             AddHandler connectedGrid.CellDoubleClick,
-                Sub(s, e) ConnectedLabel_LinkClicked(Nothing, Nothing)
+                Sub(s, e) OpenConnectedList()
 
             Controls.Add(connectedGrid)
         End Sub
@@ -1312,10 +1296,10 @@ Namespace SDC.Framework
                     gauge.ClearScore()
                     asAtLabel.Text = "could not read"
 
-                    ' Blanked rather than left holding the previous count. A number from the last
-                    ' successful refresh beside the words "could not read" is the worst of both.
-                    connectedLabel.Text = String.Empty
-                    connectedLabel.Links.Clear()
+                    ' Back to the bare word rather than left holding the previous count. A number
+                    ' from the last successful refresh, over a grid that has just been emptied,
+                    ' claims the two still agree when they no longer do.
+                    connectedHeading.Text = "CONNECTED"
                     connectedGrid.Rows.Clear()
                     SetTile(savesTile, "--", "The health data could not be read.", MutedColour)
                     SetTile(faultsTile, "--", String.Empty, MutedColour)
@@ -1409,33 +1393,26 @@ Namespace SDC.Framework
         ''' the kind of quiet mismatch nobody notices for months.
         ''' </summary>
         ''' <summary>
-        ''' The connected count, and whether it is a link.
+        ''' The count, written into the grid's own heading - "3 CONNECTED".
         '''
-        ''' The whole text is the link, so the target is the number somebody is already looking at
-        ''' rather than a separate word beside it.
-        '''
-        ''' It only ever reads zero if the snapshot failed or the registration filter excludes
-        ''' everybody - reading this page makes you one of the rows - and in that case the text
-        ''' stays plain, because a link to an empty window is a promise the window cannot keep.
+        ''' It lived in the header until the grid existed, which put a number in one place and the
+        ''' rows it described in another. One heading cannot disagree with the list under it.
         '''
         ''' CONNECTIONS, NOT PEOPLE. One person signed in on two machines is two rows and two
-        ''' licences, and "2 people connected" would be false. Counting distinct users instead
-        ''' would make the number on the page disagree with the rows behind it, which is the one
-        ''' fault this design avoids everywhere else.
+        ''' licences, and "2 people" would be false. Counting distinct users instead would make
+        ''' the heading disagree with the rows beneath it, which is the fault this design avoids
+        ''' everywhere else.
+        '''
+        ''' Zero should be unreachable - reading this page makes you one of the rows - but it is
+        ''' said in words rather than as "0 CONNECTED", which reads like a figure that failed to
+        ''' load beside an empty grid that would look the same either way.
         ''' </summary>
         Private Sub ShowConnected()
             Dim count = snapshot.ConnectedSessions.Count
 
-            connectedLabel.Links.Clear()
-
-            If count = 0 Then
-                connectedLabel.Text = "nothing connected"
-                Return
-            End If
-
-            connectedLabel.Text = count.ToString("N0", CultureInfo.CurrentCulture) &
-                                  If(count = 1, " connection", " connections")
-            connectedLabel.Links.Add(0, connectedLabel.Text.Length)
+            connectedHeading.Text = If(count = 0,
+                                       "NONE CONNECTED",
+                                       count.ToString("N0", CultureInfo.CurrentCulture) & " CONNECTED")
         End Sub
 
         ''' <summary>
@@ -1481,10 +1458,16 @@ Namespace SDC.Framework
         End Sub
 
         ''' <summary>
-        ''' Opens the list the count was taken from - the page's own rows, not a fresh read, so
-        ''' the window cannot contradict the number that was clicked.
+        ''' Opens the detail for the rows already on screen - registration, where from and idle,
+        ''' which do not fit in the grid's 241 pixels.
+        '''
+        ''' The page's own rows, never a fresh read, so the window cannot contradict the grid
+        ''' behind it or the count in its heading.
+        '''
+        ''' Reached by double-clicking a row. It was a link in the header until the grid existed,
+        ''' and the name said so long after that stopped being true.
         ''' </summary>
-        Private Sub ConnectedLabel_LinkClicked(sender As Object, e As LinkLabelLinkClickedEventArgs)
+        Private Sub OpenConnectedList()
             If snapshot Is Nothing OrElse snapshot.ConnectedSessions.Count = 0 Then Return
 
             Using connected As New FW_ConnectedUsers(snapshot.ConnectedSessions, snapshot.TakenAtUtc)
