@@ -192,7 +192,28 @@ Namespace SDC.Framework
             Return body.ToString()
         End Function
 
+        ''' <summary>
+        ''' One message per recipient, not one message addressed to all of them.
+        '''
+        ''' **A bad address must not cost everybody the mail.** SMTP rejects the message, not the
+        ''' address, so a single send with three people on the To line is lost entirely when one
+        ''' mailbox is full or one address is mistyped. That is the least acceptable failure mode
+        ''' in the thing whose job is reporting failures. Sent separately, each one fails alone and
+        ''' the log says how many got through.
+        '''
+        ''' **And nobody sees anybody else's address.** Today every recipient is an App Admin and
+        ''' they all work together, so it would not matter. It starts mattering the day a tenant's
+        ''' administrator is on the list beside somebody from another city - which the spec already
+        ''' contemplates for failed sign-ins - and by then nobody would remember to look.
+        '''
+        ''' The connection is opened once and reused across the sends. The cost of separating them
+        ''' is a few more SMTP transactions on a background thread, which is nothing next to either
+        ''' of the problems it removes.
+        ''' </summary>
         Private Sub Send(recipients As List(Of String), subject As String, body As String)
+            Dim sent = 0
+            Dim failed = 0
+
             Try
                 Dim host = Setting("SDC_MAIL_HOST")
                 Dim user = Setting("SDC_MAIL_USER")
@@ -208,26 +229,43 @@ Namespace SDC.Framework
                     client.Credentials = New NetworkCredential(user, password)
                     client.Timeout = 20000
 
-                    Using message As New MailMessage()
-                        message.From = New MailAddress(user, "SDC Framework")
-                        message.Subject = subject
-                        message.Body = body
-                        message.IsBodyHtml = False
+                    For Each address In recipients
+                        Try
+                            Using message As New MailMessage()
+                                message.From = New MailAddress(user, "SDC Framework")
+                                message.Subject = subject
+                                message.Body = body
+                                message.IsBodyHtml = False
+                                message.To.Add(address)
 
-                        For Each address In recipients
-                            message.To.Add(address)
-                        Next
+                                client.Send(message)
+                            End Using
 
-                        client.Send(message)
-                    End Using
+                            sent += 1
+
+                        Catch addressError As Exception
+                            ' Named, because "2 of 3 sent" without saying which one failed leaves
+                            ' somebody checking three mailboxes to find out.
+                            failed += 1
+                            Program.Log("Health mail to " & address & " failed: " & addressError.Message)
+                        End Try
+                    Next
                 End Using
 
-                Program.Log("Health mail sent to " & recipients.Count.ToString(CultureInfo.InvariantCulture) & " recipient(s)")
+                Program.Log("Health mail sent to " & sent.ToString(CultureInfo.InvariantCulture) &
+                            " of " & recipients.Count.ToString(CultureInfo.InvariantCulture) & " recipient(s)" &
+                            If(failed > 0, ", " & failed.ToString(CultureInfo.InvariantCulture) & " failed", String.Empty))
 
             Catch ex As Exception
                 ' To the log, never to Telemetry. A failure to send a fault report becoming a fault
                 ' report would mail itself about being unable to mail.
-                Program.Log("Health mail failed: " & ex.Message)
+                '
+                ' This outer catch is now only for the things that stop every send - a host that
+                ' does not resolve, credentials the server refuses. A single bad address is caught
+                ' inside the loop and costs nobody else their mail.
+                Program.Log("Health mail failed before sending to " &
+                            (recipients.Count - sent).ToString(CultureInfo.InvariantCulture) &
+                            " recipient(s): " & ex.Message)
             End Try
         End Sub
 

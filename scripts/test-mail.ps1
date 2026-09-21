@@ -115,10 +115,34 @@ it was caught and the message.
 You are receiving this because Receives Health Alerts is ticked on your employee record.
 "@
 
-	foreach ($address in $recipients) { $message.To.Add($address) }
+	# One per recipient, matching HealthMail. A test that batches them would prove a path the
+	# application no longer uses, and would not catch the bad address this separation exists for.
+	$sent = 0
+	$failed = 0
 
-	$client.Send($message)
-	Write-Host "Sent."
+	foreach ($address in $recipients) {
+		$one = New-Object System.Net.Mail.MailMessage
+		$one.From = $message.From
+		$one.Subject = $message.Subject
+		$one.Body = $message.Body
+		$one.IsBodyHtml = $false
+		$one.To.Add($address)
+
+		try {
+			$client.Send($one)
+			Write-Host "  sent to $address"
+			$sent++
+		} catch {
+			Write-Host "  FAILED to $address : $($_.Exception.Message)"
+			$failed++
+		} finally {
+			$one.Dispose()
+		}
+	}
+
+	Write-Host ""
+	Write-Host "Sent $sent of $($recipients.Count)."
+	if ($failed -gt 0) { exit 1 }
 	exit 0
 
 } catch {
