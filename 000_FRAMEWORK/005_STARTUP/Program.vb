@@ -434,8 +434,7 @@ Namespace SDC.Framework
 
                 ' A process that was killed - Task Manager, a reboot, the machine going down -
                 ' never reached the end of its session, so its row would show somebody connected
-                ' for ever. This process starting is proof the earlier ones on this machine are
-                ' not running.
+                ' for ever.
                 '
                 ' Off the startup path, like the schema sweep above and for the same reason. It
                 ' opens a connection, and on 2026-09-21 the database was down: that one call took
@@ -444,9 +443,14 @@ Namespace SDC.Framework
                 '
                 ' The comment that used to be here argued it had to run BEFORE the login form, so
                 ' that a session opened moments later was not caught by its own sweep. That was
-                ' wrong: the sweep already excludes its own process id, so it cannot reach this
-                ' process's session whenever it runs. Only this machine's rows either way -
+                ' wrong: this process is among the live ones the sweep excludes, so it cannot
+                ' reach its own session whenever it runs. Only this machine's rows either way -
                 ' another server's open sessions may be perfectly alive.
+                '
+                ' What it no longer does is close OTHER live instances. Until 2026-09-21 it closed
+                ' every open row on this machine that was not its own, which two instances on one
+                ' desktop proved wrong in a second and which over Thinfinity - every session a
+                ' process on one server - would have been wrong for every user after the first.
                 Task.Run(Sub() SessionTracking.CloseAbandonedSessions())
 
                 ' What is on the other end. A probe only - nothing acts on the answer yet.

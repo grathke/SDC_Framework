@@ -82,6 +82,58 @@ Namespace SDC.Framework
         End Class
 
         ''' <summary>
+        ''' One person currently signed in - a FW_Session row with no end.
+        '''
+        ''' THE LIST IS THE COUNT. Nothing selects a number separately, so the readout on the page
+        ''' and the rows in the dialog cannot disagree. Section 6 of HEALTH_DASHBOARD_SPEC.md
+        ''' makes the same argument about logins and sessions, and for the same reason: two
+        ''' records of one fact eventually contradict each other and somebody has to work out
+        ''' which is lying.
+        ''' </summary>
+        Public NotInheritable Class ConnectedSession
+            Public Property SessionID As Integer
+            Public Property WhoName As String = String.Empty
+            Public Property RegistrationName As String = String.Empty
+
+            ''' <summary>Thinfinity or Desktop.</summary>
+            Public Property SessionKind As String = String.Empty
+
+            ''' <summary>
+            ''' The browser's address where one was captured, else the machine the process ran on.
+            ''' Over Thinfinity the machine is the server, never the person's, which is why the
+            ''' address is preferred when there is one.
+            ''' </summary>
+            Public Property FromWhere As String = String.Empty
+
+            Public Property StartedOn As Date
+            Public Property ConnectedSeconds As Integer
+
+            ''' <summary>
+            ''' Seconds since the last recorded action, or -1 when there has been none.
+            '''
+            ''' Minus one rather than zero, because "signed in and touched nothing" is a different
+            ''' state from "active a second ago" and a zero reads as the second.
+            ''' </summary>
+            Public Property IdleSeconds As Integer
+
+            ''' <summary>
+            ''' A session whose process died without writing an end stays open until the sweep at
+            ''' the next startup closes it as a Crash. Until then it is here, inflating the count.
+            '''
+            ''' It is shown rather than filtered, so an inflated number explains itself instead of
+            ''' rows quietly going missing. Four hours idle is well past any working pause, and a
+            ''' session that has done nothing at all since signing in is judged on its connected
+            ''' time instead.
+            ''' </summary>
+            Public ReadOnly Property LooksAbandoned As Boolean
+                Get
+                    Dim since = If(IdleSeconds >= 0, IdleSeconds, ConnectedSeconds)
+                    Return since > 4 * 60 * 60
+                End Get
+            End Property
+        End Class
+
+        ''' <summary>
         ''' What Find cost, per page, over the window.
         '''
         ''' Two averages and two maxima, never merged. Section 9: a custom-SQL page applies its QBE
@@ -220,6 +272,15 @@ Namespace SDC.Framework
             ''' <summary>Failed sign-ins in the window, worst first.</summary>
             Public Property LoginFailures As New List(Of LoginFailure)()
 
+            ''' <summary>
+            ''' Who is signed in right now, newest first. Not cut by the period combo - "right
+            ''' now" is not a window - but cut by the registration filter like everything else.
+            '''
+            ''' It always holds at least the person reading the page, which surprises people once
+            ''' and is correct every time.
+            ''' </summary>
+            Public Property ConnectedSessions As New List(Of ConnectedSession)()
+
             Public Property Failed As Boolean
             Public Property FailureMessage As String = String.Empty
 
@@ -332,6 +393,7 @@ Namespace SDC.Framework
                             End If
                             If reader.NextResult() Then ReadSearchTimings(reader, snapshot)
                             If reader.NextResult() Then ReadLoginFailures(reader, snapshot)
+                            If reader.NextResult() Then ReadConnectedSessions(reader, snapshot)
                         End Using
                     End Using
                 End Using
@@ -385,6 +447,26 @@ Namespace SDC.Framework
                     .Attempts = SafeInt(reader, "Attempts"),
                     .LastAttempt = SafeDate(reader, "LastAttempt"),
                     .RegistrationName = SafeString(reader, "RegistrationName")
+                })
+            End While
+        End Sub
+
+        ''' <summary>
+        ''' SafeInt is safe for IdleSec only because the SQL never sends a null for it - the CASE
+        ''' returns -1 where LastActivityOn is null. If that CASE is ever removed, SafeInt's null
+        ''' becomes zero, and zero here means "active this second" rather than "never active".
+        ''' </summary>
+        Private Shared Sub ReadConnectedSessions(reader As SqlDataReader, snapshot As HealthSnapshot)
+            While reader.Read()
+                snapshot.ConnectedSessions.Add(New ConnectedSession With {
+                    .SessionID = SafeInt(reader, "SessionID"),
+                    .WhoName = SafeString(reader, "WhoName"),
+                    .RegistrationName = SafeString(reader, "RegistrationName"),
+                    .SessionKind = SafeString(reader, "SessionKind"),
+                    .FromWhere = SafeString(reader, "FromWhere"),
+                    .StartedOn = SafeDate(reader, "StartedOn"),
+                    .ConnectedSeconds = SafeInt(reader, "ConnectedSec"),
+                    .IdleSeconds = SafeInt(reader, "IdleSec")
                 })
             End While
         End Sub
@@ -833,6 +915,45 @@ Namespace SDC.Framework
         Private Const RegistrationFilter As String =
             "(@RegistrationID IS NULL OR {0}.RegistrationID = @RegistrationID)"
 
+        ''' <summary>
+        ''' Who is connected now - every session with no end.
+        '''
+        ''' The tenth result set on a command that was already open, so the connected list costs
+        ''' no round trip of its own.
+        '''
+        ''' NOT SCOPED BY @Cutoff, unlike everything above it in the snapshot. The period combo
+        ''' asks "over the last N days"; this asks "right now", and a session that began before
+        ''' the window is still somebody sitting at a screen. It IS scoped by registration,
+        ''' because every other figure on the page is, and a count that ignored the filter would
+        ''' not match the page it sits on.
+        '''
+        ''' THE NAME EXPRESSION AND THE OPEN PREDICATE ARE sessions.ps1's, deliberately copied
+        ''' rather than reinvented. Two definitions of "who is connected" that can disagree is
+        ''' exactly the fault sql/151 avoided by deriving the login buckets from the same rows.
+        '''
+        ''' IdleSec is -1, not 0, when nothing has been done. Null LastActivityOn means somebody
+        ''' signed in and touched nothing, which is different from having been active a moment
+        ''' ago, and a zero would read as the second.
+        ''' </summary>
+        Private Shared ReadOnly ConnectedSessionsSql As String =
+            "SELECT s.SessionID, " &
+            "  ISNULL(NULLIF(LTRIM(RTRIM(ISNULL(u.FirstName, '') + ' ' + ISNULL(u.LastName, ''))), ''), " &
+            "         ISNULL(u.UserName, CONCAT('user ', s.UserID))) AS WhoName, " &
+            "  ISNULL(r.RegName, '') AS RegistrationName, " &
+            "  ISNULL(s.SessionKind, '') AS SessionKind, " &
+            "  ISNULL(NULLIF(s.ClientAddress, ''), ISNULL(s.MachineName, '')) AS FromWhere, " &
+            "  s.StartedOn, " &
+            "  DATEDIFF(second, s.StartedOn, SYSUTCDATETIME()) AS ConnectedSec, " &
+            "  CASE WHEN s.LastActivityOn IS NULL THEN -1 " &
+            "       ELSE DATEDIFF(second, s.LastActivityOn, SYSUTCDATETIME()) END AS IdleSec " &
+            "FROM dbo.FW_Session s " &
+            "LEFT JOIN dbo.FW_Users u ON u.UserId = s.UserID " &
+            "LEFT JOIN dbo.FW_Registration r ON r.RegistrationID = s.RegistrationID " &
+            "WHERE s.EndedOn IS NULL AND ISNULL(s.DeletedFlag, 0) = 0 " &
+            "  AND " & Scoped("s") & " " &
+            "ORDER BY s.StartedOn DESC;"
+
+
         Private Shared ReadOnly SnapshotSql As String =
             "DECLARE @Cutoff datetime2(0) = DATEADD(day, -@Days, SYSUTCDATETIME());" &
             vbCrLf &
@@ -909,7 +1030,9 @@ Namespace SDC.Framework
             "WHERE la.AttemptedOn >= @Cutoff AND ISNULL(la.DeletedFlag, 0) = 0 " &
             "  AND " & Scoped("la") & " " &
             "GROUP BY la.AttemptedUserName, la.Reason " &
-            "ORDER BY COUNT(*) DESC, MAX(la.AttemptedOn) DESC;"
+            "ORDER BY COUNT(*) DESC, MAX(la.AttemptedOn) DESC;" &
+            vbCrLf &
+            ConnectedSessionsSql
 
         Private Shared Function Scoped(tableAlias As String) As String
             Return String.Format(CultureInfo.InvariantCulture, RegistrationFilter, tableAlias)

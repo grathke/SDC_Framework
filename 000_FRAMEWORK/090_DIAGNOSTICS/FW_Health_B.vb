@@ -55,6 +55,18 @@ Namespace SDC.Framework
         Private ReadOnly queryStoreLabel As Label
 
         ''' <summary>
+        ''' How many people are signed in, and the way into the list of who.
+        '''
+        ''' A label rather than a tile because the tile column is full and the three that are in it
+        ''' measure the window the period combo selects. This measures right now, which is a
+        ''' different kind of fact, and putting it beside the "as at" stamp says so.
+        ''' </summary>
+        Private ReadOnly connectedLabel As LinkLabel
+
+        ''' <summary>Who is on, beside the tiles. The dialog carries what will not fit here.</summary>
+        Private ReadOnly connectedGrid As DataGridView
+
+        ''' <summary>
         ''' Query Store on or off, shown and changed by the one control.
         '''
         ''' Ticked means recording. READ_ONLY - filled its quota and stopped - reads as unticked,
@@ -94,6 +106,23 @@ Namespace SDC.Framework
         Private Const PageWidth As Integer = 1180
         Private Const PageHeight As Integer = 800
 
+        ''' <summary>
+        ''' The tile column and the connected grid share the space the tiles used to have alone.
+        '''
+        ''' The three tiles ran 560 to 1100 at 540 wide. The grid is carved out of that, not added
+        ''' beside it: the tiles lose the grid's width plus a gap and the block's right edge stays
+        ''' at 1100, so the page keeps its footprint and nothing outside the column moves.
+        '''
+        ''' Change <see cref="ConnectedGridWidth"/> and the tiles follow. Two figures that have to
+        ''' be edited together are two figures that eventually are not.
+        ''' </summary>
+        Private Const TileBlockLeft As Integer = 560
+        Private Const TileBlockRight As Integer = 1100
+        Private Const ConnectedGridWidth As Integer = 241
+        Private Const ConnectedGridGap As Integer = 16
+        Private Const ConnectedGridLeft As Integer = TileBlockRight - ConnectedGridWidth
+        Private Const TileWidth As Integer = ConnectedGridLeft - ConnectedGridGap - TileBlockLeft
+
         Private Shared ReadOnly HeadingColour As Color = Color.FromArgb(45, 48, 52)
         Private Shared ReadOnly MutedColour As Color = Color.FromArgb(110, 118, 126)
 
@@ -128,6 +157,8 @@ Namespace SDC.Framework
             refreshButton = New Button()
             closeButton = New Button()
             asAtLabel = New Label()
+            connectedLabel = New LinkLabel()
+            connectedGrid = New DataGridView()
             queryStoreLabel = New Label()
             queryStoreCheck = New CheckBox()
             savesTile = New Panel()
@@ -266,6 +297,21 @@ Namespace SDC.Framework
             asAtLabel.TextAlign = ContentAlignment.MiddleLeft
             Controls.Add(asAtLabel)
 
+            ' The gap between the Query Store text, which ends at x=548, and the "as at" stamp,
+            ' which begins at x=750. The page is FixedDialog at 1180 wide with every band spoken
+            ' for, and this is the one piece of header that was free.
+            connectedLabel.Text = String.Empty
+            connectedLabel.Font = New Font("Segoe UI", 9.0F, FontStyle.Regular)
+            connectedLabel.LinkColor = Color.FromArgb(28, 90, 168)
+            connectedLabel.ActiveLinkColor = Color.FromArgb(28, 90, 168)
+            connectedLabel.VisitedLinkColor = Color.FromArgb(28, 90, 168)
+            connectedLabel.LinkBehavior = LinkBehavior.HoverUnderline
+            connectedLabel.Location = New Point(556, 50)
+            connectedLabel.Size = New Size(186, 20)
+            connectedLabel.TextAlign = ContentAlignment.MiddleLeft
+            AddHandler connectedLabel.LinkClicked, AddressOf ConnectedLabel_LinkClicked
+            Controls.Add(connectedLabel)
+
             refreshButton.Text = "Refresh"
             refreshButton.Font = New Font("Segoe UI", 10.0F)
             refreshButton.Location = New Point(PageWidth - 250, 21)
@@ -302,21 +348,87 @@ Namespace SDC.Framework
             StyleTile(savesTile, "SAVES", 560, 95)
             StyleTile(faultsTile, "FAULTS", 560, 190)
             StyleTile(fallbacksTile, "FALLBACKS", 560, 285)
+
+            BuildConnectedGrid()
+        End Sub
+
+        ''' <summary>
+        ''' The connected list beside the tiles, in space the tiles gave up.
+        '''
+        ''' The three tiles were 540 wide with a great deal of nothing between their heading and
+        ''' their number. They are now <see cref="TileWidth"/>, and the difference plus a gap is
+        ''' exactly this grid - so the block still runs from 560 to 1100 and nothing else on the
+        ''' page moved.
+        '''
+        ''' Two columns and no more. Registration, where from and idle do not fit in 241 pixels
+        ''' and are what the dialog is for; this answers "who is on" without a click.
+        ''' </summary>
+        Private Sub BuildConnectedGrid()
+            Dim heading As New Label() With {
+                .Text = "CONNECTED",
+                .Font = New Font("Segoe UI", 9.5F, FontStyle.Bold),
+                .ForeColor = MutedColour,
+                .Location = New Point(ConnectedGridLeft, 74),
+                .Size = New Size(200, 18),
+                .TextAlign = ContentAlignment.MiddleLeft
+            }
+            Controls.Add(heading)
+
+            connectedGrid.Location = New Point(ConnectedGridLeft, 95)
+            connectedGrid.Size = New Size(ConnectedGridWidth, 270)
+            connectedGrid.AllowUserToAddRows = False
+            connectedGrid.AllowUserToDeleteRows = False
+            connectedGrid.AllowUserToResizeRows = False
+            connectedGrid.AllowUserToResizeColumns = False
+            connectedGrid.ReadOnly = True
+            connectedGrid.RowHeadersVisible = False
+            connectedGrid.ColumnHeadersVisible = True
+            connectedGrid.SelectionMode = DataGridViewSelectionMode.FullRowSelect
+            connectedGrid.MultiSelect = False
+            connectedGrid.BackgroundColor = Color.White
+            connectedGrid.BorderStyle = BorderStyle.FixedSingle
+            connectedGrid.Font = New Font("Segoe UI", 9.0F)
+            connectedGrid.EnableHeadersVisualStyles = False
+            connectedGrid.ScrollBars = ScrollBars.Vertical
+            connectedGrid.ColumnHeadersDefaultCellStyle.Font = New Font("Segoe UI", 9.0F, FontStyle.Bold)
+
+            BrowseGridStandardizer.ApplyStaticHeaderStyle(connectedGrid,
+                                                          Color.FromArgb(245, 246, 248),
+                                                          Color.FromArgb(45, 48, 52))
+
+            connectedGrid.Columns.Add(New DataGridViewTextBoxColumn() With {
+                .Name = "Who", .HeaderText = "Who", .Width = 140,
+                .SortMode = DataGridViewColumnSortMode.NotSortable, .ReadOnly = True})
+
+            connectedGrid.Columns.Add(New DataGridViewTextBoxColumn() With {
+                .Name = "Since", .HeaderText = "Since", .Width = 80,
+                .SortMode = DataGridViewColumnSortMode.NotSortable, .ReadOnly = True})
+
+            ' The Existing Owner Gate: double-click performs the same action the visible command
+            ' does, by calling it, rather than opening the dialog a second way.
+            AddHandler connectedGrid.CellDoubleClick,
+                Sub(s, e) ConnectedLabel_LinkClicked(Nothing, Nothing)
+
+            Controls.Add(connectedGrid)
         End Sub
 
         Private Sub StyleTile(tile As Panel, heading As String, left As Integer, top As Integer)
             tile.Location = New Point(left, top)
-            tile.Size = New Size(540, 80)
+            tile.Size = New Size(TileWidth, 80)
             tile.BackColor = Color.FromArgb(249, 250, 251)
             tile.BorderStyle = BorderStyle.FixedSingle
 
+            ' Narrowed with the tile. The heading used to have 200 pixels and the value 200 more,
+            ' with a hundred of nothing between them; at 283 they have to share, so the heading
+            ' takes what "FALLBACKS" needs and the value takes the rest, still right-aligned
+            ' against the same 20-pixel margin it always had.
             Dim headingLabel As New Label() With {
                 .Name = "Heading",
                 .Text = heading,
                 .Font = New Font("Segoe UI", 9.5F, FontStyle.Bold),
                 .ForeColor = MutedColour,
                 .Location = New Point(14, 10),
-                .Size = New Size(200, 20),
+                .Size = New Size(120, 20),
                 .TextAlign = ContentAlignment.MiddleLeft
             }
             tile.Controls.Add(headingLabel)
@@ -326,8 +438,8 @@ Namespace SDC.Framework
                 .Text = "--",
                 .Font = New Font("Segoe UI", 20.0F, FontStyle.Bold),
                 .ForeColor = HeadingColour,
-                .Location = New Point(320, 8),
-                .Size = New Size(200, 38),
+                .Location = New Point(TileWidth - 20 - 120, 8),
+                .Size = New Size(120, 38),
                 .TextAlign = ContentAlignment.MiddleRight
             }
             tile.Controls.Add(valueLabel)
@@ -338,7 +450,7 @@ Namespace SDC.Framework
                 .Font = New Font("Segoe UI", 9.5F, FontStyle.Regular),
                 .ForeColor = MutedColour,
                 .Location = New Point(14, 48),
-                .Size = New Size(506, 20),
+                .Size = New Size(TileWidth - 28, 20),
                 .TextAlign = ContentAlignment.MiddleLeft
             }
             tile.Controls.Add(detailLabel)
@@ -1199,6 +1311,12 @@ Namespace SDC.Framework
                 If snapshot.Failed Then
                     gauge.ClearScore()
                     asAtLabel.Text = "could not read"
+
+                    ' Blanked rather than left holding the previous count. A number from the last
+                    ' successful refresh beside the words "could not read" is the worst of both.
+                    connectedLabel.Text = String.Empty
+                    connectedLabel.Links.Clear()
+                    connectedGrid.Rows.Clear()
                     SetTile(savesTile, "--", "The health data could not be read.", MutedColour)
                     SetTile(faultsTile, "--", String.Empty, MutedColour)
                     SetTile(fallbacksTile, "--", String.Empty, MutedColour)
@@ -1213,6 +1331,9 @@ Namespace SDC.Framework
                 ' "as at", never "now". The figures are as old as the last refresh, and a page that
                 ' implies otherwise is claiming something it cannot know.
                 asAtLabel.Text = "as at " & snapshot.TakenAtUtc.ToLocalTime().ToString("HH:mm", CultureInfo.CurrentCulture)
+
+                ShowConnected()
+                FillConnected()
 
                 ShowQueryStoreState()
 
@@ -1287,6 +1408,90 @@ Namespace SDC.Framework
         ''' is showing. Reading the history of a different period from the number above it would be
         ''' the kind of quiet mismatch nobody notices for months.
         ''' </summary>
+        ''' <summary>
+        ''' The connected count, and whether it is a link.
+        '''
+        ''' The whole text is the link, so the target is the number somebody is already looking at
+        ''' rather than a separate word beside it.
+        '''
+        ''' It only ever reads zero if the snapshot failed or the registration filter excludes
+        ''' everybody - reading this page makes you one of the rows - and in that case the text
+        ''' stays plain, because a link to an empty window is a promise the window cannot keep.
+        '''
+        ''' CONNECTIONS, NOT PEOPLE. One person signed in on two machines is two rows and two
+        ''' licences, and "2 people connected" would be false. Counting distinct users instead
+        ''' would make the number on the page disagree with the rows behind it, which is the one
+        ''' fault this design avoids everywhere else.
+        ''' </summary>
+        Private Sub ShowConnected()
+            Dim count = snapshot.ConnectedSessions.Count
+
+            connectedLabel.Links.Clear()
+
+            If count = 0 Then
+                connectedLabel.Text = "nothing connected"
+                Return
+            End If
+
+            connectedLabel.Text = count.ToString("N0", CultureInfo.CurrentCulture) &
+                                  If(count = 1, " connection", " connections")
+            connectedLabel.Links.Add(0, connectedLabel.Text.Length)
+        End Sub
+
+        ''' <summary>
+        ''' The same rows the count came from, so the grid cannot disagree with the number above
+        ''' it - and, like every other figure on this page, cut by the registration combo.
+        '''
+        ''' SINCE IS A CLOCK TIME, and a date for anything that did not start today. A session from
+        ''' yesterday showing only "21:31" reads as one from this morning, which is the kind of
+        ''' quiet wrongness nobody checks.
+        ''' </summary>
+        Private Sub FillConnected()
+            connectedGrid.Rows.Clear()
+
+            Dim today = Date.Now.Date
+
+            For Each item In snapshot.ConnectedSessions
+                Dim startedLocal = item.StartedOn.ToLocalTime()
+
+                Dim since = If(startedLocal.Date = today,
+                               startedLocal.ToString("HH:mm", CultureInfo.CurrentCulture),
+                               startedLocal.ToString("d MMM", CultureInfo.CurrentCulture))
+
+                Dim index = connectedGrid.Rows.Add(item.WhoName, since)
+                Dim row = connectedGrid.Rows(index)
+
+                ' The whole story on hover, because 140 pixels of name is all there is room for.
+                row.Cells("Who").ToolTipText = item.WhoName &
+                                               If(item.SessionKind = String.Empty, String.Empty, " - " & item.SessionKind) &
+                                               If(item.RegistrationName = String.Empty, String.Empty, " - " & item.RegistrationName)
+
+                ' Italic for a session that has been idle long enough to have ended without
+                ' saying so. Same marking as the dialog, so the two never disagree about which
+                ' rows are doubtful.
+                If item.LooksAbandoned Then
+                    row.DefaultCellStyle.Font = New Font("Segoe UI", 9.0F, FontStyle.Italic)
+                End If
+            Next
+
+            ' Nobody chose a row. A grid selects its first the moment it fills, and the tint that
+            ' follows reads as a choice somebody made.
+            connectedGrid.ClearSelection()
+            connectedGrid.CurrentCell = Nothing
+        End Sub
+
+        ''' <summary>
+        ''' Opens the list the count was taken from - the page's own rows, not a fresh read, so
+        ''' the window cannot contradict the number that was clicked.
+        ''' </summary>
+        Private Sub ConnectedLabel_LinkClicked(sender As Object, e As LinkLabelLinkClickedEventArgs)
+            If snapshot Is Nothing OrElse snapshot.ConnectedSessions.Count = 0 Then Return
+
+            Using connected As New FW_ConnectedUsers(snapshot.ConnectedSessions, snapshot.TakenAtUtc)
+                connected.ShowDialog(Me)
+            End Using
+        End Sub
+
         Private Sub HistoryButton_Click(sender As Object, e As EventArgs)
             Using history As New FW_FixHistory(SelectedWindowDays(), SelectedRegistrationId())
                 history.ShowDialog(Me)

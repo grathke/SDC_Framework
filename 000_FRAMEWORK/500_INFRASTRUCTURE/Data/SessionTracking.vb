@@ -2,8 +2,11 @@ Option Strict On
 Option Explicit On
 
 Imports System
+Imports System.Collections.Generic
 Imports System.Data
+Imports System.Diagnostics
 Imports System.Globalization
+Imports System.Linq
 Imports Microsoft.Data.SqlClient
 
 Namespace SDC.Framework
@@ -210,14 +213,47 @@ Namespace SDC.Framework
         ''' Closes sessions left open by a process that is gone.
         '''
         ''' A killed process - Task Manager, a reboot, the machine going down - never reaches End,
-        ''' so its row would show somebody connected for ever. Run at startup, where a process that
-        ''' has just started is proof that the ones before it are not running.
+        ''' so its row would show somebody connected for ever.
+        '''
+        ''' **IT ASKS WHICH PROCESSES ARE ALIVE. It used to assume.** Until 2026-09-21 the rule was
+        ''' "any open row on this machine whose process id is not mine", justified by the claim
+        ''' that a process starting proves the earlier ones are not running. That is proof of
+        ''' nothing. Two instances on one desktop closed each other on sight - row 1042 was created
+        ''' and closed as a Crash in the same second - and over Thinfinity, where EVERY session is
+        ''' a process on one server, the second person to sign in would have closed the first
+        ''' person's row, leaving the connected count stuck at one and a trail of Crash rows that
+        ''' never happened.
+        '''
+        ''' Process.GetProcessesByName is Cybele support's own answer to counting sessions, for the
+        ''' reason that makes it work here: one VirtualUI session is one process. The name comes
+        ''' from the running process rather than a literal, so renaming the executable cannot
+        ''' quietly turn this into a sweep that closes everything.
+        '''
+        ''' A ROW WITH NO PROCESS ID IS CLOSED. It predates the column being written and no rule
+        ''' can ever reconcile it, so leaving it out would mean an open row nothing can close.
+        '''
+        ''' PID REUSE IS ACCEPTED. A dead session whose id has since been taken by a live instance
+        ''' stays open until somebody notices. That fails in the safe direction - a stale row shown
+        ''' rather than a live session destroyed - and the obvious guard, comparing the process
+        ''' start time against StartedOn, would compare this machine's clock against the database
+        ''' server's, which is how skew produces exactly the false closes this fixes.
         '''
         ''' Only this machine's rows. Another server's open sessions may be perfectly alive, and
         ''' closing them from here would report people as gone while they are working.
         ''' </summary>
         Public Sub CloseAbandonedSessions()
             Try
+                Dim alive = LiveProcessIds()
+
+                ' Never empty - this process is in it - but an empty list would build "NOT IN ()",
+                ' which is a syntax error, and a sweep that throws is a sweep that never runs.
+                If alive.Count = 0 Then Return
+
+                Dim placeholders As New List(Of String)()
+                For index = 0 To alive.Count - 1
+                    placeholders.Add("@Pid" & index.ToString(CultureInfo.InvariantCulture))
+                Next
+
                 Using conn As New SqlConnection(DataAccess.BuildConnectionStringForDatabase(String.Empty))
                     conn.Open()
 
@@ -226,10 +262,14 @@ Namespace SDC.Framework
                         "SET EndedOn = ISNULL(LastActivityOn, StartedOn), EndReason = 'Crash' " &
                         "WHERE EndedOn IS NULL " &
                         "  AND MachineName = @MachineName " &
-                        "  AND ISNULL(ProcessID, 0) <> @ProcessID", conn)
+                        "  AND (ProcessID IS NULL OR ProcessID NOT IN (" &
+                        String.Join(", ", placeholders) & "))", conn)
 
                         cmd.Parameters.Add("@MachineName", SqlDbType.VarChar, 100).Value = SafeMachineName()
-                        cmd.Parameters.Add("@ProcessID", SqlDbType.Int).Value = SafeProcessId()
+
+                        For index = 0 To alive.Count - 1
+                            cmd.Parameters.Add(placeholders(index), SqlDbType.Int).Value = alive(index)
+                        Next
 
                         Dim closed = cmd.ExecuteNonQuery()
                         If closed > 0 Then
@@ -254,6 +294,28 @@ Namespace SDC.Framework
                 End If
             End Try
         End Sub
+
+        ''' <summary>
+        ''' Every running instance of this application on this machine, by process id.
+        '''
+        ''' Includes this process, which is what keeps the sweep from closing its own session.
+        '''
+        ''' Returns an empty list if the enumeration fails rather than a partial one. A short list
+        ''' here would close live sessions - the exact fault being fixed - so the caller treats
+        ''' empty as "do nothing" instead of "everything is dead".
+        ''' </summary>
+        Private Function LiveProcessIds() As List(Of Integer)
+            Try
+                Dim name = Process.GetCurrentProcess().ProcessName
+                If String.IsNullOrWhiteSpace(name) Then Return New List(Of Integer)()
+
+                Return Process.GetProcessesByName(name).Select(Function(p) p.Id).Distinct().ToList()
+
+            Catch ex As Exception
+                Telemetry.Error(ex, "SessionTracking.LiveProcessIds", Telemetry.FaultOrigin.Swallowed)
+                Return New List(Of Integer)()
+            End Try
+        End Function
 
         Private Function SafeMachineName() As String
             Try

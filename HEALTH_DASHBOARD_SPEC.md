@@ -287,15 +287,51 @@ figure between the two would be a number describing nothing.
 
 ### The panel
 
-Under the gauge. User, registration, how they are connected, where from, how long.
+**Built 2026-09-21, and not as a panel.** The design below was written for space under the gauge
+that no longer exists - the breakdown line, ACTIVITY and SEARCH TIMING took it, and the page is
+`FixedDialog` at 1180x800 with every band spoken for. What was built instead says the same things
+in two places:
 
-It carries an **`as at HH:MM` stamp** rather than claiming to be "now", because it is stale by the
-refresh interval plus the disconnect grace - at a five-minute refresh, somebody who closed their
-browser can still appear for eight. A panel that says "now" when it cannot be is worse than one that
-admits its age.
+- **A count in the header**, between the Query Store text and the `as at` stamp, reading
+  "4 connections". It measures right now rather than the period the combo selects, which is why it
+  sits beside the stamp and not in the tile column where everything is windowed.
+- **A two-column grid beside the tiles** — who, and since when. The three tiles were 540 wide with
+  a hundred pixels of nothing between each heading and its number; they are now 283, and the
+  difference plus a gap is exactly the grid. The block still runs 560 to 1100 and the page keeps
+  its 1180x800 footprint, so nothing outside that column moved. `ConnectedGridWidth` drives the
+  tile width rather than the two being written down separately.
+- **`FW_ConnectedUsers`**, a modal opened by clicking the count or double-clicking a grid row:
+  user, registration, how they are connected, where from, when they signed in, for how long, and
+  how long idle. Registration, origin and idle are what will not fit in 241 pixels.
 
-One query returning the whole list, never a query per row, and it rides the page's existing refresh
-rather than owning a timer of its own.
+**Connections, not people.** One person signed in on two machines is two rows and two licences,
+and "2 people" would be false. Counting distinct users instead would make the header disagree with
+the rows behind it, which is the fault this design avoids everywhere else. The dialog adds "from N
+people" only when the two numbers differ.
+
+**The dialog runs no query of its own.** It is handed the list the page already read, so a window
+opened by clicking a number cannot disagree with the number that was clicked, and opening it is
+free. The count is the list's length; nothing selects a number separately, for the same reason the
+login buckets are derived from the session rows rather than written beside them.
+
+It carries the **`as at HH:MM` stamp** rather than claiming to be "now", because it is stale by the
+refresh interval. This section used to add "plus the disconnect grace - at a five-minute refresh,
+somebody who closed their browser can still appear for eight". **That is no longer true**: the
+grace was remeasured on 2026-09-21 at about four and a half seconds, and it is the Reconnection
+timeout on the Thinfinity profile. See `THINFINITY_NOTES.md`.
+
+One query returning the whole list, never a query per row. It is the tenth result set on the
+snapshot command the page was issuing anyway, so the whole feature costs no round trip, and it
+rides the page's existing refresh rather than owning a timer of its own.
+
+**The count always includes the reader**, because opening the health page makes you a connected
+session. Correct every time, surprising once.
+
+**An unswept crash inflates it.** A process killed without writing an end stays open until
+`CloseAbandonedSessions` closes it at the next startup. Those rows are shown, marked, and counted
+rather than filtered - a number that is too high explains itself in the dialog, where a quietly
+filtered list would leave somebody comparing a count against a shorter list and finding neither
+trustworthy.
 
 ## 7. Mail out
 
