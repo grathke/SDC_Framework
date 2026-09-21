@@ -90,6 +90,15 @@ Namespace SDC.Framework
                 Announce(message)
             Catch ex As Exception
                 Program.Log("Schema drift check failed: " & ex.Message)
+
+                ' The journal, not Telemetry, when the server could not be reached: Telemetry
+                ' writes to the database, and this is the branch where the database is the thing
+                ' that cannot be written to. Anything else here is a real fault.
+                If OutageJournal.IsUnreachable(ex) Then
+                    OutageJournal.Note("checking the schema at startup", ex)
+                Else
+                    Telemetry.Error(ex, "SchemaDriftWatch.RunQuietly", Telemetry.FaultOrigin.Swallowed)
+                End If
             End Try
         End Sub
 

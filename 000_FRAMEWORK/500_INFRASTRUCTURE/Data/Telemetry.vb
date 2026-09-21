@@ -40,7 +40,7 @@ Namespace SDC.Framework
             Swallowed
         End Enum
 
-        Private NotInheritable Class Note
+        Friend NotInheritable Class Note
             ''' <summary>
             ''' When the fault happened, not when it was written.
             '''
@@ -224,9 +224,52 @@ Namespace SDC.Framework
             Using conn As New SqlConnection(DataAccess.BuildConnectionStringForDatabase(String.Empty))
                 conn.Open()
 
+                ' Collected across the batch and mailed once at the end. One mail about a dozen
+                ' faults is read; a dozen mails about one fault each teaches somebody to filter
+                ' the address into a folder they never open.
+                Dim worthTelling As New List(Of HealthMail.Item)()
+
                 For Each note In batch
                     Try
-                        Using cmd As New SqlCommand(
+                        If UpsertFault(conn, note) Then
+                            worthTelling.Add(New HealthMail.Item With {
+                                .Headline = note.ExceptionType,
+                                .PageName = note.PageName,
+                                .Context = note.Context,
+                                .Message = note.Message,
+                                .Recurred = False
+                            })
+                        End If
+                    Catch
+                        ' One bad note does not cost the rest of the batch.
+                    End Try
+                Next
+
+                HealthMail.NotifyNewFaults(conn, worthTelling)
+
+                ' This connection opening is proof the database is reachable, which is the only
+                ' trigger the outage journal needs - there is no point asking whether an outage is
+                ' over when a successful write has already answered.
+                OutageJournal.FlushAll(conn)
+            End Using
+        End Sub
+
+        ''' <summary>
+        ''' One fault row, upserted on a connection the caller already has open.
+        '''
+        ''' Lifted out of WriteBatch so it has one caller more: OutageJournal, which writes the
+        ''' record of a database outage once the database is reachable again. A second MERGE
+        ''' against FW_ErrorLog would have been a second copy of the fingerprint rule, the
+        ''' recur-on-repeat rule and the LastSeen-moves-forward rule, and the three would have
+        ''' drifted apart the first time one of them changed.
+        ''' </summary>
+        ''' <summary>
+        ''' Returns True when this fault is worth telling somebody about: it had never been seen
+        ''' before, or it had been marked fixed and has happened again. A fault ticking from four
+        ''' occurrences to five is not news and returns False.
+        ''' </summary>
+        Friend Function UpsertFault(conn As SqlConnection, note As Note) As Boolean
+            Using cmd As New SqlCommand(
                             "MERGE dbo.FW_ErrorLog AS target " &
                             "USING (SELECT @Fingerprint AS Fingerprint) AS source " &
                             "ON target.Fingerprint = source.Fingerprint " &
@@ -249,7 +292,8 @@ Namespace SDC.Framework
                             "   FirstSeen, LastSeen) " &
                             "  VALUES (@Fingerprint, @ExceptionType, @PageName, @Context, @Message, @StackTrace, " &
                             "          @Origin, @SessionKind, @RegistrationID, @UserID, @MachineName, @AppVersion, " &
-                            "          @OccurredUtc, @OccurredUtc);", conn)
+                            "          @OccurredUtc, @OccurredUtc) " &
+                "OUTPUT $action AS Act, ISNULL(deleted.Resolved, 0) AS WasResolved;", conn)
 
                             ' LastSeen only ever moves forward. A batch is not guaranteed to be in
                             ' time order - the queue is concurrent, and a flush can carry notes from
@@ -274,15 +318,20 @@ Namespace SDC.Framework
                             cmd.Parameters.AddWithValue("@MachineName", NullIfEmpty(Clip(note.MachineName, 100)))
                             cmd.Parameters.AddWithValue("@AppVersion", NullIfEmpty(Clip(note.AppVersion, 40)))
 
-                            cmd.ExecuteNonQuery()
-                        End Using
-                    Catch
-                        ' One bad note does not cost the rest of the batch.
-                    End Try
-                Next
-            End Using
-        End Sub
+                            ' $action says whether the MERGE inserted or matched, and
+                            ' deleted.Resolved says what the row looked like before it did. A
+                            ' fault that was resolved and is being written again is a fix that
+                            ' did not hold, which is louder than one nobody has seen before.
+                            Using reader = cmd.ExecuteReader()
+                                If Not reader.Read() Then Return False
 
+                                Dim action = Convert.ToString(reader("Act"), CultureInfo.InvariantCulture)
+                                Dim wasResolved = Convert.ToBoolean(reader("WasResolved"))
+
+                                Return String.Equals(action, "INSERT", StringComparison.OrdinalIgnoreCase) OrElse wasResolved
+                            End Using
+                        End Using
+        End Function
         Private Function BuildNote(ex As Exception, context As String, origin As FaultOrigin) As Note
             Dim exceptionType = ex.GetType().FullName
             Dim resolvedContext = If(context, String.Empty).Trim()

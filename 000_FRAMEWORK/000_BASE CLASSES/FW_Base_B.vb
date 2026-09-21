@@ -1,4 +1,4 @@
-﻿Option Strict On
+Option Strict On
 Option Explicit On
 
 Imports System.Data
@@ -151,6 +151,21 @@ Namespace SDC.Framework
         ' already implies the stand-in is not saved either; saying so twice cost the last line.
         Private Const DefaultSqlNoticeText As String =
             "NO SQL SAVED FOR THIS PAGE - SHOWING EVERY COLUMN"
+
+        ''' <summary>
+        ''' The cap once criteria have been entered, from the registration.
+        '''
+        ''' Its own setting rather than a share of the no-criteria one, because the two caps say
+        ''' different things - see FW_Registration.MaxRecordsWithQBE and sql/153.
+        ''' </summary>
+        Private Function GetFilteredRowLimit() As Integer
+            Dim session = SessionState.Current
+            If session.HasValue AndAlso session.Value.MaxRecordsWithQBE > 0 Then
+                Return session.Value.MaxRecordsWithQBE
+            End If
+
+            Return 200
+        End Function
 
         Private Function GetEmptyQbeRowLimit() As Integer
             Dim session = SessionState.Current
@@ -2131,9 +2146,25 @@ Namespace SDC.Framework
                 ' thousand reads as a grid showing everything. The Find handler sets the same
                 ' message again on its own path, which changes nothing.
                 If lastRefreshExceededRowLimit Then
-                    SetRetrievalStatus("Only showing the top " & maxRows &
-                                       " records. Enter at least one QBE criterion to see more.",
-                                       False, True)
+                    ' Two messages, because the same sentence was being said to somebody who had
+                    ' entered criteria and somebody who had not. Telling a person who has just
+                    ' filled in three QBE fields to "enter at least one QBE criterion" reads as
+                    ' the application not having noticed what they did, which is worse than
+                    ' saying nothing.
+                    '
+                    ' Neither says "to see more". Entering a criterion does not show more rows -
+                    ' the cap does not move - it narrows the result to the ones worth showing.
+                    Dim hasCriteria = currentFilters IsNot Nothing AndAlso currentFilters.Count > 0
+
+                    If hasCriteria Then
+                        SetRetrievalStatus("More than " & maxRows & " records match. Showing the first " &
+                                           maxRows & " - narrow the search to see the ones you want.",
+                                           False, True)
+                    Else
+                        SetRetrievalStatus("Showing the first " & maxRows &
+                                           " records. Enter a QBE criterion to narrow the search.",
+                                           False, True)
+                    End If
                 End If
 
                 ' How long the SQL alone took, handed back by the data layer. Kept for the caller
@@ -2144,14 +2175,27 @@ Namespace SDC.Framework
                     lastQueryMilliseconds = Convert.ToInt32(dt.ExtendedProperties("BrowseQueryMilliseconds"),
                                                             Globalization.CultureInfo.InvariantCulture)
                 End If
+                ' Every step from here to the end of the Try is timed. The telemetry said a Find
+                ' averaged 656ms against 204ms of database, and nobody could say what the other
+                ' 450 were doing - eleven rows come back whatever the table holds, so the cost is
+                ' fixed work, not volume. A breakdown is the only way to know which step owns it.
+                Dim stepTimer = System.Diagnostics.Stopwatch.StartNew()
+                Dim breakdown As New System.Text.StringBuilder()
+
                 ' Fields this role may not see are removed from the result before anything can bind
                 ' to them, so no later step can put them back on screen.
                 RemoveInvisibleRoleFieldColumns(dt)
                 RemoveBinaryColumns(dt)
+                MarkStep(stepTimer, breakdown, "strip")
+
                 browseGrid.DataSource = dt
                 recordCountLabel.Text = "Record Count: " & dt.Rows.Count.ToString()
                 browseGrid.ColumnHeadersVisible = True
+                MarkStep(stepTimer, breakdown, "bind")
+
                 ApplyFriendlyColumnHeaders(browseGrid)
+                MarkStep(stepTimer, breakdown, "headers")
+
                 ApplyPkColumnHiding(browseGrid)
                 HideRegistrationIdColumn(browseGrid)
                 HideSoftDeleteColumns(browseGrid)
@@ -2159,17 +2203,25 @@ Namespace SDC.Framework
                 ApplyPkColumnHiding(browseGrid)
                 HideRegistrationIdColumn(browseGrid)
                 HideSoftDeleteColumns(browseGrid)
+                MarkStep(stepTimer, breakdown, "hide")
+
                 EnsureAtLeastOneManageableVisibleColumn()
                 UpdateMaintenanceKeyAvailability()
+                MarkStep(stepTimer, breakdown, "keys")
+
                 GridColumnsManager.FitVisibleColumnsToAvailableWidth(browseGrid)
+                MarkStep(stepTimer, breakdown, "fit")
+
                 UpdateLayoutUiAvailability()
                 RefreshColumnsManagerFromGrid()
                 UpdateShowDeletedButtonState()
+                MarkStep(stepTimer, breakdown, "buttons")
 
                 If pendingInitialLayoutApply Then
                     EnsureDefaultLayoutExists(registrationId)
                     ApplySavedLayoutIfAvailable(registrationId)
                     pendingInitialLayoutApply = False
+                    MarkStep(stepTimer, breakdown, "layout")
                 End If
 
                 titleLabel.Text = Me.Text
@@ -2185,15 +2237,19 @@ Namespace SDC.Framework
                     End If
 
                     lastAppliedSqlSignature = sqlSignature
+                    MarkStep(stepTimer, breakdown, "qbe")
                 End If
 
-
                 RestoreGridViewState(viewState)
+                MarkStep(stepTimer, breakdown, "restore")
 
                 If Not hasBaselineLayoutSnapshot AndAlso browseGrid.Columns IsNot Nothing AndAlso browseGrid.Columns.Count > 0 Then
                     baselineLayoutSnapshot = BuildCurrentLayoutSnapshotJson()
                     hasBaselineLayoutSnapshot = True
+                    MarkStep(stepTimer, breakdown, "snapshot")
                 End If
+
+                ReportPostQuery(breakdown)
 
             Catch ex As Exception
                 ' The message alone says what went wrong but never where. The first stack frame
@@ -4469,6 +4525,56 @@ Namespace SDC.Framework
         ''' response time: the stopwatch stops when the grid paints server-side, and over
         ''' Thinfinity the pixels still have to reach the browser.
         ''' </summary>
+        ''' <summary>How long a post-query step took, in milliseconds, before the timer restarts.</summary>
+        Private Shared Sub MarkStep(timer As System.Diagnostics.Stopwatch,
+                                    breakdown As System.Text.StringBuilder,
+                                    name As String)
+            Try
+                Dim ms = timer.ElapsedMilliseconds
+
+                ' Steps that cost nothing are left out. A breakdown of fifteen entries, eleven of
+                ' them zero, hides the two that matter.
+                If ms > 0 Then
+                    If breakdown.Length > 0 Then breakdown.Append(" ")
+                    breakdown.Append(name).Append("=").Append(ms.ToString(Globalization.CultureInfo.InvariantCulture))
+                End If
+
+                timer.Restart()
+            Catch
+                ' Measuring must never cost somebody their Find.
+            End Try
+        End Sub
+
+        ''' <summary>
+        ''' Writes the post-query breakdown to the log, when there was anything worth writing.
+        '''
+        ''' To startup.log rather than to telemetry: this is a developer finding out where the time
+        ''' goes, not a fault anybody should be told about. It is silent below the threshold, so an
+        ''' ordinary Find leaves no trace at all.
+        '''
+        ''' The threshold is deliberately low. 150ms is not slow enough for anybody to complain
+        ''' about, which is the point - by the time a Find is slow enough to complain about, the
+        ''' step that owns it has been paying that cost invisibly for months.
+        ''' </summary>
+        Private Sub ReportPostQuery(breakdown As System.Text.StringBuilder)
+            Try
+                If breakdown Is Nothing OrElse breakdown.Length = 0 Then Return
+
+                Dim total = 0
+                For Each part In breakdown.ToString().Split(" "c)
+                    Dim pieces = part.Split("="c)
+                    Dim value = 0
+                    If pieces.Length = 2 AndAlso Integer.TryParse(pieces(1), value) Then total += value
+                Next
+
+                If total < PostQueryReportThresholdMs Then Return
+
+                Program.Log("Browse post-query " & Me.GetType().Name & ": " &
+                            total.ToString(Globalization.CultureInfo.InvariantCulture) & "ms  " & breakdown.ToString())
+            Catch
+                ' As above.
+            End Try
+        End Sub
         Private Sub RecordFind(findTimer As System.Diagnostics.Stopwatch)
             Try
                 Dim elapsed = UsageCounters.ElapsedMillis(findTimer)
@@ -4505,6 +4611,16 @@ Namespace SDC.Framework
         ''' </summary>
         Private Const ModalContaminationCapMs As Integer = 30000
 
+        ''' <summary>
+        ''' Below this, the post-query breakdown is not worth a log line.
+        '''
+        ''' 60ms, not 150. It was 150 for one afternoon and caught nothing: the real cost is about
+        ''' 130ms per Find, on every page, whatever the query took - Registration's SQL runs in 9ms
+        ''' and its Find takes 146. A threshold set from a guess sat just above the thing it was
+        ''' meant to find, which is the most useless place a threshold can be.
+        ''' </summary>
+        Private Const PostQueryReportThresholdMs As Integer = 60
+
         Private Sub RunFind()
             Dim selectedId = SelectedRecordId()
             Dim registrationId = GetRegistrationIdForQbeFind()
@@ -4522,21 +4638,32 @@ Namespace SDC.Framework
 
             currentFilters = filters
             UpdateActiveFilterLabel()
-            Dim emptyQbeLimit = If(qbeGrid.Rows.Count > 0 AndAlso filters.Count = 0, GetEmptyQbeRowLimit(), 0)
-            If emptyQbeLimit > 0 Then
-                RefreshGrid(selectedId, False, emptyQbeLimit, registrationId)
-                If lastRefreshExceededRowLimit Then
-                    SetRetrievalStatus("Only showing the top " & emptyQbeLimit & " records. Enter at least one QBE criterion to see more.", False, True)
-                ElseIf browseGrid.Rows.Count > 0 Then
-                    SetRetrievalStatus("Retrieved " & browseGrid.Rows.Count & " record(s).", False)
-                End If
-                If browseGrid.Rows.Count = 0 Then
-                    SetRetrievalStatus("No records found.", False)
-                End If
-                Return
-            End If
+            ' The cap applies whether or not there are criteria. It used to be taken only when
+            ' filters.Count = 0, which meant typing one character into a QBE cell turned the limit
+            ' off entirely - a contains search on 10,000 employees bound every one of the 1,050
+            ' rows that matched. The grid was unreadable, and the binding was most of what a Find
+            ' cost.
+            '
+            ' Criteria change what the cap means, not whether it applies. Without them it says
+            ' "this is the top of a longer list". With them it says "your search was not narrow
+            ' enough", which is a different problem and gets a different sentence in RefreshGrid.
+            ' Two caps, because they mean two different things. Without criteria the cap says
+            ' "this is the top of a longer list" and a handful is enough to show the shape of the
+            ' data. With criteria it says "your search was not narrow enough", and a handful there
+            ' is infuriating - somebody who has just filtered by department expects to see the
+            ' department.
+            '
+            ' 200 rather than 100: a hundred is easy to reach legitimately, and the cost is small.
+            ' Binding a thousand rows was measured at about 130ms, so 200 is roughly 25.
+            Dim rowLimit = If(filters.Count > 0, GetFilteredRowLimit(), If(qbeGrid.Rows.Count > 0, GetEmptyQbeRowLimit(), 0))
 
-            RefreshGrid(selectedId, False, emptyQbeLimit, registrationId)
+            RefreshGrid(selectedId, False, rowLimit, registrationId)
+
+            ' RefreshGrid already said it, in the wording that knows whether criteria were used.
+            ' Saying it again here - which this did, in one sentence for both cases - overwrote the
+            ' right message with the wrong one on every filtered Find.
+            If lastRefreshExceededRowLimit Then Return
+
             SetRetrievalStatus(If(browseGrid.Rows.Count = 0,
                                   "No records found.",
                                   "Retrieved " & browseGrid.Rows.Count & " record(s)."),

@@ -191,7 +191,15 @@ Namespace SDC.Framework
             Public Property FaultsTotal As Integer
             Public Property FaultPressure As Double
 
+            ''' <summary>Fallbacks that mean something went wrong. These count against the score.</summary>
             Public Property FallbackCount As Integer
+
+            ''' <summary>
+            ''' Fallbacks that mean a page has never been configured. Shown, because a page running
+            ''' on a default SQL is worth knowing about, and not scored, because an unfinished page
+            ''' is not a sick one.
+            ''' </summary>
+            Public Property FallbackUnconfigured As Integer
             Public Property AuditedOperations As Integer
 
             Public Property Activity As New List(Of ActivityCount)()
@@ -357,6 +365,7 @@ Namespace SDC.Framework
             If Not reader.Read() Then Return
 
             snapshot.FallbackCount = SafeInt(reader, "FallbackCount")
+            snapshot.FallbackUnconfigured = SafeInt(reader, "FallbackUnconfigured")
         End Sub
 
         Private Shared Sub ReadActivity(reader As SqlDataReader, snapshot As HealthSnapshot)
@@ -803,6 +812,24 @@ Namespace SDC.Framework
         ''' is nullable for exactly that reason - so filtering to one registration correctly hides
         ''' those. They are still visible with the filter off, which is the page's normal state.
         ''' </summary>
+        ''' <summary>
+        ''' The fallbacks that are not ill health.
+        '''
+        ''' A page with no saved SQL used the default builder. On a framework being built that is
+        ''' an unfinished page, not a malfunction, and counting it the same as a page whose
+        ''' permissions quietly defaulted made the score say something untrue: on 2026-09-21 the
+        ''' 90-day figure was 89.8, and 19 of the 37 fallbacks behind it were pages nobody had
+        ''' configured yet.
+        '''
+        ''' **A list of the harmless ones, not of the harmful ones.** Anything not named here
+        ''' counts against the score, so a fallback type added later is treated as degradation
+        ''' until somebody decides otherwise. The other way round, a new kind of failure would be
+        ''' free until it was noticed, and the whole point of this number is noticing.
+        ''' </summary>
+        Private Const UnconfiguredList As String =
+            "('SQL_Fallback_DefaultBuilder', 'SQL_Fallback_UnsavedDefault', " &
+            "'SQL_Fallback_UsersAdminDefault', 'SQL_Fallback_CopiedFromTable')"
+
         Private Const RegistrationFilter As String =
             "(@RegistrationID IS NULL OR {0}.RegistrationID = @RegistrationID)"
 
@@ -830,7 +857,9 @@ Namespace SDC.Framework
             "WHERE e.LastSeen >= @Cutoff AND ISNULL(e.DeletedFlag, 0) = 0 " &
             "  AND " & Scoped("e") & ";" &
             vbCrLf &
-            "SELECT COUNT(*) AS FallbackCount " &
+            "SELECT " &
+            "  SUM(CASE WHEN f.FallbackType IN " & UnconfiguredList & " THEN 0 ELSE 1 END) AS FallbackCount, " &
+            "  SUM(CASE WHEN f.FallbackType IN " & UnconfiguredList & " THEN 1 ELSE 0 END) AS FallbackUnconfigured " &
             "FROM dbo.FW_FallbackUsageLog f " &
             "WHERE f.LoggedOn >= @Cutoff AND ISNULL(f.DeletedFlag, 0) = 0 " &
             "  AND " & Scoped("f") & ";" &

@@ -69,6 +69,23 @@ Namespace SDC.Framework
 
         Private ReadOnly activityPanel As Panel
         Private ReadOnly timingPanel As Panel
+
+        ''' <summary>
+        ''' Which page the timing panel is describing.
+        '''
+        ''' The panel showed the slowest page and nothing else, which was defensible while one page
+        ''' had ever been searched and misleading the moment four had: three pages were being
+        ''' recorded and had never once been on screen. A drop-down keeps the four figures that
+        ''' matter - database and whole find, average and worst - for whichever page is asked about,
+        ''' rather than reducing every page to one row to fit them all in.
+        '''
+        ''' It sits beside the heading rather than inside the panel, so refilling the rows does not
+        ''' destroy the control that chose them.
+        ''' </summary>
+        Private ReadOnly timingPageCombo As ComboBox
+
+        ''' <summary>Set while the combo is being repopulated, so doing so does not redraw.</summary>
+        Private timingComboFilling As Boolean
         Private ReadOnly attentionGrid As DataGridView
         Private ReadOnly loginGrid As DataGridView
 
@@ -118,6 +135,7 @@ Namespace SDC.Framework
             fallbacksTile = New Panel()
             activityPanel = New Panel()
             timingPanel = New Panel()
+            timingPageCombo = New ComboBox()
             attentionGrid = New DataGridView()
             loginGrid = New DataGridView()
 
@@ -227,7 +245,12 @@ Namespace SDC.Framework
             periodCombo.Location = New Point(PageWidth - 430, 22)
             periodCombo.Size = New Size(160, 28)
             periodCombo.Items.AddRange(New Object() {"Last 24 hours", "Last 7 days", "Last 30 days", "Last 90 days"})
-            periodCombo.SelectedIndex = 1
+
+            ' Opens on the last 24 hours. It was 7 days, on the reasoning that a week is enough to
+            ' show a trend - but the first question anybody asks this page is "is it all right
+            ' now", and a week-wide window answers a different one. A week of history is one click
+            ' away; today is what the page is for.
+            periodCombo.SelectedIndex = 0
 
             ' The drop-down never opens wider than its box - the rule ComboWidth.Narrow applies
             ' everywhere else, said by hand here because this page builds its own controls.
@@ -365,6 +388,18 @@ Namespace SDC.Framework
             }
             Controls.Add(timingHeading)
 
+            timingPageCombo.DropDownStyle = ComboBoxStyle.DropDownList
+            timingPageCombo.Font = New Font("Segoe UI", 9.0F)
+            timingPageCombo.Location = New Point(PageWidth - 204, 383)
+            timingPageCombo.Size = New Size(180, 22)
+
+            ' The drop-down never opens wider than its box - the rule ComboWidth.Narrow applies
+            ' everywhere else, said by hand here because this page builds its own controls.
+            timingPageCombo.DropDownWidth = timingPageCombo.Width
+            timingPageCombo.Visible = False
+            Controls.Add(timingPageCombo)
+            AddHandler timingPageCombo.SelectedIndexChanged, AddressOf TimingPageCombo_Changed
+
             timingPanel.Location = New Point(740, 410)
             timingPanel.Size = New Size(PageWidth - 764, 92)
             timingPanel.BackColor = Color.White
@@ -387,6 +422,10 @@ Namespace SDC.Framework
             timingPanel.Controls.Clear()
 
             If snapshot Is Nothing OrElse snapshot.SearchTimings.Count = 0 Then
+                ' Nothing to choose between. Left visible it would offer last refresh's pages
+                ' against a panel saying there were none.
+                timingPageCombo.Visible = False
+
                 timingPanel.Controls.Add(New Label() With {
                     .Text = "No searches recorded in this period.",
                     .Font = New Font("Segoe UI", 9.5F, FontStyle.Italic),
@@ -398,11 +437,67 @@ Namespace SDC.Framework
                 Return
             End If
 
-            Dim slowest = snapshot.SearchTimings(0)
+            ' The page that was showing, if it is still in the window. Somebody who picked
+            ' Registration and pressed Refresh should still be looking at Registration.
+            Dim wanted = Convert.ToString(timingPageCombo.SelectedItem, CultureInfo.InvariantCulture)
+
+            timingComboFilling = True
+            Try
+                timingPageCombo.Items.Clear()
+
+                ' Every page together, first. It is the question somebody opening this panel asks
+                ' before any other - is searching all right - and a page name at the top answered
+                ' a narrower one while looking like the answer to the broad one.
+                timingPageCombo.Items.Add(AllPages)
+
+                For Each timing In snapshot.SearchTimings
+                    timingPageCombo.Items.Add(timing.PageName)
+                Next
+
+                Dim index = timingPageCombo.Items.IndexOf(wanted)
+
+                ' Falls back to the first, which the query orders slowest first. A page nobody has
+                ' chosen should be the one worth looking at.
+                timingPageCombo.SelectedIndex = If(index >= 0, index, 0)
+            Finally
+                timingComboFilling = False
+            End Try
+
+            ' Shown as soon as there is a page to compare against the everything entry.
+            timingPageCombo.Visible = snapshot.SearchTimings.Count > 0
+
             Dim totalSearches = 0
             For Each timing In snapshot.SearchTimings
                 totalSearches += timing.Searches
             Next
+
+            DrawTiming(totalSearches)
+        End Sub
+
+        ''' <summary>Redraws the rows for whichever page is chosen, leaving the combo alone.</summary>
+        Private Sub TimingPageCombo_Changed(sender As Object, e As EventArgs)
+            If timingComboFilling Then Return
+            If snapshot Is Nothing OrElse snapshot.SearchTimings.Count = 0 Then Return
+
+            Dim totalSearches = 0
+            For Each timing In snapshot.SearchTimings
+                totalSearches += timing.Searches
+            Next
+
+            DrawTiming(totalSearches)
+        End Sub
+
+        ''' <summary>
+        ''' The four figures for the chosen page: database and whole find, average and worst.
+        '''
+        ''' The worst case is on the panel and not only the average, because an average that looks
+        ''' acceptable while one Find in twenty takes four seconds is exactly the complaint this
+        ''' exists to catch.
+        ''' </summary>
+        Private Sub DrawTiming(totalSearches As Integer)
+            timingPanel.Controls.Clear()
+
+            Dim chosen = ChosenTiming()
 
             ' No verdict line. There was one - "not the database, the time is client-side" - and it
             ' came out on 2026-09-20 for two reasons. The two figures below already say which half
@@ -421,16 +516,16 @@ Namespace SDC.Framework
 
             ' Labelled once, across the top. Repeating "average" and "slowest" on every row is
             ' noise when the numbers already line up under their heading.
-            AddTimingRow(slowest.PageName, "average", "slowest", 28, FontStyle.Regular, MutedColour)
+            AddTimingRow(If(timingPageCombo.Visible, String.Empty, chosen.PageName), "average", "slowest", 28, FontStyle.Regular, MutedColour)
 
             AddTimingRow("database",
-                         slowest.DbAverage.ToString("0", CultureInfo.InvariantCulture) & " ms",
-                         slowest.DbMax.ToString("N0", CultureInfo.CurrentCulture) & " ms",
+                         chosen.DbAverage.ToString("0", CultureInfo.InvariantCulture) & " ms",
+                         chosen.DbMax.ToString("N0", CultureInfo.CurrentCulture) & " ms",
                          46, FontStyle.Regular, HeadingColour)
 
             AddTimingRow("whole find",
-                         slowest.PerceivedAverage.ToString("0", CultureInfo.InvariantCulture) & " ms",
-                         slowest.PerceivedMax.ToString("N0", CultureInfo.CurrentCulture) & " ms",
+                         chosen.PerceivedAverage.ToString("0", CultureInfo.InvariantCulture) & " ms",
+                         chosen.PerceivedMax.ToString("N0", CultureInfo.CurrentCulture) & " ms",
                          64, FontStyle.Regular, HeadingColour)
         End Sub
 
@@ -439,6 +534,46 @@ Namespace SDC.Framework
         ''' their heading, so a column of numbers reads down rather than being re-labelled on every
         ''' line.
         ''' </summary>
+        ''' <summary>The entry that means every page at once.</summary>
+        Private Const AllPages As String = "All pages"
+
+        ''' <summary>
+        ''' The figures for whatever is chosen, including the everything entry.
+        '''
+        ''' The averages are weighted by how many searches each page contributed, not averaged
+        ''' across pages. A page searched once at 3 seconds and a page searched a hundred times at
+        ''' 50ms are not "1.5 seconds on average" to anybody who used the application.
+        '''
+        ''' The worst case is the worst anywhere, not an average of the worsts, because the point
+        ''' of a worst case is that it happened to somebody.
+        ''' </summary>
+        Private Function ChosenTiming() As HealthDataAccess.SearchTiming
+            Dim index = timingPageCombo.SelectedIndex
+
+            If index > 0 AndAlso index - 1 < snapshot.SearchTimings.Count Then
+                Return snapshot.SearchTimings(index - 1)
+            End If
+
+            Dim every As New HealthDataAccess.SearchTiming With {.PageName = AllPages}
+            Dim dbWeighted As Double = 0
+            Dim findWeighted As Double = 0
+
+            For Each timing In snapshot.SearchTimings
+                every.Searches += timing.Searches
+                dbWeighted += timing.DbAverage * timing.Searches
+                findWeighted += timing.PerceivedAverage * timing.Searches
+                every.DbMax = Math.Max(every.DbMax, timing.DbMax)
+                every.PerceivedMax = Math.Max(every.PerceivedMax, timing.PerceivedMax)
+            Next
+
+            If every.Searches > 0 Then
+                every.DbAverage = dbWeighted / every.Searches
+                every.PerceivedAverage = findWeighted / every.Searches
+            End If
+
+            Return every
+        End Function
+
         Private Sub AddTimingRow(caption As String,
                                  average As String,
                                  slowest As String,
@@ -1173,15 +1308,24 @@ Namespace SDC.Framework
                     "unacknowledged " & snapshot.FaultsUnacknowledged.ToString("N0", CultureInfo.CurrentCulture),
                     If(snapshot.FaultsUnacknowledged > 0, Color.FromArgb(200, 55, 50), Color.FromArgb(35, 160, 85)))
 
+            ' The number is the degraded ones only, because that is what the score counts and a
+            ' tile disagreeing with the needle beside it is worse than no tile. Pages that have
+            ' simply never been configured are said after it, in words, because they are worth
+            ' knowing about and are not ill health.
+            Dim unconfigured = If(snapshot.FallbackUnconfigured > 0,
+                                  ", " & snapshot.FallbackUnconfigured.ToString("N0", CultureInfo.CurrentCulture) &
+                                  " unconfigured page" & If(snapshot.FallbackUnconfigured = 1, "", "s"),
+                                  String.Empty)
+
             If snapshot.AuditedOperations > 0 Then
                 SetTile(fallbacksTile,
                         snapshot.FallbackCount.ToString("N0", CultureInfo.CurrentCulture),
-                        "per 100 operations " & snapshot.FallbackRatePer100.ToString("0.0", CultureInfo.InvariantCulture),
+                        "per 100 operations " & snapshot.FallbackRatePer100.ToString("0.0", CultureInfo.InvariantCulture) & unconfigured,
                         If(snapshot.FallbackRatePer100 > 5, Color.FromArgb(232, 160, 25), HeadingColour))
             Else
                 SetTile(fallbacksTile,
                         snapshot.FallbackCount.ToString("N0", CultureInfo.CurrentCulture),
-                        "no audited operations to compare against",
+                        "no audited operations to compare against" & unconfigured,
                         MutedColour)
             End If
         End Sub

@@ -2643,7 +2643,8 @@ Namespace SDC.Framework
                                       activeSession.Value.AllowUpdateMyProfile,
                                       activeSession.Value.HomeGraphic,
                                       activeSession.Value.TimeZoneName,
-                                      activeSession.Value.MessageRetrievalMinutes)
+                                      activeSession.Value.MessageRetrievalMinutes,
+                                      activeSession.Value.MaxRecordsWithQBE)
             MenuFormInitializer.Configure(Me, currentUser, True)
             UpdateRoleSelectionTile()
         End Sub

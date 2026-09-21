@@ -253,6 +253,10 @@ Namespace SDC.Framework
                 ' buckets are keyed by registration rather than by user, which would have credited
                 ' one person with another's searches.
                 SessionTracking.StampActivity(conn)
+
+                ' The other background writer. Between them they cover any system somebody is
+                ' using; SessionTracking.Begin covers the one nobody has touched since it restarted.
+                OutageJournal.FlushAll(conn)
             End Using
         End Sub
 

@@ -163,7 +163,11 @@ Namespace SDC.Framework
             Dim registrationTimeZone = If(registrationRecord Is Nothing, String.Empty, If(registrationRecord.TimeZoneName, String.Empty))
             Dim employeeTimeZone = DataAccess.GetEmployeeTimeZoneName(user.UserId)
             If employeeTimeZone <> String.Empty Then registrationTimeZone = employeeTimeZone
-            Dim maxRecordsNoQBE = DataAccess.GetMaxRecordsNoQBE(sessionRegistrationId)
+            ' Both caps together. Two settings on one row, and asking twice would be a round trip
+            ' bought for nothing.
+            Dim maxRecordsNoQBE As Integer
+            Dim maxRecordsWithQBE As Integer
+            DataAccess.GetRecordCaps(sessionRegistrationId, maxRecordsNoQBE, maxRecordsWithQBE)
             ' Off the same registration read as the Smarty keys above, rather than a query of its own.
             Dim messageRetrievalMinutes = If(registrationRecord Is Nothing OrElse Not registrationRecord.MessageRetrievalFrequency.HasValue,
                                              0, registrationRecord.MessageRetrievalFrequency.Value)
@@ -204,7 +208,8 @@ Namespace SDC.Framework
                                       allowUpdateMyProfile,
                                       homeGraphic,
                                       registrationTimeZone,
-                                      messageRetrievalMinutes)
+                                      messageRetrievalMinutes,
+                                      maxRecordsWithQBE)
 
             ' Recorded after the session is established rather than before, so the row carries the
             ' registration and role the person actually ended up in - a role prompt can change both

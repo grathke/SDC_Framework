@@ -424,10 +424,17 @@ Namespace SDC.Framework
                 ' for ever. This process starting is proof the earlier ones on this machine are
                 ' not running.
                 '
-                ' Before the login form, so a session opened a moment later is not caught by its
-                ' own sweep, and only this machine's rows: another server's open sessions may be
-                ' perfectly alive.
-                SessionTracking.CloseAbandonedSessions()
+                ' Off the startup path, like the schema sweep above and for the same reason. It
+                ' opens a connection, and on 2026-09-21 the database was down: that one call took
+                ' 71 seconds to time out, in front of the login screen, with nothing on screen to
+                ' say why. Nothing waits for this - it is housekeeping.
+                '
+                ' The comment that used to be here argued it had to run BEFORE the login form, so
+                ' that a session opened moments later was not caught by its own sweep. That was
+                ' wrong: the sweep already excludes its own process id, so it cannot reach this
+                ' process's session whenever it runs. Only this machine's rows either way -
+                ' another server's open sessions may be perfectly alive.
+                Task.Run(Sub() SessionTracking.CloseAbandonedSessions())
 
                 ' What is on the other end. A probe only - nothing acts on the answer yet.
                 ClientDevice.Probe()

@@ -96,11 +96,20 @@ Namespace SDC.Framework
                                 currentSessionId = Convert.ToInt32(inserted, CultureInfo.InvariantCulture)
                             End If
                         End Using
+
+                        ' Somebody signing in is the moment an outage is over and a person is
+                        ' back, and after a restart it is the first connection that succeeds -
+                        ' before any telemetry flush has had anything to write.
+                        OutageJournal.FlushAll(conn)
                     End Using
                 End SyncLock
 
             Catch ex As Exception
-                Telemetry.Error(ex, "SessionTracking.Begin", Telemetry.FaultOrigin.Swallowed)
+                If OutageJournal.IsUnreachable(ex) Then
+                    OutageJournal.Note("starting a session", ex)
+                Else
+                    Telemetry.Error(ex, "SessionTracking.Begin", Telemetry.FaultOrigin.Swallowed)
+                End If
             End Try
         End Sub
 
@@ -234,7 +243,15 @@ Namespace SDC.Framework
                 End Using
 
             Catch ex As Exception
-                Telemetry.Error(ex, "SessionTracking.CloseAbandonedSessions", Telemetry.FaultOrigin.Swallowed)
+                ' One or the other, never both. An unreachable database already becomes a single
+                ' resolved outage row; also reporting the raw SqlException put a second, unresolved
+                ' copy of the same event in Needs Attention, which is exactly the noise the journal
+                ' exists to replace. Anything else is a real fault and goes where faults go.
+                If OutageJournal.IsUnreachable(ex) Then
+                    OutageJournal.Note("closing abandoned sessions", ex)
+                Else
+                    Telemetry.Error(ex, "SessionTracking.CloseAbandonedSessions", Telemetry.FaultOrigin.Swallowed)
+                End If
             End Try
         End Sub
 

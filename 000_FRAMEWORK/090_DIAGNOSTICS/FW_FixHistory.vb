@@ -46,14 +46,14 @@ Namespace SDC.Framework
 
         Private Shared ReadOnly MutedColour As Color = Color.FromArgb(110, 118, 126)
 
-        ''' <summary>Every row, whether it held, whether it is selected.</summary>
+        ''' <summary>Every row, whatever became of it, selected or not.</summary>
         Private Shared ReadOnly TextColour As Color = Color.FromArgb(45, 48, 52)
 
         Public Sub New(days As Integer, registration As Integer)
             windowDays = days
             registrationId = registration
 
-            Text = "What Has Been Fixed"
+            Text = "History"
             StartPosition = FormStartPosition.CenterParent
             FormBorderStyle = FormBorderStyle.FixedDialog
             MaximizeBox = False
@@ -107,13 +107,13 @@ Namespace SDC.Framework
             ' A column rather than a colour. Whether a fix held was said in red, which is the one
             ' form that cannot be read aloud, cannot be searched for and is not available to
             ' everybody who has to read it.
-            grid.Columns.Add(NewColumn("Held", "Held?", 90))
+            grid.Columns.Add(NewColumn("Held", "Again?", 90))
             grid.Columns.Add(NewColumn("Resolution", "What was done", 230))
 
             Controls.Add(grid)
 
             Dim note As New Label() With {
-                .Text = "A row reading ""came back"" was fixed and did not hold. Its text is what was tried last time.",
+                .Text = "A row answering Yes has happened again since. Its text is what was done about it last time.",
                 .Font = New Font("Segoe UI", 8.5F, FontStyle.Italic),
                 .ForeColor = MutedColour,
                 .Location = New Point(20, DialogHeight - 54),
@@ -219,16 +219,27 @@ Namespace SDC.Framework
         End Sub
 
         ''' <summary>
-        ''' Whether the fix held, said rather than coloured.
+        ''' Whether it has happened again, said rather than coloured.
         '''
         ''' "Came back" is the entry worth finding in this window, and it used to be conveyed by
         ''' the row being red. A word survives a screenshot, a printer, a colour-blind reader and
         ''' somebody reading the screen out over the phone.
+        '''
+        ''' It read "held" until 2026-09-21, which was written for one kind of row and then asked
+        ''' to describe another. A fix holds; an outage that ended by itself never had a fix to
+        ''' hold, and "held" against it says something that is not true. Asking whether it happened
+        ''' again is the one question both kinds answer.
         ''' </summary>
         Private Shared Function HeldOrNot(line As HealthDataAccess.FixHistoryLine) As String
-            If line.RecurredAfterResolved Then Return "came back"
-            If Not line.StillResolved Then Return "open again"
-            Return "held"
+            ' Yes or No, because the header asks a question and those are its answers. It read
+            ' "came back" and "not again" first, which said the same thing at more length and made
+            ' the column scan like prose rather than like a column.
+            '
+            ' A row whose Resolved flag has been cleared without a recorded recurrence answers Yes
+            ' too. It is open again, whatever cleared it, and the question is whether it is back.
+            If line.RecurredAfterResolved OrElse Not line.StillResolved Then Return "Yes"
+
+            Return "No"
         End Function
 
         ''' <summary>
@@ -242,6 +253,12 @@ Namespace SDC.Framework
         Private Shared Function DecidedBy(line As HealthDataAccess.FixHistoryLine) As String
             If String.Equals(line.ResolvedSource, "Claude", StringComparison.OrdinalIgnoreCase) Then
                 Return "Code change"
+            End If
+
+            ' An outage that ended by itself. Nobody decided anything, and saying a person did
+            ' would be the one kind of wrong this column exists to prevent.
+            If String.Equals(line.ResolvedSource, "Recovered", StringComparison.OrdinalIgnoreCase) Then
+                Return "Recovered"
             End If
 
             If line.ResolvedByName <> String.Empty Then Return line.ResolvedByName

@@ -7,6 +7,12 @@
 # run-with-db.ps1 sets these variables before launching:
 #
 #   SDC_DB_PASSWORD           required - no default. Startup is blocked without it.
+#
+#   SDC_MAIL_HOST             optional - SMTP host for health alerts, e.g. smtp.zoho.com
+#   SDC_MAIL_PORT             optional - defaults to 587. Use 587 (STARTTLS), not 465.
+#   SDC_MAIL_USER             optional - the account mail is sent from, and its login
+#   SDC_MAIL_PASSWORD         optional - absent means no mail is sent, silently
+#   SDC_HEALTH_MAIL           optional - "off" silences mail even when the settings exist
 #   SDC_DB_SERVER             optional - defaults to BEELINK
 #   SDC_DB_USER               optional - defaults to sa
 #   SDC_DB_NAME               optional - defaults to WX_Framework

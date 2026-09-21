@@ -163,6 +163,15 @@ Namespace SDC.Framework
         Public Property MaxRecordsNoQBE As Integer
 
         ''' <summary>
+        ''' The cap once criteria have been entered, from FW_Registration.MaxRecordsWithQBE.
+        '''
+        ''' A separate setting because the two caps mean different things. Without criteria the cap
+        ''' says "this is the top of a longer list"; with them it says "your search was not narrow
+        ''' enough", and a handful there is infuriating to somebody who has just filtered.
+        ''' </summary>
+        Public Property MaxRecordsWithQBE As Integer
+
+        ''' <summary>
         ''' Minutes between new-message checks, as this registration set it. Zero means it has set
         ''' nothing, and the menu uses its own default.
         ''' </summary>
@@ -281,7 +290,8 @@ Namespace SDC.Framework
                                 Optional allowUpdateMyProfile As Boolean = False,
                                 Optional homeGraphic As String = "",
                                 Optional timeZoneName As String = "",
-                                Optional messageRetrievalMinutes As Integer = 0)
+                                Optional messageRetrievalMinutes As Integer = 0,
+                                Optional maxRecordsWithQBE As Integer = 200)
             If user Is Nothing Then
                 ClearSession()
                 Return
@@ -325,6 +335,7 @@ Namespace SDC.Framework
                 .CrudUpdateCaption = "Modify",
                 .CrudDeleteCaption = "Delete",
                 .MaxRecordsNoQBE = If(maxRecordsNoQBE > 0, maxRecordsNoQBE, 10),
+                .MaxRecordsWithQBE = If(maxRecordsWithQBE > 0, maxRecordsWithQBE, 200),
                 .MessageRetrievalMinutes = If(messageRetrievalMinutes > 0, messageRetrievalMinutes, 0),
                 .DateFormat = If(dateFormat, String.Empty).Trim(),
                 .TimeFormat = If(timeFormat, String.Empty).Trim(),

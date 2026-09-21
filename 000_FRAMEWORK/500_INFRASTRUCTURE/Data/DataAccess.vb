@@ -1,4 +1,4 @@
-﻿Option Strict On
+Option Strict On
 Option Explicit On
 
 Imports System
@@ -720,6 +720,11 @@ Namespace SDC.Framework
                 End Using
             Catch ex As Exception
                 errorMessage = "Login failed: " & ex.Message
+                ' Recorded locally when the server could not be reached, because the row below is
+                ' written to the database and that write will usually fail on this branch. The
+                ' journal will not.
+                If OutageJournal.IsUnreachable(ex) Then OutageJournal.Note("signing in", ex)
+
                 RecordLoginAttempt(emailInput, "DatabaseDown", 0, 0)
                 Return False
             End Try
@@ -6481,6 +6486,54 @@ Namespace SDC.Framework
             End Try
         End Sub
 
+        ''' <summary>
+        ''' Both row caps in one round trip.
+        '''
+        ''' Two settings, one query. GetMaxRecordsNoQBE already read this row at sign-in, and
+        ''' asking a second time for the column beside the one it fetched would be a round trip
+        ''' bought for nothing - a session of logging in and opening a few pages was measured at
+        ''' 110 of them, which is how the caches came to exist.
+        '''
+        ''' The defaults are the fallbacks, not the values: 10 without criteria and 200 with them,
+        ''' applied when the column is null, zero or unreadable. A registration that has never been
+        ''' asked has not decided anything.
+        ''' </summary>
+        Public Shared Sub GetRecordCaps(registrationId As Integer,
+                                        ByRef withoutCriteria As Integer,
+                                        ByRef withCriteria As Integer)
+            withoutCriteria = 10
+            withCriteria = 200
+
+            If registrationId <= 0 Then Return
+
+            Try
+                Using conn As New SqlConnection(ConnectionString)
+                    conn.Open()
+                    Using cmd As New SqlCommand(
+                        "SELECT TOP 1 ISNULL(MaxRecordsNoQBE, 10) AS NoQbe, " &
+                        "             ISNULL(MaxRecordsWithQBE, 200) AS WithQbe " &
+                        "FROM dbo.FW_Registration WHERE RegistrationID = @ID", conn)
+
+                        cmd.Parameters.AddWithValue("@ID", registrationId)
+
+                        Using reader = cmd.ExecuteReader()
+                            If Not reader.Read() Then Return
+
+                            Dim noQbe = Convert.ToInt32(reader("NoQbe"))
+                            Dim withQbe = Convert.ToInt32(reader("WithQbe"))
+
+                            If noQbe > 0 Then withoutCriteria = noQbe
+                            If withQbe > 0 Then withCriteria = withQbe
+                        End Using
+                    End Using
+                End Using
+
+            Catch ex As Exception
+                ' The defaults above stand. A browse page with no cap is far worse than one with a
+                ' cap somebody did not choose.
+                Telemetry.Error(ex, "DataAccess.GetRecordCaps", Telemetry.FaultOrigin.Swallowed)
+            End Try
+        End Sub
         Public Shared Function GetMaxRecordsNoQBE(registrationId As Integer) As Integer
             If registrationId <= 0 Then
                 Return 10
