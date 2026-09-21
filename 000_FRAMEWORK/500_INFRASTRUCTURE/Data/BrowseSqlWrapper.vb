@@ -93,9 +93,19 @@ Namespace SDC.Framework
         ''' Already-built predicate text, each referring to columns as q.[name] and carrying
         ''' parameter placeholders rather than values. This never sees a user's value.
         ''' </param>
+        ''' <param name="defaultOrderByColumn">
+        ''' The output column to order by when the page's SQL has no ORDER BY of its own, which is
+        ''' what makes a cap possible on a page that never asked for an order. An **output name**,
+        ''' not SQL: it is matched against the select list and quoted here, so a caller cannot put
+        ''' anything else into the ORDER BY through it. A name the query does not produce declines
+        ''' the wrap rather than being ignored - ordering by a column that is not there is a page
+        ''' that will not open, and silently dropping it brings back the arbitrary order the cap
+        ''' cannot be trusted on.
+        ''' </param>
         Public Function TryWrap(innerSql As String,
                                 topRows As Integer,
-                                predicates As IEnumerable(Of String)) As WrapResult
+                                predicates As IEnumerable(Of String),
+                                Optional defaultOrderByColumn As String = Nothing) As WrapResult
             Dim result As New WrapResult()
 
             Dim body = If(innerSql, String.Empty).Trim()
@@ -165,8 +175,22 @@ Namespace SDC.Framework
                 ' differ between runs of the same query. The old path is no better - it keeps the
                 ' first N of an arbitrary order - but it is at least the arbitrary order the page
                 ' has always had, and changing which rows appear is not an optimisation.
-                result.DeclineReason = "no ORDER BY, so TOP would not be deterministic"
-                Return result
+                '
+                ' So the caller may name a column to order by instead. Every browse query aliases
+                ' its key AS PK, which is what makes one answer fit the pages that have no ORDER BY.
+                If String.IsNullOrWhiteSpace(defaultOrderByColumn) Then
+                    result.DeclineReason = "no ORDER BY, so TOP would not be deterministic"
+                    Return result
+                End If
+
+                Dim wanted = defaultOrderByColumn.Trim()
+                Dim matched = names.FirstOrDefault(Function(n) String.Equals(n, wanted, StringComparison.OrdinalIgnoreCase))
+                If matched Is Nothing Then
+                    result.DeclineReason = "no ORDER BY, and " & wanted & " is not one of the selected columns"
+                    Return result
+                End If
+
+                outerOrderBy = InnerAlias & ".[" & matched & "]"
             End If
 
             Dim sql As New StringBuilder()

@@ -417,11 +417,14 @@ Restore points are written to `restore-points/`.
   parsed locally into a SQL predicate. Read it before building any of it, and before changing QBE
   filtering: section 8 records the three filter paths a change has to reach, which is not obvious
   from any one of them.
-- `QBE_SQL_PUSHDOWN_SPEC.md` — **proposed, nothing built.** QBE filters are applied in memory on
-  every page with SQL in `FW_Pages`: the page SQL runs without the criteria, the whole table
-  crosses the wire, and the row cap is applied last. Read it before changing
-  `GetBrowseRowsByRegistration`, the QBE filter path or the row cap — section 4 is why wrapping
-  the page SQL is harder than it looks, and section 6 is why it must not be done in one pass.
+- `QBE_SQL_PUSHDOWN_SPEC.md` — **built 2026-09-21.** The criteria, the deleted state and the row
+  cap are applied by SQL Server rather than after the fetch: `GetBrowseRowsByRegistration` puts a
+  page's own SQL inside a wrapper, and the in-memory deleted, registration and QBE steps are
+  skipped when it does. A page whose SQL cannot be wrapped with confidence declines, runs exactly
+  the old path, and writes a `FW_FallbackUsageLog` row. Read it before changing
+  `GetBrowseRowsByRegistration`, the QBE filter path or the row cap — section 12 is what was built
+  and measured, section 4 is why wrapping the page SQL is harder than it looks, and section 4a is
+  why a filter value must be a typed parameter rather than text.
 - `PAGE_GENERATION_SIMPLIFICATION.md` — **proposed, not built.** Why a generated `_B` is almost
   entirely boilerplate, and what follows from that: the three duplicated handlers belong in
   `FW_Base_B`, and a browse page may not need to be a compiled class at all. Read it before

@@ -979,6 +979,367 @@ Namespace SDC.Framework
             End Using
         End Function
 
+        ''' <summary>
+        ''' A browse query rewritten so the criteria, the deleted state and the row cap are applied
+        ''' by SQL Server, or the reason it was left alone.
+        ''' </summary>
+        Private Class WrappedBrowseQuery
+            Public Property Sql As String = String.Empty
+            Public Property Parameters As New List(Of SqlParameter)()
+            Public Property DeclineReason As String = String.Empty
+
+            Public ReadOnly Property Wrapped As Boolean
+                Get
+                    Return Sql <> String.Empty
+                End Get
+            End Property
+
+            Public Shared Function Declined(reason As String) As WrappedBrowseQuery
+                Return New WrappedBrowseQuery With {.DeclineReason = reason}
+            End Function
+        End Class
+
+        ''' <summary>
+        ''' The column types a browse result produces, keyed by the SQL that produces it.
+        '''
+        ''' Types are needed before the query runs, to build a typed parameter rather than send a
+        ''' value as text and let the server parse it - which is where format and locale disagree,
+        ''' and the disagreement returns wrong rows with no error.
+        '''
+        ''' Filled from every fill rather than asked for: a page opens with no criteria, and that
+        ''' fill already carries the exact types for that SQL. By the time somebody types a
+        ''' criterion the answer is here, so the common path costs no round trip at all. Only a
+        ''' filtered search against SQL that has never been run pays a SchemaOnly call, once.
+        ''' </summary>
+        Private Shared ReadOnly browseResultTypes As New Dictionary(Of String, Dictionary(Of String, Type))(StringComparer.Ordinal)
+        Private Shared ReadOnly browseResultTypesLock As New Object()
+
+        ''' <summary>
+        ''' Which pages declined to wrap, so the log records each reason once rather than once per
+        ''' refresh.
+        '''
+        ''' A decline happens on every refresh of a page whose SQL cannot be wrapped, and a row per
+        ''' refresh would put a write round trip on exactly the path this change exists to shorten -
+        ''' while burying the fact in thousands of identical rows. Once per table and reason per run
+        ''' is what makes the opt-out visible, which is all the log is for.
+        ''' </summary>
+        Private Shared ReadOnly browseDeclinesLogged As New HashSet(Of String)(StringComparer.OrdinalIgnoreCase)
+
+        Private Shared Sub RememberBrowseResultTypes(effectiveSql As String, table As DataTable)
+            If String.IsNullOrWhiteSpace(effectiveSql) OrElse table Is Nothing OrElse table.Columns Is Nothing Then Return
+            If table.Columns.Count = 0 Then Return
+
+            Dim types As New Dictionary(Of String, Type)(StringComparer.OrdinalIgnoreCase)
+            For Each column As DataColumn In table.Columns
+                If column Is Nothing OrElse String.IsNullOrWhiteSpace(column.ColumnName) Then Continue For
+                types(column.ColumnName) = column.DataType
+            Next
+
+            SyncLock browseResultTypesLock
+                browseResultTypes(effectiveSql) = types
+            End SyncLock
+        End Sub
+
+        Private Shared Function GetBrowseResultTypes(effectiveSql As String) As Dictionary(Of String, Type)
+            If String.IsNullOrWhiteSpace(effectiveSql) Then Return Nothing
+
+            SyncLock browseResultTypesLock
+                Dim cached As Dictionary(Of String, Type) = Nothing
+                If browseResultTypes.TryGetValue(effectiveSql, cached) Then Return cached
+            End SyncLock
+
+            ' Never run before, and a criterion is waiting. One SchemaOnly call, no rows.
+            Dim schema = GetSchemaFromSelectSql(effectiveSql, 0)
+            If schema Is Nothing OrElse schema.Columns Is Nothing OrElse schema.Columns.Count = 0 Then
+                Return Nothing
+            End If
+
+            RememberBrowseResultTypes(effectiveSql, schema)
+
+            SyncLock browseResultTypesLock
+                Dim cached As Dictionary(Of String, Type) = Nothing
+                If browseResultTypes.TryGetValue(effectiveSql, cached) Then Return cached
+            End SyncLock
+
+            Return Nothing
+        End Function
+
+        Private Shared Sub LogBrowseWrapDecline(sourceTableName As String, reason As String)
+            Dim page = If(String.IsNullOrWhiteSpace(sourceTableName), "(unknown table)", sourceTableName.Trim())
+            Dim key = page & "|" & reason
+
+            SyncLock browseResultTypesLock
+                If Not browseDeclinesLogged.Add(key) Then Return
+            End SyncLock
+
+            LogFallbackUsage("Browse_SqlPushdown_Declined", reason, page)
+        End Sub
+
+        ''' <summary>
+        ''' The predicate that decides the deleted state in SQL, as three cases settled in
+        ''' QBE_SQL_PUSHDOWN_SPEC.md section 10.
+        '''
+        ''' 1. The result selects DeletedFlag, so the answer is already in the derived table.
+        ''' 2. It does not, but the base table has the column. The key is matched back to the table
+        '''    with NOT EXISTS - a row whose key finds no match must survive as not-deleted, which
+        '''    is what the in-memory hydration does today, and an inner join would silently drop it.
+        '''    NOT EXISTS rather than the LEFT JOIN the spec describes: identical semantics, no risk
+        '''    of a join multiplying rows, and the wrapper takes predicates and has no join slot.
+        ''' 3. The base table has no DeletedFlag. No predicate, and Show Deleted is already
+        '''    unavailable on those pages.
+        '''
+        ''' An empty string is a real answer, meaning case 3. Nothing is added, exactly as
+        ''' ApplyBrowseDeletedFilterFallback returns its rows untouched.
+        ''' </summary>
+        Private Shared Function BuildBrowseDeletedPredicate(outputNames As List(Of String),
+                                                           sourceTableName As String,
+                                                           showDeletedOnly As Boolean) As String
+            Dim wanted = If(showDeletedOnly, "1", "0")
+            Dim alias_ = BrowseSqlWrapper.InnerAlias
+
+            If outputNames IsNot Nothing AndAlso
+               outputNames.Any(Function(n) String.Equals(n, "DeletedFlag", StringComparison.OrdinalIgnoreCase)) Then
+                Return "ISNULL(" & alias_ & ".[DeletedFlag], 0) = " & wanted
+            End If
+
+            Dim normalized = NormalizeTableName(sourceTableName)
+            If normalized = String.Empty OrElse Not IsSafeSqlIdentifier(normalized) Then Return String.Empty
+            If Not TableHasColumn(normalized, "DeletedFlag") Then Return String.Empty
+
+            Dim keyColumn = GetPrimaryKeyFieldName(normalized)
+            If String.IsNullOrWhiteSpace(keyColumn) OrElse Not IsSafeSqlIdentifier(keyColumn) Then Return String.Empty
+
+            ' PK first, then the table's own key name - the same resolution ResolveResultKeyColumn
+            ' uses, because every browse query aliases its key that way.
+            Dim resultKey As String = Nothing
+            If outputNames IsNot Nothing Then
+                resultKey = outputNames.FirstOrDefault(Function(n) String.Equals(n, "PK", StringComparison.OrdinalIgnoreCase))
+                If resultKey Is Nothing Then
+                    resultKey = outputNames.FirstOrDefault(Function(n) String.Equals(n, keyColumn, StringComparison.OrdinalIgnoreCase))
+                End If
+            End If
+
+            ' No key in the result means no way to ask the table about it. The hydration gives up
+            ' here too and returns the rows unfiltered, so this matches rather than inventing.
+            If resultKey Is Nothing Then Return String.Empty
+
+            Dim exists = "EXISTS (SELECT 1 FROM dbo.[" & normalized & "] AS d WHERE d.[" & keyColumn & "] = " &
+                         alias_ & ".[" & resultKey & "] AND ISNULL(d.[DeletedFlag], 0) = 1)"
+
+            Return If(showDeletedOnly, exists, "NOT " & exists)
+        End Function
+
+        ''' <summary>
+        ''' The QBE criteria as SQL predicates over the wrapper's q.[name] columns, with every value
+        ''' carried by a typed parameter.
+        '''
+        ''' **Anything it cannot build completely, it declines.** Not "drop that one criterion" -
+        ''' a dropped criterion returns more rows than were asked for, which reads as everything
+        ''' having matched. Declining runs the old path instead, which behaves exactly as it does
+        ''' today right down to the message it shows for a date it cannot read.
+        '''
+        ''' The operator itself is not decided here. ResolveTextComparison and QbeDateBounds own
+        ''' what an operator means, and they are the same two the in-memory path and the Users page
+        ''' already call, so the three cannot drift apart on semantics.
+        ''' </summary>
+        Private Shared Function TryBuildBrowseSqlPredicates(filters As Dictionary(Of String, String),
+                                                           outputNames As List(Of String),
+                                                           types As Dictionary(Of String, Type),
+                                                           predicates As List(Of String),
+                                                           parameters As List(Of SqlParameter),
+                                                           ByRef declineReason As String) As Boolean
+            Dim alias_ = BrowseSqlWrapper.InnerAlias
+            Dim nextParameter = 0
+
+            For Each kvp In filters
+                Dim rawKey = If(kvp.Key, String.Empty).Trim()
+                Dim rawValue = If(kvp.Value, String.Empty).Trim()
+                If rawValue = String.Empty Then Continue For
+
+                Dim fieldName = rawKey
+                Dim comparisonOperator As QbeComparisonOperator = QbeComparisonOperator.EqualsTo
+
+                If rawKey.Contains("|") Then
+                    Dim pieces = rawKey.Split("|"c)
+                    fieldName = pieces(0)
+                    If pieces.Length > 1 Then
+                        [Enum].TryParse(pieces(1), True, comparisonOperator)
+                    End If
+                End If
+
+                ' The name is taken from the select list rather than from the key, so nothing a
+                ' caller supplies reaches the SQL as an identifier. A criterion naming a column the
+                ' result does not have is skipped, which is what the in-memory path does too.
+                Dim column = outputNames.FirstOrDefault(Function(n) String.Equals(n, fieldName, StringComparison.OrdinalIgnoreCase))
+                If column Is Nothing Then Continue For
+
+                Dim columnType As Type = Nothing
+                If types Is Nothing OrElse Not types.TryGetValue(column, columnType) OrElse columnType Is Nothing Then
+                    declineReason = "the type of " & column & " is not known"
+                    Return False
+                End If
+
+                Dim quoted = alias_ & ".[" & column.Replace("]", "]]") & "]"
+
+                If columnType Is GetType(Boolean) Then
+                    Dim parsedBool As Boolean
+                    If Not TryParseBooleanFilter(rawValue, parsedBool) Then
+                        declineReason = column & " could not be read as a yes or no"
+                        Return False
+                    End If
+
+                    Dim name = "@qbe" & nextParameter.ToString(CultureInfo.InvariantCulture)
+                    nextParameter += 1
+                    predicates.Add(quoted & " " & GetSqlOperator(comparisonOperator, QbeFieldKind.BooleanField) & " " & name)
+                    parameters.Add(New SqlParameter(name, SqlDbType.Bit) With {.Value = parsedBool})
+                    Continue For
+                End If
+
+                If IsNumericBrowseType(columnType) Then
+                    Dim name = "@qbe" & nextParameter.ToString(CultureInfo.InvariantCulture)
+                    nextParameter += 1
+
+                    Dim parameter As SqlParameter = Nothing
+                    If columnType Is GetType(Int16) OrElse columnType Is GetType(Int32) OrElse columnType Is GetType(Int64) Then
+                        Dim whole As Long
+                        If Not Long.TryParse(rawValue, Globalization.NumberStyles.Integer, CultureInfo.InvariantCulture, whole) Then
+                            declineReason = column & " could not be read as a whole number"
+                            Return False
+                        End If
+                        parameter = New SqlParameter(name, SqlDbType.BigInt) With {.Value = whole}
+                    Else
+                        Dim fraction As Decimal
+                        If Not Decimal.TryParse(rawValue, Globalization.NumberStyles.Number, CultureInfo.InvariantCulture, fraction) Then
+                            declineReason = column & " could not be read as a number"
+                            Return False
+                        End If
+                        parameter = New SqlParameter(name, SqlDbType.Decimal) With {.Value = fraction, .Precision = 29, .Scale = 9}
+                    End If
+
+                    predicates.Add(quoted & " " & GetSqlOperator(comparisonOperator, QbeFieldKind.NumericField) & " " & name)
+                    parameters.Add(parameter)
+                    Continue For
+                End If
+
+                If columnType Is GetType(Date) Then
+                    Dim chosen As Date
+                    If Not QbeDateBounds.TryParseFilterValue(rawValue, chosen) Then
+                        ' Declined rather than answered. The old path says so in a message that
+                        ' names the field and tells the user to pick from the calendar, and
+                        ' running it is how that message still gets shown.
+                        declineReason = column & " could not be read as a date"
+                        Return False
+                    End If
+
+                    Dim limits = QbeDateBounds.Resolve(comparisonOperator, chosen)
+                    Dim sides As New List(Of String)()
+
+                    If limits.Lower.HasValue Then
+                        Dim name = "@qbe" & nextParameter.ToString(CultureInfo.InvariantCulture)
+                        nextParameter += 1
+                        sides.Add(quoted & If(limits.Excluded, " < ", " >= ") & name)
+                        parameters.Add(New SqlParameter(name, SqlDbType.DateTime2) With {.Value = limits.Lower.Value})
+                    End If
+
+                    If limits.Upper.HasValue Then
+                        Dim name = "@qbe" & nextParameter.ToString(CultureInfo.InvariantCulture)
+                        nextParameter += 1
+                        sides.Add(quoted & If(limits.Excluded, " >= ", " < ") & name)
+                        parameters.Add(New SqlParameter(name, SqlDbType.DateTime2) With {.Value = limits.Upper.Value})
+                    End If
+
+                    If sides.Count = 0 Then Continue For
+
+                    predicates.Add("(" & String.Join(If(limits.Excluded, " OR ", " AND "), sides) & ")")
+                    Continue For
+                End If
+
+                ' Text. A mid-string wildcard is not refused here as it is on the in-memory path -
+                ' SQL Server is happy with Gl%nn, and that refusal exists only because a DataView
+                ' filter throws on it.
+                Dim comparison = ResolveTextComparison(rawValue, comparisonOperator)
+                Dim textName = "@qbe" & nextParameter.ToString(CultureInfo.InvariantCulture)
+                nextParameter += 1
+
+                Select Case comparison.SqlOperator
+                    Case "LIKE" : predicates.Add(quoted & " LIKE " & textName)
+                    Case "NOT LIKE" : predicates.Add("NOT (" & quoted & " LIKE " & textName & ")")
+                    Case "<>" : predicates.Add(quoted & " <> " & textName)
+                    Case Else : predicates.Add(quoted & " = " & textName)
+                End Select
+
+                parameters.Add(New SqlParameter(textName, SqlDbType.NVarChar, -1) With {.Value = comparison.Pattern})
+            Next
+
+            Return True
+        End Function
+
+        Private Shared Function IsNumericBrowseType(candidate As Type) As Boolean
+            Return candidate Is GetType(Int16) OrElse candidate Is GetType(Int32) OrElse
+                   candidate Is GetType(Int64) OrElse candidate Is GetType(Single) OrElse
+                   candidate Is GetType(Double) OrElse candidate Is GetType(Decimal)
+        End Function
+
+        ''' <summary>
+        ''' Decides whether this browse query can be answered by SQL Server instead of by fetching
+        ''' the table and filtering it here, and builds the statement if it can.
+        '''
+        ''' Every reason to decline is checked before anything runs, on the SQL that is about to be
+        ''' executed rather than on what FW_Pages holds - a page's SQL can be overridden in code or
+        ''' typed into the box at runtime, so FW_Pages is not what runs.
+        ''' </summary>
+        Private Shared Function TryBuildWrappedBrowseQuery(effectiveSql As String,
+                                                          sourceTableName As String,
+                                                          filters As Dictionary(Of String, String),
+                                                          showDeletedOnly As Boolean,
+                                                          maxRows As Integer,
+                                                          registrationId As Integer,
+                                                          hasExplicitRegistrationPredicate As Boolean) As WrappedBrowseQuery
+            Dim outputNames As List(Of String) = Nothing
+            If Not BrowseSqlWrapper.TryReadOutputNames(effectiveSql, outputNames) Then
+                Return WrappedBrowseQuery.Declined("the select list could not be read")
+            End If
+
+            ' In-memory registration scoping removes rows after the fetch, and while rows are
+            ' removed afterwards no TOP can be correct. Judged by the same condition the old path
+            ' uses, with the select list standing in for the result's columns.
+            If registrationId > 0 AndAlso Not hasExplicitRegistrationPredicate AndAlso
+               IsRegistrationScopedTable(sourceTableName) AndAlso
+               outputNames.Any(Function(n) String.Equals(n, "RegistrationID", StringComparison.OrdinalIgnoreCase)) Then
+                Return WrappedBrowseQuery.Declined("the registration is scoped in memory, not in the SQL")
+            End If
+
+            Dim predicates As New List(Of String)()
+            Dim parameters As New List(Of SqlParameter)()
+
+            Dim deletedPredicate = BuildBrowseDeletedPredicate(outputNames, sourceTableName, showDeletedOnly)
+            If deletedPredicate <> String.Empty Then predicates.Add(deletedPredicate)
+
+            If filters IsNot Nothing AndAlso filters.Count > 0 Then
+                Dim types = GetBrowseResultTypes(effectiveSql)
+                If types Is Nothing Then
+                    Return WrappedBrowseQuery.Declined("the result's column types could not be read")
+                End If
+
+                Dim reason As String = Nothing
+                If Not TryBuildBrowseSqlPredicates(filters, outputNames, types, predicates, parameters, reason) Then
+                    Return WrappedBrowseQuery.Declined(If(reason, "a criterion could not be turned into SQL"))
+                End If
+            End If
+
+            ' One more than is shown. The caller knows the list is longer than the cap only because
+            ' it received one more row than it asked for, and LimitBrowseRows turns that back into
+            ' the cap and the message.
+            Dim topRows = If(maxRows > 0, maxRows + 1, 0)
+
+            Dim wrapped = BrowseSqlWrapper.TryWrap(effectiveSql, topRows, predicates, "PK")
+            If Not wrapped.Wrapped Then
+                Return WrappedBrowseQuery.Declined(wrapped.DeclineReason)
+            End If
+
+            Return New WrappedBrowseQuery With {.Sql = wrapped.Sql, .Parameters = parameters}
+        End Function
+
         Public Shared Function GetBrowseRowsByRegistration(registrationId As Integer,
                                                          Optional filters As Dictionary(Of String, String) = Nothing,
                                                          Optional baseSelectSql As String = Nothing,
@@ -1028,13 +1389,37 @@ Namespace SDC.Framework
                         effectiveSql = AddBrowseScopePredicate(effectiveSql, scopedPredicate)
                     End If
 
-                    Using cmd As New SqlCommand(effectiveSql, conn)
-                        If scopeUserId > 0 AndAlso effectiveSql.Contains("@UserID", StringComparison.OrdinalIgnoreCase) Then
+                    ' Can SQL Server answer this instead of us? Decided from the SQL about to run,
+                    ' never from FW_Pages - the page's SQL can be overridden in code or typed into
+                    ' the box at runtime, and what runs is what has to be understood.
+                    '
+                    ' When it can, the criteria, the deleted state and the row cap all go into the
+                    ' statement, and the three in-memory steps below are skipped. When it cannot,
+                    ' nothing is skipped and the old path runs exactly as it always has.
+                    Dim wrapped = TryBuildWrappedBrowseQuery(effectiveSql,
+                                                             sourceTableName,
+                                                             filters,
+                                                             showDeletedOnly,
+                                                             maxRows,
+                                                             registrationId,
+                                                             hasExplicitRegistrationPredicate)
+
+                    If Not wrapped.Wrapped Then
+                        LogBrowseWrapDecline(sourceTableName, wrapped.DeclineReason)
+                    End If
+
+                    Dim sqlToRun = If(wrapped.Wrapped, wrapped.Sql, effectiveSql)
+
+                    Using cmd As New SqlCommand(sqlToRun, conn)
+                        If scopeUserId > 0 AndAlso sqlToRun.Contains("@UserID", StringComparison.OrdinalIgnoreCase) Then
                             cmd.Parameters.AddWithValue("@UserID", scopeUserId)
                         End If
-                        If effectiveSql.Contains("@RegistrationID", StringComparison.OrdinalIgnoreCase) Then
+                        If sqlToRun.Contains("@RegistrationID", StringComparison.OrdinalIgnoreCase) Then
                             cmd.Parameters.AddWithValue("@RegistrationID", registrationId)
                         End If
+                        For Each parameter In wrapped.Parameters
+                            cmd.Parameters.Add(parameter)
+                        Next
                         Try
                             ' Timed, and the figure carried back on the table itself - the same way
                             ' BrowseRowsLimited already travels. This is the SQL alone: the caller
@@ -1055,14 +1440,36 @@ Namespace SDC.Framework
                             End If
                         Catch ex As Exception
                             ' The query that runs is not the query that was stored - the registration
-                            ' value is substituted into it and a scope predicate may have been
-                            ' appended - so "invalid column name" on its own leaves nothing to look
-                            ' at. The text that actually failed goes into the message.
+                            ' value is substituted into it, a scope predicate may have been
+                            ' appended, and it may have been wrapped - so "invalid column name" on
+                            ' its own leaves nothing to look at. The text that actually failed goes
+                            ' into the message.
+                            '
+                            ' A wrapped query that throws is not retried unwrapped. A decline is a
+                            ' decision made before running anything, on evidence; a catch-and-retry
+                            ' would be a guess made afterwards, it would hide the wrap that needs
+                            ' fixing, and it would catch a timeout or a dropped connection and
+                            ' answer it by running the expensive query a second time.
                             Throw New InvalidOperationException(
                                 ex.Message & Environment.NewLine & Environment.NewLine &
-                                "SQL THAT FAILED:" & Environment.NewLine & effectiveSql, ex)
+                                "SQL THAT FAILED:" & Environment.NewLine & sqlToRun, ex)
                         End Try
                     End Using
+
+                    ' Nothing below this line runs on a wrapped query. Leaving the deleted step in
+                    ' would re-run the hydration on the rows that came back - handing back the very
+                    ' round trip this exists to remove - and in Show Deleted mode it would filter
+                    ' twice and return nothing.
+                    If wrapped.Wrapped Then
+                        RememberBrowseResultTypes(effectiveSql, table)
+                        Return LimitBrowseRows(table, maxRows)
+                    End If
+
+                    ' The types this result produces, kept so a later search on the same SQL can
+                    ' build typed parameters without asking the server what shape its own columns
+                    ' are. A page opens unfiltered far more often than it is searched, so this is
+                    ' almost always already answered by the time it is needed.
+                    RememberBrowseResultTypes(effectiveSql, table)
 
                     ' Same rule as the predicate above: a result carrying RegistrationID is not
                     ' scoped when that column is the table's own key.

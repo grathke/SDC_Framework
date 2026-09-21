@@ -4695,8 +4695,14 @@ Namespace SDC.Framework
         ''' 130ms per Find, on every page, whatever the query took - Registration's SQL runs in 9ms
         ''' and its Find takes 146. A threshold set from a guess sat just above the thing it was
         ''' meant to find, which is the most useless place a threshold can be.
+        '''
+        ''' 15ms since 2026-09-21, for the same reason a second time. Pushing the QBE criteria and
+        ''' the row cap into SQL took a warm Employees refresh from 149-260ms to 60 - which is the
+        ''' threshold exactly, so the change made its own successes invisible and the log recorded
+        ''' three refreshes out of a session of them. A threshold that rises to meet an improvement
+        ''' stops measuring precisely when there is something to measure.
         ''' </summary>
-        Private Const PostQueryReportThresholdMs As Integer = 60
+        Private Const PostQueryReportThresholdMs As Integer = 15
 
         Private Sub RunFind()
             ' The part of a Find that happens before the refresh, which nothing has measured.

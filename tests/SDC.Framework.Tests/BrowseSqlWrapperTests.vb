@@ -38,6 +38,93 @@ Namespace SDC.Framework.Tests
             "WHERE E.[RegistrationID] = @RegistrationID" & vbCrLf &
             "ORDER BY E.[EmployeeID] ASC"
 
+        ' The other six browse pages, as FW_Pages held them on 2026-09-21. Read out of the database
+        ' rather than typed, because the whole point of the test above is that a tidied-up example
+        ' proves nothing - and two of these decline for reasons no example would have suggested.
+        '
+        ' Line breaks are normalised to vbCrLf. Nothing in the wrapper reads whitespace beyond
+        ' "is there any", so that changes no outcome.
+
+        ''' <summary>No ORDER BY at all, and a ? for the registration value.</summary>
+        Private Const HdIssuesSql As String =
+            "SELECT" & vbCrLf &
+            "    i.IssueID AS PK," & vbCrLf &
+            "    i.IssueNumber," & vbCrLf &
+            "    i.Subject," & vbCrLf &
+            "    c.CategoryName," & vbCrLf &
+            "    i.Status," & vbCrLf &
+            "    i.CreatedOn," & vbCrLf &
+            "    i.UpdatedOn," & vbCrLf &
+            "    i.ConversationEntryCount AS Messages" & vbCrLf &
+            "FROM dbo.FW_HD_Issues AS i" & vbCrLf &
+            "LEFT JOIN dbo.FW_HD_IssueCategories AS c" & vbCrLf &
+            "    ON c.CategoryID = i.CategoryID" & vbCrLf &
+            "WHERE i.RegistrationID = ?" & vbCrLf &
+            "  AND ISNULL(i.DeletedFlag, 0) = 0"
+
+        ''' <summary>Descending order, and two joins.</summary>
+        Private Const HdIssuesSupportSql As String =
+            "SELECT" & vbCrLf &
+            "    i.IssueID AS PK," & vbCrLf &
+            "    i.IssueNumber," & vbCrLf &
+            "    i.Subject," & vbCrLf &
+            "    c.CategoryName," & vbCrLf &
+            "    i.Status," & vbCrLf &
+            "    u.FirstLast AS RequesterName," & vbCrLf &
+            "    i.CreatedOn," & vbCrLf &
+            "    i.UpdatedOn" & vbCrLf &
+            "FROM dbo.FW_HD_Issues AS i" & vbCrLf &
+            "LEFT JOIN dbo.FW_HD_IssueCategories AS c" & vbCrLf &
+            "    ON c.CategoryID = i.CategoryID" & vbCrLf &
+            "LEFT JOIN dbo.FW_Users AS u" & vbCrLf &
+            "    ON u.UserID = i.ReporterUserID" & vbCrLf &
+            "    AND u.RegistrationID = i.RegistrationID" & vbCrLf &
+            "WHERE ISNULL(i.DeletedFlag, 0) = 0 AND i.RegistrationID = @RegistrationID" & vbCrLf &
+            "ORDER BY i.IssueID DESC"
+
+        ''' <summary>The one page that selects DeletedFlag, and orders by an output name.</summary>
+        Private Const PageGenerationSql As String =
+            "SELECT GeneratedPageID AS PK, RequestName, PageBaseName, BrowsePageName, " &
+            "MaintenancePageName, DeletedFlag FROM FW_GeneratedPages ORDER BY RequestName"
+
+        ''' <summary>Two columns, no ORDER BY, no alias prefixes, and a lower-case "as".</summary>
+        Private Const RegistrationSql As String =
+            "SELECT RegistrationID as PK, RegName FROM FW_Registration"
+
+        ''' <summary>Two ORDER BY terms, both needing rewriting.</summary>
+        Private Const SwitchUserSql As String =
+            "SELECT" & vbCrLf &
+            "    s.[SwitchUserID] AS PK," & vbCrLf &
+            "    s.[LastName]," & vbCrLf &
+            "    s.[FirstName]," & vbCrLf &
+            "    s.[UserName]," & vbCrLf &
+            "    s.[Email]," & vbCrLf &
+            "    s.[PersonType]," & vbCrLf &
+            "    s.[CompanyName]," & vbCrLf &
+            "    s.[IsActive]," & vbCrLf &
+            "    s.[UserId]" & vbCrLf &
+            "FROM dbo.[FW_SwitchUser] s" & vbCrLf &
+            "WHERE s.[RegistrationID] = @RegistrationID" & vbCrLf &
+            "ORDER BY s.[LastName] ASC, s.[FirstName] ASC"
+
+        ''' <summary>Ordered by a column from the joined table, not the base one.</summary>
+        Private Const UserAccessDiagnosticSql As String =
+            "SELECT" & vbCrLf &
+            "    U.[UserId] AS PK," & vbCrLf &
+            "    E.[FirstName]," & vbCrLf &
+            "    E.[LastName]," & vbCrLf &
+            "    E.[FirstLast]," & vbCrLf &
+            "    U.[UserName]" & vbCrLf &
+            "FROM dbo.[FW_Users] U" & vbCrLf &
+            "INNER JOIN dbo.[FW_Employees] E ON E.[UserId] = U.[UserId]" & vbCrLf &
+            "WHERE U.[RegistrationID] = @RegistrationID" & vbCrLf &
+            "ORDER BY E.[FirstLast] ASC"
+
+        ''' <summary>Three-part column names, which is what makes this one decline.</summary>
+        Private Const RolesSql As String =
+            "SELECT dbo.FW_Roles.ID AS PK, dbo.FW_Roles.DisplayOrder, dbo.FW_Roles.RoleName " &
+            "From dbo.FW_Roles WHERE RegistrationID = ? Order By DisplayOrder"
+
         <TestMethod>
         Public Sub TheRealEmployeesPage_Wraps()
             Dim result = BrowseSqlWrapper.TryWrap(EmployeesSql, 12, Nothing)
@@ -188,6 +275,133 @@ Namespace SDC.Framework.Tests
             Assert.IsFalse(BrowseSqlWrapper.TryWrap("SELECT TOP 10 E.[A] AS PK FROM dbo.[T] E ORDER BY E.[A]", 12, Nothing).Wrapped)
             Assert.IsFalse(BrowseSqlWrapper.TryWrap("", 12, Nothing).Wrapped)
             Assert.IsFalse(BrowseSqlWrapper.TryWrap(Nothing, 12, Nothing).Wrapped)
+        End Sub
+
+        <TestMethod>
+        Public Sub TheSupportQueue_KeepsItsDescendingOrder()
+            Dim result = BrowseSqlWrapper.TryWrap(HdIssuesSupportSql, 12, Nothing)
+
+            Assert.IsTrue(result.Wrapped, result.DeclineReason)
+            StringAssert.Contains(result.Sql, "ORDER BY q.[PK] DESC")
+        End Sub
+
+        <TestMethod>
+        Public Sub ThePageGenerationPage_SelectsDeletedFlagAndOrdersByAnOutputName()
+            Dim names As List(Of String) = Nothing
+            Assert.IsTrue(BrowseSqlWrapper.TryReadOutputNames(PageGenerationSql, names))
+            CollectionAssert.Contains(names, "DeletedFlag")
+
+            Dim result = BrowseSqlWrapper.TryWrap(PageGenerationSql, 12, {"ISNULL(q.[DeletedFlag], 0) = 0"})
+
+            Assert.IsTrue(result.Wrapped, result.DeclineReason)
+            StringAssert.Contains(result.Sql, "ORDER BY q.[RequestName]")
+            StringAssert.Contains(result.Sql, "WHERE ISNULL(q.[DeletedFlag], 0) = 0")
+        End Sub
+
+        <TestMethod>
+        Public Sub TheSwitchUserPage_RewritesBothOrderTerms()
+            Dim result = BrowseSqlWrapper.TryWrap(SwitchUserSql, 12, Nothing)
+
+            Assert.IsTrue(result.Wrapped, result.DeclineReason)
+            StringAssert.Contains(result.Sql, "ORDER BY q.[LastName] ASC, q.[FirstName] ASC")
+        End Sub
+
+        <TestMethod>
+        Public Sub TheAccessDiagnostic_OrdersByAColumnFromTheJoinedTable()
+            ' E.[FirstLast] is selected without an alias, so its output name is FirstLast and the
+            ' order has to find it through the select list rather than through the table prefix.
+            Dim result = BrowseSqlWrapper.TryWrap(UserAccessDiagnosticSql, 12, Nothing)
+
+            Assert.IsTrue(result.Wrapped, result.DeclineReason)
+            StringAssert.Contains(result.Sql, "ORDER BY q.[FirstLast] ASC")
+        End Sub
+
+        <TestMethod>
+        Public Sub TheRolesPage_Declines_BecauseItsColumnsAreThreePart()
+            ' dbo.FW_Roles.DisplayOrder. A select item is read as at most one dot, so the name this
+            ' produces cannot be determined and the whole wrap is refused. This is the page that
+            ' exercises the fallback, and it is why the fallback had to exist.
+            Dim result = BrowseSqlWrapper.TryWrap(RolesSql, 12, Nothing, "PK")
+
+            Assert.IsFalse(result.Wrapped)
+            StringAssert.Contains(result.DeclineReason, "select list")
+        End Sub
+
+        <TestMethod>
+        Public Sub APageWithNoOrderBy_TakesTheDefaultColumn()
+            ' FW_HD_Issues_B and FW_Registration_B both have no ORDER BY, and both alias their key
+            ' AS PK. Without this they could not be capped at all.
+            Dim issues = BrowseSqlWrapper.TryWrap(HdIssuesSql, 12, Nothing, "PK")
+            Assert.IsTrue(issues.Wrapped, issues.DeclineReason)
+            StringAssert.Contains(issues.Sql, "ORDER BY q.[PK]")
+
+            Dim registration = BrowseSqlWrapper.TryWrap(RegistrationSql, 12, Nothing, "PK")
+            Assert.IsTrue(registration.Wrapped, registration.DeclineReason)
+            StringAssert.Contains(registration.Sql, "ORDER BY q.[PK]")
+        End Sub
+
+        <TestMethod>
+        Public Sub ADefaultOrderColumnThatIsNotSelected_Declines()
+            ' Roles_B's code-level DefaultSelectSql aliases nothing AS PK. Ordering by a column that
+            ' is not in the derived table is a page that will not open, so it declines instead.
+            Dim sql = "SELECT ID, RegistrationID, RoleName, IsActive, UpdatedOn " &
+                      "FROM dbo.FW_Roles WHERE RegistrationID = @RegistrationID"
+            Dim result = BrowseSqlWrapper.TryWrap(sql, 12, Nothing, "PK")
+
+            Assert.IsFalse(result.Wrapped)
+            StringAssert.Contains(result.DeclineReason, "PK")
+        End Sub
+
+        <TestMethod>
+        Public Sub ADefaultOrderColumn_IsNeverRawSql()
+            ' The parameter is an output name, matched and quoted here. Anything else declines, so
+            ' it cannot become a way to put text into the ORDER BY.
+            Dim result = BrowseSqlWrapper.TryWrap(RegistrationSql, 12, Nothing, "PK DESC; DROP TABLE x")
+
+            Assert.IsFalse(result.Wrapped)
+        End Sub
+
+        <TestMethod>
+        Public Sub APageWithAnOrderBy_IgnoresTheDefaultColumn()
+            Dim result = BrowseSqlWrapper.TryWrap(SwitchUserSql, 12, Nothing, "PK")
+
+            Assert.IsTrue(result.Wrapped, result.DeclineReason)
+            StringAssert.Contains(result.Sql, "ORDER BY q.[LastName] ASC, q.[FirstName] ASC")
+        End Sub
+
+        ''' <summary>
+        ''' Prints what the wrapper makes of all eight pages, so the statements can be run against a
+        ''' real database and compared to what the pages return today. Asserts nothing about the
+        ''' text - the tests above do that - and exists because the semantic differences between a
+        ''' DataView filter and a WHERE clause will not be found by reading.
+        ''' </summary>
+        <TestMethod>
+        Public Sub PrintEveryRealPageWrapped()
+            Dim pages = New List(Of KeyValuePair(Of String, String)) From {
+                New KeyValuePair(Of String, String)("FW_Employees_B", EmployeesSql),
+                New KeyValuePair(Of String, String)("FW_HD_Issues_B", HdIssuesSql),
+                New KeyValuePair(Of String, String)("FW_HD_Issues_Support_B", HdIssuesSupportSql),
+                New KeyValuePair(Of String, String)("FW_PageGeneration_B", PageGenerationSql),
+                New KeyValuePair(Of String, String)("FW_Registration_B", RegistrationSql),
+                New KeyValuePair(Of String, String)("FW_SwitchUser_B", SwitchUserSql),
+                New KeyValuePair(Of String, String)("FW_UserAccessDiagnostic_B", UserAccessDiagnosticSql),
+                New KeyValuePair(Of String, String)("Roles_B", RolesSql)
+            }
+
+            Dim report As New System.Text.StringBuilder()
+
+            For Each page In pages
+                Dim result = BrowseSqlWrapper.TryWrap(page.Value, 12, Nothing, "PK")
+                report.AppendLine("===== " & page.Key & " =====")
+                If result.Wrapped Then
+                    report.AppendLine(result.Sql)
+                Else
+                    report.AppendLine("DECLINED: " & result.DeclineReason)
+                End If
+                report.AppendLine()
+            Next
+
+            Console.WriteLine(report.ToString())
         End Sub
 
         <TestMethod>
