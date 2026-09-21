@@ -246,8 +246,21 @@ Namespace SDC.Framework
         ''' browser closing and OnClose arriving, so the poll never counted and never would. A
         ''' safety net that cannot fire is worse than none: it reads like cover that is not there.
         '''
-        ''' The delay before OnClose is VirtualUI's own disconnect grace, and is a server setting
-        ''' rather than anything this can hurry along.
+        ''' The three and a half minutes above is history. Remeasured on 2026-09-21: a closed tab
+        ''' releases the process in about four and a half seconds, matching the Reconnection
+        ''' timeout of 5 seconds on the application profile. Why it was ever minutes is not
+        ''' recoverable - the profile value was not read at the time.
+        '''
+        ''' WHAT THAT COSTS THIS METHOD: the shutdown window IS the Reconnection timeout. Five
+        ''' seconds here, against the three-second timer below - under two seconds of margin
+        ''' before VirtualUI takes the process down itself. That is why the session end and the
+        ''' telemetry flush are the first two statements here rather than anything later. Do not
+        ''' add work in front of them.
+        '''
+        ''' AND THE BUDGET IS SET OUTSIDE THIS REPOSITORY. Someone editing the Thinfinity profile
+        ''' changes how long this method has, with nothing here to say so. At 0 the process dies
+        ''' before this runs at all and the session row is lost. If the profile is ever set below
+        ''' about four seconds, the timer below has to come down with it.
         '''
         ''' Application.Exit first, so forms close through their own Closing handlers and anything
         ''' with cleanup gets to run. The timer behind it is not defensive decoration: Exit will

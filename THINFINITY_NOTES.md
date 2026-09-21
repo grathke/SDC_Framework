@@ -617,12 +617,54 @@ pointer for the duration.
 
 ### Closing, and what does not detect it
 
-Closing the browser ends the process - but not at once.
-**Measured twice: 156 seconds, and about three and a half minutes**
-between the browser closing and `OnClose` arriving - so a fixed grace of roughly two to three
-minutes, not something variable. It is VirtualUI's own disconnect timeout; it appears in neither
-the server `.ini` nor anywhere the application can reach, so the profile editor is the only place
-left that might expose it.
+Closing the browser ends the process, and **it now takes about four and a half seconds.**
+Measured 2026-09-21 by closing the tab and watching `SDC.Framework.exe` leave Task Manager, with
+`OnClose` reaching the application in the same moment.
+
+**The setting is Reconnection timeout**, on the Application Profiles Editor's General tab, and the
+SDC Framework profile reads **5 seconds**. Cybele support described it on 2026-09-21: a grace in
+seconds that starts *after* the browser disconnects, during which the process is kept alive for
+the same session to be reconnected to. Zero terminates the application the moment the browser goes
+away; raise it to survive a page refresh or a brief network drop. Nothing else is involved -
+`Thinfinity.VirtualUI.Server.ini` holds no keepalive, ping or interval key at all.
+
+**The three-minute wait this section used to describe is gone, and why is not recoverable.**
+It was measured twice on 2026-09-11, at 156 seconds and at about three and a half minutes, and was
+taken to be a fixed grace nothing could reach. The profile value was never read at the time, so
+whether it then held a large number, or something else entirely was happening, cannot now be
+established. **Do not plan around three minutes.** A closed tab releases the exe in seconds, which
+is what a `CLOSE THE APP` wait should now assume.
+
+The consequence to keep in mind is that **the shutdown window is the Reconnection timeout, and
+nothing else.** It is five seconds here because that is what the profile says; change the profile
+and the application's entire budget for shutting down changes with it, silently, from outside the
+codebase. That is why `Program.VirtualUISessionClosed` writes the session end and flushes
+telemetry as its first two statements rather than relying on the message loop unwinding: the
+forced-exit timer behind them is set for three seconds, which at the current five leaves under two
+seconds of margin before VirtualUI takes the process down itself.
+
+**Never set it to 0.** Zero terminates the process the instant the browser disconnects, which is
+before the close handler can write anything - the `FW_Session` row would be left open and swept
+later as a `Crash`, and queued telemetry would be lost with it. Raising it is safe in both
+directions: it buys a user the chance to survive a page refresh, and it widens the shutdown budget
+at the same time. **Anything below about four seconds starts eating into the three-second timer
+and should be treated as a change to the application, not to the server.** Anything added to that handler has to fit in front
+of that, and the log bears it out - a closed tab on 2026-09-21 produced
+`VirtualUI session closed - exiting` and no line after it, neither `Main end` nor
+`forcing exit`.
+
+**Proved on 2026-09-21, not assumed.** A Thinfinity login closed by shutting the tab wrote
+`FW_Session` row 1041 with `EndReason = 'Disconnect'` and a connected time of 16 seconds - the
+write beat the kill, and the end is near-exact rather than late by minutes. `sql/151` used to warn
+that a Disconnect end was approximate; it no longer is.
+
+**There is no user-inactivity timer anywhere in VirtualUI.** A session lives as long as the browser
+tab holds it open, whether or not anybody is typing or clicking, and no tab of the profile editor
+offers such a setting. Sessions that drop while idle come from outside it: a reverse proxy, load
+balancer or WAF closing an idle WebSocket at 60-300 seconds, or an RDS session policy. Neither
+applies here. Nothing therefore has to keep a session awake, and a control that repaints to look
+busy would be the worst way to attempt it - every repaint streams pixels to the browser for no
+functional gain.
 
 `Active` does **not** help. It stayed `True` for that entire period with no browser attached, so a
 poll on it never counts down. A watch built on it was removed the same day: a safety net that
@@ -631,6 +673,23 @@ from `Start()`'s answer - it means "this process belongs to a session", not "som
 
 Exiting normally - Cancel at the login screen - leaves the tab showing VirtualUI's own
 "application closed" page. That is the server's behaviour; the profile can redirect instead.
+
+### Counting who is connected
+
+**There is no API for it.** Confirmed by Cybele support on 2026-09-21: the .NET SDK is scoped to
+the session its own process is running in - it exposes that session's information and lifecycle
+events rather than server-wide counters - and the published REST API covers administrative objects
+rather than live session counts. Their recommended approach is to count it in the application
+instead, since one VirtualUI session is one process: a row per session in your own database, or
+`Process.GetProcessesByName` on the server, which is accurate while one process means one session
+and covers only the local server under a load balancer.
+
+`FW_Session` is the first of those and `SessionTracking.CloseAbandonedSessions`, reconciling on
+`ProcessID`, is the second - both built before the question was asked. See
+`sql/151_create_session.sql`. The one piece of that advice deliberately not taken is a per-session
+heartbeat for robustness against crashes, and the same file says why: the process keeps running
+through the disconnect grace with no browser attached, the heartbeat keeps beating, and it proves
+nothing that `ProcessID` does not prove better.
 
 ### Sizing
 

@@ -13,12 +13,16 @@
 -- THE START IS EXACT. THE END IS NOT ALWAYS, and EndReason says which kind it got:
 --
 --   Exit         the person left properly - exact
---   Disconnect   VirtualUI's OnClose - late by the disconnect grace
+--   Disconnect   VirtualUI's OnClose - now near-exact, see below
 --   Crash        a row whose process is gone - last activity only
 --
--- DO NOT SUBTRACT A CONSTANT FOR Disconnect. The grace was measured at 156 seconds and at about
--- 210; it is not a constant, and shaving a fixed figure off would invent a precision the
--- measurement does not have. Record the reason and let the report say the end is approximate.
+-- DISCONNECT WAS ONCE LATE BY MINUTES AND NO LONGER IS. The grace was measured at 156 seconds and
+-- at about 210 on 2026-09-11, and this file said never to subtract a constant for it because it
+-- was not one. Remeasured on 2026-09-21: OnClose arrives as the tab closes, and the process is
+-- gone about four and a half seconds later - matching the Reconnection timeout of 5 seconds on
+-- the application profile, which is the setting nobody had read. Session 1041 then proved the end
+-- is written inside that window rather than lost to the kill. Still subtract nothing: there is no
+-- longer anything worth subtracting.
 --
 -- TWO DURATIONS, because the session end is the wrong measure of when somebody stopped:
 --
@@ -34,9 +38,11 @@
 -- every click.
 --
 -- NO HEARTBEAT. It is the classic round-trip multiplier - every user, every interval, for ever,
--- whether or not anything changed - and it would not even work: the process keeps running for
--- the three minutes of the disconnect grace with no browser attached, so the heartbeat keeps
--- beating.
+-- whether or not anything changed. Cybele support recommended one on 2026-09-21, for robustness
+-- against a crashed process; it is still declined, because reconciling on ProcessID answers the
+-- same question without the traffic. The original second reason - that a heartbeat would keep
+-- beating through a three-minute grace with no browser attached - no longer holds now the grace
+-- is five seconds, but the first reason is enough on its own.
 
 SET NOCOUNT ON;
 SET QUOTED_IDENTIFIER ON;
