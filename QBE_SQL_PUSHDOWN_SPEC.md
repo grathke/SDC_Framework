@@ -478,9 +478,22 @@ Browse refresh FW_Employees_B: 3373ms  fetch=3297 strip=8 bind=5 hide=2 fit=11 b
 **3.4 seconds to show eleven rows, 98% of it the fetch.** The same page on the desktop the same
 afternoon: 151-237ms. Everything that is not the fetch comes to 71ms and is irrelevant.
 
-One sample, and the first refresh of that session - first refreshes are always the worst, 833ms
-against 151ms on the desktop. A second and third open would say whether it settles. It has not
-been repeated yet.
+**Repeated, and it settles at about 900ms:**
+
+```
+13:29:38  3373ms  fetch=3297     <- first open of the session, cold
+13:37:04   917ms  fetch=827
+13:39:41   857ms  fetch=763
+13:39:51    64ms  fetch=34       <- FW_Registration_B, a small table
+```
+
+So 3.4 seconds was cold start and should not be quoted. **The steady figure is ~900ms to show
+eleven rows, 90% of it the fetch** - four to five times the desktop, through the path the
+application is delivered by.
+
+`FW_Registration_B` at 64ms is the control case: the same code, the same session, a small table,
+no problem. Nothing here is about the page, the grid or the session overhead. It is the row
+count, and only the row count.
 
 ### Two premises corrected by this measurement
 

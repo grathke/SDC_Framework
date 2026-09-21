@@ -770,12 +770,55 @@ outside it does nothing, and the session is stuck until a value is chosen — wi
 "I did not want this". In a desktop window the same list dismisses normally, which is what points
 at the relay rather than at the control.
 
-Only one combo in the codebase showed it, and that is the discriminating detail: the QBE lookup
-cell was the only one **opened in code**, by `DroppedDown = True` as its editor appeared. Every
-other combo is opened by the user clicking its arrow, and those behave. That line is gone, and the
-QBE list opens on its arrow like every other one.
+### Settled the same day, through the real server — not dev mode, and not one combo
 
-So the panel-and-`ListBox` replacement is **not** currently needed. Keep it in reserve for the day
-a combo opened normally misbehaves: a `ListBox` in a panel, shown and hidden by hand, inside the
-form's own window. It would want to be a shared control rather than a change per page — combos are
-everywhere, and `COMBO_CHECKLIST.md` asks for binding and validation to stay in shared patterns.
+The paragraphs above first blamed the QBE lookup cell being **opened in code** (`DroppedDown =
+True` as its editor appeared), on the reasoning that it was the only combo doing anything unusual.
+Wrong. Tested through `http://localhost:6580/` with `DevMode=False`:
+
+| Control | Wedges? | Why |
+|---|---|---|
+| QBE value cell (a `DataGridView` combo editor) | **yes** | native popup |
+| Layout drop-down on the browse toolbar | **yes** | native popup |
+| Columns manager | no | a checked list in a panel |
+| Ribbon tile menus | no | panels, by `TileDropDownController` |
+
+**Every real `ComboBox` has it. Every panel is fine.** It is the popup window, not the control and
+not how it was opened.
+
+**Escape closes it.** That is the whole difference between a quirk and a trap: keyboard events
+relay where the dismissing click does not, so there is always a way out that is not "choose a
+value you did not want" — which on the Layout drop-down would mean applying a layout and changing
+what is on screen.
+
+**Decision, 2026-09-21: accept it and teach Escape.** The panel-and-`ListBox` replacement stays in
+reserve — a `ListBox` in a panel, shown and hidden by hand, inside the form's own window. It would
+have to be a shared control rather than a change per page, because combos are everywhere and
+`COMBO_CHECKLIST.md` asks for binding and validation to stay in shared patterns. That is a large
+change with real regression risk for something a user adapts to in a day. **Revisit it if Escape
+ever stops working, or if a combo appears somewhere Escape cannot reach.**
+
+One thing did change: the QBE cell no longer forces its list open. Not because that caused the
+wedge — it did not — but because auto-opening a list that can trap you made every click into a
+lookup cell a trap, where now only a deliberate one is.
+
+### The splitter repaint fails in a session too, and the control is healthy
+
+Same day, same cause family. Opening a browse page through a real session threw
+`ExternalException` — "a generic error occurred in GDI+" — from `Graphics.FillRectangle`, inside
+`SplitContainer.RepaintSplitterRect`, inside WinForms' own `OnLayout`. Nothing of ours is on the
+stack, and nothing outside the control can catch it, so it reached the user as an
+unhandled-exception dialog on every browse page.
+
+The obvious explanation is a degenerate rectangle, and it is wrong. `SafeSplitContainer` logs the
+control's state when it catches, and the control is entirely healthy:
+
+```
+size=940x562  client=940x562  distance=150  width=6  min1=120  min2=120
+collapsed1=False  visible=True  handle=True
+```
+
+It needs 246 pixels and has 562. So `CreateGraphics()` is failing on a sound control inside a
+VirtualUI session — a device-context artefact of the session, not an application bug. There is
+nothing in our geometry to fix, which is why the treatment is to swallow that one repaint and log
+it. The next layout pass redraws it and nobody sees anything missing.

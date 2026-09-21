@@ -731,7 +731,9 @@ Namespace SDC.Framework
             End If
 
             browseSplit.Panel1MinSize = panelHeight
-            browseSplit.SplitterDistance = Math.Min(panelHeight, browseSplit.Height - browseSplit.Panel2MinSize)
+            ' Same arithmetic, same fix: see SplitterLayout for what the missing SplitterWidth
+            ' cost on 2026-09-21.
+            SplitterLayout.TrySetDistance(browseSplit, panelHeight)
             Return panelHeight
         End Function
 

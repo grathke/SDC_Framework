@@ -404,11 +404,12 @@ Namespace SDC.Framework
         Private Shared Sub ScaleSplitter(split As SplitContainer, was As Original, factor As Single)
             If split Is Nothing OrElse was.SplitterDistance <= 0 OrElse split.Panel1Collapsed Then Return
 
-            Try
-                split.SplitterDistance = CInt(was.SplitterDistance * factor)
-            Catch
-                ' Outside the panels' minimum sizes. Leaving the splitter where it is beats failing.
-            End Try
+            ' SplitterLayout clamps and refuses, rather than this setting a value and swallowing
+            ' whatever came back. Zooming out shrinks the container while the panel minimums stay
+            ' where they are, so a factor small enough leaves no legal position at all - and
+            ' pressing on anyway is what produces a splitter rectangle off the bottom of the
+            ' control and a GDI+ error from inside the layout.
+            SplitterLayout.TrySetDistance(split, CInt(was.SplitterDistance * factor))
         End Sub
 
         ''' <summary>
