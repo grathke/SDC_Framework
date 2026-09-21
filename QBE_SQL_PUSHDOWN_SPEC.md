@@ -458,9 +458,15 @@ not remove case 2 anyway, since the question is what the *result* exposes, not w
 
 Per page, and on at least one page that declines: open with no criteria; a text criterion; a date
 criterion and a Between; Show Deleted and back; a saved search retrieved; the row-cap message in
-both wordings; and the deleted employee. **`FW_Employees` registration 1 holds exactly one deleted
-row, `EmployeeID` 14, and it is sixth in key order** - so a first page that shows it is the
-regression test for the whole deleted branch, visible without counting anything.
+both wordings; and the deleted employee.
+
+**The fixture is `EmployeeID` 13, and it is the only deleted row in registration 1.** Corrected
+2026-09-21: it was 14, that row was restored while proving Show Deleted works, and 13 was deleted in
+its place. 13 is the better fixture, because the page now orders by `LastFirst` and 13 is `AAA, AAA` -
+it would sort to the very top of the first page. **A predicate that fails puts a wrong row in the
+first position of the grid**, which needs no counting to see. Note that restoring the fixture is not
+the same as it existing: check it rather than assume, since anybody proving Show Deleted works ends
+up restoring the one row that makes the test possible.
 
 ### Open question, not a blocker
 

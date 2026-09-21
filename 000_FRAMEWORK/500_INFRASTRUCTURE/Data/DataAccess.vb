@@ -8018,13 +8018,65 @@ Namespace SDC.Framework
                 conn.Open()
 
                 If TableHasColumn("FW_Roles", "DeletedFlag") Then
-                    Using cmd As New SqlCommand(
-                        "UPDATE dbo.FW_Roles " &
-                        "SET IsActive = 1, DeletedFlag = 0, DeletedBy = NULL, DeletedOn = NULL, UpdatedBy = @UpdatedBy, UpdatedOn = GETDATE() " &
-                        "WHERE ID = @ID", conn)
+                    ' The restore un-cascades what the delete cascaded, in one transaction.
+                    '
+                    ' DeleteRole soft-deletes four tables - FW_Roles, FW_RoleDetails, FW_RoleFields
+                    ' and FW_EmployeeRoles - and until 2026-09-21 this restored only the first. A
+                    ' delete and restore round trip therefore lost every table permission, every
+                    ' field permission and every member of the role, while the role reappeared in
+                    ' the list looking perfectly normal. Found on Role 4: 3 detail rows, 38 field
+                    ' rows and 3 members all left deleted behind a role that read as restored.
+                    '
+                    ' Matched on the role's own DeletedOn, not on RoleID alone. A blind reset would
+                    ' also revive children deleted individually and deliberately before the role
+                    ' went - a field permission somebody removed last week - and resurrecting a
+                    ' decision is worse than leaving a row deleted. DeleteRole stamps every
+                    ' cascaded child with the same SYSUTCDATETIME(), so that timestamp identifies
+                    ' exactly what this delete took and nothing else.
+                    '
+                    ' Read before the parent is cleared, because clearing it sets DeletedOn to NULL
+                    ' and the children could then match nothing.
+                    Dim deletedOn As Object = Nothing
+                    Using cmd As New SqlCommand("SELECT DeletedOn FROM dbo.FW_Roles WHERE ID = @ID", conn)
                         cmd.Parameters.AddWithValue("@ID", roleId)
-                        cmd.Parameters.AddWithValue("@UpdatedBy", If(updatedBy > 0, CType(updatedBy, Object), DBNull.Value))
-                        cmd.ExecuteNonQuery()
+                        deletedOn = cmd.ExecuteScalar()
+                    End Using
+
+                    Using trans = conn.BeginTransaction()
+                        Try
+                            Using cmd As New SqlCommand(
+                                "UPDATE dbo.FW_Roles " &
+                                "SET IsActive = 1, DeletedFlag = 0, DeletedBy = NULL, DeletedOn = NULL, UpdatedBy = @UpdatedBy, UpdatedOn = GETDATE() " &
+                                "WHERE ID = @ID", conn, trans)
+                                cmd.Parameters.AddWithValue("@ID", roleId)
+                                cmd.Parameters.AddWithValue("@UpdatedBy", If(updatedBy > 0, CType(updatedBy, Object), DBNull.Value))
+                                cmd.ExecuteNonQuery()
+                            End Using
+
+                            ' No timestamp to match on means the role was deleted before this
+                            ' cascade existed, or by hand. The parent is restored and the children
+                            ' are left alone rather than guessed at.
+                            If deletedOn IsNot Nothing AndAlso Not IsDBNull(deletedOn) Then
+                                For Each childTable In {"FW_RoleDetails", "FW_RoleFields", "FW_EmployeeRoles"}
+                                    If Not TableHasColumn(childTable, "DeletedFlag") Then Continue For
+
+                                    Using cmd As New SqlCommand(
+                                        "UPDATE dbo." & childTable & " " &
+                                        "SET IsActive = 1, DeletedFlag = 0, DeletedBy = NULL, DeletedOn = NULL, UpdatedBy = @UpdatedBy, UpdatedOn = GETDATE() " &
+                                        "WHERE RoleID = @RoleID AND ISNULL(DeletedFlag, 0) = 1 AND DeletedOn = @DeletedOn", conn, trans)
+                                        cmd.Parameters.AddWithValue("@RoleID", roleId)
+                                        cmd.Parameters.AddWithValue("@DeletedOn", deletedOn)
+                                        cmd.Parameters.AddWithValue("@UpdatedBy", If(updatedBy > 0, CType(updatedBy, Object), DBNull.Value))
+                                        cmd.ExecuteNonQuery()
+                                    End Using
+                                Next
+                            End If
+
+                            trans.Commit()
+                        Catch
+                            trans.Rollback()
+                            Throw
+                        End Try
                     End Using
 
                     LogUpdateAudit("Roles_B",
@@ -8032,7 +8084,8 @@ Namespace SDC.Framework
                                    "Restore",
                                    "AfterSave",
                                    roleId.ToString(CultureInfo.InvariantCulture),
-                                   BuildSoftDeleteAuditSnapshotJson("Restored role record."),
+                                   BuildSoftDeleteAuditSnapshotJson(
+                                       "Restored role record, with its table permissions, field permissions and members."),
                                    True,
                                    Nothing,
                                    updatedBy)
