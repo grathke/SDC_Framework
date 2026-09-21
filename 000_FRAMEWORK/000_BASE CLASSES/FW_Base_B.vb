@@ -207,6 +207,24 @@ Namespace SDC.Framework
             Public FlashSelection As Boolean
         End Structure
 
+        ''' <summary>
+        ''' Where somebody was in the search grid, so a Find puts them back there.
+        '''
+        ''' The browse grid has had <see cref="GridViewState"/> for this since the beginning. The
+        ''' search grid had nothing, so a Find from the bottom search row answered the search and
+        ''' then scrolled that grid to the top - and the next criterion had to be found again.
+        '''
+        ''' Held by row index and column name rather than by a cell reference. A DataGridViewCell
+        ''' belongs to the grid that owns it, and keeping one across a refresh is how a stale cell
+        ''' outlives its row.
+        ''' </summary>
+        Private Structure QbeViewState
+            Public HasCurrentCell As Boolean
+            Public RowIndex As Integer
+            Public ColumnName As String
+            Public FirstDisplayedRowIndex As Integer
+        End Structure
+
         Protected Sub New()
         End Sub
 
@@ -2109,6 +2127,7 @@ Namespace SDC.Framework
             End If
 
             Dim viewState = CaptureGridViewState()
+            Dim qbeState = CaptureQbeViewState()
 
             If selectedRecordId.HasValue Then
                 viewState.HasSelection = True
@@ -2269,6 +2288,7 @@ Namespace SDC.Framework
                 End If
 
                 RestoreGridViewState(viewState)
+                RestoreQbeViewState(qbeState)
                 MarkStep(stepTimer, breakdown, "restore")
 
                 If Not hasBaselineLayoutSnapshot AndAlso browseGrid.Columns IsNot Nothing AndAlso browseGrid.Columns.Count > 0 Then
@@ -4092,6 +4112,87 @@ Namespace SDC.Framework
             Return Nothing
         End Function
 
+        ''' <summary>
+        ''' Where the caret was in the search grid, before a refresh moves it.
+        '''
+        ''' Wrapped, and silent when it cannot answer. Losing a scroll position is a nuisance; a
+        ''' Find that throws while trying to remember one is worse than the nuisance.
+        ''' </summary>
+        Private Function CaptureQbeViewState() As QbeViewState
+            Dim state As New QbeViewState With {
+                .HasCurrentCell = False,
+                .RowIndex = -1,
+                .ColumnName = String.Empty,
+                .FirstDisplayedRowIndex = -1
+            }
+
+            Try
+                If qbeGrid Is Nothing OrElse qbeGrid.Rows.Count = 0 Then
+                    Return state
+                End If
+
+                If qbeGrid.FirstDisplayedScrollingRowIndex >= 0 Then
+                    state.FirstDisplayedRowIndex = qbeGrid.FirstDisplayedScrollingRowIndex
+                End If
+
+                Dim cell = qbeGrid.CurrentCell
+                If cell Is Nothing OrElse cell.OwningColumn Is Nothing Then
+                    Return state
+                End If
+
+                state.HasCurrentCell = True
+                state.RowIndex = cell.RowIndex
+                state.ColumnName = cell.OwningColumn.Name
+            Catch
+                ' Answering "nowhere" is a valid answer and the restore does nothing with it.
+            End Try
+
+            Return state
+        End Function
+
+        ''' <summary>
+        ''' Puts the search grid back where it was.
+        '''
+        ''' Order matters. Setting CurrentCell scrolls the grid to show that cell, so the scroll
+        ''' position is restored second or it is immediately overwritten.
+        '''
+        ''' It does not begin an edit and it does not take focus. After a Find the focus belongs to
+        ''' the Find button, and a grid that grabbed it back would swallow the next keystroke -
+        ''' CurrentCell can be set on a grid that does not have focus, which is exactly what is
+        ''' wanted here.
+        ''' </summary>
+        Private Sub RestoreQbeViewState(state As QbeViewState)
+            Try
+                If qbeGrid Is Nothing OrElse qbeGrid.Rows.Count = 0 Then
+                    Return
+                End If
+
+                If state.HasCurrentCell AndAlso
+                   state.RowIndex >= 0 AndAlso state.RowIndex < qbeGrid.Rows.Count AndAlso
+                   Not String.IsNullOrEmpty(state.ColumnName) AndAlso
+                   qbeGrid.Columns.Contains(state.ColumnName) Then
+
+                    Dim column = qbeGrid.Columns(state.ColumnName)
+                    Dim row = qbeGrid.Rows(state.RowIndex)
+
+                    ' A cell that is not there to be landed on is skipped rather than forced. The
+                    ' operator column is a list and the value column changes editor with the field,
+                    ' so which cells exist is not fixed across a refresh.
+                    If column IsNot Nothing AndAlso column.Visible AndAlso row IsNot Nothing AndAlso row.Visible Then
+                        qbeGrid.CurrentCell = row.Cells(state.ColumnName)
+                    End If
+                End If
+
+                If state.FirstDisplayedRowIndex >= 0 AndAlso state.FirstDisplayedRowIndex < qbeGrid.Rows.Count Then
+                    qbeGrid.FirstDisplayedScrollingRowIndex = state.FirstDisplayedRowIndex
+                End If
+            Catch
+                ' See CaptureQbeViewState. A remembered position is a convenience, never a reason
+                ' for a Find to fail.
+            End Try
+
+        End Sub
+
         Private Sub RestoreGridViewState(state As GridViewState)
             If browseGrid.Rows.Count = 0 Then
                 Return
@@ -4979,6 +5080,23 @@ Namespace SDC.Framework
 
         Protected Overridable Sub ClearQbeFilters()
             If qbeGrid IsNot Nothing Then
+                ' The open editor first, or the cell being typed in does not clear.
+                '
+                ' Setting Value on a cell that is still in edit mode changes the cell behind a live
+                ' editing control, and the editor writes its own text back when it commits. Every
+                ' other row blanked and the one the caret was in kept its value - which is the one
+                ' most likely to be noticed, because it is the one just typed.
+                '
+                ' Cancel then End, in that order and for the reason the closing handler gives:
+                ' cancel discards what is in the editor, and end releases it. Ending alone commits
+                ' the text that is being thrown away.
+                Try
+                    qbeGrid.CancelEdit()
+                    qbeGrid.EndEdit()
+                Catch
+                    ' A cell that will not leave edit mode must not stop the rest from clearing.
+                End Try
+
                 For Each row As DataGridViewRow In qbeGrid.Rows
                     row.Cells("FieldValue").Value = String.Empty
                 Next
@@ -4986,7 +5104,38 @@ Namespace SDC.Framework
 
             currentFilters = New Dictionary(Of String, String)(StringComparer.OrdinalIgnoreCase)
             UpdateActiveFilterLabel()
+
+            ' Clearing means starting over, so the caret goes back to the first field rather than
+            ' staying wherever the last criterion was typed. This is the opposite of what a Find
+            ' wants - see CaptureQbeViewState, which exists to keep the position across a Find -
+            ' and the two are different gestures: a Find continues, a Clear begins again.
+            MoveQbeToTop()
         End Sub
+
+        ''' <summary>
+        ''' Puts the search grid back at its first field, for a gesture that means "start over".
+        '''
+        ''' The value column, not the first column: the field and operator cells are where a search
+        ''' is described and the value cell is where it is typed, so that is where somebody starting
+        ''' a new search wants to be.
+        ''' </summary>
+        Private Sub MoveQbeToTop()
+            Try
+                If qbeGrid Is Nothing OrElse qbeGrid.Rows.Count = 0 Then Return
+
+                Dim firstRow = qbeGrid.Rows(0)
+                If firstRow Is Nothing OrElse Not firstRow.Visible Then Return
+
+                If qbeGrid.Columns.Contains("FieldValue") AndAlso qbeGrid.Columns("FieldValue").Visible Then
+                    qbeGrid.CurrentCell = firstRow.Cells("FieldValue")
+                End If
+
+                qbeGrid.FirstDisplayedScrollingRowIndex = 0
+            Catch
+                ' A grid that will not be moved is a cosmetic disappointment, not a failed Clear.
+            End Try
+        End Sub
+
 
         Private Sub ResetQbeAndDeletedState()
             ClearQbeFilters()
