@@ -77,12 +77,49 @@ Namespace SDC.Framework
         Private WithEvents refreshTimer As Timer
 
         ''' <summary>
-        ''' A minute. Long enough that the page is not re-reading while somebody studies it, short
-        ''' enough that "who is connected" is worth believing - and the connected list is the part
-        ''' that goes stale fastest, now that a closed browser tab is gone in about five seconds
-        ''' rather than the three minutes assumed until 2026-09-21.
+        ''' A minute between reads. Long enough that the page is not re-reading while somebody
+        ''' studies it, short enough that "who is connected" is worth believing - and the connected
+        ''' list is the part that goes stale fastest, now that a closed browser tab is gone in
+        ''' about five seconds rather than the three minutes assumed until 2026-09-21.
         ''' </summary>
         Private Const RefreshSeconds As Integer = 60
+
+        ''' <summary>
+        ''' How often the countdown moves, and therefore how often the timer ticks.
+        '''
+        ''' ONE TIMER, NOT TWO. A second timer for the display would be a second thing to start,
+        ''' stop and dispose, and two independent clocks drift - the countdown would reach zero
+        ''' while the refresh was still a moment away, or the other way round. This one ticks every
+        ''' ten seconds and reads every sixth tick, so the number on screen is derived from the
+        ''' same clock that does the work and cannot disagree with it.
+        '''
+        ''' Ten rather than one: a number changing every second is movement on a page somebody is
+        ''' reading, and it would be six times the repaints - which over Thinfinity is six times
+        ''' the pixels down the wire - to say the same thing.
+        '''
+        ''' A one-second tick using modulo for both the display and the read was considered on
+        ''' 2026-09-21 and rejected on cost: sixty timer messages a minute per open page against
+        ''' six, for behaviour nobody can tell apart.
+        '''
+        ''' WHAT THAT COSTS INSTEAD: the read happens on the first tick at or past
+        ''' <see cref="RefreshSeconds"/>, so **keep RefreshSeconds a multiple of this**. It is not
+        ''' a trap if you do not - 45 against 10 simply reads at 50, rounded up, and the countdown
+        ''' clamps at zero rather than going negative - but the page would then refresh at an
+        ''' interval nobody chose. The modulo version has no such rule, which is the one thing it
+        ''' is better at.
+        ''' </summary>
+        Private Const CountdownSeconds As Integer = 10
+
+        ''' <summary>Seconds until the next read. Counts down in <see cref="CountdownSeconds"/> steps.</summary>
+        Private secondsToRefresh As Integer = RefreshSeconds
+
+        ''' <summary>
+        ''' The stamp without the countdown - "as at 18:35", or "could not read".
+        '''
+        ''' Held apart because the countdown rewrites that label every ten seconds and would
+        ''' otherwise have to parse back out what the last read put there.
+        ''' </summary>
+        Private asAtStamp As String = String.Empty
 
         ''' <summary>
         ''' True while a snapshot is being read. A tick that arrives during one is dropped rather
@@ -231,7 +268,7 @@ Namespace SDC.Framework
 
             ' Started after the first read, not before it, so the interval is measured from the
             ' page being usable rather than from the window appearing.
-            refreshTimer = New Timer() With {.Interval = RefreshSeconds * 1000}
+            refreshTimer = New Timer() With {.Interval = CountdownSeconds * 1000}
             refreshTimer.Start()
         End Sub
 
@@ -259,7 +296,39 @@ Namespace SDC.Framework
         ''' </summary>
         Private Sub RefreshTimer_Tick(sender As Object, e As EventArgs) Handles refreshTimer.Tick
             If refreshing Then Return
+
+            secondsToRefresh -= CountdownSeconds
+
+            If secondsToRefresh > 0 Then
+                ' Not due yet - just move the number. No round trip.
+                ShowStamp()
+                Return
+            End If
+
+            ' LoadSnapshot resets the countdown itself, so a read started here and one started by
+            ' the Refresh button leave the page in the same state.
             LoadSnapshot()
+        End Sub
+
+        ''' <summary>
+        ''' "as at 18:35   next in 40s".
+        '''
+        ''' The two belong together: one says how old the figures are, the other how long until
+        ''' they are replaced. Written into the existing stamp rather than a new control, because
+        ''' the header has no room and because a countdown somewhere else on the page would be a
+        ''' second thing to find.
+        '''
+        ''' The countdown is left off entirely until the first read has happened, so the page does
+        ''' not promise a refresh before it has shown anything to refresh.
+        ''' </summary>
+        Private Sub ShowStamp()
+            If asAtStamp = String.Empty Then
+                asAtLabel.Text = String.Empty
+                Return
+            End If
+
+            asAtLabel.Text = asAtStamp & "   next in " &
+                             Math.Max(0, secondsToRefresh).ToString(CultureInfo.CurrentCulture) & "s"
         End Sub
 
         Private Sub BuildHeader()
@@ -1352,12 +1421,21 @@ Namespace SDC.Framework
             Cursor = Cursors.WaitCursor
             refreshing = True
 
+            ' Reset here rather than in the tick, so every path that reads restarts the countdown -
+            ' the timer, the Refresh button, and a change of period or registration. A manual
+            ' refresh that left the countdown where it was would read again seconds later.
+            secondsToRefresh = RefreshSeconds
+
             Try
                 snapshot = HealthDataAccess.GetSnapshot(SelectedWindowDays(), SelectedRegistrationId())
 
                 If snapshot.Failed Then
                     gauge.ClearScore()
-                    asAtLabel.Text = "could not read"
+
+                    ' The countdown still runs on a failed read. It is the one time somebody most
+                    ' wants to know another attempt is coming, and when.
+                    asAtStamp = "could not read"
+                    ShowStamp()
 
                     ' Back to the bare word rather than left holding the previous count. A number
                     ' from the last successful refresh, over a grid that has just been emptied,
@@ -1377,7 +1455,8 @@ Namespace SDC.Framework
 
                 ' "as at", never "now". The figures are as old as the last refresh, and a page that
                 ' implies otherwise is claiming something it cannot know.
-                asAtLabel.Text = "as at " & snapshot.TakenAtUtc.ToLocalTime().ToString("HH:mm", CultureInfo.CurrentCulture)
+                asAtStamp = "as at " & snapshot.TakenAtUtc.ToLocalTime().ToString("HH:mm", CultureInfo.CurrentCulture)
+                ShowStamp()
 
                 ShowConnected()
                 FillConnected()
