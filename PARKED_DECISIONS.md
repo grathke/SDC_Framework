@@ -210,6 +210,58 @@ a contractor:
 
 ## Designed, specified, and deliberately not started
 
+### Live record updates across sessions, the way FileMaker does it
+
+*Parked 2026-09-21. Asked for as a want, not a requirement, and answered in enough detail that the
+next conversation starts from here rather than from the beginning.*
+
+**The want.** Two people have the same browse page open. One changes a record. If that record is
+in the other person's grid, their row updates with the new values, without them doing anything.
+The explicit condition attached to it: **the page must not appear to slow down.**
+
+**It is possible. Push notifications are not the way.** SQL Server's `SqlDependency`, over Service
+Broker, is the obvious-looking answer and is the wrong tool here. Its query restrictions are
+severe - no `*`, no aggregates, no `TOP`, no subqueries or derived tables, two-part names only -
+and browse-page SQL is authored by whoever made the page and stored in `FW_Pages`, so most of it
+would be rejected. Rejection is silent, and the failure modes are the two worst available: fire
+immediately and for ever, or never fire at all. Each registration is also single-shot and has to be
+renewed after every fire.
+
+**Poll a change token, never the data.** The cost is decided entirely by what the tick asks. A tick
+that re-runs the page's own query is what would make the page feel slow; a tick that asks "has
+anything I care about changed since id N?" returns nothing on almost every tick. That suggests a
+narrow `FW_ChangeFeed` - change id, table, record key, when, by whom - written inside the save's
+existing transaction, which the Transaction Guardrail already requires. A page remembers the last
+id it saw and re-fetches only on a hit.
+
+**What it would cost, separating what is measured from what is not:**
+
+- an idle tick is one narrow indexed query, single-digit milliseconds - **estimated, not measured**
+- a tick that finds something is the page's ordinary refresh, **measured at 16-33ms warm** on
+  `FW_Employees_B` after the QBE pushdown work
+- multiply by users, because over Thinfinity every session is its own process on the server: 50
+  users on a 10-second tick is 5 queries a second across the whole system, which is nothing. A
+  one-second tick is 50 a second and mostly waste
+
+**The grid is the harder problem than the database.** Rebinding it would throw away the selection,
+the scroll position and the sort - so a row changing under somebody would also lose their place,
+which is the fault `RestoreGridViewState` and the QBE Find work both exist to avoid. The rule has
+to be: merge values into the existing rows, never rebind, never move the selection, never touch a
+row being edited.
+
+**Browse pages only. Never a maintenance page.** A `_U` page holding a record has a `RowVersion`
+and a save-conflict path the guardrails require. Refreshing its fields underneath the user would
+silently destroy the conflict detection that exists to stop one person overwriting another's work.
+FileMaker's behaviour is right for a list and wrong for an open form, and the distinction is not a
+detail to be decided later.
+
+**What is unanswered.** Whether the feed is written by the data layer or by each save; how a page
+decides which changes are "its" without re-running its own query; what a deleted or newly inserted
+row does to a grid somebody is reading; and whether a changed row should be marked for a moment
+rather than silently swapping its values.
+
+
+
 ### Telemetry: tickets from faults, and sending it off-machine
 
 *Parked 2026-09-19. The recording half is built; these two are not.*

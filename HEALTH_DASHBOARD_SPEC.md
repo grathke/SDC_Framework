@@ -292,10 +292,10 @@ that no longer exists - the breakdown line, ACTIVITY and SEARCH TIMING took it, 
 `FixedDialog` at 1180x800 with every band spoken for. What was built instead says the same things
 in two places:
 
-- **A count in the header**, between the Query Store text and the `as at` stamp, reading
-  "4 connections". It measures right now rather than the period the combo selects, which is why it
-  sits beside the stamp and not in the tile column where everything is windowed.
-- **A two-column grid beside the tiles** — who, and since when. The three tiles were 540 wide with
+- **A two-column grid beside the tiles** — who, and since when — under a heading that carries the
+  count: `3 CONNECTED`. The count sat in the header for one day, between the Query Store text and
+  the `as at` stamp, which put a number in one place and the rows it described in another. A
+  heading cannot drift from the list underneath it. The three tiles were 540 wide with
   a hundred pixels of nothing between each heading and its number; they are now 283, and the
   difference plus a gap is exactly the grid. The block still runs 560 to 1100 and the page keeps
   its 1180x800 footprint, so nothing outside that column moved. `ConnectedGridWidth` drives the

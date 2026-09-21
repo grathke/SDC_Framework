@@ -61,6 +61,36 @@ Namespace SDC.Framework
         Private ReadOnly connectedHeading As Label
 
         ''' <summary>
+        ''' Refreshes the page on its own, every <see cref="RefreshSeconds"/>.
+        '''
+        ''' A WinForms timer, not a threading one, because everything it touches is a control and
+        ''' its Tick already arrives on the UI thread. A System.Threading.Timer would need an
+        ''' Invoke round every line of the refresh.
+        '''
+        ''' IT POLLS, BECAUSE NOTHING PUSHES. The figures come from tables other processes write -
+        ''' on other machines, in other sessions - so there is no event to subscribe to. SQL
+        ''' Server's own query notifications were considered and rejected for the browse-grid
+        ''' version of this idea; see PARKED_DECISIONS.md, "Live record updates across sessions".
+        ''' Here the cost is one command a minute per open page, which is the snapshot the page
+        ''' already takes on every manual Refresh.
+        ''' </summary>
+        Private WithEvents refreshTimer As Timer
+
+        ''' <summary>
+        ''' A minute. Long enough that the page is not re-reading while somebody studies it, short
+        ''' enough that "who is connected" is worth believing - and the connected list is the part
+        ''' that goes stale fastest, now that a closed browser tab is gone in about five seconds
+        ''' rather than the three minutes assumed until 2026-09-21.
+        ''' </summary>
+        Private Const RefreshSeconds As Integer = 60
+
+        ''' <summary>
+        ''' True while a snapshot is being read. A tick that arrives during one is dropped rather
+        ''' than queued: the refresh it would do is the refresh already happening.
+        ''' </summary>
+        Private refreshing As Boolean
+
+        ''' <summary>
         ''' Query Store on or off, shown and changed by the one control.
         '''
         ''' Ticked means recording. READ_ONLY - filled its quota and stopped - reads as unticked,
@@ -197,6 +227,38 @@ Namespace SDC.Framework
         ''' Thinfinity that delay is the network as well as the query.
         ''' </summary>
         Private Sub Health_Shown(sender As Object, e As EventArgs)
+            LoadSnapshot()
+
+            ' Started after the first read, not before it, so the interval is measured from the
+            ' page being usable rather than from the window appearing.
+            refreshTimer = New Timer() With {.Interval = RefreshSeconds * 1000}
+            refreshTimer.Start()
+        End Sub
+
+        ''' <summary>
+        ''' The timer is stopped and disposed with the page.
+        '''
+        ''' A modal opened from a dashboard is disposed by its Using block, and a live timer inside
+        ''' a disposed form is the classic way to keep the form alive and firing at a database
+        ''' nobody is watching.
+        ''' </summary>
+        Private Sub Health_FormClosed(sender As Object, e As FormClosedEventArgs) Handles Me.FormClosed
+            If refreshTimer IsNot Nothing Then
+                refreshTimer.Stop()
+                refreshTimer.Dispose()
+                refreshTimer = Nothing
+            End If
+        End Sub
+
+        ''' <summary>
+        ''' The automatic refresh.
+        '''
+        ''' It reads exactly what the manual Refresh button reads, for whatever the period and
+        ''' registration combos currently say - so an unattended page shows the same thing a
+        ''' pressed button would, and there is one refresh path rather than two that can diverge.
+        ''' </summary>
+        Private Sub RefreshTimer_Tick(sender As Object, e As EventArgs) Handles refreshTimer.Tick
+            If refreshing Then Return
             LoadSnapshot()
         End Sub
 
@@ -1288,6 +1350,7 @@ Namespace SDC.Framework
 
         Private Sub LoadSnapshot()
             Cursor = Cursors.WaitCursor
+            refreshing = True
 
             Try
                 snapshot = HealthDataAccess.GetSnapshot(SelectedWindowDays(), SelectedRegistrationId())
@@ -1333,11 +1396,76 @@ Namespace SDC.Framework
                 FillTiles()
                 FillActivity()
                 FillTiming()
+
+                ' KEEP THE READER'S PLACE ACROSS THE FILL.
+                '
+                ' Manual refreshes could afford to lose it - somebody who presses Refresh knows
+                ' they asked. An unattended one cannot: a fault being read, or a row selected
+                ' while deciding whether to mark it fixed, would be dropped every minute by a
+                ' page nobody touched. Captured by ErrorLogID rather than by row index, because
+                ' a resolved fault leaves the list and every index below it shifts up.
+                Dim selectedFault = FaultIdOnRow(If(attentionGrid.CurrentRow IsNot Nothing,
+                                                    attentionGrid.CurrentRow.Index, -1))
+                Dim faultScroll = If(attentionGrid.Rows.Count > 0,
+                                     attentionGrid.FirstDisplayedScrollingRowIndex, 0)
+                Dim connectedScroll = If(connectedGrid.Rows.Count > 0,
+                                         connectedGrid.FirstDisplayedScrollingRowIndex, 0)
+
                 FillNeedsAttention()
                 FillLoginFailures()
 
+                RestoreFaultPlace(selectedFault, faultScroll)
+                RestoreScroll(connectedGrid, connectedScroll)
+
             Finally
+                refreshing = False
                 Cursor = Cursors.Default
+            End Try
+        End Sub
+
+        ''' <summary>
+        ''' Puts the reader back where they were in the fault list.
+        '''
+        ''' The selection is found by ErrorLogID, not by index. If the fault has gone - somebody
+        ''' marked it fixed - nothing is selected rather than whatever has moved into that slot,
+        ''' because a selection landing on a different fault is worse than none.
+        ''' </summary>
+        Private Sub RestoreFaultPlace(errorLogId As Integer, scrollTo As Integer)
+            RestoreScroll(attentionGrid, scrollTo)
+
+            If errorLogId <= 0 Then Return
+
+            For Each row As DataGridViewRow In attentionGrid.Rows
+                If FaultIdOnRow(row.Index) <> errorLogId Then Continue For
+
+                ' The current cell is what a grid scrolls to, and it cannot sit on a hidden
+                ' column - so it goes on the first visible one rather than on column zero.
+                For Each cell As DataGridViewCell In row.Cells
+                    If cell.OwningColumn.Visible Then
+                        attentionGrid.CurrentCell = cell
+                        Exit For
+                    End If
+                Next
+
+                ' After the current cell, because setting it scrolls the grid on its own and
+                ' would otherwise undo the position just restored.
+                RestoreScroll(attentionGrid, scrollTo)
+                Return
+            Next
+        End Sub
+
+        ''' <summary>
+        ''' Scrolls a grid back to where it was, when there is still that far to scroll.
+        ''' </summary>
+        Private Shared Sub RestoreScroll(grid As DataGridView, scrollTo As Integer)
+            If grid Is Nothing OrElse grid.Rows.Count = 0 Then Return
+            If scrollTo <= 0 OrElse scrollTo >= grid.Rows.Count Then Return
+
+            Try
+                grid.FirstDisplayedScrollingRowIndex = scrollTo
+            Catch
+                ' A grid too short to scroll that far refuses, which is not a fault - the reader
+                ' is already seeing every row there is.
             End Try
         End Sub
 
