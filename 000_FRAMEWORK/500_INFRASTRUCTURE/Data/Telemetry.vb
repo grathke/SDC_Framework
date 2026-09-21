@@ -231,13 +231,15 @@ Namespace SDC.Framework
 
                 For Each note In batch
                     Try
-                        If UpsertFault(conn, note) Then
+                        Dim outcome = UpsertFault(conn, note)
+
+                        If outcome <> FaultOutcome.Unchanged Then
                             worthTelling.Add(New HealthMail.Item With {
                                 .Headline = note.ExceptionType,
                                 .PageName = note.PageName,
                                 .Context = note.Context,
                                 .Message = note.Message,
-                                .Recurred = False
+                                .Recurred = (outcome = FaultOutcome.Recurred)
                             })
                         End If
                     Catch
@@ -263,12 +265,28 @@ Namespace SDC.Framework
         ''' recur-on-repeat rule and the LastSeen-moves-forward rule, and the three would have
         ''' drifted apart the first time one of them changed.
         ''' </summary>
+        ''' <summary>What the upsert did, in the only terms anybody needs telling about.</summary>
+        Friend Enum FaultOutcome
+            ''' <summary>Seen before and still open. Its count moved; that is not news.</summary>
+            Unchanged
+
+            ''' <summary>Never seen before. It has just appeared in Needs Attention.</summary>
+            Appeared
+
+            ''' <summary>
+            ''' Somebody marked this fixed and it has happened again - the loudest thing this
+            ''' system can say, because a fix has already failed.
+            ''' </summary>
+            Recurred
+        End Enum
+
         ''' <summary>
-        ''' Returns True when this fault is worth telling somebody about: it had never been seen
-        ''' before, or it had been marked fixed and has happened again. A fault ticking from four
-        ''' occurrences to five is not news and returns False.
+        ''' Upserts one fault and says whether it is worth telling somebody about.
+        '''
+        ''' A Boolean until 2026-09-21, which lost the distinction between a fault appearing and a
+        ''' fix failing - so every mail said "new fault" whichever it was.
         ''' </summary>
-        Friend Function UpsertFault(conn As SqlConnection, note As Note) As Boolean
+        Friend Function UpsertFault(conn As SqlConnection, note As Note) As FaultOutcome
             Using cmd As New SqlCommand(
                             "MERGE dbo.FW_ErrorLog AS target " &
                             "USING (SELECT @Fingerprint AS Fingerprint) AS source " &
@@ -323,12 +341,17 @@ Namespace SDC.Framework
                             ' fault that was resolved and is being written again is a fix that
                             ' did not hold, which is louder than one nobody has seen before.
                             Using reader = cmd.ExecuteReader()
-                                If Not reader.Read() Then Return False
+                                If Not reader.Read() Then Return FaultOutcome.Unchanged
 
                                 Dim action = Convert.ToString(reader("Act"), CultureInfo.InvariantCulture)
                                 Dim wasResolved = Convert.ToBoolean(reader("WasResolved"))
 
-                                Return String.Equals(action, "INSERT", StringComparison.OrdinalIgnoreCase) OrElse wasResolved
+                                ' Recurrence first. A row can only be one of the two, and a fix
+                                ' that did not hold is the one worth saying out loud.
+                                If wasResolved Then Return FaultOutcome.Recurred
+                                If String.Equals(action, "INSERT", StringComparison.OrdinalIgnoreCase) Then Return FaultOutcome.Appeared
+
+                                Return FaultOutcome.Unchanged
                             End Using
                         End Using
         End Function

@@ -1,3 +1,15 @@
+-- DECIDED 2026-09-21: DO NOT RUN THIS YET. The rows stay.
+--
+-- They were inserted to exercise the Find timing and were going to be deleted afterwards. Glenn's
+-- argument for keeping them is the better one: a city reaches 10,000 permits, inspections or
+-- transactions soon enough, and a framework with no table that size has nowhere to notice what
+-- happens at that size. They have already earned it twice - the row cap being off for filtered
+-- searches, and QBE filtering in memory, were both found because this table is big enough to make
+-- the difference visible.
+--
+-- The table is arbitrary. The row count is the point. Run this when something else reaches that
+-- size, or when the timings need a small-table baseline to compare against.
+--
 -- 147_loadtest_employees_remove.sql
 --
 -- Takes out everything 146 put in.

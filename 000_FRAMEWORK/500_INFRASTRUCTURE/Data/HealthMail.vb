@@ -129,7 +129,7 @@ Namespace SDC.Framework
         ''' <summary>
         ''' The subject line, which is the whole message for somebody reading on a phone.
         '''
-        ''' It says the count and the worst thing in it. "SDC health: 1 new fault" is answerable
+        ''' It says how many and whether one came back, in the words somebody would use. It is answerable
         ''' from the lock screen; "SDC Framework Notification" is not.
         ''' </summary>
         Private Function BuildSubject(items As List(Of Item)) As String
@@ -138,11 +138,26 @@ Namespace SDC.Framework
             Dim recurred = items.Where(Function(i) i.Recurred).Count()
             Dim fresh = items.Count - recurred
 
-            Dim parts As New List(Of String)()
-            If fresh > 0 Then parts.Add(fresh.ToString(CultureInfo.InvariantCulture) & " new fault" & Plural(fresh))
-            If recurred > 0 Then parts.Add(recurred.ToString(CultureInfo.InvariantCulture) & " back after a fix")
+            ' Written the way somebody would say it, not the way a log would. It said
+            ' "SDC health: 1 new fault" first, which reads like a line out of a file and makes the
+            ' reader work out what is being asked of them.
+            Dim total = items.Count
 
-            Return "SDC health: " & String.Join(", ", parts)
+            Dim subject = If(total = 1,
+                             "You have an item that needs attention in System Health",
+                             "You have " & total.ToString(CultureInfo.InvariantCulture) &
+                             " items that need attention in System Health")
+
+            ' The recurrence is worth the subject line. A fix that did not hold is a different
+            ' message from a fault nobody has seen, and somebody deciding whether to open this on a
+            ' Sunday should be told which.
+            If recurred > 0 Then
+                subject &= If(recurred = 1,
+                              " - one is back after a fix",
+                              " - " & recurred.ToString(CultureInfo.InvariantCulture) & " are back after a fix")
+            End If
+
+            Return subject
         End Function
 
         ''' <summary>
