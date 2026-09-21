@@ -385,3 +385,77 @@ belongs in an execution plan check on the pages that alias a joined column.
 
 **Not a risk:** the `ORDER BY` cost is unchanged. The server already sorts the whole result today,
 `TOP` or no `TOP`.
+
+---
+
+## 10. The wiring contract — settled 2026-09-21, not yet built
+
+`BrowseSqlWrapper` is committed in `ef1eb29` and **called by nothing**. This section is what the
+next session needs, because all of it was settled in conversation and none of it is in the code.
+
+### Where the SQL comes from, which is not `FW_Pages`
+
+The SQL that runs is whatever `GetActiveBaseSql()` returns - the page's SQL box. It arrives there
+four ways: from `FW_Pages`; copied from another page for the same table when this page has no row;
+**typed by a user and applied at runtime**; or overridden in code, which `FW_SwitchUser_B`,
+`Roles_B` and `FW_UserAccessDiagnostic_B` all do.
+
+**So the wrapper must decide from the string it is about to execute, never from `FW_Pages`.** An
+audit of `FW_Pages` is for planning only. This is what closes the hole the SQL box would otherwise
+leave open.
+
+### The deleted state - three cases, no schema change
+
+Decided at runtime from facts already cached (`TableHasColumn`, `GetPrimaryKeyFieldName`):
+
+1. **The result selects `DeletedFlag`** - `FW_HD_Issues_B`, `FW_HD_Issues_Support_B`,
+   `FW_PageGeneration_B`. Predicate `ISNULL(q.[DeletedFlag], 0) = 0`, or `= 1` for Show Deleted.
+2. **It does not, but the base table has the column** - the other five, and almost every page yet
+   to be written. Join back on the key:
+   `LEFT JOIN dbo.[<table>] AS d ON d.[<pk>] = q.[PK]`, then `ISNULL(d.[DeletedFlag], 0) = 0`.
+   **`LEFT JOIN`, never `INNER`**: a row whose key finds no match must survive as not-deleted,
+   because that is what the hydration does today. An inner join would silently drop it.
+   The result key is `PK` first, then the table's own key name - the same resolution
+   `ResolveResultKeyColumn` already uses.
+3. **The base table has no `DeletedFlag`** - the four reference tables, the two `FW_Perm_` tables,
+   messaging, `FW_SwitchUser`. No predicate, and Show Deleted is already unavailable there.
+
+**Requiring `DeletedFlag` on every table was considered and rejected**: it contradicts the
+`FW_Perm_` convention in `CLAUDE.md` ("and no other column"), it would light up a working Show
+Deleted button on pages with no delete or restore behind it, because
+`DeletedViewGuard.TableSupportsDeletedView` keys purely on the column's presence - and it would
+not remove case 2 anyway, since the question is what the *result* exposes, not what the table has.
+
+### The rest of the contract
+
+- **`TOP` is the cap plus one.** The framework knows a list is longer than the cap only because it
+  received one more row than it asked for. Ask for exactly the cap and that signal is gone, and
+  "showing the first 11 of a longer list" can no longer be said truthfully.
+- **`ORDER BY q.[PK]` when the page has none.** `FW_HD_Issues_B` and `FW_Registration_B` have no
+  `ORDER BY` today, and every page aliases its key as `PK`. Supplied by the wrapper, so no page SQL
+  changes. See the open question below.
+- **Decline if in-memory registration scoping would apply** - a page whose SQL carries no
+  registration predicate of its own. That also removes rows after the fetch.
+- **When wrapped, skip the in-memory deleted step and the in-memory QBE filter.** This is the part
+  most likely to be got wrong: leaving the deleted step in re-runs the hydration on the returned
+  rows, handing back the query this change exists to remove, and in Show Deleted mode it filters
+  twice. **When declined, skip nothing** - the old path runs exactly as today.
+- **`LimitBrowseRows` stays unchanged.** It turns the cap+1 rows into the cap and sets
+  `BrowseRowsLimited`, which is what the two status messages read.
+- **Every decline writes a `FW_FallbackUsageLog` row** naming the page and the reason, so the
+  pages that opted out are visible rather than discovered.
+
+### What to verify, beyond a green build
+
+Per page, and on at least one page that declines: open with no criteria; a text criterion; a date
+criterion and a Between; Show Deleted and back; a saved search retrieved; the row-cap message in
+both wordings; and the deleted employee. **`FW_Employees` registration 1 holds exactly one deleted
+row, `EmployeeID` 14, and it is sixth in key order** - so a first page that shows it is the
+regression test for the whole deleted branch, visible without counting anything.
+
+### Open question, not a blocker
+
+`FW_HD_Issues_B` has no `ORDER BY`, so the wrapper would order it by `PK` - oldest issue first,
+which is almost certainly not what a support queue wants. `CreatedOn DESC` is the likely answer.
+That belongs in the page's own SQL where it is visible, and it is a page decision rather than a
+framework default.
