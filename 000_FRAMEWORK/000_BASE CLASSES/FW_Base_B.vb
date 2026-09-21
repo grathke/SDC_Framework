@@ -690,6 +690,12 @@ Namespace SDC.Framework
             AddHandler qbeGrid.CellClick, AddressOf QbeGrid_CellClick
             AddHandler qbeGrid.EditingControlShowing, AddressOf QbeGrid_EditingControlShowing
 
+            ' An operator has to take effect where it is chosen, because the value box beside it
+            ' changes shape with it - a date control, or a range the dialog owns.
+            AddHandler qbeGrid.CurrentCellDirtyStateChanged, AddressOf QbeGrid_CurrentCellDirtyStateChanged
+            AddHandler qbeGrid.CellValueChanged, AddressOf QbeGrid_CellValueChanged
+            AddHandler qbeGrid.DataError, AddressOf QbeGrid_DataError
+
             qbeGrid.Columns("FieldName").ReadOnly = True
             qbeGrid.Columns("FriendlyName").ReadOnly = True
             qbeGrid.Columns("FieldName").Visible = False
@@ -3707,10 +3713,18 @@ Namespace SDC.Framework
 
                 Dim existingQbeValue As Tuple(Of String, String) = Nothing
                 If existingQbeValues.TryGetValue(fieldName, existingQbeValue) Then
-                    If Not String.IsNullOrWhiteSpace(existingQbeValue.Item1) Then
-                        qbeGrid.Rows(rowIndex).Cells("Operator").Value = existingQbeValue.Item1
-                    End If
-                    qbeGrid.Rows(rowIndex).Cells("FieldValue").Value = existingQbeValue.Item2
+                    ' Put back, not chosen. A Between restored here must not reopen its dialog.
+                    suppressQbeOperatorEvents = True
+                    Try
+                        If Not String.IsNullOrWhiteSpace(existingQbeValue.Item1) Then
+                            qbeGrid.Rows(rowIndex).Cells("Operator").Value = existingQbeValue.Item1
+                        End If
+                        qbeGrid.Rows(rowIndex).Cells("FieldValue").Value = existingQbeValue.Item2
+                    Finally
+                        suppressQbeOperatorEvents = False
+                    End Try
+
+                    If fieldKind = QbeFieldKind.DateField Then ApplyQbeDateEditor(rowIndex)
                 End If
             Next
 
@@ -4846,6 +4860,32 @@ Namespace SDC.Framework
                         End If
                 End Select
 
+                ' Between is expanded here and travels no further. Below this line a range is the
+                ' two comparisons it always meant - on or after the first day, on or before the
+                ' last - and every filter path answers those already. The alternative was teaching
+                ' three of them a two-valued operator.
+                '
+                ' The dialog is the only place a range can be entered, and it refuses one that
+                ' runs backwards, so there is nothing to re-check here.
+                If comparisonOperator = QbeComparisonOperator.Between Then
+                    Dim halves = filterValue.Split(New String() {QbeDateCell.RangeSeparator}, StringSplitOptions.None)
+                    Dim rangeFrom As Date
+                    Dim rangeTo As Date
+
+                    If halves.Length <> 2 OrElse
+                       Not QbeDateBounds.TryParseFilterValue(halves(0), rangeFrom) OrElse
+                       Not QbeDateBounds.TryParseFilterValue(halves(1), rangeTo) Then
+                        errors.Add(fieldDefinition.DisplayName & " needs two dates. Click the value to pick them.")
+                        Continue For
+                    End If
+
+                    builtFilters(fieldName & "|" & QbeComparisonOperator.GreaterThanOrEqual.ToString()) =
+                        QbeDateBounds.ToFilterValue(rangeFrom)
+                    builtFilters(fieldName & "|" & QbeComparisonOperator.LessThanOrEqual.ToString()) =
+                        QbeDateBounds.ToFilterValue(rangeTo)
+                    Continue For
+                End If
+
                 builtFilters(fieldName & "|" & comparisonOperator.ToString()) = filterValue
             Next
 
@@ -5016,7 +5056,135 @@ Namespace SDC.Framework
             ConfigureOperatorCellItems(operatorCell, fieldDefinition.FieldKind)
             operatorCell.Value = GetDefaultOperator(fieldDefinition).ToString()
 
+            ' A date field gets a date control, and never a lookup list - a declared foreign key
+            ' pointing at a date column is not a thing, and asking for one is a round trip for an
+            ' answer known in advance.
+            If fieldDefinition.FieldKind = QbeFieldKind.DateField Then
+                ApplyQbeDateEditor(rowIndex)
+                Return
+            End If
+
             ApplyQbeValueChoices(rowIndex, fieldDefinition)
+        End Sub
+
+        ''' <summary>
+        ''' Turns a date field's value box into the control a maintenance page uses.
+        '''
+        ''' Nothing is typed as free text, which is what removes the format question: a control
+        ''' that holds only a date cannot be handed an ambiguous string, and the day it holds is
+        ''' written into the filter as ISO whatever the company displays.
+        '''
+        ''' A Between row keeps the same cell and makes it read-only. Two dates do not fit in one
+        ''' cell, and a range half-entered in place is a search nobody asked for - clicking it
+        ''' reopens the dialog instead.
+        ''' </summary>
+        Protected Overridable Sub ApplyQbeDateEditor(rowIndex As Integer)
+            If rowIndex < 0 OrElse rowIndex >= qbeGrid.Rows.Count Then Return
+
+            Dim row = qbeGrid.Rows(rowIndex)
+            Dim existing = Convert.ToString(row.Cells("FieldValue").Value)
+
+            If TryCast(row.Cells("FieldValue"), QbeDateCell) Is Nothing Then
+                row.Cells("FieldValue") = New QbeDateCell()
+                row.Cells("FieldValue").Value = existing
+            End If
+
+            row.Cells("FieldValue").ReadOnly =
+                ParseOperatorValue(row.Cells("Operator").Value) = QbeComparisonOperator.Between
+        End Sub
+
+        ''' <summary>
+        ''' True while the code, rather than the user, is putting operators into the grid.
+        '''
+        ''' Restoring a saved search sets an operator like any other assignment, and a Between
+        ''' arriving that way must not open the dialog over a page that is still loading.
+        ''' </summary>
+        Private suppressQbeOperatorEvents As Boolean
+
+        ''' <summary>
+        ''' Commits an operator the moment it is chosen.
+        '''
+        ''' A combo cell otherwise keeps its new value until the cell loses focus, and the value
+        ''' box beside it would go on offering the wrong editor until somebody clicked elsewhere.
+        ''' Scoped to the operator column on purpose: committing a date cell on every tick of its
+        ''' picker would write a value while it was still being chosen.
+        ''' </summary>
+        Private Sub QbeGrid_CurrentCellDirtyStateChanged(sender As Object, e As EventArgs)
+            If Not qbeGrid.IsCurrentCellDirty Then Return
+
+            Dim cell = qbeGrid.CurrentCell
+            If cell Is Nothing OrElse cell.OwningColumn Is Nothing Then Return
+            If Not String.Equals(cell.OwningColumn.Name, "Operator", StringComparison.Ordinal) Then Return
+
+            qbeGrid.CommitEdit(DataGridViewDataErrorContexts.Commit)
+        End Sub
+
+        ''' <summary>
+        ''' Keeps a date row's value box in step with the operator above it.
+        '''
+        ''' Choosing Between opens the dialog at once. An empty Between row can do nothing, and
+        ''' making somebody click a second time to discover that is a wasted round trip over a
+        ''' browser session.
+        '''
+        ''' Choosing anything else clears a range that is left behind. Half a range read as a
+        ''' single date would search for a day nobody asked for.
+        ''' </summary>
+        Private Sub QbeGrid_CellValueChanged(sender As Object, e As DataGridViewCellEventArgs)
+            If suppressQbeOperatorEvents Then Return
+            If e.RowIndex < 0 OrElse e.ColumnIndex < 0 OrElse e.RowIndex >= qbeGrid.Rows.Count Then Return
+            If Not String.Equals(qbeGrid.Columns(e.ColumnIndex).Name, "Operator", StringComparison.Ordinal) Then Return
+
+            Dim row = qbeGrid.Rows(e.RowIndex)
+            Dim fieldDefinition = GetFieldDefinition(Convert.ToString(row.Cells("FieldName").Value))
+            If fieldDefinition Is Nothing OrElse fieldDefinition.FieldKind <> QbeFieldKind.DateField Then Return
+
+            If ParseOperatorValue(row.Cells("Operator").Value) = QbeComparisonOperator.Between Then
+                ApplyQbeDateEditor(e.RowIndex)
+                PromptForQbeDateRange(e.RowIndex, fieldDefinition)
+                Return
+            End If
+
+            If Convert.ToString(row.Cells("FieldValue").Value).Contains(QbeDateCell.RangeSeparator) Then
+                row.Cells("FieldValue").Value = String.Empty
+            End If
+
+            ApplyQbeDateEditor(e.RowIndex)
+        End Sub
+
+        ''' <summary>
+        ''' Asks for the two dates of a Between row.
+        '''
+        ''' Cancelling leaves the row empty rather than putting the previous operator back. An
+        ''' empty row filters on nothing, which is exactly what an untouched search row does, and
+        ''' nothing has to be remembered to undo.
+        ''' </summary>
+        Protected Overridable Sub PromptForQbeDateRange(rowIndex As Integer, fieldDefinition As QbeFieldDefinition)
+            If rowIndex < 0 OrElse rowIndex >= qbeGrid.Rows.Count OrElse fieldDefinition Is Nothing Then Return
+
+            Dim row = qbeGrid.Rows(rowIndex)
+            Dim current = Convert.ToString(row.Cells("FieldValue").Value)
+            Dim startFrom As Date? = Nothing
+            Dim startTo As Date? = Nothing
+            Dim parsed As Date
+
+            For Each half In current.Split(New String() {QbeDateCell.RangeSeparator}, StringSplitOptions.None)
+                If Not QbeDateBounds.TryParseFilterValue(half, parsed) Then Continue For
+                If Not startFrom.HasValue Then
+                    startFrom = parsed
+                ElseIf Not startTo.HasValue Then
+                    startTo = parsed
+                End If
+            Next
+
+            Using dialog As New QbeDateRangeDialog(fieldDefinition.DisplayName, startFrom, startTo)
+                If dialog.ShowDialog(Me) = DialogResult.OK Then
+                    row.Cells("FieldValue").Value = QbeDateBounds.ToFilterValue(dialog.FromDate) &
+                                                    QbeDateCell.RangeSeparator &
+                                                    QbeDateBounds.ToFilterValue(dialog.ToDate)
+                Else
+                    row.Cells("FieldValue").Value = String.Empty
+                End If
+            End Using
         End Sub
 
         ''' <summary>
@@ -5114,7 +5282,18 @@ Namespace SDC.Framework
             If e.RowIndex < 0 OrElse e.ColumnIndex < 0 Then Return
 
             Dim cell = qbeGrid.Rows(e.RowIndex).Cells(e.ColumnIndex)
-            If cell Is Nothing OrElse cell.ReadOnly Then Return
+            If cell Is Nothing Then Return
+
+            ' A Between value is not edited in place. Both of its dates belong to the dialog, and
+            ' the cell is read-only precisely so that half of a range cannot be typed over.
+            If TypeOf cell Is QbeDateCell AndAlso
+               ParseOperatorValue(qbeGrid.Rows(e.RowIndex).Cells("Operator").Value) = QbeComparisonOperator.Between Then
+                Dim rangeField = GetFieldDefinition(Convert.ToString(qbeGrid.Rows(e.RowIndex).Cells("FieldName").Value))
+                If rangeField IsNot Nothing Then PromptForQbeDateRange(e.RowIndex, rangeField)
+                Return
+            End If
+
+            If cell.ReadOnly Then Return
 
             ' Every editable cell, not only the lists. A grid that does not yet have focus spends
             ' the first click getting it, so a search field took one click to wake up and another
@@ -5135,6 +5314,17 @@ Namespace SDC.Framework
             Dim editor = TryCast(e.Control, ComboBox)
             If editor Is Nothing Then Return
 
+            ' An open list holds the mouse, and the next click anywhere - Close, Find, another
+            ' row - is spent shutting it rather than doing what was clicked. That is ordinary
+            ' combo behaviour, made constant here by opening the list on the first click, which
+            ' left one sitting open after every choice. Ending the edit on a committed selection
+            ' gives the mouse back at the moment the choice is made.
+            '
+            ' Removed first: the grid reuses one editing control across cells, and handlers added
+            ' per showing would otherwise accumulate for the life of the page.
+            RemoveHandler editor.SelectionChangeCommitted, AddressOf QbeEditor_SelectionChangeCommitted
+            AddHandler editor.SelectionChangeCommitted, AddressOf QbeEditor_SelectionChangeCommitted
+
             ' Posted rather than set here. The editor is not yet placed and sized when this runs,
             ' and a list dropped in that moment opens against the wrong rectangle.
             BeginInvoke(Sub()
@@ -5144,6 +5334,43 @@ Namespace SDC.Framework
                                 ' A list that will not open is still a list that can be typed into.
                             End Try
                         End Sub)
+        End Sub
+
+        ''' <summary>
+        ''' Closes the editor as soon as a value is chosen, which hands the mouse back.
+        '''
+        ''' Posted rather than called here: ending an edit from inside the editor's own event
+        ''' disposes the control the event is still running on.
+        ''' </summary>
+        Private Sub QbeEditor_SelectionChangeCommitted(sender As Object, e As EventArgs)
+            BeginInvoke(Sub()
+                            Try
+                                qbeGrid.EndEdit()
+                            Catch
+                                ' A grid that will not leave its cell is the fault this exists to
+                                ' avoid; it must not become an exception on the way out.
+                            End Try
+                        End Sub)
+        End Sub
+
+        ''' <summary>
+        ''' A search cell that will not take its value says so and lets go.
+        '''
+        ''' Without a handler here a DataGridView shows its own dialog and keeps the focus in the
+        ''' cell, and a page whose search grid will not release focus is a page that will not
+        ''' close. A criterion that cannot be committed is worth a line in the status area; it is
+        ''' not worth trapping somebody in the window.
+        ''' </summary>
+        Private Sub QbeGrid_DataError(sender As Object, e As DataGridViewDataErrorEventArgs)
+            e.ThrowException = False
+            e.Cancel = False
+
+            Dim reason = If(e.Exception IsNot Nothing, e.Exception.Message, "the value was not accepted")
+            SetRetrievalStatus("That search value was not accepted: " & reason, True)
+
+            If e.Exception IsNot Nothing Then
+                Telemetry.Error(e.Exception, "FW_Base_B.QbeGrid_DataError")
+            End If
         End Sub
 
         Private Sub ConfigureQbeOperatorsForAllRows()
@@ -5168,7 +5395,19 @@ Namespace SDC.Framework
                 End If
 
                 ConfigureOperatorCellItems(operatorCell, fieldDefinition.FieldKind)
-                operatorCell.Value = GetDefaultOperator(fieldDefinition).ToString()
+
+                ' Written by the code, not chosen by anybody, so the row is not re-shaped and a
+                ' Between does not open a dialog over a page that is still assembling itself.
+                suppressQbeOperatorEvents = True
+                Try
+                    operatorCell.Value = GetDefaultOperator(fieldDefinition).ToString()
+                Finally
+                    suppressQbeOperatorEvents = False
+                End Try
+
+                If fieldDefinition.FieldKind = QbeFieldKind.DateField Then
+                    ApplyQbeDateEditor(row.Index)
+                End If
             Next
         End Sub
 
@@ -5197,7 +5436,15 @@ Namespace SDC.Framework
             choices.Columns.Add("Value", GetType(String))
             choices.Columns.Add("Display", GetType(String))
 
-            For Each op In operators
+            ' Alphabetical by what is read, not by the order the allowed list happens to be
+            ' written in. Sorted here rather than in GetAllowedOperators so the two questions stay
+            ' apart: that one answers which operators a field may use, this one what the list
+            ' looks like. A page overriding the first still gets a sorted list.
+            '
+            ' The default is set by name, never by position - GetDefaultOperator picks Equals -
+            ' so reordering the list does not change what a field starts on.
+            For Each op In operators.OrderBy(Function(o) DisplayNameFormatter.ToOperatorDisplayName(o),
+                                             StringComparer.OrdinalIgnoreCase)
                 choices.Rows.Add(op.ToString(), DisplayNameFormatter.ToOperatorDisplayName(op))
             Next
 
@@ -5275,7 +5522,7 @@ Namespace SDC.Framework
 
         Protected Overridable Function GetAllowedOperators(fieldKind As QbeFieldKind) As IEnumerable(Of QbeComparisonOperator)
             Select Case fieldKind
-                Case QbeFieldKind.NumericField, QbeFieldKind.DateField
+                Case QbeFieldKind.NumericField
                     Return New QbeComparisonOperator() {
                         QbeComparisonOperator.EqualsTo,
                         QbeComparisonOperator.NotEquals,
@@ -5283,6 +5530,22 @@ Namespace SDC.Framework
                         QbeComparisonOperator.GreaterThanOrEqual,
                         QbeComparisonOperator.LessThan,
                         QbeComparisonOperator.LessThanOrEqual
+                    }
+
+                ' Dates get Between; numbers do not, yet. Not an oversight and not a judgement
+                ' about ranges of numbers: Between expands into two filters on the same field, and
+                ' the Users browse names its SQL parameter after the field, which would declare
+                ' @UserID twice and have the batch refused. FW_Users carries no date column, so a
+                ' date range never reaches that path. Numbers need it numbered first.
+                Case QbeFieldKind.DateField
+                    Return New QbeComparisonOperator() {
+                        QbeComparisonOperator.EqualsTo,
+                        QbeComparisonOperator.NotEquals,
+                        QbeComparisonOperator.GreaterThan,
+                        QbeComparisonOperator.GreaterThanOrEqual,
+                        QbeComparisonOperator.LessThan,
+                        QbeComparisonOperator.LessThanOrEqual,
+                        QbeComparisonOperator.Between
                     }
                 Case QbeFieldKind.BooleanField
                     Return New QbeComparisonOperator() {
@@ -5387,7 +5650,22 @@ Namespace SDC.Framework
             Dim registrationId As Integer
             If Not TryGetActiveRegistrationId(registrationId) Then Return
 
-            Using dlg As New SaveQbeDialog()
+            ' One query, on a button the user pressed. The dialog needs the names already taken
+            ' to ask before replacing one, and asking the database again per keystroke - or once
+            ' per OK - would be worse for the same answer.
+            Dim takenNames As New List(Of String)()
+            Try
+                For Each saved In DataAccess.GetSavedQbes(registrationId, activeSession.Value.UserID, Me.Text)
+                    If saved.UserID = activeSession.Value.UserID Then takenNames.Add(saved.QbeName)
+                Next
+            Catch ex As Exception
+                ' A name check that cannot run must not stop somebody saving. The data layer still
+                ' updates rather than duplicates, which is the behaviour this prompt warns about -
+                ' it is now unwarned rather than wrong.
+                Telemetry.Error(ex, "FW_Base_B.SaveQbeButton_Click")
+            End Try
+
+            Using dlg As New SaveQbeDialog(takenNames)
                 If dlg.ShowDialog(Me) = DialogResult.OK Then
                     Try
                         Dim record As New SavedQbeRecord With {
@@ -5485,12 +5763,25 @@ Namespace SDC.Framework
                     Dim rowField = gridRow.Cells("FieldName").Value
                     If rowField IsNot Nothing AndAlso
                        String.Equals(rowField.ToString(), fieldName, StringComparison.OrdinalIgnoreCase) Then
+
+                        ' Restored, not chosen. A saved Between would otherwise open its dialog
+                        ' the moment its row was reached, before the search had been loaded.
+                        suppressQbeOperatorEvents = True
                         Try
                             gridRow.Cells("Operator").Value = operatorStr
                         Catch telemetryEx As Exception
                             Telemetry.Error(telemetryEx, "FW_Base_B.ApplyQbeDataToGrid")
+                        Finally
+                            suppressQbeOperatorEvents = False
                         End Try
+
                         gridRow.Cells("FieldValue").Value = valuePart
+
+                        Dim restoredField = GetFieldDefinition(fieldName)
+                        If restoredField IsNot Nothing AndAlso restoredField.FieldKind = QbeFieldKind.DateField Then
+                            ApplyQbeDateEditor(gridRow.Index)
+                        End If
+
                         Exit For
                     End If
                 Next
@@ -5502,6 +5793,16 @@ Namespace SDC.Framework
         End Sub
 
         Private Sub BrowsePage_FormClosing(sender As Object, e As FormClosingEventArgs)
+            ' A search cell still in edit mode can refuse to be left, and a page whose grid will
+            ' not give up focus is a page that will not close. Nothing in a search row is worth
+            ' keeping at this point, so it is cancelled rather than committed.
+            Try
+                qbeGrid.CancelEdit()
+                qbeGrid.EndEdit()
+            Catch
+                ' Closing is the one thing that must happen. It happens.
+            End Try
+
             ' Central close pipeline for both Close button and window X.
             Try
                 If Not hasBaselineLayoutSnapshot Then

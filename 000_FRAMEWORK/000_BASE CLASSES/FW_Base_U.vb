@@ -2677,27 +2677,23 @@ Namespace SDC.Framework
         ''' </summary>
         Private ReadOnly dateFieldFormats As New Dictionary(Of DateTimePicker, String)()
 
-        ''' <summary>The blank a DateTimePicker shows when its value is null. A space, because an
-        ''' empty custom format is ignored and the control falls back to the short date.</summary>
-        Private Const EmptyDateFormat As String = " "
-
         ''' <summary>
         ''' Shows or hides a date field's value according to its check box.
         '''
-        ''' Called whenever the box is toggled, by the user or in code, so the display and the
-        ''' value can never disagree about whether there is a date.
+        ''' Called whenever the box is toggled, by the user or in code, and the display and the
+        ''' value can then never disagree about whether there is a date.
+        '''
+        ''' The rule itself lives in DateFieldDisplay, because the browse page's search rows need
+        ''' the identical behaviour. This knows only which format the field really shows; the
+        ''' helper knows what an unticked box does.
         ''' </summary>
         Private Sub RefreshDateFieldDisplay(picker As DateTimePicker)
             If picker Is Nothing Then Return
 
             Dim realFormat As String = Nothing
-            If Not dateFieldFormats.TryGetValue(picker, realFormat) OrElse String.IsNullOrEmpty(realFormat) Then Return
+            If Not dateFieldFormats.TryGetValue(picker, realFormat) Then Return
 
-            Dim showsNothing = picker.ShowCheckBox AndAlso Not picker.Checked
-            Dim wanted = If(showsNothing, EmptyDateFormat, realFormat)
-            If Not String.Equals(picker.CustomFormat, wanted, StringComparison.Ordinal) Then
-                picker.CustomFormat = wanted
-            End If
+            DateFieldDisplay.Refresh(picker, realFormat)
         End Sub
 
         Protected Shared Sub ApplyDateFieldFormat(picker As DateTimePicker, showTime As Boolean)
@@ -2834,29 +2830,14 @@ Namespace SDC.Framework
         ''' <summary>
         ''' Ticks or unticks a date field's check box so that it survives the control being shown.
         '''
-        ''' DateTimePicker.Checked does not stick before the window handle exists. BindToForm runs
-        ''' from the page's constructor, long before the form is displayed, so setting it there
-        ''' looked right and did nothing: at handle creation the control initialises itself from
-        ''' Value and comes up ticked. Every nullable date therefore opened as though it held
-        ''' today's date, and a null Termination Date read as "terminated today" - wrong in the
-        ''' most alarming possible direction, and it would have been saved that way on the next
-        ''' Save.
-        '''
-        ''' Set now for the case where the handle already exists, and again when it is created.
-        ''' The handler removes itself, so reloading a page cannot accumulate them.
+        ''' DateTimePicker.Checked does not stick before the window handle exists, and BindToForm
+        ''' runs from the page's constructor, long before the form is displayed. DateFieldDisplay
+        ''' holds that trap and what it cost; this supplies the format the field shows.
         ''' </summary>
         Private Sub SetDateFieldChecked(picker As DateTimePicker, isChecked As Boolean)
-            picker.Checked = isChecked
-            RefreshDateFieldDisplay(picker)
-            If picker.IsHandleCreated Then Return
-
-            Dim reapply As EventHandler = Nothing
-            reapply = Sub(sender As Object, e As EventArgs)
-                          RemoveHandler picker.HandleCreated, reapply
-                          picker.Checked = isChecked
-                          RefreshDateFieldDisplay(picker)
-                      End Sub
-            AddHandler picker.HandleCreated, reapply
+            Dim realFormat As String = Nothing
+            dateFieldFormats.TryGetValue(picker, realFormat)
+            DateFieldDisplay.SetChecked(picker, isChecked, realFormat)
         End Sub
 
         ''' <summary>

@@ -10839,6 +10839,25 @@ Namespace SDC.Framework
                 Return quotedField & " " & numOp & " " & value
             End If
 
+            ' Date field. A search row offers a day and no time, and the column may carry one.
+            ' The day becomes a pair of boundaries rather than an equality - QbeDateBounds holds
+            ' the rule and the reasoning. Until 2026-09-21 a date fell through to the text branch
+            ' below and was compared as a quoted string, which found the rows saved at midnight
+            ' and silently missed every other one.
+            If col.DataType Is GetType(Date) Then
+                Dim chosen As Date
+                If Not QbeDateBounds.TryParseFilterValue(value, chosen) Then
+                    unsupportedMessage =
+                        fieldName & " needs a date." & Environment.NewLine &
+                        Environment.NewLine &
+                        "'" & value & "' could not be read as one. Pick the date from the calendar " &
+                        "rather than typing it."
+                    Return String.Empty
+                End If
+
+                Return QbeDateBounds.ToDataViewExpression(fieldName, QbeDateBounds.Resolve(op, chosen))
+            End If
+
             ' Text field. Same decision as the SQL paths make, so a page filtered here and a page
             ' filtered in the database answer a typed wildcard the same way.
             Dim comparison = ResolveTextComparison(value, op)

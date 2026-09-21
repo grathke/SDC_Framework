@@ -220,13 +220,22 @@ block the parser, and the capability should not be added before it is known to b
 
 Recorded because it is the evidence the route in §2 rests on.
 
-There are three filter paths, not one:
+There are two filter paths, not one:
 
 | Path | Where | Used by |
 |---|---|---|
-| Client-side `DataView` | `DataAccess.vb:649` and `:4199`, via `BuildSingleColumnFilterExpr` at `:7672` | **most browse pages** — any page with SQL in `FW_Pages` |
-| Inline SQL, `FW_Entity` | `DataAccess.vb:718` and `:750` | fallback when no page SQL is supplied |
-| Inline SQL, `FW_Users` | `DataAccess.vb:4261` and `:4287` | the Users browse |
+| Client-side `DataView` | two call sites, both through `BuildSingleColumnFilterExpr` | **most browse pages** — any page with SQL in `FW_Pages` |
+| Inline SQL, `FW_Users` | the Users browse query | the Users browse |
+
+**Was three until 2026-09-03.** The third was an inline `SELECT` against `dbo.FW_Entity`, used
+when a page supplied no SQL of its own. It went when `FW_Entity` did, and a page with no row now
+gets PK-safe fallback SQL written into `FW_Pages` instead. Line numbers are left off deliberately:
+the ones this table carried were wrong within a fortnight.
+
+**The Users path names its parameter after the field** — `"@" & fieldName`. Two filters on one
+field therefore declare the same parameter twice and the batch is refused, which is why a Between
+row is offered on date fields only: it expands into two comparisons on one field, and `FW_Users`
+carries no date column for one to reach.
 
 The first is the main one, and it filters in memory with `DataView.RowFilter`, whose expression
 syntax permits a wildcard only at the **start or end** of a pattern. Mid-string `LIKE '%Gl%nn%'`

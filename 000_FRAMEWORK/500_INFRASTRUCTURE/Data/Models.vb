@@ -610,6 +610,16 @@ Namespace SDC.Framework
         GreaterThanOrEqual
         LessThan
         LessThanOrEqual
+
+        ''' <summary>
+        ''' Two dates, and the only operator that needs a second value.
+        '''
+        ''' It never reaches a filter. The search row expands it into the two comparisons it
+        ''' already means - on or after the first day, on or before the last - and nothing below
+        ''' the row learns a new word. Added at the end because a saved search stores the name,
+        ''' not the number, and a name is only stable while nothing is inserted above it.
+        ''' </summary>
+        Between
     End Enum
 
     Public Class QbeFieldDefinition

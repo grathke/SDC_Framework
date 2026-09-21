@@ -96,6 +96,26 @@ QBE values and operators are preserved if the QBE rows need to be rebuilt becaus
 
 An empty QBE is limited to the first 10 rows. Entering at least one criterion removes that empty-query limit.
 
+### Date fields (2026-09-21)
+
+A date field's value box is a `DateTimePicker`, not a text box — `QbeDateCell` and its editing
+control. Three things follow, and a change to any of them belongs here:
+
+- **Stored ISO, shown in the company's pattern.** The cell's value is `2026-09-14`, because that
+  value reaches a filter key and a saved search and has to keep meaning the same day after an
+  administrator changes the display format. Nothing parses a date out of a display string.
+- **The tick means "not searching on this field".** Unticked shows nothing and stores nothing, the
+  same rule `FW_Base_U` uses for a nullable date. `DateFieldDisplay` owns it for both.
+- **A chosen day is a range, never an equality.** `QbeDateBounds` holds the table: Equals D is
+  `>= D and < D+1`, Less Than Or Equal D is `< D+1`, and so on. This is what makes a search find a
+  record saved at 16:40. Do not replace it with `CAST(column AS date)` — that puts a function on
+  the column, and the `DataView` path has no truncation function at all.
+
+**Between** is offered on date fields only. It never reaches a filter: `TryBuildFiltersFromQbe`
+expands it into `GreaterThanOrEqual` and `LessThanOrEqual` on the same field. It is not offered on
+numbers because the Users browse names its SQL parameter after the field, and two filters on one
+field would declare the same parameter twice.
+
 ## Layout Load Lifecycle
 
 Layouts are stored in `dbo.FW_TableLayouts` and are scoped by:
