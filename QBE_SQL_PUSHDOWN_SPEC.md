@@ -18,6 +18,11 @@ run on the same server, so those 10,014 rows never cross a network. The waste is
 and garbage collection, measured in tens of milliseconds, against a table that is already the
 largest in the database.
 
+> **That premise was false, and the paragraph above is left standing as the record of it.**
+> Corrected 2026-09-21: the database is on `BEELINK`, the application runs on `NucBox_EVO-T1`,
+> and every one of those 10,014 rows has been crossing a LAN the whole time. The server name was
+> printed at the top of every run and was never compared against the hostname. See section 11.
+
 That reason expires the day the database moves to a machine of its own, or a table reaches a
 size where materialising all of it is the cost rather than moving it. Nothing in the code will
 say when that happens. **Raise it again on either of those, not before.**
@@ -459,3 +464,37 @@ regression test for the whole deleted branch, visible without counting anything.
 which is almost certainly not what a support queue wants. `CreatedOn DESC` is the likely answer.
 That belongs in the page's own SQL where it is visible, and it is a page decision rather than a
 framework default.
+
+---
+
+## 11. Measured through a real Thinfinity session — 2026-09-21
+
+The first run through the real server rather than `--tf-dev`, on a 1678x807 viewport:
+
+```
+Browse refresh FW_Employees_B: 3373ms  fetch=3297 strip=8 bind=5 hide=2 fit=11 buttons=5 layout=40 other=5
+```
+
+**3.4 seconds to show eleven rows, 98% of it the fetch.** The same page on the desktop the same
+afternoon: 151-237ms. Everything that is not the fetch comes to 71ms and is irrelevant.
+
+One sample, and the first refresh of that session - first refreshes are always the worst, 833ms
+against 151ms on the desktop. A second and third open would say whether it settles. It has not
+been repeated yet.
+
+### Two premises corrected by this measurement
+
+**The database is not local.** It runs on `BEELINK`; the application runs on `NucBox_EVO-T1`.
+Section 4a's "those rows never cross a network" was wrong, and every timing in this document
+already included a LAN hop. `hostname` against `SDC_DB_SERVER` settles it in seconds and was
+never checked. When deployed they will probably be co-located; AWS remains possible.
+
+**So the pushdown is worth doing today, not at ten times the data.** Section 2 said "not a
+performance project - the current numbers are tolerable". 3.4 seconds to display eleven rows is
+not tolerable, and it is happening now, in the delivery path the application actually uses.
+
+### And the instrumentation is what found it
+
+Before this afternoon the breakdown began after the query returned, so this line would have read
+`66ms post-query` and said nothing at all. A measurement that excludes the dominant term is worse
+than none, because it looks like an answer.
