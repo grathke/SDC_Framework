@@ -764,8 +764,18 @@ was built as a panel parented to the form. `TileDropDownController` opens the ri
 that way, which is why TEST_CASES MENU-18 records the menu overlaying the regions rather than being
 clipped at the ribbon's edge. The combo is the one control where the OS still owns the list.
 
-Not diagnosed against a real browser session. If it misplaces there too, the fix already has a
-working precedent in this repository: a `ListBox` in a panel, shown and hidden by hand, inside the
-form's own window. That would want to be a shared control rather than a change per page - combos
-are everywhere, and `COMBO_CHECKLIST.md` asks for binding and validation to stay in shared
-patterns.
+**Confirmed in a real browser session — 2026-09-21.** It is worse there than misplacement. The
+list opens where it should and can be picked from, but the **dismissal never arrives**: a click
+outside it does nothing, and the session is stuck until a value is chosen — with no value meaning
+"I did not want this". In a desktop window the same list dismisses normally, which is what points
+at the relay rather than at the control.
+
+Only one combo in the codebase showed it, and that is the discriminating detail: the QBE lookup
+cell was the only one **opened in code**, by `DroppedDown = True` as its editor appeared. Every
+other combo is opened by the user clicking its arrow, and those behave. That line is gone, and the
+QBE list opens on its arrow like every other one.
+
+So the panel-and-`ListBox` replacement is **not** currently needed. Keep it in reserve for the day
+a combo opened normally misbehaves: a `ListBox` in a panel, shown and hidden by hand, inside the
+form's own window. It would want to be a shared control rather than a change per page — combos are
+everywhere, and `COMBO_CHECKLIST.md` asks for binding and validation to stay in shared patterns.

@@ -683,10 +683,8 @@ Namespace SDC.Framework
             })
             qbeGrid.Columns.Add("FieldValue", "Value")
 
-            ' One click opens a list, not two. A DataGridView combo cell takes the first click to
-            ' enter edit mode and the second to drop the list down, which reads as the first click
-            ' having missed - and over VirtualUI, where a click is a round trip, it is twice the
-            ' waiting for the same choice.
+            ' One click reaches the editor. It no longer also opens the list - see
+            ' QbeGrid_EditingControlShowing for why that had to stop.
             AddHandler qbeGrid.CellClick, AddressOf QbeGrid_CellClick
             AddHandler qbeGrid.EditingControlShowing, AddressOf QbeGrid_EditingControlShowing
 
@@ -2084,6 +2082,18 @@ Namespace SDC.Framework
 
             ' Before the SQL check and the read: a page that prepares its own source may be the
             ' reason there is anything to read.
+            ' Timed from here rather than from after the query.
+            '
+            ' The breakdown below was added to answer "a Find averages 656ms against 204ms of
+            ' database - what are the other 450 doing", and it did not answer it: the steps it
+            ' measured summed to 66-88ms. Everything before the query, the query call itself, and
+            ' whatever happens after the Try were all outside the measurement, which is exactly
+            ' where an unexplained 400ms would hide. A breakdown that does not add up to the whole
+            ' is a breakdown that can be read for months without noticing what it leaves out.
+            Dim refreshTimer = System.Diagnostics.Stopwatch.StartNew()
+            Dim stepTimer = System.Diagnostics.Stopwatch.StartNew()
+            Dim breakdown As New System.Text.StringBuilder()
+
             PrepareBrowseSource()
 
             If Not EnsureSqlOrClose() Then
@@ -2134,6 +2144,11 @@ Namespace SDC.Framework
                     Return
                 End If
 
+                ' Everything up to the query: the SQL, the scope predicate, the user id, the
+                ' visibility map, the role-field table name. Several of those can reach the
+                ' database, and none of them was being timed.
+                MarkStep(stepTimer, breakdown, "pre")
+
                 Dim dt = DataAccess.GetBrowseRowsByRegistration(registrationId,
                                                                currentFilters,
                                                                activeSql,
@@ -2143,6 +2158,12 @@ Namespace SDC.Framework
                                                                maxRows,
                                                                registrationId > 0,
                                                                ResolveCurrentRoleFieldTableName())
+
+                ' The call, not the query. The data layer times its own Fill and hands that back
+                ' as BrowseQueryMilliseconds; this is the whole call including the in-memory
+                ' scoping, the deleted-flag fallback, the QBE filter and the row trim, all of
+                ' which happen after the Fill and none of which that figure covers.
+                MarkStep(stepTimer, breakdown, "fetch")
                 lastRefreshExceededRowLimit = maxRows > 0 AndAlso
                                               dt.ExtendedProperties.ContainsKey("BrowseRowsLimited") AndAlso
                                               Convert.ToBoolean(dt.ExtendedProperties("BrowseRowsLimited"))
@@ -2181,13 +2202,6 @@ Namespace SDC.Framework
                     lastQueryMilliseconds = Convert.ToInt32(dt.ExtendedProperties("BrowseQueryMilliseconds"),
                                                             Globalization.CultureInfo.InvariantCulture)
                 End If
-                ' Every step from here to the end of the Try is timed. The telemetry said a Find
-                ' averaged 656ms against 204ms of database, and nobody could say what the other
-                ' 450 were doing - eleven rows come back whatever the table holds, so the cost is
-                ' fixed work, not volume. A breakdown is the only way to know which step owns it.
-                Dim stepTimer = System.Diagnostics.Stopwatch.StartNew()
-                Dim breakdown As New System.Text.StringBuilder()
-
                 ' Fields this role may not see are removed from the result before anything can bind
                 ' to them, so no later step can put them back on screen.
                 RemoveInvisibleRoleFieldColumns(dt)
@@ -2255,7 +2269,7 @@ Namespace SDC.Framework
                     MarkStep(stepTimer, breakdown, "snapshot")
                 End If
 
-                ReportPostQuery(breakdown)
+                ReportPostQuery(breakdown, refreshTimer)
 
             Catch ex As Exception
                 ' The message alone says what went wrong but never where. The first stack frame
@@ -4569,22 +4583,63 @@ Namespace SDC.Framework
         ''' The threshold is deliberately low. 150ms is not slow enough for anybody to complain
         ''' about, which is the point - by the time a Find is slow enough to complain about, the
         ''' step that owns it has been paying that cost invisibly for months.
+        '''
+        ''' **It reports the whole refresh and what the steps do not account for.** The steps used
+        ''' to be summed and that sum called the total, which made the line self-consistent and
+        ''' useless: it read as a complete account of a refresh while covering about a fifth of
+        ''' one. Anything not inside a named step now shows as "other", where it can be seen
+        ''' growing instead of being quietly left out.
         ''' </summary>
-        Private Sub ReportPostQuery(breakdown As System.Text.StringBuilder)
+        ''' <summary>
+        ''' What a Find spent before the refresh started, when that is worth a line.
+        '''
+        ''' Silent below the same threshold, which is where it will sit on an ordinary page. It
+        ''' exists for the case where it does not - a registration combo reloaded from the
+        ''' database, or the row-cap query answering slowly - because that time was being counted
+        ''' against the refresh, which does not contain it.
+        ''' </summary>
+        Private Sub ReportFindPreamble(findTimer As System.Diagnostics.Stopwatch)
             Try
-                If breakdown Is Nothing OrElse breakdown.Length = 0 Then Return
+                If findTimer Is Nothing Then Return
 
-                Dim total = 0
+                Dim elapsed = findTimer.ElapsedMilliseconds
+                If elapsed < PostQueryReportThresholdMs Then Return
+
+                Program.Log("Browse find preamble " & Me.GetType().Name & ": " &
+                            elapsed.ToString(Globalization.CultureInfo.InvariantCulture) & "ms")
+            Catch
+                ' As above.
+            End Try
+        End Sub
+
+        Private Sub ReportPostQuery(breakdown As System.Text.StringBuilder,
+                                    refreshTimer As System.Diagnostics.Stopwatch)
+            Try
+                If breakdown Is Nothing Then Return
+
+                Dim whole = If(refreshTimer Is Nothing, 0L, refreshTimer.ElapsedMilliseconds)
+
+                Dim accounted = 0
                 For Each part In breakdown.ToString().Split(" "c)
                     Dim pieces = part.Split("="c)
                     Dim value = 0
-                    If pieces.Length = 2 AndAlso Integer.TryParse(pieces(1), value) Then total += value
+                    If pieces.Length = 2 AndAlso Integer.TryParse(pieces(1), value) Then accounted += value
                 Next
 
-                If total < PostQueryReportThresholdMs Then Return
+                If whole < PostQueryReportThresholdMs AndAlso accounted < PostQueryReportThresholdMs Then Return
 
-                Program.Log("Browse post-query " & Me.GetType().Name & ": " &
-                            total.ToString(Globalization.CultureInfo.InvariantCulture) & "ms  " & breakdown.ToString())
+                Dim other = whole - accounted
+                Dim line = "Browse refresh " & Me.GetType().Name & ": " &
+                           whole.ToString(Globalization.CultureInfo.InvariantCulture) & "ms  " &
+                           breakdown.ToString()
+
+                ' Only when it is worth a word. A refresh whose steps add up needs no reminder
+                ' that nothing is missing.
+                If other > 0 Then
+                    line &= " other=" & other.ToString(Globalization.CultureInfo.InvariantCulture)
+                End If
+
+                Program.Log(line)
             Catch
                 ' As above.
             End Try
@@ -4636,6 +4691,13 @@ Namespace SDC.Framework
         Private Const PostQueryReportThresholdMs As Integer = 60
 
         Private Sub RunFind()
+            ' The part of a Find that happens before the refresh, which nothing has measured.
+            ' Resolving the registration can reload the combo, which is a query. The row caps are
+            ' not - they come from the session, resolved at login. Perceived time covers all of
+            ' this; the refresh line covers none of it, and the difference between the two numbers
+            ' had no owner.
+            Dim findTimer = System.Diagnostics.Stopwatch.StartNew()
+
             Dim selectedId = SelectedRecordId()
             Dim registrationId = GetRegistrationIdForQbeFind()
             If registrationId <= 0 Then
@@ -4670,6 +4732,8 @@ Namespace SDC.Framework
             ' 200 rather than 100: a hundred is easy to reach legitimately, and the cost is small.
             ' Binding a thousand rows was measured at about 130ms, so 200 is roughly 25.
             Dim rowLimit = If(filters.Count > 0, GetFilteredRowLimit(), If(qbeGrid.Rows.Count > 0, GetEmptyQbeRowLimit(), 0))
+
+            ReportFindPreamble(findTimer)
 
             RefreshGrid(selectedId, False, rowLimit, registrationId)
 
@@ -5307,33 +5371,35 @@ Namespace SDC.Framework
         End Sub
 
         ''' <summary>
-        ''' Drops the list down as the editor appears, which is the other half of opening on one
-        ''' click: BeginEdit alone shows a closed combo box.
+        ''' Prepares a search row's list editor as it appears.
+        '''
+        ''' **It no longer opens the list.** Until 2026-09-21 it set DroppedDown as the editor
+        ''' showed, to save a click: a DataGridView combo cell otherwise takes one click to enter
+        ''' edit mode and another to drop the list, and over VirtualUI each of those is a round
+        ''' trip to the browser.
+        '''
+        ''' That saving cost far more than it bought. A combo's list is the one control in this
+        ''' application the OS still owns - a top-level popup window, not part of the streamed
+        ''' form surface, as THINFINITY_NOTES section 13 predicted and a browser session has now
+        ''' confirmed. In a desktop window a click outside dismisses it normally. Through the
+        ''' browser the dismissal never arrives, and nothing responds until a value is chosen -
+        ''' with no value that means "I did not want this".
+        '''
+        ''' This was the only combo in the codebase opened in code, and the only one that wedged.
+        ''' Every other one in the application is opened by the user clicking its arrow, and those
+        ''' behave. Opening it deliberately is now the user's again.
+        '''
+        ''' Ending the edit on a committed selection stays: a list left open after a choice would
+        ''' still be holding the mouse when the next click arrives.
         ''' </summary>
         Private Sub QbeGrid_EditingControlShowing(sender As Object, e As DataGridViewEditingControlShowingEventArgs)
             Dim editor = TryCast(e.Control, ComboBox)
             If editor Is Nothing Then Return
 
-            ' An open list holds the mouse, and the next click anywhere - Close, Find, another
-            ' row - is spent shutting it rather than doing what was clicked. That is ordinary
-            ' combo behaviour, made constant here by opening the list on the first click, which
-            ' left one sitting open after every choice. Ending the edit on a committed selection
-            ' gives the mouse back at the moment the choice is made.
-            '
             ' Removed first: the grid reuses one editing control across cells, and handlers added
             ' per showing would otherwise accumulate for the life of the page.
             RemoveHandler editor.SelectionChangeCommitted, AddressOf QbeEditor_SelectionChangeCommitted
             AddHandler editor.SelectionChangeCommitted, AddressOf QbeEditor_SelectionChangeCommitted
-
-            ' Posted rather than set here. The editor is not yet placed and sized when this runs,
-            ' and a list dropped in that moment opens against the wrong rectangle.
-            BeginInvoke(Sub()
-                            Try
-                                If Not editor.IsDisposed Then editor.DroppedDown = True
-                            Catch
-                                ' A list that will not open is still a list that can be typed into.
-                            End Try
-                        End Sub)
         End Sub
 
         ''' <summary>
