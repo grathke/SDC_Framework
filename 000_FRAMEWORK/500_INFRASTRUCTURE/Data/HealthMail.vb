@@ -141,20 +141,24 @@ Namespace SDC.Framework
             ' Written the way somebody would say it, not the way a log would. It said
             ' "SDC health: 1 new fault" first, which reads like a line out of a file and makes the
             ' reader work out what is being asked of them.
+            '
+            ' Every word is capitalised, asked for on 2026-09-21. A subject line is a heading, and
+            ' an inbox stacks it beside Delivery Confirmation and Invoice Overdue - a sentence in
+            ' ordinary case reads as the start of a body somebody forgot to write.
             Dim total = items.Count
 
             Dim subject = If(total = 1,
-                             "You have an item that needs attention in System Health",
-                             "You have " & total.ToString(CultureInfo.InvariantCulture) &
-                             " items that need attention in System Health")
+                             "You Have An Item That Needs Attention In System Health",
+                             "You Have " & total.ToString(CultureInfo.InvariantCulture) &
+                             " Items That Need Attention In System Health")
 
             ' The recurrence is worth the subject line. A fix that did not hold is a different
             ' message from a fault nobody has seen, and somebody deciding whether to open this on a
             ' Sunday should be told which.
             If recurred > 0 Then
                 subject &= If(recurred = 1,
-                              " - one is back after a fix",
-                              " - " & recurred.ToString(CultureInfo.InvariantCulture) & " are back after a fix")
+                              " - One Is Back After A Fix",
+                              " - " & recurred.ToString(CultureInfo.InvariantCulture) & " Are Back After A Fix")
             End If
 
             Return subject
@@ -232,7 +236,10 @@ Namespace SDC.Framework
                     For Each address In recipients
                         Try
                             Using message As New MailMessage()
-                                message.From = New MailAddress(user, "SDC Framework")
+                                ' The address is the SMTP account; only the name shown beside
+                                ' it is ours. Written again in the test-mail script, which
+                                ' has to look like the real thing to be worth sending.
+                                message.From = New MailAddress(user, "City Nexus")
                                 message.Subject = subject
                                 message.Body = body
                                 message.IsBodyHtml = False

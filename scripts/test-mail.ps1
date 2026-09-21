@@ -100,8 +100,9 @@ try {
 	$client.Timeout = 20000
 
 	$message = New-Object System.Net.Mail.MailMessage
-	$message.From = New-Object System.Net.Mail.MailAddress($user, "SDC Framework")
-	$message.Subject = "SDC health: test message"
+	# The same name HealthMail sends under. Change one and change the other.
+	$message.From = New-Object System.Net.Mail.MailAddress($user, "City Nexus")
+	$message.Subject = "This Is A Test Of System Health Alerts"
 	$message.IsBodyHtml = $false
 	$message.Body = @"
 This is a test of the health alert path, sent by scripts\test-mail.ps1.
