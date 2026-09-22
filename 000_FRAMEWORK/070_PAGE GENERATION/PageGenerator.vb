@@ -2316,6 +2316,13 @@ Namespace SDC.Framework
             Dim formWidth = page.Width
             Dim extraBelowFields = page.ExtraBelowFields
 
+            ' Suspended for the whole build. A form lays itself out every time a control is added
+            ' to it, and a generated page adds sixty-odd - so the page was arranging itself sixty
+            ' times to reach the arrangement it was always going to have. Every control here is
+            ' placed by an explicit Location, so nothing downstream depends on a layout pass having
+            ' run: the controllers built at the end read positions that were assigned, not
+            ' computed.
+            output.AppendLine("            SuspendLayout()")
             output.AppendLine("            ClientSize = New Size(" & formWidth.ToString() & ", " & page.Height.ToString() & ")")
             output.AppendLine("            okButton.Location = New Point(ClientSize.Width - " & MaintenanceLayout.ButtonRowWidth.ToString() & ", ClientSize.Height - " & (MaintenanceLayout.ButtonHeight + MaintenanceLayout.ButtonBottomGap).ToString() & ")")
             output.AppendLine("            cancelActionButton.Location = New Point(ClientSize.Width - " & (MaintenanceLayout.ButtonWidth + MaintenanceLayout.ButtonRightGap).ToString() & ", ClientSize.Height - " & (MaintenanceLayout.ButtonHeight + MaintenanceLayout.ButtonBottomGap).ToString() & ")")
@@ -2421,6 +2428,11 @@ Namespace SDC.Framework
 
             output.AppendLine()
             output.AppendLine("            OnFieldsBuilt()")
+
+            ' After OnFieldsBuilt, so a companion's own controls are added under the same
+            ' suspension - the role selector adds six. One layout pass at the end rather than one
+            ' per control.
+            output.AppendLine("            ResumeLayout(True)")
             output.AppendLine("        End Sub")
             output.AppendLine()
             output.AppendLine("        Protected Overrides Function GetTableNameOverride() As String")

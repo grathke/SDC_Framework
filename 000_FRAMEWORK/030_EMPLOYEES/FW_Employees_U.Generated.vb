@@ -52,6 +52,7 @@ Namespace SDC.Framework
         ''' Every control on the page, laid out. Called from the constructor in FW_Employees_U.vb.
         ''' </summary>
         Private Sub BuildGeneratedFields()
+            SuspendLayout()
             ClientSize = New Size(1060, 799)
             okButton.Location = New Point(ClientSize.Width - 270, ClientSize.Height - 46)
             cancelActionButton.Location = New Point(ClientSize.Width - 135, ClientSize.Height - 46)
@@ -100,6 +101,7 @@ Namespace SDC.Framework
             zipCoderController = New ZipCoderController(Me, cityTextBox, stateTextBox, zipTextBox)
 
             OnFieldsBuilt()
+            ResumeLayout(True)
         End Sub
 
         Protected Overrides Function GetTableNameOverride() As String
