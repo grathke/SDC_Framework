@@ -152,7 +152,33 @@ Namespace SDC.Framework
         ''' <summary>Each table's computed columns and the columns they are built from.</summary>
         Private Shared ReadOnly computedSourceCache As New Dictionary(Of String, Dictionary(Of String, List(Of String)))(StringComparer.OrdinalIgnoreCase)
 
-        Private Shared ReadOnly tableColumnCache As New Dictionary(Of String, Boolean)(StringComparer.OrdinalIgnoreCase)
+        ''' <summary>
+        ''' What a table's columns are, read once and then answered from memory.
+        '''
+        ''' Was one question per column - "does FW_Employees have DeletedFlag?" - which cached its
+        ''' answer perfectly and still cost a round trip for every column nobody had asked about
+        ''' yet. A traced page open on 2026-09-22 made nine of those, and separately asked three
+        ''' more times for the same table's column list in three different dialects: the names, the
+        ''' names in declared order, and the names with their maximum text length. Seven trips for
+        ''' facts that all sit in the same row of INFORMATION_SCHEMA.COLUMNS.
+        ''' </summary>
+        Private Shared ReadOnly tableSchemaFactsCache As New Dictionary(Of String, TableSchemaFacts)(StringComparer.OrdinalIgnoreCase)
+
+        ''' <summary>
+        ''' The three things the framework asks about a table's columns, from one read.
+        ''' </summary>
+        Private NotInheritable Class TableSchemaFacts
+            Public Property OrderedNames As List(Of String)
+            Public Property NameSet As HashSet(Of String)
+            Public Property TextMaxLengths As Dictionary(Of String, Integer)
+        End Class
+
+        ''' <summary>
+        ''' A table's declared foreign keys. The query always returned the whole table; only the
+        ''' caching was missing, and GetQbeValueChoices asks once per field - seven times for one
+        ''' page in the same trace.
+        ''' </summary>
+        Private Shared ReadOnly columnRelationshipsCache As New Dictionary(Of String, Dictionary(Of String, ColumnRelationship))(StringComparer.OrdinalIgnoreCase)
         Private Shared ReadOnly rowVersionCache As New Dictionary(Of String, Boolean)(StringComparer.OrdinalIgnoreCase)
         Private Shared ReadOnly primaryKeyCache As New Dictionary(Of String, String)(StringComparer.OrdinalIgnoreCase)
 
@@ -207,7 +233,8 @@ Namespace SDC.Framework
         ''' </summary>
         Public Shared Sub InvalidateSchemaCache()
             SyncLock metadataCacheLock
-                tableColumnCache.Clear()
+                tableSchemaFactsCache.Clear()
+                columnRelationshipsCache.Clear()
                 rowVersionCache.Clear()
                 primaryKeyCache.Clear()
             End SyncLock
@@ -2521,39 +2548,93 @@ Namespace SDC.Framework
                 Return False
             End If
 
-            Dim cacheKey = tableName.Trim() & "|" & columnName.Trim()
-            Dim cached As Boolean
+            Dim facts = GetTableSchemaFacts(tableName)
+            If facts Is Nothing Then
+                Return False
+            End If
+
+            Return facts.NameSet.Contains(columnName.Trim())
+        End Function
+
+        ''' <summary>
+        ''' A table's columns - names, declared order and text lengths - from one read, cached for
+        ''' the process and cleared by InvalidateSchemaCache.
+        '''
+        ''' Filtered to the dbo schema. The per-column question it replaces was not, but every
+        ''' table in this database is dbo, no table name appears in two schemas, and every statement
+        ''' the framework writes is dbo-qualified - so this narrows a question that had no other
+        ''' answer to give. A database that put framework tables in another schema would need this
+        ''' revisited, and would have larger problems first.
+        ''' </summary>
+        ''' <returns>
+        ''' Nothing when the question could not be asked at all. That is not the same as a table
+        ''' with no such column, and the difference matters: a failure must not be remembered as an
+        ''' answer, or a transient fault would tell the application for the rest of the session that
+        ''' a table has no DeletedFlag and quietly turn soft delete off.
+        ''' </returns>
+        Private Shared Function GetTableSchemaFacts(tableName As String) As TableSchemaFacts
+            Dim key = NormalizeTableName(tableName)
+            If key = String.Empty Then
+                Return Nothing
+            End If
+
+            Dim cached As TableSchemaFacts = Nothing
             SyncLock metadataCacheLock
-                If tableColumnCache.TryGetValue(cacheKey, cached) Then
+                If tableSchemaFactsCache.TryGetValue(key, cached) Then
                     Return cached
                 End If
             End SyncLock
 
             Try
-                Dim answer As Boolean
+                Dim orderedNames As New List(Of String)()
+                Dim nameSet As New HashSet(Of String)(StringComparer.OrdinalIgnoreCase)
+                Dim textLengths As New Dictionary(Of String, Integer)(StringComparer.OrdinalIgnoreCase)
+
                 Using conn As New SqlConnection(ConnectionString)
                     conn.Open()
                     Using cmd As New SqlCommand(
-                        "SELECT COUNT(1) FROM INFORMATION_SCHEMA.COLUMNS " &
-                        "WHERE TABLE_NAME = @TableName AND COLUMN_NAME = @ColumnName", conn)
+                        "SELECT COLUMN_NAME, DATA_TYPE, CHARACTER_MAXIMUM_LENGTH " &
+                        "FROM INFORMATION_SCHEMA.COLUMNS " &
+                        "WHERE TABLE_SCHEMA = 'dbo' AND TABLE_NAME = @TableName " &
+                        "ORDER BY ORDINAL_POSITION", conn)
 
-                        cmd.Parameters.AddWithValue("@TableName", tableName.Trim())
-                        cmd.Parameters.AddWithValue("@ColumnName", columnName.Trim())
+                        cmd.Parameters.AddWithValue("@TableName", key)
 
-                        Dim result = cmd.ExecuteScalar()
-                        answer = If(result IsNot Nothing AndAlso IsNumeric(result), CInt(result) > 0, False)
+                        Using reader = cmd.ExecuteReader()
+                            While reader.Read()
+                                Dim name = SafeString(reader("COLUMN_NAME"))
+                                If name = String.Empty Then Continue While
+
+                                orderedNames.Add(name)
+                                nameSet.Add(name)
+
+                                Dim dataType = SafeString(reader("DATA_TYPE")).ToLowerInvariant()
+                                If dataType = "varchar" OrElse dataType = "nvarchar" OrElse
+                                   dataType = "char" OrElse dataType = "nchar" Then
+
+                                    If Not IsDBNull(reader("CHARACTER_MAXIMUM_LENGTH")) Then
+                                        Dim maxLength = Convert.ToInt32(reader("CHARACTER_MAXIMUM_LENGTH"), CultureInfo.InvariantCulture)
+                                        If maxLength > 0 Then textLengths(name) = maxLength
+                                    End If
+                                End If
+                            End While
+                        End Using
                     End Using
                 End Using
 
-                ' Stored only on the success path. A False from the Catch below is "the question
-                ' could not be asked", not "the column is absent", and must not become permanent.
+                Dim facts As New TableSchemaFacts With {
+                    .OrderedNames = orderedNames,
+                    .NameSet = nameSet,
+                    .TextMaxLengths = textLengths
+                }
+
                 SyncLock metadataCacheLock
-                    tableColumnCache(cacheKey) = answer
+                    tableSchemaFactsCache(key) = facts
                 End SyncLock
 
-                Return answer
+                Return facts
             Catch
-                Return False
+                Return Nothing
             End Try
         End Function
 
@@ -9313,6 +9394,27 @@ Namespace SDC.Framework
             Dim normalized = NormalizeTableName(tableName)
             If normalized = String.Empty Then Return relationships
 
+            ' Copied out of the cache rather than handed over. Callers have always been given a
+            ' dictionary of their own, and one of them could reasonably add to it; a cached instance
+            ' passed out by reference would let that edit every later caller's answer.
+            Dim cachedRelationships As Dictionary(Of String, ColumnRelationship) = Nothing
+            SyncLock metadataCacheLock
+                columnRelationshipsCache.TryGetValue(normalized, cachedRelationships)
+            End SyncLock
+
+            If cachedRelationships IsNot Nothing Then
+                For Each pair In cachedRelationships
+                    relationships(pair.Key) = New ColumnRelationship With {
+                        .LookupTable = pair.Value.LookupTable,
+                        .KeyColumn = pair.Value.KeyColumn
+                    }
+                Next
+
+                Return relationships
+            End If
+
+            Dim readWithoutError As Boolean = False
+
             Try
                 Using conn As New SqlConnection(ConnectionString)
                     conn.Open()
@@ -9336,10 +9438,28 @@ Namespace SDC.Framework
                         End Using
                     End Using
                 End Using
+
+                readWithoutError = True
             Catch
                 ' No relationships found means every field is offered plainly, which is how the
                 ' generator behaved before this existed.
             End Try
+
+            ' Only a completed read is remembered. A table that genuinely declares no foreign keys
+            ' caches an empty answer and stops being asked; a query that failed is asked again.
+            If readWithoutError Then
+                Dim toCache As New Dictionary(Of String, ColumnRelationship)(StringComparer.OrdinalIgnoreCase)
+                For Each pair In relationships
+                    toCache(pair.Key) = New ColumnRelationship With {
+                        .LookupTable = pair.Value.LookupTable,
+                        .KeyColumn = pair.Value.KeyColumn
+                    }
+                Next
+
+                SyncLock metadataCacheLock
+                    columnRelationshipsCache(normalized) = toCache
+                End SyncLock
+            End If
 
             Return relationships
         End Function
@@ -9461,50 +9581,25 @@ Namespace SDC.Framework
         ''' would expect, and it puts the key first.
         ''' </summary>
         Public Shared Function GetTableColumnList(tableName As String) As List(Of String)
-            Dim columns As New List(Of String)()
-            Dim normalized = NormalizeTableName(tableName)
-            If normalized = String.Empty Then Return columns
-
-            Try
-                Using conn As New SqlConnection(ConnectionString)
-                    conn.Open()
-                    Using cmd As New SqlCommand(
-                        "SELECT name FROM sys.columns WHERE object_id = OBJECT_ID('dbo.' + @TableName) ORDER BY column_id", conn)
-                        cmd.Parameters.AddWithValue("@TableName", normalized)
-                        Using reader = cmd.ExecuteReader()
-                            While reader.Read()
-                                columns.Add(SafeString(reader("name")))
-                            End While
-                        End Using
-                    End Using
-                End Using
-            Catch
+            Dim facts = GetTableSchemaFacts(tableName)
+            If facts Is Nothing Then
                 ' An empty list means the picker offers nothing rather than the page failing.
-            End Try
+                Return New List(Of String)()
+            End If
 
-            Return columns
+            ' A copy, because the caller is handed a list it may reasonably sort or add to, and the
+            ' cached one is shared with everything that asks after it.
+            Return New List(Of String)(facts.OrderedNames)
         End Function
 
         ''' <summary>Column names of a table, for deciding which controls are field-shaped.</summary>
         Private Shared Function GetTableColumnNames(tableName As String) As HashSet(Of String)
-            Dim columns As New HashSet(Of String)(StringComparer.OrdinalIgnoreCase)
-            Dim normalized = NormalizeTableName(tableName)
-            If normalized = String.Empty Then Return columns
+            Dim facts = GetTableSchemaFacts(tableName)
+            If facts Is Nothing Then
+                Return New HashSet(Of String)(StringComparer.OrdinalIgnoreCase)
+            End If
 
-            Using conn As New SqlConnection(ConnectionString)
-                conn.Open()
-                Using cmd As New SqlCommand(
-                    "SELECT name FROM sys.columns WHERE object_id = OBJECT_ID('dbo.' + @TableName)", conn)
-                    cmd.Parameters.AddWithValue("@TableName", normalized)
-                    Using reader = cmd.ExecuteReader()
-                        While reader.Read()
-                            columns.Add(SafeString(reader("name")))
-                        End While
-                    End Using
-                End Using
-            End Using
-
-            Return columns
+            Return New HashSet(Of String)(facts.NameSet, StringComparer.OrdinalIgnoreCase)
         End Function
 
         ''' <summary>
@@ -9616,38 +9711,12 @@ Namespace SDC.Framework
         End Function
 
         Public Shared Function GetTextColumnMaxLengths(tableName As String) As Dictionary(Of String, Integer)
-            Dim results As New Dictionary(Of String, Integer)(StringComparer.OrdinalIgnoreCase)
-            Dim normalizedTable = NormalizeTableName(tableName)
-            If String.IsNullOrWhiteSpace(normalizedTable) Then
-                Return results
+            Dim facts = GetTableSchemaFacts(tableName)
+            If facts Is Nothing Then
+                Return New Dictionary(Of String, Integer)(StringComparer.OrdinalIgnoreCase)
             End If
 
-            Using conn As New SqlConnection(ConnectionString)
-                conn.Open()
-                Using cmd As New SqlCommand(
-                    "SELECT COLUMN_NAME, CHARACTER_MAXIMUM_LENGTH " &
-                    "FROM INFORMATION_SCHEMA.COLUMNS " &
-                    "WHERE TABLE_SCHEMA = 'dbo' AND TABLE_NAME = @TableName " &
-                    "AND DATA_TYPE IN ('varchar', 'nvarchar', 'char', 'nchar')", conn)
-                    cmd.Parameters.AddWithValue("@TableName", normalizedTable)
-
-                    Using reader = cmd.ExecuteReader()
-                        While reader.Read()
-                            Dim columnName = reader("COLUMN_NAME").ToString().Trim()
-                            Dim maxLength = 0
-                            If Not IsDBNull(reader("CHARACTER_MAXIMUM_LENGTH")) Then
-                                maxLength = Convert.ToInt32(reader("CHARACTER_MAXIMUM_LENGTH"), CultureInfo.InvariantCulture)
-                            End If
-
-                            If columnName <> String.Empty AndAlso maxLength > 0 Then
-                                results(columnName) = maxLength
-                            End If
-                        End While
-                    End Using
-                End Using
-            End Using
-
-            Return results
+            Return New Dictionary(Of String, Integer)(facts.TextMaxLengths, StringComparer.OrdinalIgnoreCase)
         End Function
 
         ''' <summary>

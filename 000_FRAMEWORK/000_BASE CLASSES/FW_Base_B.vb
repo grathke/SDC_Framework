@@ -78,6 +78,17 @@ Namespace SDC.Framework
         ''' visible columns, which is what every page did before the arrangement existed.
         ''' </summary>
         Private qbeFieldLayoutEntries As List(Of QbeFieldLayout.Entry) = Nothing
+
+        ''' <summary>
+        ''' The page open, start to on-screen. pageOpenTimer is restarted at each boundary and
+        ''' measures the step; pageOpenWholeTimer runs from the constructor's first line and
+        ''' measures the whole of it.
+        ''' </summary>
+        Private pageOpenTimer As System.Diagnostics.Stopwatch = Nothing
+        Private pageOpenWholeTimer As System.Diagnostics.Stopwatch = Nothing
+        Private pageOpenBreakdown As New System.Text.StringBuilder()
+        Private pageOpenTripsAtStart As Long = 0
+        Private pageOpenReported As Boolean = False
         Private ReadOnly activeFilterLabel As Label
         Private ReadOnly retrievalStatusLabel As Label
         Private ReadOnly retrievalStatusFlashTimer As Timer
@@ -430,6 +441,16 @@ Namespace SDC.Framework
                        Optional profile As AccessProfile = Nothing,
                        Optional tableName As String = Nothing,
                        Optional buildDefaultBrowseShell As Boolean = True)
+            ' The page open, measured from its own first line. Every figure before today started at
+            ' the browse refresh, which is late: by then the form has been constructed, its controls
+            ' built, and its SQL, permissions, captions and saved layouts read. None of that was in
+            ' any number anybody had.
+            DbTripCounter.EnsureAttached()
+            DbTripCounter.BeginTrace()
+            pageOpenTimer = System.Diagnostics.Stopwatch.StartNew()
+            pageOpenWholeTimer = System.Diagnostics.Stopwatch.StartNew()
+            pageOpenTripsAtStart = DbTripCounter.Count
+
             currentUser = user
             accessProfile = profile
             accessTableName = If(tableName, String.Empty).Trim()
@@ -987,6 +1008,8 @@ Namespace SDC.Framework
             Me.Controls.Add(qbeSplitContainer)
 
             AddHandler Me.Load, AddressOf ContactsForm_Load
+
+            MarkStep(pageOpenTimer, pageOpenBreakdown, "ctor")
         End Sub
 
         Private Sub ContactsForm_Load(sender As Object, e As EventArgs)
@@ -1738,10 +1761,49 @@ Namespace SDC.Framework
                 Me.DialogResult = DialogResult.Cancel
                 Return
             End If
+
+            MarkStep(pageOpenTimer, pageOpenBreakdown, "load")
         End Sub
 
         Private Sub BrowsePage_Shown(sender As Object, e As EventArgs)
+            ReportPageOpen()
             BeginInvoke(New MethodInvoker(AddressOf ShowInitialMissingPkWarningAndFocus))
+        End Sub
+
+        ''' <summary>
+        ''' What the page cost to open, once, when it is on screen.
+        '''
+        ''' Reported at Shown rather than at the end of Load because Shown is the first moment the
+        ''' user has anything to look at - which is the quantity they are judging. It still stops
+        ''' short of what a Thinfinity session adds after that, and nothing here can see it.
+        '''
+        ''' The trip count covers the whole open, so it includes the browse refresh's own query and
+        ''' everything the constructor and Load read on the way: the page row, the permissions, the
+        ''' captions, the saved layouts and the QBE arrangement.
+        ''' </summary>
+        Private Sub ReportPageOpen()
+            Try
+                If pageOpenReported OrElse pageOpenWholeTimer Is Nothing Then Return
+                pageOpenReported = True
+
+                MarkStep(pageOpenTimer, pageOpenBreakdown, "shown")
+
+                Dim trips = DbTripCounter.Count - pageOpenTripsAtStart
+                Dim tripText = If(DbTripCounter.IsCounting,
+                                  trips.ToString(Globalization.CultureInfo.InvariantCulture),
+                                  "not counted")
+
+                Program.Log("Page open " & Me.GetType().Name & ": " &
+                            pageOpenWholeTimer.ElapsedMilliseconds.ToString(Globalization.CultureInfo.InvariantCulture) &
+                            "ms  " & pageOpenBreakdown.ToString() & "  trips=" & tripText)
+
+                ' Grouped and counted, because the question is not what ran but what ran twice.
+                For Each line In DbTripCounter.EndTrace()
+                    Program.Log("    " & line)
+                Next
+            Catch
+                ' A measurement is never worth a failed page open.
+            End Try
         End Sub
 
         Private Sub ShowInitialMissingPkWarningAndFocus()

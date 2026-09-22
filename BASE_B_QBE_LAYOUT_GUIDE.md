@@ -88,8 +88,10 @@ QBE fields come from what the page SQL returns, arranged by the search panel's o
    - Soft-delete maintenance columns are hidden from normal user field lists.
    - Registration hiding rules are applied by the shared Base_B path.
 3. A saved layout is applied when the first result grid is built.
-4. `BuildQbeCandidateColumns` lists every grid column that could be searched on — **regardless of
-   whether it is visible** — excluding the `PK` alias and the soft-delete columns.
+4. `BuildQbeCandidateColumns` lists every field the statement returned that could be searched on —
+   **regardless of whether the grid is showing it** — excluding the `PK` alias and the soft-delete
+   columns. It reads them off the grid's columns because that is where the result is bound and where
+   each field's resolved caption already sits, not because the grid decides the list.
 5. `ResolveQbeColumns` applies the registration's saved QBE arrangement to that list: its order,
    and its choice of which fields the panel offers. Where no arrangement is saved it returns the
    grid's visible columns, which is what every page did before the arrangement existed.
@@ -102,6 +104,21 @@ A browse page shows what it shows and can be searched on what it can be searched
 two questions. A column hidden to save grid width used to stop being searchable at the same moment,
 which is the fault this removes.
 
+**Where the fields come from.** The statement's own result — its column names and their types — and
+not the grid. The grid is one more consumer of that same result, which is why the two can differ at
+all. Before the first Find on a Start Empty page there is no grid, and the list is read from the
+statement's schema directly; afterwards it is the same set of columns, carried on the grid's
+columns because the headers there already hold each field's resolved caption. A field the statement
+does not select cannot be ticked into the panel: the column goes into `Table_SQL` first, which needs
+no rebuild.
+
+The type of each field is read the same way, and it decides what the value box is: a date picker, a
+number, a tick, a lookup list. Lookup lists come from the table's **declared foreign keys**, cached
+per table — one of the reads measured and collapsed on 2026-09-22, when the same question was being
+asked once per field.
+
+**What the arrangement is:**
+
 - **Stored** in `dbo.FW_TableLayouts`, `LayoutType = 'QbeDefault'`, `LayoutName = 'QBE Fields'`,
   `UserID` null. The JSON is the grid layout's shape minus `Width`: `Key`, `DisplayIndex`,
   `Visible`. `QbeFieldLayout` owns reading and writing it. `sql/155` adds the type to the CHECK
@@ -113,17 +130,28 @@ which is the fault this removes.
   the panel is visible only to an App Admin. The save re-checks that at the write boundary, because
   a hidden button is not authorization.
 - **One database read per page**, held for the life of the page and refreshed by the save itself.
-- **The panel** is `qbeFieldsPanel`: the columns manager's measurements, its shared helper and its
-  interaction rules — tick the checkbox to show or hide, Up/Down to reorder, Space to toggle the
-  selected row, and selecting a row never ticks it. It overlays the left of the browse grid, where
-  the columns manager overlays the right, because the QBE strip is around 150px tall and a field
-  list needs more than twice that. Its button sits in a third column right of Retrieve, measured
-  against the space actually available: full width where there is room, a glyph where there is not.
-  Nothing on the strip moves and the QBE grid keeps its width.
 - **Two cases the saved document cannot cover**, both handled in `QbeFieldLayout.Apply`: a field the
   SQL no longer returns is dropped, and a field the SQL has gained that the arrangement never heard
   of goes to the end, visible. Appearing is the safe failure — a new column that silently could not
   be searched on would look like a framework fault.
+
+**The panel that edits it.** Chrome, and nothing here decides which fields exist — only how an
+administrator changes the arrangement above:
+
+- **The panel** is `qbeFieldsPanel`: the columns manager's measurements, its shared helper and its
+  interaction rules — tick the checkbox to show or hide, Up/Down to reorder, Space to toggle the
+  selected row, and selecting a row never ticks it. It hangs from its own button — top edge touching
+  the button's bottom, right edges aligned — which is why it is a child of the form rather than of
+  the grid panel: the button is on the QBE strip, and that point is above where the grid panel
+  begins. While open it covers the layout toolbar and the top of the grid, and it stops at the
+  bottom of the split container so it can never cover Close.
+- **Both panels size to their contents** through `GridColumnsManager.FitPanelToList`: one row per
+  field, a floor of three rows, and a ceiling at the space available, past which the list scrolls.
+  One implementation, so the QBE panel and the columns manager cannot drift apart.
+- **The button is a 36px glyph**, the same mark the columns manager uses, in a third column right of
+  Retrieve. Nothing else on the strip moves and the QBE grid keeps its width. Two identical marks on
+  one page need their tooltips — "Columns shown in the grid" and "Fields offered in the QBE" — so
+  those are not decoration.
 
 When the user clicks **Find**:
 
