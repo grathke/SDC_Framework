@@ -52,6 +52,29 @@ function Assert-NotPattern {
     Write-Host "PASS: $Description" -ForegroundColor Green
 }
 
+# Some contracts are about how many times something appears rather than whether it appears at all.
+# Two confirmations of the same action are two correct-looking lines that are wrong together, and
+# every check above would pass on them.
+function Assert-Count {
+    param(
+        [string]$Path,
+        [string]$Pattern,
+        [int]$Expected,
+        [string]$Description
+    )
+
+    if (-not (Test-Path $Path)) {
+        throw "Missing expected file: $Path"
+    }
+
+    $found = @(Select-String -Path $Path -Pattern $Pattern -SimpleMatch).Count
+    if ($found -ne $Expected) {
+        throw "Expected $Expected occurrence(s) for $Description in ${Path}, found ${found}: $Pattern"
+    }
+
+    Write-Host "PASS: $Description" -ForegroundColor Green
+}
+
 # Assert-Pattern matches one line at a time, so it cannot say what a function *returns* - only that
 # the function exists. A default that has been flipped from False to True is exactly the case that
 # needs the body, hence a raw whole-file comparison.
@@ -310,6 +333,9 @@ Assert-Block -Path ".\000_FRAMEWORK\000_BASE CLASSES\FW_Base_B.vb" -Block @"
         Protected Overridable Function HandleDefaultRestoreAction(recordId As Integer) As Boolean
             If Not UsesStandardSoftDelete() Then Return False
 "@ -Description "Restore answers to the same opt-in as delete"
+# A restore is confirmed once. Both halves asked until 2026-09-22, which put the identical dialog
+# on screen twice; the click handler owns the asking and the action handler owns the write.
+Assert-Count -Path ".\000_FRAMEWORK\000_BASE CLASSES\FW_Base_B.vb" -Pattern '"CONFIRM RESTORE"' -Expected 1 -Description "A restore is confirmed exactly once"
 Assert-NotPattern -Path ".\000_FRAMEWORK\050_REGISTRATION\FW_Registration_B.vb" -Pattern "UsesStandardSoftDelete" -Description "Registration did not silently gain a delete"
 # The generated page this asserted against went with the FW_Users pages on 2026-09-08, and
 # 999_GENERATED is empty. The template is what actually decides it, so the check moves there

@@ -80,15 +80,11 @@ Namespace SDC.Framework
         Private qbeFieldLayoutEntries As List(Of QbeFieldLayout.Entry) = Nothing
 
         ''' <summary>
-        ''' The page open, start to on-screen. pageOpenTimer is restarted at each boundary and
-        ''' measures the step; pageOpenWholeTimer runs from the constructor's first line and
-        ''' measures the whole of it.
+        ''' The page open, start to on-screen: the step breakdown, the whole, and the round trips
+        ''' behind both. DbCostTrace owns how all three are kept, since FW_Base_U needs the same
+        ''' measurement for the same reason.
         ''' </summary>
-        Private pageOpenTimer As System.Diagnostics.Stopwatch = Nothing
-        Private pageOpenWholeTimer As System.Diagnostics.Stopwatch = Nothing
-        Private pageOpenBreakdown As New System.Text.StringBuilder()
-        Private pageOpenTripsAtStart As Long = 0
-        Private pageOpenReported As Boolean = False
+        Private pageOpenTrace As DbCostTrace = Nothing
         Private ReadOnly activeFilterLabel As Label
         Private ReadOnly retrievalStatusLabel As Label
         Private ReadOnly retrievalStatusFlashTimer As Timer
@@ -445,11 +441,7 @@ Namespace SDC.Framework
             ' the browse refresh, which is late: by then the form has been constructed, its controls
             ' built, and its SQL, permissions, captions and saved layouts read. None of that was in
             ' any number anybody had.
-            DbTripCounter.EnsureAttached()
-            DbTripCounter.BeginTrace()
-            pageOpenTimer = System.Diagnostics.Stopwatch.StartNew()
-            pageOpenWholeTimer = System.Diagnostics.Stopwatch.StartNew()
-            pageOpenTripsAtStart = DbTripCounter.Count
+            pageOpenTrace = DbCostTrace.Start("Page open")
 
             currentUser = user
             accessProfile = profile
@@ -1009,7 +1001,7 @@ Namespace SDC.Framework
 
             AddHandler Me.Load, AddressOf ContactsForm_Load
 
-            MarkStep(pageOpenTimer, pageOpenBreakdown, "ctor")
+            pageOpenTrace?.Mark("ctor")
         End Sub
 
         Private Sub ContactsForm_Load(sender As Object, e As EventArgs)
@@ -1689,17 +1681,28 @@ Namespace SDC.Framework
                 Return True
             End If
 
+            ' Measured from after the confirmation to before any dialog the result raises, so the
+            ' reading is the work and never how long somebody took to read something.
+            Dim deleteTrace = DbCostTrace.Start("Delete")
+
             Dim failure = DataAccess.SoftDeleteGeneratedPageRecord(accessTableName,
                                                                   primaryKey,
                                                                   recordId.Value,
                                                                   SessionState.ActingUserID,
                                                                   ResolveBrowsePageName())
+            deleteTrace.Mark("write")
+
             If Not String.IsNullOrWhiteSpace(failure) Then
+                deleteTrace.Report(Me.GetType().Name)
                 MessageBox.Show(Me, failure.ToUpperInvariant(), "DELETE FAILED", MessageBoxButtons.OK, MessageBoxIcon.Warning)
                 Return True
             End If
 
+            ' The refresh is part of what a delete costs - the row has to leave the list - and it
+            ' is named rather than folded in, because it is also reported on its own line.
             RefreshGridForCustomAction()
+            deleteTrace.Mark("refresh")
+            deleteTrace.Report(Me.GetType().Name)
             Return True
         End Function
 
@@ -1729,28 +1732,30 @@ Namespace SDC.Framework
                 Return True
             End If
 
-            Dim summary = GetSelectedRowSummary()
-            Dim prompt = If(String.IsNullOrWhiteSpace(summary), "Restore the selected record?", "Restore " & summary & "?")
-            If MessageBox.Show(Me,
-                               (prompt & Environment.NewLine & Environment.NewLine &
-                                "It will return to the normal list.").ToUpperInvariant(),
-                               "CONFIRM RESTORE",
-                               MessageBoxButtons.YesNo,
-                               MessageBoxIcon.Question) <> DialogResult.Yes Then
-                Return True
-            End If
+            ' No confirmation here. RestoreButton_Click asks before calling this, and asking again
+            ' put the same CONFIRM RESTORE dialog on screen twice - which the measurement found on
+            ' 2026-09-22, a restore reading 4,790ms because two dialogs were waiting inside it.
+            ' This method owns the write, exactly as the summary above says.
+
+            ' As with Delete: from after the confirmation to before any dialog the result raises.
+            Dim restoreTrace = DbCostTrace.Start("Restore")
 
             Dim failure = DataAccess.RestoreGeneratedPageRecord(accessTableName,
                                                                 primaryKey,
                                                                 recordId,
                                                                 SessionState.ActingUserID,
                                                                 ResolveBrowsePageName())
+            restoreTrace.Mark("write")
+
             If Not String.IsNullOrWhiteSpace(failure) Then
+                restoreTrace.Report(Me.GetType().Name)
                 MessageBox.Show(Me, failure.ToUpperInvariant(), "RESTORE FAILED", MessageBoxButtons.OK, MessageBoxIcon.Warning)
                 Return True
             End If
 
             RefreshGridForCustomAction()
+            restoreTrace.Mark("refresh")
+            restoreTrace.Report(Me.GetType().Name)
             Return True
         End Function
 
@@ -1762,7 +1767,7 @@ Namespace SDC.Framework
                 Return
             End If
 
-            MarkStep(pageOpenTimer, pageOpenBreakdown, "load")
+            pageOpenTrace?.Mark("load")
         End Sub
 
         Private Sub BrowsePage_Shown(sender As Object, e As EventArgs)
@@ -1782,28 +1787,8 @@ Namespace SDC.Framework
         ''' captions, the saved layouts and the QBE arrangement.
         ''' </summary>
         Private Sub ReportPageOpen()
-            Try
-                If pageOpenReported OrElse pageOpenWholeTimer Is Nothing Then Return
-                pageOpenReported = True
-
-                MarkStep(pageOpenTimer, pageOpenBreakdown, "shown")
-
-                Dim trips = DbTripCounter.Count - pageOpenTripsAtStart
-                Dim tripText = If(DbTripCounter.IsCounting,
-                                  trips.ToString(Globalization.CultureInfo.InvariantCulture),
-                                  "not counted")
-
-                Program.Log("Page open " & Me.GetType().Name & ": " &
-                            pageOpenWholeTimer.ElapsedMilliseconds.ToString(Globalization.CultureInfo.InvariantCulture) &
-                            "ms  " & pageOpenBreakdown.ToString() & "  trips=" & tripText)
-
-                ' Grouped and counted, because the question is not what ran but what ran twice.
-                For Each line In DbTripCounter.EndTrace()
-                    Program.Log("    " & line)
-                Next
-            Catch
-                ' A measurement is never worth a failed page open.
-            End Try
+            If pageOpenTrace Is Nothing Then Return
+            pageOpenTrace.Report(Me.GetType().Name, "shown")
         End Sub
 
         Private Sub ShowInitialMissingPkWarningAndFocus()
@@ -2320,9 +2305,7 @@ Namespace SDC.Framework
             ' whatever happens after the Try were all outside the measurement, which is exactly
             ' where an unexplained 400ms would hide. A breakdown that does not add up to the whole
             ' is a breakdown that can be read for months without noticing what it leaves out.
-            Dim refreshTimer = System.Diagnostics.Stopwatch.StartNew()
-            Dim stepTimer = System.Diagnostics.Stopwatch.StartNew()
-            Dim breakdown As New System.Text.StringBuilder()
+            Dim refreshTrace = DbCostTrace.StartSteps()
 
             PrepareBrowseSource()
 
@@ -2378,7 +2361,7 @@ Namespace SDC.Framework
                 ' Everything up to the query: the SQL, the scope predicate, the user id, the
                 ' visibility map, the role-field table name. Several of those can reach the
                 ' database, and none of them was being timed.
-                MarkStep(stepTimer, breakdown, "pre")
+                refreshTrace.Mark("pre")
 
                 Dim dt = DataAccess.GetBrowseRowsByRegistration(registrationId,
                                                                currentFilters,
@@ -2394,7 +2377,7 @@ Namespace SDC.Framework
                 ' as BrowseQueryMilliseconds; this is the whole call including the in-memory
                 ' scoping, the deleted-flag fallback, the QBE filter and the row trim, all of
                 ' which happen after the Fill and none of which that figure covers.
-                MarkStep(stepTimer, breakdown, "fetch")
+                refreshTrace.Mark("fetch")
 
                 ' How the fetch above was spent, from the figures the data layer measured inside
                 ' that call: the connection, the query itself, and the wrapper decision that has to
@@ -2405,9 +2388,9 @@ Namespace SDC.Framework
                 ' for, and these are parts of fetch rather than steps beside it. Written as
                 ' "fetch=597[open=0]" they first broke the token itself, so fetch dropped out of the
                 ' sum and the line claimed other=602 on a refresh where nothing was unaccounted for.
-                AppendFetchDetail(breakdown, dt, "BrowseOpenMilliseconds", "open")
-                AppendFetchDetail(breakdown, dt, "BrowseWrapMilliseconds", "wrap")
-                AppendFetchDetail(breakdown, dt, "BrowseQueryMilliseconds", "db")
+                AppendFetchDetail(refreshTrace, dt, "BrowseOpenMilliseconds", "open")
+                AppendFetchDetail(refreshTrace, dt, "BrowseWrapMilliseconds", "wrap")
+                AppendFetchDetail(refreshTrace, dt, "BrowseQueryMilliseconds", "db")
 
                 lastRefreshExceededRowLimit = maxRows > 0 AndAlso
                                               dt.ExtendedProperties.ContainsKey("BrowseRowsLimited") AndAlso
@@ -2451,15 +2434,15 @@ Namespace SDC.Framework
                 ' to them, so no later step can put them back on screen.
                 RemoveInvisibleRoleFieldColumns(dt)
                 RemoveBinaryColumns(dt)
-                MarkStep(stepTimer, breakdown, "strip")
+                refreshTrace.Mark("strip")
 
                 browseGrid.DataSource = dt
                 recordCountLabel.Text = "Record Count: " & dt.Rows.Count.ToString()
                 browseGrid.ColumnHeadersVisible = True
-                MarkStep(stepTimer, breakdown, "bind")
+                refreshTrace.Mark("bind")
 
                 ApplyFriendlyColumnHeaders(browseGrid)
-                MarkStep(stepTimer, breakdown, "headers")
+                refreshTrace.Mark("headers")
 
                 ApplyPkColumnHiding(browseGrid)
                 HideRegistrationIdColumn(browseGrid)
@@ -2468,25 +2451,25 @@ Namespace SDC.Framework
                 ApplyPkColumnHiding(browseGrid)
                 HideRegistrationIdColumn(browseGrid)
                 HideSoftDeleteColumns(browseGrid)
-                MarkStep(stepTimer, breakdown, "hide")
+                refreshTrace.Mark("hide")
 
                 EnsureAtLeastOneManageableVisibleColumn()
                 UpdateMaintenanceKeyAvailability()
-                MarkStep(stepTimer, breakdown, "keys")
+                refreshTrace.Mark("keys")
 
                 GridColumnsManager.FitVisibleColumnsToAvailableWidth(browseGrid)
-                MarkStep(stepTimer, breakdown, "fit")
+                refreshTrace.Mark("fit")
 
                 UpdateLayoutUiAvailability()
                 RefreshColumnsManagerFromGrid()
                 UpdateShowDeletedButtonState()
-                MarkStep(stepTimer, breakdown, "buttons")
+                refreshTrace.Mark("buttons")
 
                 If pendingInitialLayoutApply Then
                     EnsureDefaultLayoutExists(registrationId)
                     ApplySavedLayoutIfAvailable(registrationId)
                     pendingInitialLayoutApply = False
-                    MarkStep(stepTimer, breakdown, "layout")
+                    refreshTrace.Mark("layout")
                 End If
 
                 titleLabel.Text = Me.Text
@@ -2502,20 +2485,20 @@ Namespace SDC.Framework
                     End If
 
                     lastAppliedSqlSignature = sqlSignature
-                    MarkStep(stepTimer, breakdown, "qbe")
+                    refreshTrace.Mark("qbe")
                 End If
 
                 RestoreGridViewState(viewState)
                 RestoreQbeViewState(qbeState)
-                MarkStep(stepTimer, breakdown, "restore")
+                refreshTrace.Mark("restore")
 
                 If Not hasBaselineLayoutSnapshot AndAlso browseGrid.Columns IsNot Nothing AndAlso browseGrid.Columns.Count > 0 Then
                     baselineLayoutSnapshot = BuildCurrentLayoutSnapshotJson()
                     hasBaselineLayoutSnapshot = True
-                    MarkStep(stepTimer, breakdown, "snapshot")
+                    refreshTrace.Mark("snapshot")
                 End If
 
-                ReportPostQuery(breakdown, refreshTimer)
+                ReportPostQuery(refreshTrace)
 
             Catch ex As Exception
                 ' The message alone says what went wrong but never where. The first stack frame
@@ -5446,46 +5429,20 @@ Namespace SDC.Framework
         ''' </summary>
         ''' <summary>How long a post-query step took, in milliseconds, before the timer restarts.</summary>
         ''' <summary>
-        ''' Adds one of the data layer's own measurements to the breakdown, as a part of the fetch
-        ''' rather than as a step beside it.
-        '''
-        ''' Zero is printed here where MarkStep leaves it out, because zero is the finding: an open
-        ''' that cost nothing says the connection was pooled, and that is exactly what rules the
-        ''' connection out as the cause of a slow first fetch.
+        ''' Hands one of the data layer's own measurements to the trace, as a part of the fetch
+        ''' rather than as a step beside it. DbCostTrace.Note owns how it is written.
         ''' </summary>
-        Private Shared Sub AppendFetchDetail(breakdown As System.Text.StringBuilder,
+        Private Shared Sub AppendFetchDetail(trace As DbCostTrace,
                                              table As DataTable,
                                              propertyName As String,
                                              label As String)
             Try
-                If breakdown Is Nothing OrElse table Is Nothing Then Return
+                If trace Is Nothing OrElse table Is Nothing Then Return
                 If Not table.ExtendedProperties.ContainsKey(propertyName) Then Return
 
-                Dim ms = Convert.ToInt32(table.ExtendedProperties(propertyName), Globalization.CultureInfo.InvariantCulture)
-
-                If breakdown.Length > 0 Then breakdown.Append(" ")
-                breakdown.Append(label).Append(":").Append(ms.ToString(Globalization.CultureInfo.InvariantCulture))
+                trace.Note(label, Convert.ToInt32(table.ExtendedProperties(propertyName), Globalization.CultureInfo.InvariantCulture))
             Catch
                 ' A missing figure is not worth a failed refresh.
-            End Try
-        End Sub
-
-        Private Shared Sub MarkStep(timer As System.Diagnostics.Stopwatch,
-                                    breakdown As System.Text.StringBuilder,
-                                    name As String)
-            Try
-                Dim ms = timer.ElapsedMilliseconds
-
-                ' Steps that cost nothing are left out. A breakdown of fifteen entries, eleven of
-                ' them zero, hides the two that matter.
-                If ms > 0 Then
-                    If breakdown.Length > 0 Then breakdown.Append(" ")
-                    breakdown.Append(name).Append("=").Append(ms.ToString(Globalization.CultureInfo.InvariantCulture))
-                End If
-
-                timer.Restart()
-            Catch
-                ' Measuring must never cost somebody their Find.
             End Try
         End Sub
 
@@ -5528,12 +5485,12 @@ Namespace SDC.Framework
             End Try
         End Sub
 
-        Private Sub ReportPostQuery(breakdown As System.Text.StringBuilder,
-                                    refreshTimer As System.Diagnostics.Stopwatch)
+        Private Sub ReportPostQuery(trace As DbCostTrace)
             Try
-                If breakdown Is Nothing Then Return
+                If trace Is Nothing Then Return
 
-                Dim whole = If(refreshTimer Is Nothing, 0L, refreshTimer.ElapsedMilliseconds)
+                Dim breakdown = trace.Breakdown
+                Dim whole = trace.ElapsedMilliseconds
 
                 Dim accounted = 0
                 For Each part In breakdown.ToString().Split(" "c)

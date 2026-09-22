@@ -66,7 +66,7 @@ Namespace SDC.Framework
         ''' done, since FW_Base_B needs the same thing for the same reason.
         ''' </summary>
         Protected Overrides Sub OnLoad(e As EventArgs)
-            MarkStep(pageOpenTimer, pageOpenBreakdown, "build")
+            pageOpenTrace?.Mark("build")
             MyBase.OnLoad(e)
             PageZoom.ParkIfZoomPending(Me)
         End Sub
@@ -85,44 +85,8 @@ Namespace SDC.Framework
         ''' The trips cover the whole of it.
         ''' </summary>
         Private Sub ReportPageOpen()
-            Try
-                If pageOpenReported OrElse pageOpenWholeTimer Is Nothing Then Return
-                pageOpenReported = True
-
-                MarkStep(pageOpenTimer, pageOpenBreakdown, "shown")
-
-                Dim trips = DbTripCounter.Count - pageOpenTripsAtStart
-                Dim tripText = If(DbTripCounter.IsCounting,
-                                  trips.ToString(Globalization.CultureInfo.InvariantCulture),
-                                  "not counted")
-
-                Program.Log("Page open " & Me.GetType().Name & ": " &
-                            pageOpenWholeTimer.ElapsedMilliseconds.ToString(Globalization.CultureInfo.InvariantCulture) &
-                            "ms  " & pageOpenBreakdown.ToString() & "  trips=" & tripText)
-
-                For Each line In DbTripCounter.EndTrace()
-                    Program.Log("    " & line)
-                Next
-            Catch
-                ' A measurement is never worth a failed page open.
-            End Try
-        End Sub
-
-        Private Shared Sub MarkStep(timer As System.Diagnostics.Stopwatch,
-                                    breakdown As System.Text.StringBuilder,
-                                    name As String)
-            Try
-                If timer Is Nothing OrElse breakdown Is Nothing Then Return
-
-                Dim ms = timer.ElapsedMilliseconds
-                If ms > 0 Then
-                    If breakdown.Length > 0 Then breakdown.Append(" ")
-                    breakdown.Append(name).Append("=").Append(ms.ToString(Globalization.CultureInfo.InvariantCulture))
-                End If
-
-                timer.Restart()
-            Catch
-            End Try
+            If pageOpenTrace Is Nothing Then Return
+            pageOpenTrace.Report(Me.GetType().Name, "shown")
         End Sub
 
         ''' <summary>
@@ -188,20 +152,12 @@ Namespace SDC.Framework
         ''' 2026-09-22 began at the data fetch, which is late: by then the form is built and its
         ''' record, permissions, captions, tab order and layout have been read.
         ''' </summary>
-        Private pageOpenTimer As System.Diagnostics.Stopwatch = Nothing
-        Private pageOpenWholeTimer As System.Diagnostics.Stopwatch = Nothing
-        Private pageOpenBreakdown As New System.Text.StringBuilder()
-        Private pageOpenTripsAtStart As Long = 0
-        Private pageOpenReported As Boolean = False
+        Private pageOpenTrace As DbCostTrace = Nothing
 
         Protected Sub New()
             ' First line of the first constructor to run, so the reading covers the derived page's
             ' own field building and binding as well as this one's.
-            DbTripCounter.EnsureAttached()
-            DbTripCounter.BeginTrace()
-            pageOpenTimer = System.Diagnostics.Stopwatch.StartNew()
-            pageOpenWholeTimer = System.Diagnostics.Stopwatch.StartNew()
-            pageOpenTripsAtStart = DbTripCounter.Count
+            pageOpenTrace = DbCostTrace.Start("Page open")
 
             Me.StartPosition = FormStartPosition.CenterParent
             Me.FormBorderStyle = FormBorderStyle.FixedDialog
@@ -300,12 +256,12 @@ Namespace SDC.Framework
                                        okButton.TabStop = False
                                        cancelActionButton.TabStop = False
                                        CollapseHiddenFieldRows()
-                                       MarkStep(pageOpenTimer, pageOpenBreakdown, "collapse")
+                                       pageOpenTrace?.Mark("collapse")
                                        RefreshLocalRequiredBorders()
                                        ApplySavedTabOrder()
                                        InitializeTabOrderManager()
                                        AttachZoomAfterLayout()
-                                       MarkStep(pageOpenTimer, pageOpenBreakdown, "layout")
+                                       pageOpenTrace?.Mark("layout")
                                        BeginInvoke(New Action(Sub()
                                                                   SetInitialFieldFocus()
                                                                   ResetPendingRecordBaseline()
@@ -1820,16 +1776,36 @@ Namespace SDC.Framework
             Me.Close()
         End Sub
 
+        ''' <summary>
+        ''' The whole of a save, and what it cost.
+        '''
+        ''' The trace starts after the switched-user guard and covers what a save actually is:
+        ''' validation - which reaches the database for unique-field checks - the record build, the
+        ''' write and its audit rows. A save that never began because the session is switched is
+        ''' not a save and leaves no line.
+        '''
+        ''' It reports on the way out whatever the answer was. A refused save costs round trips
+        ''' too, and a conflict costs the most of all, so reporting only the successes would
+        ''' measure the cheap half.
+        ''' </summary>
         Protected Function ExecuteSaveWorkflow() As Boolean
             If Not SwitchedUserGuard.AllowWrite(Me, "SAVE THIS RECORD") Then
                 Return False
             End If
 
-            If Not ValidateAndBuildForSave() Then
-                Return False
-            End If
+            Dim saveTrace = DbCostTrace.Start("Save")
+            Try
+                If Not ValidateAndBuildForSave() Then
+                    Return False
+                End If
+                saveTrace.Mark("validate")
 
-            Return SaveRecordWithAudit()
+                Dim saved = SaveRecordWithAudit()
+                saveTrace.Mark("write")
+                Return saved
+            Finally
+                saveTrace.Report(Me.GetType().Name)
+            End Try
         End Function
 
 
