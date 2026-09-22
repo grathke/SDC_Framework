@@ -5337,6 +5337,20 @@ Namespace SDC.Framework
             Dim registrationId As Integer = 0
             RegistrationComboHelper.TryGetSelectedId(registrationComboBox, registrationId)
             RegistrationComboHelper.UpdateLabelForSelection(registrationIdLabel, registrationComboBox)
+
+            ' The combo is the registration being worked in, and saying so here rather than only
+            ' when a maintenance page opens is what makes that true of everything else on the page.
+            ' Lookup lists and QBE value lists are scoped to a registration, and they were asking
+            ' the session - the one signed in under - so an App Admin who chose another company got
+            ' its rows in the grid and their own company's names in the drop-downs beside them.
+            '
+            ' Every _B page has this combo, from this class, so there is one answer and one place
+            ' it comes from. Where the combo is hidden it holds the session's registration anyway,
+            ' which is the same answer by a shorter route.
+            If registrationId > 0 Then
+                SessionState.SetWorkingRegistration(registrationId)
+            End If
+
             LayoutQbeSection()
             If registrationId = lastSelectedRegistrationId Then
                 Return

@@ -2283,6 +2283,15 @@ Namespace SDC.Framework
                 Return
             End If
 
+            ' My Profile is the one way into a maintenance page with no browse page in front of it,
+            ' so there is no registration combo to take the answer from. Said explicitly rather
+            ' than left alone: the working registration is whatever the last browse page set, and
+            ' an App Admin who had been working in another company would otherwise edit their own
+            ' record with that company's lookup lists beside it.
+            If SessionState.IsActive AndAlso SessionState.Current.HasValue Then
+                SessionState.SetWorkingRegistration(SessionState.Current.Value.RegistrationID)
+            End If
+
             Using page As New FW_Employees_U(employeeId, currentUser, activeAccessProfile, selfService:=True)
                 page.ShowDialog(Me)
             End Using

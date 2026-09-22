@@ -3694,9 +3694,15 @@ Namespace SDC.Framework
                         cmd.Parameters.Add("@KeepValue", SqlDbType.Int).Value = keepValue
                     End If
                     If scopeToRegistration Then
-                        cmd.Parameters.AddWithValue("@RegistrationID",
-                                                    If(SessionState.IsActive AndAlso SessionState.Current.HasValue,
-                                                       SessionState.Current.Value.RegistrationID, 0))
+                        ' The registration being worked in, not the one signed in under. It comes
+                        ' from the browse page's registration combo, which every _B page has, and
+                        ' falls back to the session where nothing has set it.
+                        '
+                        ' It was the session's until 2026-09-22, which meant an App Admin working
+                        ' in another company saw that company's rows in the grid and their own
+                        ' company's names in every drop-down. The role selector on the employee
+                        ' page had already been fixed this way; every other lookup had not.
+                        cmd.Parameters.AddWithValue("@RegistrationID", SessionState.WorkingRegistrationID())
                     End If
 
                     Using adapter As New SqlDataAdapter(cmd)
@@ -9485,7 +9491,12 @@ Namespace SDC.Framework
             Dim normalizedTable = NormalizeTableName(tableName)
             If normalizedTable = String.Empty OrElse String.IsNullOrWhiteSpace(columnName) Then Return Nothing
 
-            Dim cacheKey = normalizedTable & "." & columnName.Trim()
+            ' The registration belongs in the key because it decides the answer. GetLookupTable
+            ' scopes a lookup to the registration being worked in wherever that table carries one -
+            ' FW_Gender, FW_Employees, FW_Roles and FW_Users all do - so a key of table and column
+            ' alone served the first registration's list to the second for the rest of the session.
+            Dim cacheKey = SessionState.WorkingRegistrationID().ToString(CultureInfo.InvariantCulture) &
+                           "|" & normalizedTable & "." & columnName.Trim()
             SyncLock metadataCacheLock
                 Dim cached As DataTable = Nothing
                 If qbeChoiceCache.TryGetValue(cacheKey, cached) Then Return cached
