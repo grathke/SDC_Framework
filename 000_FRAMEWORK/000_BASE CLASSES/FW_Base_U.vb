@@ -66,6 +66,7 @@ Namespace SDC.Framework
         ''' done, since FW_Base_B needs the same thing for the same reason.
         ''' </summary>
         Protected Overrides Sub OnLoad(e As EventArgs)
+            MarkStep(pageOpenTimer, pageOpenBreakdown, "build")
             MyBase.OnLoad(e)
             PageZoom.ParkIfZoomPending(Me)
         End Sub
@@ -73,6 +74,55 @@ Namespace SDC.Framework
         ''' <summary>Attaches the zoom once the page has finished laying itself out.</summary>
         Private Sub AttachZoomAfterLayout()
             PageZoom.AttachAndReveal(Me)
+        End Sub
+
+        ''' <summary>
+        ''' What the page cost to open, reported once, from the innermost of the Shown handler's
+        ''' queued actions - the last thing that runs before the page is somebody's to use.
+        '''
+        ''' `build` is the constructor and everything the derived page does in it; `layout` is the
+        ''' row collapse, the tab order, the required borders and the zoom; `shown` is what is left.
+        ''' The trips cover the whole of it.
+        ''' </summary>
+        Private Sub ReportPageOpen()
+            Try
+                If pageOpenReported OrElse pageOpenWholeTimer Is Nothing Then Return
+                pageOpenReported = True
+
+                MarkStep(pageOpenTimer, pageOpenBreakdown, "shown")
+
+                Dim trips = DbTripCounter.Count - pageOpenTripsAtStart
+                Dim tripText = If(DbTripCounter.IsCounting,
+                                  trips.ToString(Globalization.CultureInfo.InvariantCulture),
+                                  "not counted")
+
+                Program.Log("Page open " & Me.GetType().Name & ": " &
+                            pageOpenWholeTimer.ElapsedMilliseconds.ToString(Globalization.CultureInfo.InvariantCulture) &
+                            "ms  " & pageOpenBreakdown.ToString() & "  trips=" & tripText)
+
+                For Each line In DbTripCounter.EndTrace()
+                    Program.Log("    " & line)
+                Next
+            Catch
+                ' A measurement is never worth a failed page open.
+            End Try
+        End Sub
+
+        Private Shared Sub MarkStep(timer As System.Diagnostics.Stopwatch,
+                                    breakdown As System.Text.StringBuilder,
+                                    name As String)
+            Try
+                If timer Is Nothing OrElse breakdown Is Nothing Then Return
+
+                Dim ms = timer.ElapsedMilliseconds
+                If ms > 0 Then
+                    If breakdown.Length > 0 Then breakdown.Append(" ")
+                    breakdown.Append(name).Append("=").Append(ms.ToString(Globalization.CultureInfo.InvariantCulture))
+                End If
+
+                timer.Restart()
+            Catch
+            End Try
         End Sub
 
         ''' <summary>
@@ -131,7 +181,28 @@ Namespace SDC.Framework
         Private Shared ReadOnly TabOrderCollapsedText As String = "Tab Order " & ChrW(&H25BC)
         Private Shared ReadOnly TabOrderExpandedText As String = "Tab Order " & ChrW(&H25B2)
 
+        ''' <summary>
+        ''' What the page open cost, start to on screen, and how many trips it made.
+        '''
+        ''' The same measurement the browse page carries. Every figure either of them had before
+        ''' 2026-09-22 began at the data fetch, which is late: by then the form is built and its
+        ''' record, permissions, captions, tab order and layout have been read.
+        ''' </summary>
+        Private pageOpenTimer As System.Diagnostics.Stopwatch = Nothing
+        Private pageOpenWholeTimer As System.Diagnostics.Stopwatch = Nothing
+        Private pageOpenBreakdown As New System.Text.StringBuilder()
+        Private pageOpenTripsAtStart As Long = 0
+        Private pageOpenReported As Boolean = False
+
         Protected Sub New()
+            ' First line of the first constructor to run, so the reading covers the derived page's
+            ' own field building and binding as well as this one's.
+            DbTripCounter.EnsureAttached()
+            DbTripCounter.BeginTrace()
+            pageOpenTimer = System.Diagnostics.Stopwatch.StartNew()
+            pageOpenWholeTimer = System.Diagnostics.Stopwatch.StartNew()
+            pageOpenTripsAtStart = DbTripCounter.Count
+
             Me.StartPosition = FormStartPosition.CenterParent
             Me.FormBorderStyle = FormBorderStyle.FixedDialog
             Me.MaximizeBox = False
@@ -229,13 +300,16 @@ Namespace SDC.Framework
                                        okButton.TabStop = False
                                        cancelActionButton.TabStop = False
                                        CollapseHiddenFieldRows()
+                                       MarkStep(pageOpenTimer, pageOpenBreakdown, "collapse")
                                        RefreshLocalRequiredBorders()
                                        ApplySavedTabOrder()
                                        InitializeTabOrderManager()
                                        AttachZoomAfterLayout()
+                                       MarkStep(pageOpenTimer, pageOpenBreakdown, "layout")
                                        BeginInvoke(New Action(Sub()
                                                                   SetInitialFieldFocus()
                                                                   ResetPendingRecordBaseline()
+                                                                  ReportPageOpen()
                                                               End Sub))
                                    End Sub))
         End Sub
