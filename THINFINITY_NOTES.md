@@ -935,3 +935,44 @@ The profile lives in the Application Profiles Editor on the server. Server and W
 configuration is not done through Claude — see the rule in `CLAUDE.md`, and 11.2 through 11.4 for
 what that afternoon cost. Reading a pasted profile, explaining what a setting does and working out
 the consequence for the session figures is the help that is actually useful.
+
+### Turning tab suspension off, per machine and per fleet
+
+Both browsers offer the same two levers: switch the feature off entirely, or keep a list of sites it
+may never touch. **The site list is the better one.** Switching the feature off is a change to how
+the whole machine behaves and somebody will turn it back on; an exception for one site survives
+that, and leaves the memory saving in place everywhere else.
+
+Menu paths move between versions — these are as of 2026 — but the settings pages are stable
+addresses and worth using instead of hunting through menus.
+
+**Chrome — Memory Saver**
+
+- `chrome://settings/performance`, or Settings → Performance.
+- **Memory Saver** has a toggle, and on recent versions a choice of how aggressive it is.
+- Under it, **"Always keep these sites active"** → **Add** → the VirtualUI host. This is the entry
+  that matters. A site listed here is not discarded.
+
+**Edge — Sleeping Tabs**
+
+- `edge://settings/system`, or Settings → System and performance → Optimize Performance.
+- **"Save resources with sleeping tabs"** has a toggle, and a separate control for how long a tab
+  must be idle first — raising that is a partial fix on its own.
+- **"Never put these sites to sleep"** → **Add** → the VirtualUI host.
+
+**By policy, for a managed fleet.** Check the names against the current admin templates before
+rolling out; both vendors have renamed these once already.
+
+| Browser | Policy | What it does |
+|---|---|---|
+| Chrome | `TabDiscardingExceptions` | URL patterns that are never discarded — the fleet version of the site list |
+| Chrome | `MemorySaverModeSavings` | How aggressive Memory Saver is; it replaced the older `HighEfficiencyModeEnabled` |
+| Edge | `SleepingTabsBlockedForUrls` | The site list |
+| Edge | `SleepingTabsEnabled` | Off entirely |
+| Edge | `SleepingTabsTimeout` | How long before a tab sleeps |
+
+**None of this is a substitute for raising the reconnection timeout.** A browser can still discard a
+tab under real memory pressure whatever the setting says, a phone or an unmanaged machine has no
+policy applied, and a proxy dropping an idle WebSocket produces the same failure with the tab in the
+foreground. The browser settings remove the common cause; the timeout is what makes the application
+survive the cause being missed.
