@@ -593,11 +593,33 @@ These are baseline rules for this application, not optional task-specific sugges
 ## QBE Visibility Guardrail (Required)
 
 - Before the first substantive edit to `000_FRAMEWORK\000_BASE CLASSES\FW_Base_B.vb`, run the `Create Base_B Restore Point` task. Do not edit Base_B until its timestamped restore point is created.
-- QBE fields must be derived only from visible browse-grid columns after all standard hiding and saved-layout rules have been applied.
+- **QBE has its own arrangement, and it is not the grid's.** Since 2026-09-22 the search panel's
+  field order and visibility come from a `QbeDefault` row in `FW_TableLayouts`, written by an App
+  Admin and read by everyone in the registration. Hiding a browse column no longer hides the search
+  field — the two were one question only because one answer was easier to compute.
+- **Where no arrangement is saved, QBE follows the grid's visible columns exactly as before.** That
+  fallback is the contract, not a stopgap: it is what keeps every page that nobody has arranged
+  behaving as it always has. Do not remove it to simplify the resolver.
+- QBE fields are still drawn from what the page SQL returns. A field the role may not see never
+  reaches the grid at all — `RemoveInvisibleRoleFieldColumns` drops it from the `DataTable` — so it
+  cannot be arranged into the panel either, and that is the intended protection rather than an
+  oversight to be worked around.
 - Internal maintenance aliases, including `PK`, must never appear in the browse grid, QBE, columns manager, or user-facing field lists.
 - A real ID column explicitly selected by page SQL, such as `IssueID`, is distinct from the internal `PK` alias and may appear when visible.
-- For Start Empty pages, where QBE is derived from SQL schema before a grid exists, exclude `PK`, soft-delete fields, and other internal aliases.
-- Any change to Base_B grid/QBE loading must run the browse regression script and manually verify that hiding a browse column also removes it from QBE.
+- For Start Empty pages, where QBE is derived from SQL schema before a grid exists, apply the same
+  saved arrangement — a panel that lists different fields before and after the first Find reads as a
+  save that did not take — and repeat every exclusion the result path applies: `PK`, soft-delete
+  fields, other internal aliases, **role-invisible fields and binary columns**. This path runs
+  before anything has been filtered, so it has to do the filtering itself. Offering a search row for
+  a field the role may not see is a leak even though its values never appear: Find answers "is there
+  a record with this value?" through the row count alone.
+- Any change to Base_B grid/QBE loading must run the browse regression script and manually verify
+  both halves: that hiding a browse column leaves the search field alone where an arrangement is
+  saved, and removes it where none is.
+- **A guardrail check must fail when its contract is broken.** The assertion that used to stand here
+  matched one line of source against the whole file, and after this change it went on passing by
+  matching the same line in an unrelated method. Assert at the line that carries the contract, and
+  after changing either, confirm the check fails when the contract is.
 
 See also `BASE_B_QBE_LAYOUT_GUIDE.md`.
 
@@ -666,7 +688,7 @@ whether the last one had been missed. Work the list, do not recall it.
 | `FW_RoleDetails` | table captions and role overrides |
 | `FW_RoleSchema` | one row per known table |
 | `FW_DashboardLayouts` | tile position and chosen picture, keyed by `ActionKey` |
-| `FW_TableLayouts` | saved grid column layouts, per page and per user |
+| `FW_TableLayouts` | saved grid column layouts, per page and per user — and the page's `QbeDefault` search-field arrangement, which has no user |
 | `FW_SavedQbe` | saved searches, keyed by table **context** — the page's caption, not its name |
 | `FW_GeneratedPages` | the generation request, which can be reopened and regenerated |
 

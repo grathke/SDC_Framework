@@ -71,9 +71,16 @@ Constructor
 
 `FW_Base_B.StartsEmptyOnInitialLoad()` returns `True` by default. This means the first page display can show an empty result grid while QBE fields are created from the SQL schema. The first **Find** loads real rows and completes the grid-driven QBE setup.
 
+That schema path runs before any result has been filtered, so it repeats the exclusions the result
+path applies rather than inheriting them: `PK`, the soft-delete columns, **role-invisible fields**
+and **binary columns**. It did not until 2026-09-22, and a Start Empty page could offer a search row
+for a field the role may not see — a leak even though the values never appear, because Find answers
+"is there a record with this value?" through the row count alone. `GetInvisibleRoleFieldNames` is
+the single owner both paths ask.
+
 ## QBE Lifecycle
 
-QBE fields are intentionally based on the final visible browse columns:
+QBE fields come from what the page SQL returns, arranged by the search panel's own saved layout:
 
 1. The result SQL is executed.
 2. Standard hiding is applied:
@@ -81,8 +88,42 @@ QBE fields are intentionally based on the final visible browse columns:
    - Soft-delete maintenance columns are hidden from normal user field lists.
    - Registration hiding rules are applied by the shared Base_B path.
 3. A saved layout is applied when the first result grid is built.
-4. The final visible grid columns are used to populate QBE.
-5. Internal aliases and soft-delete fields are excluded.
+4. `BuildQbeCandidateColumns` lists every grid column that could be searched on — **regardless of
+   whether it is visible** — excluding the `PK` alias and the soft-delete columns.
+5. `ResolveQbeColumns` applies the registration's saved QBE arrangement to that list: its order,
+   and its choice of which fields the panel offers. Where no arrangement is saved it returns the
+   grid's visible columns, which is what every page did before the arrangement existed.
+6. Captions still come from the grid column's `HeaderText`, so a role override or a page-set header
+   reaches the search row by construction rather than by a second lookup.
+
+### The QBE field arrangement (2026-09-22)
+
+A browse page shows what it shows and can be searched on what it can be searched on, and those are
+two questions. A column hidden to save grid width used to stop being searchable at the same moment,
+which is the fault this removes.
+
+- **Stored** in `dbo.FW_TableLayouts`, `LayoutType = 'QbeDefault'`, `LayoutName = 'QBE Fields'`,
+  `UserID` null. The JSON is the grid layout's shape minus `Width`: `Key`, `DisplayIndex`,
+  `Visible`. `QbeFieldLayout` owns reading and writing it. `sql/155` adds the type to the CHECK
+  constraint and its own filtered unique index — the three existing unique indexes are each
+  filtered to their own type and cover nothing else.
+- **Per registration, not per user.** The grid layout saves itself on close because it belongs to
+  whoever arranged it. This one decides what everybody can search on, so it is written only by an
+  explicit Save, behind a confirmation naming how many fields it affects, and the button that opens
+  the panel is visible only to an App Admin. The save re-checks that at the write boundary, because
+  a hidden button is not authorization.
+- **One database read per page**, held for the life of the page and refreshed by the save itself.
+- **The panel** is `qbeFieldsPanel`: the columns manager's measurements, its shared helper and its
+  interaction rules — tick the checkbox to show or hide, Up/Down to reorder, Space to toggle the
+  selected row, and selecting a row never ticks it. It overlays the left of the browse grid, where
+  the columns manager overlays the right, because the QBE strip is around 150px tall and a field
+  list needs more than twice that. Its button sits in a third column right of Retrieve, measured
+  against the space actually available: full width where there is room, a glyph where there is not.
+  Nothing on the strip moves and the QBE grid keeps its width.
+- **Two cases the saved document cannot cover**, both handled in `QbeFieldLayout.Apply`: a field the
+  SQL no longer returns is dropped, and a field the SQL has gained that the arrangement never heard
+  of goes to the end, visible. Appearing is the safe failure — a new column that silently could not
+  be searched on would look like a framework fault.
 
 When the user clicks **Find**:
 
@@ -239,6 +280,14 @@ For every new `_B` page:
 - Open with no role-table row and verify the fallback row is persisted correctly.
 - Open with an existing SQL row and verify the grid uses that SQL.
 - Confirm initial QBE fields exclude `PK` and soft-delete internals.
+- With no saved QBE arrangement, hide a browse column and confirm the search field goes with it.
+- As an App Admin, open **Fields**, hide a field, reorder another, Save, and confirm the search
+  panel follows — then reopen the page and confirm it is still that way.
+- Hide a browse column that the QBE arrangement keeps, and confirm the search field stays.
+- Sign in as a non-admin and confirm the **Fields** button is not there, and the saved arrangement
+  is.
+- Add a column to the page SQL and confirm it appears at the end of the search panel rather than
+  going missing.
 - Enter a QBE value before the first Find and verify it survives the first grid load.
 - Change the registration selection and verify the existing grid rows clear immediately without a database refresh.
 - Verify that only QBE Find reloads rows for the newly selected registration.

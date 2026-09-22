@@ -408,6 +408,12 @@ Namespace SDC.Framework
             Dim menuDialogResult As DialogResult = DialogResult.None
 
             Using menu As New FW_MainMenu(user, AddressOf MenuFormInitializer.Configure)
+                ' The browse path's one-time startup cost, paid on a background thread once the menu
+                ' is on screen - see BrowseWarmUp for the measurement. Hooked here rather than added
+                ' to FW_MainMenu: the menu is a protected area, and nothing about this is the menu's
+                ' business beyond the moment it picks to start.
+                AddHandler menu.Shown, Sub(warmSender As Object, warmArgs As EventArgs) BrowseWarmUp.Start()
+
                 Me.Hide()
                 menuDialogResult = menu.ShowDialog(Me)
             End Using

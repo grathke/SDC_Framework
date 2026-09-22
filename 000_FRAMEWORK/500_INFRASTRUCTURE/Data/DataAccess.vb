@@ -1352,7 +1352,16 @@ Namespace SDC.Framework
             Dim table As New DataTable("BrowseRows")
 
             Using conn As New SqlConnection(ConnectionString)
+                ' Timed separately from the Fill, and carried back the same way, because the two
+                ' answer different questions. A first open in a process pays for the login, the TLS
+                ' handshake and the JIT of the whole data stack, and none of that is the query - but
+                ' it lands inside the caller's fetch figure and reads exactly like a slow one.
+                Dim openTimer = UsageCounters.StartTimer()
                 conn.Open()
+                Dim openMillis = UsageCounters.ElapsedMillis(openTimer)
+                If openMillis.HasValue Then
+                    table.ExtendedProperties("BrowseOpenMilliseconds") = openMillis.Value
+                End If
 
                 ' CUSTOM SQL PATH: Execute as-is, then apply QBE filters client-side
                 If Not String.IsNullOrWhiteSpace(baseSelectSql) Then
@@ -1396,6 +1405,13 @@ Namespace SDC.Framework
                     ' When it can, the criteria, the deleted state and the row cap all go into the
                     ' statement, and the three in-memory steps below are skipped. When it cannot,
                     ' nothing is skipped and the old path runs exactly as it always has.
+                    ' Timed, because it is not free and it is not the query. Deciding whether the
+                    ' SQL can be wrapped means reading the result's column types, which is its own
+                    ' trip to the server, and the answer is cached afterwards - so it is paid once
+                    ' per page and lands inside the caller's first fetch figure looking like a slow
+                    ' database.
+                    Dim wrapTimer = UsageCounters.StartTimer()
+
                     Dim wrapped = TryBuildWrappedBrowseQuery(effectiveSql,
                                                              sourceTableName,
                                                              filters,
@@ -1403,6 +1419,11 @@ Namespace SDC.Framework
                                                              maxRows,
                                                              registrationId,
                                                              hasExplicitRegistrationPredicate)
+
+                    Dim wrapMillis = UsageCounters.ElapsedMillis(wrapTimer)
+                    If wrapMillis.HasValue Then
+                        table.ExtendedProperties("BrowseWrapMilliseconds") = wrapMillis.Value
+                    End If
 
                     If Not wrapped.Wrapped Then
                         LogBrowseWrapDecline(sourceTableName, wrapped.DeclineReason)

@@ -87,9 +87,29 @@ if (-not $SkipBuild) {
 Write-Step "Shared deleted-view guard wiring"
 Assert-Pattern -Path ".\000_FRAMEWORK\000_BASE CLASSES\FW_Base_B.vb" -Pattern "DeletedViewGuard.ResultHasDeletedFlagColumn(browseGrid)" -Description "Base browse uses shared result-column guard"
 Assert-Pattern -Path ".\000_FRAMEWORK\000_BASE CLASSES\FW_Base_B.vb" -Pattern "DeletedViewGuard.TableSupportsDeletedView(tableName)" -Description "Base browse uses shared table deleted support guard"
-Assert-Pattern -Path ".\000_FRAMEWORK\000_BASE CLASSES\FW_Base_B.vb" -Pattern "If col Is Nothing OrElse Not col.Visible Then" -Description "QBE derives fields only from visible browse columns"
-Assert-Pattern -Path ".\000_FRAMEWORK\000_BASE CLASSES\FW_Base_B.vb" -Pattern "If IsPkAliasColumn(col) OrElse IsSoftDeleteColumnName(fieldName) Then" -Description "Grid-derived QBE excludes the internal PK alias"
+# QBE had its own arrangement from 2026-09-22, so it no longer follows the grid's visibility. The
+# check that used to stand here asserted "If col Is Nothing OrElse Not col.Visible Then" against the
+# whole file - and after the change it went on passing by matching that same line in
+# HideSoftDeleteColumns, which has nothing to do with QBE. A check that cannot fail is worse than no
+# check, so these assert the new contract at the lines that carry it.
+Assert-Pattern -Path ".\000_FRAMEWORK\000_BASE CLASSES\FW_Base_B.vb" -Pattern "For Each col As DataGridViewColumn In ResolveQbeColumns()" -Description "QBE builds its rows from the resolved field set, not from the grid's visible columns"
+Assert-Pattern -Path ".\000_FRAMEWORK\000_BASE CLASSES\FW_Base_B.vb" -Pattern "Return candidates.Where(Function(c) c.Visible).ToList()" -Description "With no saved arrangement, QBE falls back to the grid's visible columns"
+Assert-Pattern -Path ".\000_FRAMEWORK\000_BASE CLASSES\FW_Base_B.vb" -Pattern "If IsPkAliasColumn(col) OrElse IsSoftDeleteColumnName(fieldName) Then" -Description "QBE candidate fields exclude the internal PK alias and soft-delete columns"
+
+# The arrangement belongs to the registration, so it is written with no UserID and read back the
+# same way. A per-user row here would mean the last person to close a page had rearranged the search
+# panel for everybody.
+Assert-Pattern -Path ".\000_FRAMEWORK\000_BASE CLASSES\FW_Base_B.vb" -Pattern "QbeFieldLayout.LayoutTypeName," -Description "The QBE arrangement is stored under its own layout type"
+Assert-Pattern -Path ".\000_FRAMEWORK\000_BASE CLASSES\FW_Base_B.vb" -Pattern "toggleQbeFieldsButton.Visible = IsAppAdminSession()" -Description "Only an App Admin sees the QBE fields button"
+Assert-Pattern -Path ".\000_FRAMEWORK\000_BASE CLASSES\FW_Base_B.vb" -Pattern 'MessageBox.Show("Only an App Admin can change the QBE fields."' -Description "Saving the QBE arrangement re-checks App Admin at the write boundary"
+Assert-Pattern -Path ".\sql\155_qbe_field_layout.sql" -Pattern "CHECK (LayoutType IN ('Default', 'UserNamed', 'LastUsed', 'QbeDefault'))" -Description "FW_TableLayouts accepts the QbeDefault layout type"
 Assert-Pattern -Path ".\000_FRAMEWORK\000_BASE CLASSES\FW_Base_B.vb" -Pattern 'String.Equals(dc.ColumnName, "PK", StringComparison.OrdinalIgnoreCase)' -Description "Start Empty QBE excludes the internal PK alias"
+
+# The Start Empty panel is built from the SQL schema, before any result has been filtered, so it has
+# to repeat the two exclusions the result path applies. A role-invisible field offered as a search
+# row leaks through the row count even though its values never appear.
+Assert-Pattern -Path ".\000_FRAMEWORK\000_BASE CLASSES\FW_Base_B.vb" -Pattern "If invisibleFields.Contains(dc.ColumnName) OrElse dc.DataType Is GetType(Byte()) Then" -Description "Start Empty QBE excludes role-invisible and binary fields"
+Assert-Pattern -Path ".\000_FRAMEWORK\000_BASE CLASSES\FW_Base_B.vb" -Pattern "Dim invisibleFields = GetInvisibleRoleFieldNames()" -Description "Both paths read role-invisible fields from one owner"
 
 # A QBE row is captioned by the grid column above it, not by asking the caption map a second time.
 # ApplyFriendlyColumnHeaders has already resolved the caption into HeaderText; going back to the map

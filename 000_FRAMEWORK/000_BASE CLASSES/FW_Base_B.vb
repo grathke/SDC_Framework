@@ -59,6 +59,25 @@ Namespace SDC.Framework
         Private ReadOnly columnsManagerList As CheckedListBox
         Private ReadOnly columnsMoveUpButton As Button
         Private ReadOnly columnsMoveDownButton As Button
+        Private ReadOnly toggleQbeFieldsButton As Button
+        Private ReadOnly qbeFieldsPanel As Panel
+        Private ReadOnly qbeFieldsLabel As Label
+        Private ReadOnly qbeFieldsList As CheckedListBox
+        Private ReadOnly qbeFieldsMoveUpButton As Button
+        Private ReadOnly qbeFieldsMoveDownButton As Button
+        Private ReadOnly qbeFieldsSaveButton As Button
+        Private ReadOnly qbeFieldsCancelButton As Button
+        Private suppressQbeFieldsSync As Boolean = False
+        Private allowQbeFieldsCheckToggle As Boolean = False
+
+        ''' <summary>
+        ''' The registration's saved QBE arrangement, read once per page and then held.
+        '''
+        ''' Nothing until the first read, an empty list when no arrangement is saved. The empty
+        ''' list is not a missing answer - it is the answer that says fall back to the grid's
+        ''' visible columns, which is what every page did before the arrangement existed.
+        ''' </summary>
+        Private qbeFieldLayoutEntries As List(Of QbeFieldLayout.Entry) = Nothing
         Private ReadOnly activeFilterLabel As Label
         Private ReadOnly retrievalStatusLabel As Label
         Private ReadOnly retrievalStatusFlashTimer As Timer
@@ -124,8 +143,19 @@ Namespace SDC.Framework
         Private Shared ReadOnly QbeExpandedText As String = "QBE " & ChrW(&H25B2)
         Private Shared ReadOnly ShowDeletedText As String = "Show Deleted"
         Private Shared ReadOnly ShowNormalText As String = "Show Normal"
-        Private Shared ReadOnly ColumnsCollapsedText As String = "Columns " & ChrW(&H25BC)
-        Private Shared ReadOnly ColumnsExpandedText As String = "Columns " & ChrW(&H25B2)
+        ''' <summary>
+        ''' The mark both list panels are opened by: a row of lines, which is what either panel is.
+        '''
+        ''' One glyph rather than a caption and a caret, for two reasons. It is the same idea in
+        ''' both places, so it should look the same in both. And a 36px button leaves the layout
+        ''' toolbar sixty-odd pixels it did not have, which every control on that row now takes -
+        ''' they are laid out right to left from one cursor, so narrowing the first moves the rest
+        ''' across by exactly the width given up.
+        '''
+        ''' The same mark twice needs the tooltips to say which is which, so they are not optional
+        ''' decoration here.
+        ''' </summary>
+        Private Shared ReadOnly ListPanelGlyph As String = ChrW(&H25A4)
         Private Shared ReadOnly ColumnsUsageHintKey As String = "FW_Base_B.ColumnsUsage"
         Private Const EmptyQbeResultLimit As Integer = 10
 
@@ -497,9 +527,9 @@ Namespace SDC.Framework
             }
 
             toggleColumnsPanelButton = New Button() With {
-                .Text = ColumnsCollapsedText,
+                .Text = ListPanelGlyph,
                 .Location = New Point(14, 42),
-                .Size = New Size(102, 28)
+                .Size = New Size(36, 28)
             }
 
             saveMyLayoutButton = New Button() With {
@@ -644,6 +674,75 @@ Namespace SDC.Framework
                 .BorderStyle = BorderStyle.FixedSingle
             }
 
+            ' The QBE field panel, built to the same measurements as the columns manager above it
+            ' and driven by the same shared helper. It overlays the browse grid rather than sitting
+            ' inside the QBE strip, which is around 150px tall - a field list needs more than twice
+            ' that, and growing the strip to hold one would move the grid down on every page.
+            qbeFieldsPanel = New Panel() With {
+                .Dock = DockStyle.None,
+                .Width = 218,
+                .BackColor = Color.FromArgb(248, 248, 248),
+                .BorderStyle = BorderStyle.FixedSingle,
+                .Visible = False
+            }
+
+            qbeFieldsLabel = New Label() With {
+                .Text = "QBE Fields",
+                .AutoSize = True,
+                .Location = New Point(8, 10),
+                .Font = New Font("Segoe UI", 9.0F, FontStyle.Bold),
+                .ForeColor = Color.DimGray,
+                .Visible = False
+            }
+
+            qbeFieldsMoveUpButton = New Button() With {
+                .Text = ChrW(&H25B2),
+                .Size = New Size(32, 28),
+                .Location = New Point(8, 6)
+            }
+
+            qbeFieldsMoveDownButton = New Button() With {
+                .Text = ChrW(&H25BC),
+                .Size = New Size(32, 28),
+                .Location = New Point(46, 6)
+            }
+
+            ' Reads OK, like the columns manager's, because the two panels are the same object to
+            ' whoever is using them. The field keeps the name Save: unlike the columns manager's OK,
+            ' which only applies to the grid in front of it, this one writes a row the whole
+            ' registration reads - which is what the confirmation it raises is there to say.
+            qbeFieldsSaveButton = New Button() With {
+                .Text = "OK",
+                .Size = New Size(58, 28),
+                .Location = New Point(84, 6)
+            }
+
+            qbeFieldsCancelButton = New Button() With {
+                .Text = "Cancel",
+                .Size = New Size(58, 28),
+                .Location = New Point(148, 6)
+            }
+
+            qbeFieldsList = New CheckedListBox() With {
+                .CheckOnClick = True,
+                .Location = New Point(8, 40),
+                .Size = New Size(198, 340),
+                .Anchor = AnchorStyles.Top Or AnchorStyles.Left Or AnchorStyles.Right Or AnchorStyles.Bottom,
+                .BorderStyle = BorderStyle.FixedSingle
+            }
+
+            ' App Admin only, and hidden rather than disabled: the arrangement is shared by the
+            ' whole registration, so for everybody else there is nothing here to press.
+            toggleQbeFieldsButton = New Button() With {
+                .Text = ListPanelGlyph,
+                .Size = New Size(36, 36),
+                .Visible = False
+            }
+
+            Dim listPanelToolTip As New ToolTip()
+            listPanelToolTip.SetToolTip(toggleColumnsPanelButton, "Columns shown in the grid")
+            listPanelToolTip.SetToolTip(toggleQbeFieldsButton, "Fields offered in the QBE")
+
             findButton = New Button() With {.Text = "Find", .Size = New Size(110, 36)}
             clearFiltersButton = New Button() With {.Text = "Clear", .Size = New Size(110, 36)}
             saveQbeButton = New Button() With {.Text = "Save", .Size = New Size(110, 36)}
@@ -786,6 +885,16 @@ Namespace SDC.Framework
             AddHandler columnsManagerOkButton.Click, AddressOf ColumnsManagerOkButton_Click
             AddHandler columnsMoveUpButton.Click, AddressOf ColumnsMoveUpButton_Click
             AddHandler columnsMoveDownButton.Click, AddressOf ColumnsMoveDownButton_Click
+            AddHandler qbeFieldsList.ItemCheck, AddressOf QbeFieldsList_ItemCheck
+            AddHandler qbeFieldsList.KeyDown, AddressOf QbeFieldsList_KeyDown
+            AddHandler qbeFieldsList.MouseDown, AddressOf QbeFieldsList_MouseDown
+            AddHandler qbeFieldsList.MouseUp, AddressOf QbeFieldsList_MouseUp
+            AddHandler qbeFieldsList.SelectedIndexChanged, AddressOf QbeFieldsList_SelectedIndexChanged
+            AddHandler qbeFieldsCancelButton.Click, AddressOf QbeFieldsCancelButton_Click
+            AddHandler qbeFieldsSaveButton.Click, AddressOf QbeFieldsSaveButton_Click
+            AddHandler qbeFieldsMoveUpButton.Click, AddressOf QbeFieldsMoveUpButton_Click
+            AddHandler qbeFieldsMoveDownButton.Click, AddressOf QbeFieldsMoveDownButton_Click
+            AddHandler toggleQbeFieldsButton.Click, AddressOf ToggleQbeFieldsButton_Click
             AddHandler Me.Resize, AddressOf ContactsForm_Resize
             AddHandler qbeSplitContainer.SplitterMoved, AddressOf QbeSplitContainer_SplitterMoved
             AddHandler Me.FormClosing, AddressOf BrowsePage_FormClosing
@@ -800,6 +909,13 @@ Namespace SDC.Framework
             qbePanel.Controls.Add(clearFiltersButton)
             qbePanel.Controls.Add(saveQbeButton)
             qbePanel.Controls.Add(retrieveQbeButton)
+            qbePanel.Controls.Add(toggleQbeFieldsButton)
+            qbeFieldsPanel.Controls.Add(qbeFieldsLabel)
+            qbeFieldsPanel.Controls.Add(qbeFieldsCancelButton)
+            qbeFieldsPanel.Controls.Add(qbeFieldsSaveButton)
+            qbeFieldsPanel.Controls.Add(qbeFieldsMoveUpButton)
+            qbeFieldsPanel.Controls.Add(qbeFieldsMoveDownButton)
+            qbeFieldsPanel.Controls.Add(qbeFieldsList)
             columnsManagerPanel.Controls.Add(columnsManagerLabel)
             columnsManagerPanel.Controls.Add(columnsManagerHideButton)
             columnsManagerPanel.Controls.Add(columnsManagerOkButton)
@@ -825,6 +941,12 @@ Namespace SDC.Framework
             qbeSplitContainer.Panel2.Controls.Add(browseGrid)
             qbeSplitContainer.Panel2.Controls.Add(layoutToolbarPanel)
             qbeSplitContainer.Panel2.Controls.Add(columnsManagerPanel)
+
+            ' On the form, not in Panel2 like the columns manager beside it. The button that opens
+            ' it is on the QBE strip, which is Panel1, and the panel has to hang from that button's
+            ' bottom edge - a point some eighty pixels above where Panel2 begins. A child of Panel2
+            ' cannot be placed there at all, whatever its Top is set to.
+            Me.Controls.Add(qbeFieldsPanel)
             Me.Controls.Add(titleLabel)
 
             ' Every browse page can raise a report against itself, in the same screen position as
@@ -934,6 +1056,11 @@ Namespace SDC.Framework
             If backgroundColorPicker IsNot Nothing Then
                 backgroundColorPicker.UpdateVisibility()
             End If
+
+            ' Set here rather than in the branches below, because three of them return early and a
+            ' visibility decided in only some of them is the kind that comes back wrong on the one
+            ' page nobody tested.
+            toggleQbeFieldsButton.Visible = IsAppAdminSession()
 
             If Not UseRoleBasedCrudAccess() Then
                 createButton.Visible = Not OnlyUseQbe()
@@ -2048,9 +2175,24 @@ Namespace SDC.Framework
             retrievalStatusLabel.Location = New Point(col1X, retrieveQbeButton.Bottom + 4)
             retrievalStatusLabel.Width = Math.Max(160, qbePanel.ClientSize.Width - retrievalStatusLabel.Left - 10)
 
+            ' A third button column, right of Save and Retrieve and on the same row as Find.
+            '
+            ' It changes nothing already on this strip: rightButtonsAreaWidth above still reserves
+            ' two columns, so the QBE grid keeps the width it has always had and the status label
+            ' keeps its row. A 36px glyph fits in the space left over on any window this page opens
+            ' at, which is why it no longer measures first.
+            Dim qbeFieldsCol3X As Integer = col2X + rightButtonWidth + rightButtonGap
+            toggleQbeFieldsButton.Height = btnH
+            toggleQbeFieldsButton.Location = New Point(qbeFieldsCol3X, qbeContentTop + 4)
+
             If columnsManagerPanel.Visible Then
                 PositionColumnsManagerPanel()
                 columnsManagerPanel.BringToFront()
+            End If
+
+            If qbeFieldsPanel.Visible Then
+                PositionQbeFieldsPanel()
+                qbeFieldsPanel.BringToFront()
             End If
 
             ApplyPageSpecificLayout()
@@ -2191,6 +2333,20 @@ Namespace SDC.Framework
                 ' scoping, the deleted-flag fallback, the QBE filter and the row trim, all of
                 ' which happen after the Fill and none of which that figure covers.
                 MarkStep(stepTimer, breakdown, "fetch")
+
+                ' How the fetch above was spent, from the figures the data layer measured inside
+                ' that call: the connection, the query itself, and the wrapper decision that has to
+                ' read the result's column types before it can build a predicate.
+                '
+                ' Written with a colon, not an equals sign, and this is not cosmetic.
+                ' ReportPostQuery sums every name=value token to work out what it could not account
+                ' for, and these are parts of fetch rather than steps beside it. Written as
+                ' "fetch=597[open=0]" they first broke the token itself, so fetch dropped out of the
+                ' sum and the line claimed other=602 on a refresh where nothing was unaccounted for.
+                AppendFetchDetail(breakdown, dt, "BrowseOpenMilliseconds", "open")
+                AppendFetchDetail(breakdown, dt, "BrowseWrapMilliseconds", "wrap")
+                AppendFetchDetail(breakdown, dt, "BrowseQueryMilliseconds", "db")
+
                 lastRefreshExceededRowLimit = maxRows > 0 AndAlso
                                               dt.ExtendedProperties.ContainsKey("BrowseRowsLimited") AndAlso
                                               Convert.ToBoolean(dt.ExtendedProperties("BrowseRowsLimited"))
@@ -2622,8 +2778,8 @@ Namespace SDC.Framework
             GridColumnsManager.SetColumnsPanelVisible(columnsManagerPanel,
                                                       toggleColumnsPanelButton,
                                                       visible,
-                                                      ColumnsExpandedText,
-                                                      ColumnsCollapsedText,
+                                                      ListPanelGlyph,
+                                                      ListPanelGlyph,
                                                       AddressOf PositionColumnsManagerPanel)
         End Sub
 
@@ -2639,7 +2795,299 @@ Namespace SDC.Framework
 
             columnsManagerPanel.Left = Math.Max(0, panel2.ClientSize.Width - columnsManagerPanel.Width - rightMargin)
             columnsManagerPanel.Top = topOffset
-            columnsManagerPanel.Height = Math.Max(120, panel2.ClientSize.Height - topOffset - bottomMargin)
+
+            ' As tall as the page has columns, and no taller than the space below it - past that
+            ' the list scrolls rather than running off the bottom of the page.
+            GridColumnsManager.FitPanelToList(columnsManagerPanel,
+                                              columnsManagerList,
+                                              Math.Max(60, panel2.ClientSize.Height - topOffset - bottomMargin))
+        End Sub
+
+        ''' <summary>
+        ''' The QBE field panel hangs from the button that opens it: right edges aligned, so the
+        ''' panel reads as belonging to that button rather than as another window that happened to
+        ''' appear.
+        '''
+        ''' The two live in different containers - the button is on the QBE strip in Panel1, the
+        ''' panel overlays the grid in Panel2 - so the button's right edge is carried across through
+        ''' the screen rather than compared directly. Comparing the two Left values without that
+        ''' step would line the panel up against Panel1's origin, which is a different place.
+        '''
+        ''' Its top touches the button's bottom edge, so it reads as having dropped out of the
+        ''' button. That is why it is a child of the form: the point it has to sit at is inside the
+        ''' QBE strip's row, above where Panel2 starts, and it covers the layout toolbar and the top
+        ''' of the grid while it is open.
+        ''' </summary>
+        Private Sub PositionQbeFieldsPanel()
+            If qbeSplitContainer Is Nothing Then
+                Return
+            End If
+
+            Dim bottomMargin = 2
+            Dim edgeMargin = 2
+
+            Dim desiredLeft As Integer = edgeMargin
+            Dim desiredTop As Integer = qbeSplitContainer.Top + 2
+
+            If toggleQbeFieldsButton.Parent IsNot Nothing AndAlso
+               toggleQbeFieldsButton.Parent.IsHandleCreated AndAlso
+               Me.IsHandleCreated Then
+                Dim buttonCornerOnScreen = toggleQbeFieldsButton.Parent.PointToScreen(New Point(toggleQbeFieldsButton.Right, toggleQbeFieldsButton.Bottom))
+                Dim buttonCornerOnForm = Me.PointToClient(buttonCornerOnScreen)
+                desiredLeft = buttonCornerOnForm.X - qbeFieldsPanel.Width
+                desiredTop = buttonCornerOnForm.Y
+            End If
+
+            ' Clamped, because a narrow window can put the button's right edge closer to the left of
+            ' the page than the panel is wide, and a panel positioned off the edge is one nobody can
+            ' reach the checkboxes on.
+            Dim maxLeft = Math.Max(edgeMargin, Me.ClientSize.Width - qbeFieldsPanel.Width - edgeMargin)
+            qbeFieldsPanel.Left = Math.Max(edgeMargin, Math.Min(desiredLeft, maxLeft))
+            qbeFieldsPanel.Top = Math.Max(0, desiredTop)
+
+            ' Tall enough for the fields it holds and no taller, through the same helper the columns
+            ' manager uses - one implementation, so the two panels cannot drift apart.
+            '
+            ' The ceiling stops where the split container does, rather than at the bottom of the
+            ' window: below that line are the page's action buttons, and a list that covered Close
+            ' would be one the user has to dismiss before they can leave the page.
+            GridColumnsManager.FitPanelToList(qbeFieldsPanel,
+                                              qbeFieldsList,
+                                              Math.Max(60, qbeSplitContainer.Bottom - qbeFieldsPanel.Top - bottomMargin))
+        End Sub
+
+        Private Sub ToggleQbeFieldsButton_Click(sender As Object, e As EventArgs)
+            Dim makeVisible = Not qbeFieldsPanel.Visible
+
+            ' The mark on the button does not change with the panel's state. The panel is either on
+            ' screen or it is not, which says it better than a caret ever did.
+            qbeFieldsPanel.Visible = makeVisible
+
+            If makeVisible Then
+                RefreshQbeFieldsList()
+                PositionQbeFieldsPanel()
+                qbeFieldsPanel.BringToFront()
+                qbeFieldsList.Focus()
+            End If
+        End Sub
+
+        ''' <summary>
+        ''' Fills the panel with every field the page could search on, ticked according to the
+        ''' arrangement in force - the saved one, or the grid's visible columns where none is saved.
+        '''
+        ''' The list is the full candidate set, not the QBE rows: a field hidden from the search
+        ''' panel has to be in the list or there would be no way to bring it back.
+        ''' </summary>
+        Private Sub RefreshQbeFieldsList()
+            If suppressQbeFieldsSync Then
+                Return
+            End If
+
+            Dim captionByName = BuildQbeCandidateFields()
+
+            ' What the search panel is offering right now, which is the tick state when no
+            ' arrangement has been saved. Read from the QBE rows rather than from the grid, because
+            ' before the first Find there is no grid and the rows came from the SQL schema - which
+            ' is exactly the case where this list used to come up empty.
+            Dim inQbe As New HashSet(Of String)(StringComparer.OrdinalIgnoreCase)
+            For Each definition In qbeFieldDefinitions
+                If definition IsNot Nothing AndAlso Not String.IsNullOrWhiteSpace(definition.FieldName) Then
+                    inQbe.Add(definition.FieldName)
+                End If
+            Next
+
+            Dim layout = GetQbeFieldLayout()
+            Dim ordered = QbeFieldLayout.Apply(captionByName.Keys.ToList(), layout)
+
+            Dim items As New List(Of GridColumnsManager.ManagedFieldItem)()
+            For Each entry In ordered
+                Dim caption As String = Nothing
+                If Not captionByName.TryGetValue(entry.FieldName, caption) Then
+                    caption = ToFriendlyCaption(entry.FieldName)
+                End If
+
+                items.Add(New GridColumnsManager.ManagedFieldItem With {
+                    .FieldName = entry.FieldName,
+                    .DisplayName = caption,
+                    .Visible = If(layout.Count = 0, inQbe.Contains(entry.FieldName), entry.Visible)
+                })
+            Next
+
+            suppressQbeFieldsSync = True
+            Try
+                qbeFieldsList.BeginUpdate()
+                GridColumnsManager.RefreshFieldsManager(qbeFieldsList, items)
+            Finally
+                qbeFieldsList.EndUpdate()
+                suppressQbeFieldsSync = False
+                UpdateQbeFieldsButtonsState()
+            End Try
+        End Sub
+
+        Private Sub UpdateQbeFieldsButtonsState()
+            GridColumnsManager.UpdateColumnsManagerButtonsState(qbeFieldsList, qbeFieldsMoveUpButton, qbeFieldsMoveDownButton)
+        End Sub
+
+        Private Sub QbeFieldsList_SelectedIndexChanged(sender As Object, e As EventArgs)
+            UpdateQbeFieldsButtonsState()
+        End Sub
+
+        Private Sub QbeFieldsList_KeyDown(sender As Object, e As KeyEventArgs)
+            If suppressQbeFieldsSync Then
+                Return
+            End If
+
+            If e.KeyCode = Keys.Space Then
+                allowQbeFieldsCheckToggle = True
+            End If
+
+            GridColumnsManager.HandleColumnsManagerListKeyDown(qbeFieldsList, e)
+
+            If e.KeyCode = Keys.Space Then
+                allowQbeFieldsCheckToggle = False
+            End If
+        End Sub
+
+        ' Selecting a row must not tick it - the same rule the columns manager follows, so the two
+        ' panels do not behave differently under the same click.
+        Private Sub QbeFieldsList_MouseDown(sender As Object, e As MouseEventArgs)
+            allowQbeFieldsCheckToggle = False
+            If e.Button <> MouseButtons.Left Then
+                Return
+            End If
+
+            Dim itemIndex = qbeFieldsList.IndexFromPoint(e.Location)
+            If itemIndex < 0 Then
+                Return
+            End If
+
+            Dim itemBounds = qbeFieldsList.GetItemRectangle(itemIndex)
+            allowQbeFieldsCheckToggle = e.X <= itemBounds.Left + SystemInformation.MenuCheckSize.Width + 4
+        End Sub
+
+        Private Sub QbeFieldsList_MouseUp(sender As Object, e As MouseEventArgs)
+            allowQbeFieldsCheckToggle = False
+        End Sub
+
+        Private Sub QbeFieldsList_ItemCheck(sender As Object, e As ItemCheckEventArgs)
+            If suppressQbeFieldsSync Then
+                Return
+            End If
+
+            If Not allowQbeFieldsCheckToggle Then
+                e.NewValue = e.CurrentValue
+                Return
+            End If
+
+            GridColumnsManager.ValidateItemCheck(qbeFieldsList, e, "field", "QBE Fields")
+        End Sub
+
+        Private Sub QbeFieldsMoveUpButton_Click(sender As Object, e As EventArgs)
+            MoveSelectedQbeFieldsItem(-1)
+        End Sub
+
+        Private Sub QbeFieldsMoveDownButton_Click(sender As Object, e As EventArgs)
+            MoveSelectedQbeFieldsItem(1)
+        End Sub
+
+        Private Sub MoveSelectedQbeFieldsItem(delta As Integer)
+            suppressQbeFieldsSync = True
+            Try
+                If Not GridColumnsManager.MoveSelectedItem(qbeFieldsList, delta) Then
+                    Return
+                End If
+            Finally
+                suppressQbeFieldsSync = False
+            End Try
+
+            UpdateQbeFieldsButtonsState()
+        End Sub
+
+        ''' <summary>
+        ''' Cancel closes the panel and changes nothing. Nothing has reached the search panel or the
+        ''' database by this point - the list is edited on its own and only Save commits it - so
+        ''' there is no baseline to put back, unlike the columns manager which restores one.
+        ''' </summary>
+        Private Sub QbeFieldsCancelButton_Click(sender As Object, e As EventArgs)
+            qbeFieldsPanel.Visible = False
+        End Sub
+
+        ''' <summary>
+        ''' Writes the arrangement for the whole registration, after saying so.
+        '''
+        ''' Confirmed rather than silent because this is not the user's own layout: it decides what
+        ''' every user of this page in this registration can search on. The grid layout saves itself
+        ''' on close precisely because it is personal; this one cannot.
+        ''' </summary>
+        Private Sub QbeFieldsSaveButton_Click(sender As Object, e As EventArgs)
+            Dim session = SessionState.Current
+            If Not session.HasValue Then
+                Return
+            End If
+
+            If Not IsAppAdminSession() Then
+                MessageBox.Show("Only an App Admin can change the QBE fields.", "QBE Fields", MessageBoxButtons.OK, MessageBoxIcon.Warning)
+                Return
+            End If
+
+            Dim registrationId As Integer
+            If Not TryGetActiveRegistrationId(registrationId) OrElse registrationId <= 0 Then
+                MessageBox.Show("No active registration, so there is nothing to save the QBE fields against.", "QBE Fields", MessageBoxButtons.OK, MessageBoxIcon.Warning)
+                Return
+            End If
+
+            Dim entries As New List(Of QbeFieldLayout.Entry)()
+            For index = 0 To qbeFieldsList.Items.Count - 1
+                Dim item = TryCast(qbeFieldsList.Items(index), GridColumnsManager.ManagedFieldItem)
+                If item Is Nothing OrElse String.IsNullOrWhiteSpace(item.FieldName) Then
+                    Continue For
+                End If
+
+                entries.Add(New QbeFieldLayout.Entry With {
+                    .FieldName = item.FieldName,
+                    .Visible = qbeFieldsList.GetItemChecked(index)
+                })
+            Next
+
+            If Not entries.Any(Function(entry) entry.Visible) Then
+                MessageBox.Show("At least one field must remain in the search panel.", "QBE Fields", MessageBoxButtons.OK, MessageBoxIcon.Warning)
+                Return
+            End If
+
+            Dim json = QbeFieldLayout.Serialize(entries)
+            If String.IsNullOrWhiteSpace(json) Then
+                Return
+            End If
+
+            Dim shownCount = entries.Where(Function(entry) entry.Visible).Count()
+            If MessageBox.Show("Save these " & shownCount.ToString() & " search fields for everyone in this registration?",
+                               "QBE Fields",
+                               MessageBoxButtons.YesNo,
+                               MessageBoxIcon.Question) <> DialogResult.Yes Then
+                Return
+            End If
+
+            Try
+                DataAccess.UpsertTableLayout(registrationId,
+                                             0,
+                                             Me.GetType().Name,
+                                             ResolveCurrentRoleFieldTableName(),
+                                             QbeFieldLayout.LayoutTypeName,
+                                             QbeFieldLayout.LayoutRowName,
+                                             json,
+                                             session.Value.UserID)
+            Catch ex As Exception
+                MessageBox.Show("The QBE fields could not be saved: " & ex.Message, "QBE Fields", MessageBoxButtons.OK, MessageBoxIcon.Error)
+                Return
+            End Try
+
+            ' Read back through the same parse the next page open will use, rather than trusting
+            ' the list that was just edited - so what is on screen from here is what was stored.
+            qbeFieldLayoutEntries = QbeFieldLayout.Parse(json)
+            PopulateQbeFromGridColumns()
+            LayoutQbeSection()
+
+            qbeFieldsPanel.Visible = False
         End Sub
 
         Protected Overridable Function IsManageableColumn(col As DataGridViewColumn) As Boolean
@@ -2816,11 +3264,14 @@ Namespace SDC.Framework
                 HideRegistrationIdColumn(browseGrid)
                 HideSoftDeleteColumns(browseGrid)
 
-                ' QBE is derived from the visible columns, so hiding one here has to re-derive it.
-                ' Without this the field stayed searchable after being hidden - and permanently so,
-                ' because the signature below then told the next refresh that nothing had changed.
+                ' Re-derived because a page with no saved QBE arrangement still follows the grid's
+                ' visible columns, and without this the field stayed searchable after being hidden -
+                ' permanently so, because the signature below then told the next refresh that
+                ' nothing had changed. Where an arrangement is saved this changes nothing, which is
+                ' the point of it: hiding a column no longer touches the search panel.
+                '
                 ' Values already typed are preserved by field name, so a filter in progress
-                ' survives on the columns that remain.
+                ' survives on the fields that remain.
                 PopulateQbeFromGridColumns()
 
                 lastVisibleColumnsSignature = BuildVisibleColumnsSignature()
@@ -2846,10 +3297,11 @@ Namespace SDC.Framework
                 userChangedLayout = True
             End If
 
-            ' QBE follows the grid's order, so dragging a column has to re-derive it. One drag
-            ' raises this once per column whose position shifted, so the rebuild is deferred and
-            ' coalesced - otherwise a single move of a left-hand column would rebuild QBE several
-            ' times over. Reset and the layout combo re-derive it through their own path.
+            ' A page with no saved QBE arrangement follows the grid's order, so dragging a column
+            ' has to re-derive it; a page with one is unaffected, and the rebuild returns the same
+            ' rows. One drag raises this once per column whose position shifted, so the rebuild is
+            ' deferred and coalesced - otherwise a single move of a left-hand column would rebuild
+            ' QBE several times over. Reset and the layout combo re-derive it through their own path.
             If qbeRebuildPending Then Return
 
             qbeRebuildPending = True
@@ -3537,7 +3989,8 @@ Namespace SDC.Framework
         ''' <summary>
         ''' Hides columns whose field is flagged Make_Invisible in FW_RoleFields, so one
         ''' field-level setting hides it on both the browse grid and the maintenance page.
-        ''' QBE follows automatically, since it derives from visible columns.
+        ''' QBE follows automatically, and not by following the grid: the column is removed from the
+        ''' result outright, so no field exists for the search panel to offer however it is arranged.
         ''' </summary>
         ''' <summary>
         ''' Removes fields the role may not see from the result outright, rather than hiding them.
@@ -3553,21 +4006,40 @@ Namespace SDC.Framework
         ''' columns are also hidden from the user, but the framework reads them, so those stay in
         ''' the table and remain merely hidden.
         ''' </summary>
-        Protected Overridable Sub RemoveInvisibleRoleFieldColumns(table As DataTable)
-            If table Is Nothing OrElse table.Columns.Count = 0 Then Return
+        ''' <summary>
+        ''' The fields this role may not see, from the same cached metadata the captions come from.
+        ''' Empty when there is no session, no role or no table, which is the safe answer for a
+        ''' caller that is deciding what to remove rather than what to show.
+        '''
+        ''' One owner, because two callers ask: the result columns are dropped through it, and the
+        ''' Start Empty search panel is filtered through it. Until 2026-09-22 only the first asked,
+        ''' and the second offered a search row for a field the role could not see - which searching
+        ''' answers questions about even when reading does not.
+        ''' </summary>
+        Private Function GetInvisibleRoleFieldNames() As HashSet(Of String)
+            Dim empty As New HashSet(Of String)(StringComparer.OrdinalIgnoreCase)
 
             Dim session = SessionState.Current
-            If Not session.HasValue Then Return
+            If Not session.HasValue Then Return empty
 
             Dim roleId = session.Value.RoleID
             Dim registrationId = session.Value.RegistrationID
             Dim tableName = ResolveCurrentRoleFieldTableName()
             If roleId <= 0 OrElse registrationId <= 0 OrElse String.IsNullOrWhiteSpace(tableName) Then
-                Return
+                Return empty
             End If
 
             Dim invisibleFields = DataAccess.GetPageInitMetadata(roleId, registrationId, tableName).InvisibleFields
-            If invisibleFields Is Nothing OrElse invisibleFields.Count = 0 Then Return
+            If invisibleFields Is Nothing Then Return empty
+
+            Return invisibleFields
+        End Function
+
+        Protected Overridable Sub RemoveInvisibleRoleFieldColumns(table As DataTable)
+            If table Is Nothing OrElse table.Columns.Count = 0 Then Return
+
+            Dim invisibleFields = GetInvisibleRoleFieldNames()
+            If invisibleFields.Count = 0 Then Return
 
             For Each columnName In table.Columns.Cast(Of DataColumn)().
                                          Select(Function(c) c.ColumnName).
@@ -3673,6 +4145,217 @@ Namespace SDC.Framework
             Return Integer.TryParse(cell.Value.ToString(), recordId)
         End Function
 
+        ''' <summary>
+        ''' The column's database field name, which is what a filter, a saved search and the QBE
+        ''' layout are all keyed by.
+        ''' </summary>
+        Private Shared Function GetQbeFieldName(col As DataGridViewColumn) As String
+            If col Is Nothing Then
+                Return String.Empty
+            End If
+
+            Dim fieldName = col.DataPropertyName
+            If String.IsNullOrWhiteSpace(fieldName) Then
+                fieldName = col.Name
+            End If
+
+            Return If(fieldName, String.Empty).Trim()
+        End Function
+
+        ''' <summary>
+        ''' Every field this page could offer in QBE, in the order it would offer them if nobody
+        ''' had arranged the panel: the grid's own order.
+        '''
+        ''' Visibility is deliberately not consulted. A column hidden to save grid width is still a
+        ''' field somebody may want to search on, which is the whole point of the arrangement this
+        ''' feeds. What is excluded is excluded because it cannot be searched at all - the internal
+        ''' PK alias, and the soft-delete columns the Show Deleted button owns.
+        '''
+        ''' Fields the role may not see never reach here: RemoveInvisibleRoleFieldColumns drops
+        ''' them from the DataTable before the grid is bound, so no column exists to list. Binary
+        ''' columns go the same way, in RemoveBinaryColumns.
+        ''' </summary>
+        Private Function BuildQbeCandidateColumns() As List(Of DataGridViewColumn)
+            Dim candidates As New List(Of DataGridViewColumn)()
+            If browseGrid Is Nothing OrElse browseGrid.Columns Is Nothing Then
+                Return candidates
+            End If
+
+            For Each col As DataGridViewColumn In browseGrid.Columns.Cast(Of DataGridViewColumn)().OrderBy(Function(c) c.DisplayIndex)
+                If col Is Nothing Then
+                    Continue For
+                End If
+
+                Dim fieldName = GetQbeFieldName(col)
+                If String.IsNullOrWhiteSpace(fieldName) Then
+                    Continue For
+                End If
+
+                If IsPkAliasColumn(col) OrElse IsSoftDeleteColumnName(fieldName) Then
+                    Continue For
+                End If
+
+                candidates.Add(col)
+            Next
+
+            Return candidates
+        End Function
+
+        ''' <summary>
+        ''' The columns QBE actually builds rows from: the registration's saved arrangement where
+        ''' there is one, and otherwise the grid's visible columns exactly as before.
+        '''
+        ''' The fallback matters more than the arrangement does. Until an App Admin saves one, every
+        ''' page behaves as it always has - QBE follows the grid - so this change alters nothing on
+        ''' any existing page until somebody chooses to arrange it.
+        ''' </summary>
+        Private Function ResolveQbeColumns() As List(Of DataGridViewColumn)
+            Dim candidates = BuildQbeCandidateColumns()
+            If candidates.Count = 0 Then
+                Return candidates
+            End If
+
+            Dim layout = GetQbeFieldLayout()
+            If layout.Count = 0 Then
+                Return candidates.Where(Function(c) c.Visible).ToList()
+            End If
+
+            Dim byName As New Dictionary(Of String, DataGridViewColumn)(StringComparer.OrdinalIgnoreCase)
+            For Each col In candidates
+                Dim fieldName = GetQbeFieldName(col)
+                If Not byName.ContainsKey(fieldName) Then
+                    byName(fieldName) = col
+                End If
+            Next
+
+            Dim resolved As New List(Of DataGridViewColumn)()
+            For Each entry In QbeFieldLayout.Apply(candidates.Select(AddressOf GetQbeFieldName), layout)
+                If Not entry.Visible Then
+                    Continue For
+                End If
+
+                Dim col As DataGridViewColumn = Nothing
+                If byName.TryGetValue(entry.FieldName, col) AndAlso col IsNot Nothing Then
+                    resolved.Add(col)
+                End If
+            Next
+
+            ' An arrangement that hides everything would leave a search panel with nothing in it,
+            ' which reads as a broken page rather than as a choice. The panel refuses to save one,
+            ' so this only catches a row edited directly in the database.
+            If resolved.Count = 0 Then
+                Return candidates.Where(Function(c) c.Visible).ToList()
+            End If
+
+            Return resolved
+        End Function
+
+        ''' <summary>
+        ''' Every field the page could offer in QBE, with the caption to show for it, in the order
+        ''' it would offer them if nobody had arranged the panel.
+        '''
+        ''' Two sources, because a browse page has two states. Once a result is loaded the grid
+        ''' columns are authoritative and carry their own resolved headers. Before the first Find on
+        ''' a Start Empty page there is no grid at all - and that is where the panel used to come up
+        ''' empty while the search rows beside it were already populated from the SQL schema.
+        '''
+        ''' The schema branch resolves captions through the role map rather than a header, which is
+        ''' the same fallback PopulateQbeFromSqlSchema uses for the same reason: there is no header
+        ''' to read yet.
+        ''' </summary>
+        Private Function BuildQbeCandidateFields() As Dictionary(Of String, String)
+            Dim captionByName As New Dictionary(Of String, String)(StringComparer.OrdinalIgnoreCase)
+
+            Dim gridCandidates = BuildQbeCandidateColumns()
+            If gridCandidates.Count > 0 Then
+                For Each col In gridCandidates
+                    Dim fieldName = GetQbeFieldName(col)
+                    If captionByName.ContainsKey(fieldName) Then
+                        Continue For
+                    End If
+
+                    captionByName(fieldName) = If(String.IsNullOrWhiteSpace(col.HeaderText),
+                                                  ToFriendlyCaption(fieldName),
+                                                  col.HeaderText.Trim())
+                Next
+
+                Return captionByName
+            End If
+
+            Dim registrationId As Integer
+            If Not TryGetActiveRegistrationId(registrationId) OrElse registrationId <= 0 Then
+                Return captionByName
+            End If
+
+            Dim activeSql = GetActiveBaseSql()
+            If String.IsNullOrWhiteSpace(activeSql) Then
+                Return captionByName
+            End If
+
+            Dim schema = GetSqlSchemaForPage(activeSql, registrationId)
+            If schema Is Nothing OrElse schema.Columns Is Nothing Then
+                Return captionByName
+            End If
+
+            Dim invisibleFields = GetInvisibleRoleFieldNames()
+
+            For Each dc As DataColumn In schema.Columns
+                If dc Is Nothing OrElse String.IsNullOrWhiteSpace(dc.ColumnName) Then
+                    Continue For
+                End If
+
+                If String.Equals(dc.ColumnName, "PK", StringComparison.OrdinalIgnoreCase) OrElse
+                   IsSoftDeleteColumnName(dc.ColumnName) Then
+                    Continue For
+                End If
+
+                If invisibleFields.Contains(dc.ColumnName) OrElse dc.DataType Is GetType(Byte()) Then
+                    Continue For
+                End If
+
+                If captionByName.ContainsKey(dc.ColumnName) Then
+                    Continue For
+                End If
+
+                captionByName(dc.ColumnName) = ResolveQbeFieldCaption(dc.ColumnName, ToFriendlyCaption(dc.ColumnName))
+            Next
+
+            Return captionByName
+        End Function
+
+        ''' <summary>
+        ''' The registration's saved QBE arrangement. One database read per page, held for the life
+        ''' of the page - the arrangement is shared and changes only when an App Admin saves it,
+        ''' and the page that saves it refreshes this itself.
+        ''' </summary>
+        Private Function GetQbeFieldLayout() As List(Of QbeFieldLayout.Entry)
+            If qbeFieldLayoutEntries IsNot Nothing Then
+                Return qbeFieldLayoutEntries
+            End If
+
+            qbeFieldLayoutEntries = New List(Of QbeFieldLayout.Entry)()
+
+            Dim registrationId As Integer
+            If Not TryGetActiveRegistrationId(registrationId) OrElse registrationId <= 0 Then
+                Return qbeFieldLayoutEntries
+            End If
+
+            Try
+                Dim layoutJson = DataAccess.GetTableLayoutJson(registrationId,
+                                                              0,
+                                                              Me.GetType().Name,
+                                                              ResolveCurrentRoleFieldTableName(),
+                                                              QbeFieldLayout.LayoutTypeName,
+                                                              QbeFieldLayout.LayoutRowName)
+                qbeFieldLayoutEntries = QbeFieldLayout.Parse(layoutJson)
+            Catch
+                ' A page whose search panel cannot be read still opens, on the grid's columns.
+                qbeFieldLayoutEntries = New List(Of QbeFieldLayout.Entry)()
+            End Try
+
+            Return qbeFieldLayoutEntries
+        End Function
+
         Private Sub PopulateQbeFromGridColumns()
             ' A grid with no columns means no result is loaded, not that the page has no
             ' searchable fields. Deriving from it would empty the QBE, which is never the right
@@ -3710,26 +4393,8 @@ Namespace SDC.Framework
             qbeFieldDefinitions.Clear()
             qbeGrid.Rows.Clear()
 
-            ' Ordered by DisplayIndex, not by the order the SQL returned the columns, so QBE reads
-            ' in the same order as the grid. Arranging the important column first puts it first
-            ' in QBE too, rather than leaving the two out of step.
-            For Each col As DataGridViewColumn In browseGrid.Columns.Cast(Of DataGridViewColumn)().OrderBy(Function(c) c.DisplayIndex)
-                If col Is Nothing OrElse Not col.Visible Then
-                    Continue For
-                End If
-
-                Dim fieldName = col.DataPropertyName
-                If String.IsNullOrWhiteSpace(fieldName) Then
-                    fieldName = col.Name
-                End If
-
-                If String.IsNullOrWhiteSpace(fieldName) Then
-                    Continue For
-                End If
-
-                If IsPkAliasColumn(col) OrElse IsSoftDeleteColumnName(fieldName) Then
-                    Continue For
-                End If
+            For Each col As DataGridViewColumn In ResolveQbeColumns()
+                Dim fieldName = GetQbeFieldName(col)
 
                 ' The header, not the caption map. ApplyFriendlyColumnHeaders has already resolved
                 ' this column's caption from that map and written it here, so asking the map again
@@ -3787,13 +4452,54 @@ Namespace SDC.Framework
             qbeFieldDefinitions.Clear()
             qbeGrid.Rows.Clear()
 
+            Dim schemaColumns As New Dictionary(Of String, DataColumn)(StringComparer.OrdinalIgnoreCase)
+            Dim candidateNames As New List(Of String)()
+
+            ' The same two exclusions the result path applies, which this path did not until
+            ' 2026-09-22 - and it is the path that runs before any result exists, so it was the one
+            ' on screen when nothing had been filtered yet.
+            '
+            ' A role-invisible field offered as a search row is a real leak rather than an untidy
+            ' list: the values never appear, but Find answers "is there a record with this value?"
+            ' through the row count alone. A binary column is only noise - RowVersion on any page
+            ' selecting *, and the attachment blob - but nothing can usefully search either.
+            Dim invisibleFields = GetInvisibleRoleFieldNames()
+
             For Each dc As DataColumn In schema.Columns
                 If dc Is Nothing OrElse String.IsNullOrWhiteSpace(dc.ColumnName) Then
                     Continue For
                 End If
 
-                     If String.Equals(dc.ColumnName, "PK", StringComparison.OrdinalIgnoreCase) OrElse
-                         IsSoftDeleteColumnName(dc.ColumnName) Then
+                If String.Equals(dc.ColumnName, "PK", StringComparison.OrdinalIgnoreCase) OrElse
+                   IsSoftDeleteColumnName(dc.ColumnName) Then
+                    Continue For
+                End If
+
+                If invisibleFields.Contains(dc.ColumnName) OrElse dc.DataType Is GetType(Byte()) Then
+                    Continue For
+                End If
+
+                If schemaColumns.ContainsKey(dc.ColumnName) Then
+                    Continue For
+                End If
+
+                schemaColumns(dc.ColumnName) = dc
+                candidateNames.Add(dc.ColumnName)
+            Next
+
+            ' The saved arrangement applies here too. A Start Empty page shows its search panel
+            ' before any grid exists, and a panel that listed different fields before and after the
+            ' first Find would look like the arrangement had not been saved.
+            Dim layout = GetQbeFieldLayout()
+            Dim ordered = QbeFieldLayout.Apply(candidateNames, layout)
+
+            For Each entry In ordered
+                If layout.Count > 0 AndAlso Not entry.Visible Then
+                    Continue For
+                End If
+
+                Dim dc As DataColumn = Nothing
+                If Not schemaColumns.TryGetValue(entry.FieldName, dc) OrElse dc Is Nothing Then
                     Continue For
                 End If
 
@@ -4663,6 +5369,31 @@ Namespace SDC.Framework
         ''' Thinfinity the pixels still have to reach the browser.
         ''' </summary>
         ''' <summary>How long a post-query step took, in milliseconds, before the timer restarts.</summary>
+        ''' <summary>
+        ''' Adds one of the data layer's own measurements to the breakdown, as a part of the fetch
+        ''' rather than as a step beside it.
+        '''
+        ''' Zero is printed here where MarkStep leaves it out, because zero is the finding: an open
+        ''' that cost nothing says the connection was pooled, and that is exactly what rules the
+        ''' connection out as the cause of a slow first fetch.
+        ''' </summary>
+        Private Shared Sub AppendFetchDetail(breakdown As System.Text.StringBuilder,
+                                             table As DataTable,
+                                             propertyName As String,
+                                             label As String)
+            Try
+                If breakdown Is Nothing OrElse table Is Nothing Then Return
+                If Not table.ExtendedProperties.ContainsKey(propertyName) Then Return
+
+                Dim ms = Convert.ToInt32(table.ExtendedProperties(propertyName), Globalization.CultureInfo.InvariantCulture)
+
+                If breakdown.Length > 0 Then breakdown.Append(" ")
+                breakdown.Append(label).Append(":").Append(ms.ToString(Globalization.CultureInfo.InvariantCulture))
+            Catch
+                ' A missing figure is not worth a failed refresh.
+            End Try
+        End Sub
+
         Private Shared Sub MarkStep(timer As System.Diagnostics.Stopwatch,
                                     breakdown As System.Text.StringBuilder,
                                     name As String)

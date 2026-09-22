@@ -20,6 +20,38 @@ Namespace SDC.Framework
             End Function
         End Class
 
+        ''' <summary>
+        ''' A row in a manager panel that arranges names rather than grid columns - the QBE field
+        ''' list, which offers fields the grid may not be showing at all.
+        '''
+        ''' Everything below this class that moves, ticks or keys a row works on the CheckedListBox
+        ''' and not on what the rows hold, so both panels share one implementation of the
+        ''' interaction. Only filling the list and applying the result differ.
+        ''' </summary>
+        Friend Class ManagedFieldItem
+            Public Property FieldName As String
+            Public Property DisplayName As String
+            Public Property Visible As Boolean
+
+            Public Overrides Function ToString() As String
+                Return DisplayName
+            End Function
+        End Class
+
+        Friend Shared Sub RefreshFieldsManager(list As CheckedListBox,
+                                               items As IEnumerable(Of ManagedFieldItem))
+            list.Items.Clear()
+
+            For Each item In items
+                Dim idx = list.Items.Add(item)
+                list.SetItemChecked(idx, item.Visible)
+            Next
+
+            If list.Items.Count > 0 Then
+                list.SelectedIndex = 0
+            End If
+        End Sub
+
         Friend Shared Sub RefreshColumnsManagerFromGrid(list As CheckedListBox,
                                                         orderedColumns As IEnumerable(Of DataGridViewColumn))
             list.Items.Clear()
@@ -37,6 +69,44 @@ Namespace SDC.Framework
             If list.Items.Count > 0 Then
                 list.SelectedIndex = 0
             End If
+        End Sub
+
+        ''' <summary>
+        ''' Sizes a manager panel to the rows it is holding, within the space it has.
+        '''
+        ''' How many rows there are is a property of the page - eleven columns on one, thirty on
+        ''' another - so a panel sized once is either mostly empty or short on every page but the
+        ''' one it was measured against.
+        '''
+        ''' Where the rows do not fit, the panel stops at the space given and the list scrolls.
+        ''' Growing past it would put the bottom of the list off the page, where its last rows
+        ''' cannot be reached at all.
+        ''' </summary>
+        ''' <param name="maximumHeight">The tallest the panel may be, measured from its own top.</param>
+        Friend Shared Sub FitPanelToList(panel As Panel, list As CheckedListBox, maximumHeight As Integer)
+            If panel Is Nothing OrElse list Is Nothing Then
+                Return
+            End If
+
+            Const bottomPadding As Integer = 10
+            Const listBorder As Integer = 6
+            Const minimumRows As Integer = 3
+
+            Dim listTop = list.Top
+            Dim rowHeight = Math.Max(14, list.ItemHeight)
+            Dim rowCount = Math.Max(1, list.Items.Count)
+
+            Dim desiredHeight = listTop + (rowHeight * rowCount) + listBorder + bottomPadding
+            Dim minimumHeight = listTop + (rowHeight * minimumRows) + listBorder + bottomPadding
+            Dim absoluteMinimum = listTop + rowHeight + listBorder + bottomPadding
+
+            Dim target = Math.Max(minimumHeight, desiredHeight)
+            If target > maximumHeight Then
+                target = maximumHeight
+            End If
+
+            panel.Height = Math.Max(absoluteMinimum, target)
+            list.Height = Math.Max(rowHeight, panel.ClientSize.Height - listTop - bottomPadding)
         End Sub
 
         Friend Shared Sub UpdateColumnsManagerButtonsState(list As CheckedListBox,
@@ -79,12 +149,23 @@ Namespace SDC.Framework
             End If
         End Sub
 
+        ''' <param name="itemNoun">
+        ''' What the panel is arranging, for the message. The QBE panel lists fields rather than
+        ''' columns, and telling somebody a column must stay visible while they are looking at a
+        ''' list of search fields reads as the wrong dialog having opened.
+        ''' </param>
         Friend Shared Function ValidateItemCheck(list As CheckedListBox,
-                                                 e As ItemCheckEventArgs) As Boolean
+                                                 e As ItemCheckEventArgs,
+                                                 Optional itemNoun As String = "column",
+                                                 Optional title As String = "Columns") As Boolean
             If e.CurrentValue = CheckState.Checked AndAlso e.NewValue = CheckState.Unchecked Then
-                If list.CheckedItems.Count <= 1 Then
+                ' Two ways to end up with nothing left, and the count of ticks only catches one of
+                ' them. A list holding a single row is the other: CheckedItems is read before the
+                ' change is applied, so a list of one can report a tick still to come and let the
+                ' only row be cleared.
+                If list.Items.Count <= 1 OrElse list.CheckedItems.Count <= 1 Then
                     e.NewValue = CheckState.Checked
-                    MessageBox.Show("At least one column must remain visible.", "Columns", MessageBoxButtons.OK, MessageBoxIcon.Information)
+                    MessageBox.Show("At least one " & itemNoun & " must remain visible.", title, MessageBoxButtons.OK, MessageBoxIcon.Information)
                     Return False
                 End If
             End If
