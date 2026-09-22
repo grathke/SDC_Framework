@@ -936,43 +936,36 @@ configuration is not done through Claude — see the rule in `CLAUDE.md`, and 11
 what that afternoon cost. Reading a pasted profile, explaining what a setting does and working out
 the consequence for the session figures is the help that is actually useful.
 
-### Turning tab suspension off, per machine and per fleet
+### Stopping the browser suspending the tab
 
-Both browsers offer the same two levers: switch the feature off entirely, or keep a list of sites it
-may never touch. **The site list is the better one.** Switching the feature off is a change to how
-the whole machine behaves and somebody will turn it back on; an exception for one site survives
-that, and leaves the memory saving in place everywhere else.
-
-Menu paths move between versions — these are as of 2026 — but the settings pages are stable
-addresses and worth using instead of hunting through menus.
-
-**Chrome — Memory Saver**
-
-- `chrome://settings/performance`, or Settings → Performance.
-- **Memory Saver** has a toggle, and on recent versions a choice of how aggressive it is.
-- Under it, **"Always keep these sites active"** → **Add** → the VirtualUI host. This is the entry
-  that matters. A site listed here is not discarded.
-
-**Edge — Sleeping Tabs**
-
-- `edge://settings/system`, or Settings → System and performance → Optimize Performance.
-- **"Save resources with sleeping tabs"** has a toggle, and a separate control for how long a tab
-  must be idle first — raising that is a partial fix on its own.
-- **"Never put these sites to sleep"** → **Add** → the VirtualUI host.
-
-**By policy, for a managed fleet.** Check the names against the current admin templates before
-rolling out; both vendors have renamed these once already.
-
-| Browser | Policy | What it does |
+| | **Chrome** | **Edge** |
 |---|---|---|
-| Chrome | `TabDiscardingExceptions` | URL patterns that are never discarded — the fleet version of the site list |
-| Chrome | `MemorySaverModeSavings` | How aggressive Memory Saver is; it replaced the older `HighEfficiencyModeEnabled` |
-| Edge | `SleepingTabsBlockedForUrls` | The site list |
-| Edge | `SleepingTabsEnabled` | Off entirely |
-| Edge | `SleepingTabsTimeout` | How long before a tab sleeps |
+| The feature | Memory Saver | Sleeping Tabs |
+| **One machine** | `chrome://settings/performance` → **Always keep these sites active** → Add the host | `edge://settings/system` → Optimize Performance → **Never put these sites to sleep** → Add the host |
+| **Fleet, by policy** | `TabDiscardingExceptions` — URL patterns never discarded | `SleepingTabsBlockedForUrls` — the same list |
+| Blunter options | `MemorySaverModeSavings` sets how aggressive it is, replacing the older `HighEfficiencyModeEnabled` | `SleepingTabsTimeout` delays sleep; `SleepingTabsEnabled` turns it off |
 
-**None of this is a substitute for raising the reconnection timeout.** A browser can still discard a
-tab under real memory pressure whatever the setting says, a phone or an unmanaged machine has no
-policy applied, and a proxy dropping an idle WebSocket produces the same failure with the tab in the
-foreground. The browser settings remove the common cause; the timeout is what makes the application
-survive the cause being missed.
+**The fleet column is the IS department's, not ours.** Browser policy is deployed through group policy or the browser management console and lands on every machine in the estate, so it goes through whoever owns that. What to hand them is short: the host name, which of the two policies applies to the browser they standardise on, and why — a suspended tab kills a running application session. Doing it per machine needs nobody's permission; doing it by policy needs theirs.
+
+**On one machine, step by step.** Chrome: paste `chrome://settings/performance` into the address
+bar; if Memory Saver is already off there is nothing to do; otherwise find **Always keep these sites
+active** beneath it, press **Add**, and enter the host the application is served from — the host
+alone, such as `wd-html5` or `wd-html5.yourdomain.com`, or `127.0.0.1` for a local test. Edge: paste
+`edge://settings/system`, and under **Optimize Performance** find **Never put these sites to sleep**
+→ **Add site** → the same host. While in Edge, raising **put inactive tabs to sleep after** from its
+default to a few hours covers any site nobody remembered to list. Neither needs a restart.
+
+**To check it worked**, open the application, work in another tab for ten minutes, and come back.
+The application still being there means the tab was not suspended.
+
+Four things that apply to both:
+
+- **The exception list beats the off switch.** Off is a whole-machine change somebody will undo; an
+  exception for one host survives that and keeps the memory saving everywhere else.
+- **The entry is per browser profile.** A second Chrome profile, or another Windows account on the
+  same PC, needs its own.
+- **The policy names have been renamed once already.** Settings addresses have been stable, policy
+  names have not — check them against the current admin templates before a rollout.
+- **Neither prevents a discard under genuine memory pressure**, and neither reaches an unmanaged
+  machine or a proxy dropping an idle WebSocket. They remove the common cause; the reconnection
+  timeout is what survives the cause being missed.
