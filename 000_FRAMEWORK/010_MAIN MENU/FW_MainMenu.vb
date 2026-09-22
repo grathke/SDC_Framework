@@ -765,7 +765,7 @@ Namespace SDC.Framework
 
             ' Seated again once the form has been laid out. Doing it only during construction put
             ' the caption where the combo was going to be rather than where it ended up.
-            ' F7 smaller, F8 larger, F9 back to normal. On Load rather than Shown: a zoom applied
+            ' F8 smaller, F9 larger, F10 back to normal. On Load rather than Shown: a zoom applied
             ' after the window is up is seen to jump, and a remembered one has to be what the page
             ' opens as.
             AddHandler Me.Load,

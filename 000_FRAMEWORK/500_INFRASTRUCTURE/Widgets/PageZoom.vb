@@ -11,7 +11,7 @@ Namespace SDC.Framework
     ''' <summary>
     ''' Scales a form's contents from the keyboard, and keeps them centred.
     '''
-    ''' F7 smaller, F8 larger, F9 back to normal - three adjacent keys, because a zoom somebody
+    ''' F8 smaller, F9 larger, F10 back to normal - three adjacent keys, because a zoom somebody
     ''' reaches for repeatedly should be one hand movement rather than three.
     '''
     ''' Smaller on the left, because the keys are a physical row and a row of controls that
@@ -19,10 +19,12 @@ Namespace SDC.Framework
     ''' left of the plus, and getting it backwards costs a wrong press every time until it is
     ''' learned.
     '''
-    ''' Not F11 or F12: a browser takes those for fullscreen and developer tools before VirtualUI
-    ''' ever sees them, and not Shift+F10, which is Windows' own context-menu key. F10 was the
-    ''' reset until 2026-09-20 and is better off not being anything - Windows gives it to the menu
-    ''' bar, so it arrives already spoken for on a form that has one.
+    ''' Not F11 or F12: a browser takes those for fullscreen and developer tools before the session
+    ''' ever sees them, and not Shift+F10, which is Windows' own context-menu key.
+    '''
+    ''' F10 is Windows' menu-bar key, which is why the reset was moved off it in September. No page
+    ''' here has a menu bar and the handler suppresses the press, so it costs nothing - but it is
+    ''' the one of the three to check after any change to how a page handles keys.
     '''
     ''' Every zoom is applied to a snapshot of the original layout rather than to whatever is on
     ''' screen. Scaling relatively - ten per cent of what is already there - compounds its rounding
@@ -38,10 +40,15 @@ Namespace SDC.Framework
         End Sub
 
         ''' <summary>
-        ''' Original size is the floor. F10 undoes an F9 and stops there rather than going on to
-        ''' shrink the page inside a window that has nowhere left to follow it.
+        ''' How far out a page may be zoomed.
+        '''
+        ''' Was 1.0 until 2026-09-22, which meant zoom out did not exist: the smaller key on a page
+        ''' at 100 per cent asked for 0.9, had it clamped straight back to 1.0 and discarded. That
+        ''' was survivable while every page fitted its window. It stopped being survivable on a page
+        ''' 841 tall in 872 of room, where the button row is below the fold and the one key that
+        ''' could have reached it was the key that did nothing.
         ''' </summary>
-        Public Const Minimum As Single = 1.0F
+        Public Const Minimum As Single = 0.5F
         Public Const Maximum As Single = 2.0F
         Public Const Increment As Single = 0.1F
 
@@ -82,6 +89,16 @@ Namespace SDC.Framework
             Public DesignMaximum As Size
             Public DesignMinimum As Size
             Public Indicator As Label
+
+            ''' <summary>
+            ''' The factor in force was chosen by the fit, not by the person.
+            '''
+            ''' Kept so the close does not write it to the store: it answers the window this page
+            ''' happened to open in, and a browser left at 110 per cent for a day would otherwise
+            ''' rewrite a zoom somebody deliberately set. A key press clears it, because that is a
+            ''' choice and choices are remembered.
+            ''' </summary>
+            Public AutoFitted As Boolean = False
 
             ''' <summary>
             ''' The control the read-out lines up with: centred in the gap below it, and starting at
@@ -130,15 +147,24 @@ Namespace SDC.Framework
 
             AddHandler form.KeyDown,
                 Sub(sender As Object, e As KeyEventArgs)
-                    ' F7 smaller, F8 larger, F9 reset. It was F9, F10, F8 until 2026-09-19 and
-                    ' F8, F9, F10 until 2026-09-20. The reset still sits after the pair it resets;
-                    ' what changed is that the pair now ascends left to right.
+                    ' F8 smaller, F9 larger, F10 reset. Three in a row, the pair ascending left to
+                    ' right and the reset after the pair it resets. It was F9, F10, F8 until
+                    ' 2026-09-19, F8, F9, F10 until 2026-09-20, F7, F8, F9 until 2026-09-22, and
+                    ' is back where it was.
+                    '
+                    ' F10 is Windows' menu-bar key, which is why it was given up in September.
+                    ' Nothing here has a menu bar and the handler suppresses the press, so it costs
+                    ' nothing - but it is the one of the three to check after any change to how a
+                    ' page handles keys.
                     Select Case e.KeyCode
-                        Case Keys.F7
-                            Apply(form, state.Factor - Increment)
                         Case Keys.F8
-                            Apply(form, state.Factor + Increment)
+                            state.AutoFitted = False
+                            Apply(form, state.Factor - Increment)
                         Case Keys.F9
+                            state.AutoFitted = False
+                            Apply(form, state.Factor + Increment)
+                        Case Keys.F10
+                            state.AutoFitted = False
                             Apply(form, 1.0F)
                         Case Else
                             Return
@@ -155,7 +181,14 @@ Namespace SDC.Framework
                 Sub(sender As Object, e As FormClosedEventArgs)
                     ' On close, and only when it changed. The store decides that - a page opened
                     ' and closed without a key press writes nothing.
-                    PageZoomStore.Remember(pageName, state.Factor)
+                    '
+                    ' A factor the fit chose is not written at all. It describes the window this
+                    ' page opened in, which moves with the browser's own zoom and the size of
+                    ' somebody's window; storing it would turn a temporary fit into the preference.
+                    If Not state.AutoFitted Then
+                        PageZoomStore.Remember(pageName, state.Factor)
+                    End If
+
                     states.Remove(form)
                 End Sub
 
@@ -279,12 +312,16 @@ Namespace SDC.Framework
         Private Shared Sub ResizeWindow(form As Form, state As State, factor As Single)
             If state.DesignSize.IsEmpty Then Return
 
-            ' Never smaller than the window opened at. Letting it shrink in step with the contents
-            ' means the page always exactly fills it, there is never any slack, and nothing can be
-            ' centred - which looked like the top of the page being nailed in place. Zooming out
-            ' now leaves a margin, and the page sits in the middle of it.
-            Dim wanted As New Size(Math.Max(state.DesignSize.Width, CInt(state.DesignSize.Width * factor)),
-                                   Math.Max(state.DesignSize.Height, CInt(state.DesignSize.Height * factor)))
+            ' The window follows the contents in both directions, since 2026-09-22.
+            '
+            ' It used to be held at its opening size whatever the factor, so zooming out shrank the
+            ' contents inside a window that stayed put and left a margin to centre them in. That is
+            ' the nicer picture and it is useless for the case zoom out exists to solve: a page
+            ' taller than the browser view is still taller than the view afterwards, and the button
+            ' row is still below the fold. A window that shrinks reaches the buttons; a margin does
+            ' not.
+            Dim wanted As New Size(CInt(state.DesignSize.Width * factor),
+                                   CInt(state.DesignSize.Height * factor))
 
             If Math.Abs(factor - 1.0F) < 0.001F Then
                 form.MaximumSize = state.DesignMaximum
@@ -442,6 +479,7 @@ Namespace SDC.Framework
 
             Try
                 Attach(form)
+                ShrinkToFitRoom(form)
             Finally
                 If form.Left <= ParkedOffscreen \ 2 Then
                     Dim room = Screen.FromControl(form).WorkingArea
@@ -449,6 +487,54 @@ Namespace SDC.Framework
                                               room.Top + ((room.Height - form.Height) \ 2))
                 End If
             End Try
+        End Sub
+
+        ''' <summary>
+        ''' Zooms a page out far enough to fit the room it has, when it does not.
+        '''
+        ''' A page is FixedDialog: it cannot be dragged taller, it cannot be scrolled, and anything
+        ''' past the bottom edge of the browser view is simply unreachable - including OK and
+        ''' Cancel. That happened on the employee page at 841 tall in 872 of room: correct at every
+        ''' measurement, and missing its button row.
+        '''
+        ''' It is not an employee-page problem. It is "any page taller than the window", and which
+        ''' pages qualify changes with the size of somebody's browser window rather than with
+        ''' anything in the application.
+        '''
+        ''' **The fitted factor is deliberately not remembered.** It answers this window, not a
+        ''' preference: a day working in a short browser window would otherwise rewrite the zoom
+        ''' somebody chose, and they would find it changed on a machine where it fitted perfectly
+        ''' well. A key press afterwards is a choice and is remembered as usual - see AutoFitted.
+        ''' </summary>
+        Private Shared Sub ShrinkToFitRoom(form As Form)
+            Dim state As State = Nothing
+            If form Is Nothing OrElse form.IsDisposed OrElse Not states.TryGetValue(form, state) Then Return
+
+            Dim room = Screen.FromControl(form).WorkingArea
+            If room.Width <= 0 OrElse room.Height <= 0 Then Return
+
+            ' The window, not its client area: the title bar and borders take the space too, and on
+            ' the page that prompted this they are the difference between fitting and not.
+            If form.Width <= room.Width AndAlso form.Height <= room.Height Then Return
+
+            Dim chromeWidth = Math.Max(0, form.Width - form.ClientSize.Width)
+            Dim chromeHeight = Math.Max(0, form.Height - form.ClientSize.Height)
+
+            Dim roomForClient As New Size(Math.Max(1, room.Width - chromeWidth),
+                                          Math.Max(1, room.Height - chromeHeight))
+
+            Dim byWidth = roomForClient.Width / CSng(Math.Max(1, state.DesignSize.Width))
+            Dim byHeight = roomForClient.Height / CSng(Math.Max(1, state.DesignSize.Height))
+
+            ' A little under what just fits. Rounding and the odd border pixel have been enough to
+            ' leave the last row touching the edge, which reads as still being cut off.
+            Dim fitted = Math.Min(byWidth, byHeight) - 0.02F
+            fitted = CSng(Math.Floor(fitted * 100.0F) / 100.0F)
+
+            If fitted >= 1.0F Then Return
+
+            state.AutoFitted = True
+            Apply(form, fitted)
         End Sub
 
         Private Const ParkedOffscreen As Integer = -32000
@@ -470,7 +556,7 @@ Namespace SDC.Framework
                 .ForeColor = Color.Gray,
                 .BackColor = Color.Transparent,
                 .TabStop = False,
-                .Anchor = AnchorStyles.Bottom Or AnchorStyles.Left
+                .Anchor = AnchorStyles.Top Or AnchorStyles.Left
             }
 
             form.Controls.Add(state.Indicator)
@@ -488,30 +574,25 @@ Namespace SDC.Framework
             ' how to work it, and nothing else on screen says either - the keys are not on a menu,
             ' a toolbar or a tooltip. Discreet enough to ignore, in the same grey as the number.
             indicator.Text = CInt(Math.Round(state.Factor * 100)).ToString(Globalization.CultureInfo.InvariantCulture) &
-                             "%:  F7 smaller   F8 larger   F9 reset"
-            ' Scaled, because the band is a design measurement like every other one here: the gap
-            ' below the page's content grows with the zoom, and a band fixed at its 100 per cent
-            ' value would leave the read-out drifting towards the top of it as the space opened up.
-            ' Two up from dead centre. An AutoSize label is a little taller than the glyphs in it,
-            ' with the slack below the baseline, so the arithmetic centres the box and the eye sees
-            ' the text sitting low.
-            Const OpticalLift As Integer = 2
-
-            Dim band = 0
+                             "%:  F8 smaller   F9 larger   F10 reset"
+            ' Top left, since 2026-09-22. It sat at the bottom left for a year and read perfectly
+            ' well there, right up until the page it was most needed on turned out to be taller
+            ' than the window: on a clipped page the read-out is one of the things clipped, so the
+            ' one control that could have said what the zoom was could not be seen. The top of a
+            ' page is the part that is always there.
+            '
+            ' It keeps its left edge aligned with whatever anchor a page nominated, so it still
+            ' lines up with that page's content rather than floating in the corner on its own.
             Dim left = 4
 
             Dim anchor = state.IndicatorAnchor
             If anchor IsNot Nothing AndAlso Not anchor.IsDisposed AndAlso anchor.IsHandleCreated Then
                 ' In the form's own coordinates, whatever the control is nested inside.
                 Dim bounds = form.RectangleToClient(anchor.RectangleToScreen(anchor.ClientRectangle))
-                band = form.ClientSize.Height - bounds.Bottom
                 left = bounds.Left
             End If
 
-            Dim top = If(band > indicator.Height,
-                         form.ClientSize.Height - band + ((band - indicator.Height) \ 2) - OpticalLift,
-                         form.ClientSize.Height - indicator.Height - 3)
-            indicator.Location = New Point(Math.Max(0, left), Math.Max(0, top))
+            indicator.Location = New Point(Math.Max(0, left), 3)
             indicator.BringToFront()
         End Sub
 

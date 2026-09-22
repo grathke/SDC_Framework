@@ -711,7 +711,7 @@ so `_B` and `_U` are better resizable than scaled", and the desktop was left siz
 nearly every run is a session, and a window dragged wider fights both its own layout and the zoom.
 
 Every form is now `FixedDialog` with no maximise box, the menu included and on the desktop too. Size
-changes come from code only: F7/F8/F9 through `PageZoom`, and Hot Fields widening a browse page.
+changes come from code only: F8/F9/F10 through `PageZoom`, and Hot Fields widening a browse page.
 A browse page zooms by pausing `LayoutQbeSection` while the factor is not 1.0 and scaling a snapshot
 of its settled layout instead - the two cannot run together, or the right-anchored buttons walk off
 to the right on every press. The desktop keeps a minimise box, which is harmless there.
