@@ -881,3 +881,57 @@ It needs 246 pixels and has 562. So `CreateGraphics()` is failing on a sound con
 VirtualUI session — a device-context artefact of the session, not an application bug. There is
 nothing in our geometry to fix, which is why the treatment is to swallow that one repaint and log
 it. The next layout pass redraws it and nobody sees anything missing.
+
+## 11.7 "Application ended, user still connected" is the reconnection timeout — 2026-09-22
+
+A tab was left in the background. Coming back to it, the page said the application had ended while
+also showing the user still logged in. It reads as an inactivity timeout with a broken message. It
+is neither.
+
+**What actually happens**, from the vendor:
+
+1. The tab goes to the background and the browser suspends or discards it. Chrome's **Memory Saver**
+   and Edge's **Sleeping Tabs** both do this, and it closes the WebSocket to the server.
+2. VirtualUI sees a disconnected browser and starts the **Reconnection timeout** — five seconds on
+   this profile.
+3. Five seconds later the server terminates the application process.
+4. Returning to the tab re-establishes the connection, finds no application running, and says so.
+   The web session and its authentication are separate and still valid, which is why the same screen
+   says the user is still signed in.
+
+So the two messages are not contradicting each other. One is about the application process, the
+other about the web session, and they have different lifetimes.
+
+### What to change, and what it costs
+
+- **Raise Reconnection timeout** in the Application Profiles Editor, General tab. Five seconds is
+  the default and far too short for real use. 300 seconds is the vendor's suggested starting point;
+  higher if tabs are parked for longer. The cost is that after a genuine disconnect the process, its
+  memory and **its licence seat** stay held for that window — and with one seat, holding it for five
+  minutes is not a footnote.
+- **Check the idle timeout on anything in front of the server** — reverse proxy, load balancer,
+  firewall. One of those closing idle WebSockets produces the same sequence with the tab in the
+  foreground.
+- **On a managed fleet**, exclude the site from Memory Saver / Sleeping Tabs by policy. That
+  prevents the disconnect rather than surviving it.
+
+### What it means for the session figures
+
+This setting is load-bearing for `FW_Session` and the health page, and raising it degrades them.
+Today a disconnect ends near-exactly, because the grace is five seconds: a closed tab releases its
+session in about four and a half. At 300 seconds, "connected" means *connected, or gone for up to
+five minutes* — the count on the health page becomes an upper bound rather than a fact, and a
+one-seat licence can read as occupied by somebody who left.
+
+That is a trade, not a bug: a user who loses their work to a backgrounded tab is a worse outcome
+than a session count that lags. But the health page's wording and the architecture document both
+say the end is near-exact, and both are keyed to the five seconds. **If the timeout is raised, say
+so in the same breath** — the note in the health section, and the paragraph in the architecture
+document that quotes the five seconds.
+
+### Not ours to change from here
+
+The profile lives in the Application Profiles Editor on the server. Server and Windows
+configuration is not done through Claude — see the rule in `CLAUDE.md`, and 11.2 through 11.4 for
+what that afternoon cost. Reading a pasted profile, explaining what a setting does and working out
+the consequence for the session figures is the help that is actually useful.
