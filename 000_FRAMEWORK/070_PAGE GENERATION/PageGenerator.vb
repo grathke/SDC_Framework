@@ -2382,7 +2382,19 @@ Namespace SDC.Framework
                 Where(Function(field) Not IsPlaceholderField(field)).
                 Select(Function(field) FieldControlVariable(field, lookupFields, dateFields, bitFields)).ToList()
             output.AppendLine("            SetManualTabOrder(" & String.Join(", ", tabOrder.Concat({"okButton", "cancelActionButton"})) & ")")
-            output.AppendLine("            BindToForm()")
+
+            ' No BindToForm here. The page's own constructor calls it after this returns, and it
+            ' has to be that one: OnFieldsBuilt runs at the end of this method, and a companion
+            ' adds its controls there, so a bind that happened first would not have seen them.
+            '
+            ' Emitting it in both places bound every page twice. Measured on 2026-09-22: five of
+            ' the eight distinct queries a maintenance page open makes ran twice each - the record
+            ' itself, the field permissions, and the Reports To, Gender and Time Zone lists - which
+            ' is 13 round trips to ask 8 questions. Nothing was wrong with the result, because the
+            ' second bind simply overwrote the first with the same values.
+            '
+            ' ApplyMode stays. It sets ReadOnly flags and computed-field hints, reaches no
+            ' database, and the controllers below are positioned against the layout it settles.
             output.AppendLine("            ApplyMode()")
 
             ' After ApplyMode, as Registration_U does: the Zip Coder button places itself against

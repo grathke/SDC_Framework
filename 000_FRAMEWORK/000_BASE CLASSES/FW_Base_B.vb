@@ -6366,10 +6366,56 @@ Namespace SDC.Framework
             Dim editor = TryCast(e.Control, ComboBox)
             If editor Is Nothing Then Return
 
+            ' The page's colour, not the grid's. An open operator list was white on a white grid,
+            ' so the choices had no edge and read as part of the rows behind them. Taking the page
+            ' background puts a boundary round the list without introducing a colour of its own -
+            ' and it follows the background picker, so a page tinted by its owner keeps one palette
+            ' rather than growing an exception.
+            '
+            ' Owner-drawn, because BackColor alone does not reach the list. A DropDownList combo
+            ' has its list painted by the theme, which ignores the property - setting it coloured
+            ' the closed box and left the open list white, which is the half nobody was asking
+            ' about.
+            editor.BackColor = Me.BackColor
+            editor.DrawMode = DrawMode.OwnerDrawFixed
+            RemoveHandler editor.DrawItem, AddressOf QbeEditor_DrawItem
+            AddHandler editor.DrawItem, AddressOf QbeEditor_DrawItem
+
             ' Removed first: the grid reuses one editing control across cells, and handlers added
             ' per showing would otherwise accumulate for the life of the page.
             RemoveHandler editor.SelectionChangeCommitted, AddressOf QbeEditor_SelectionChangeCommitted
             AddHandler editor.SelectionChangeCommitted, AddressOf QbeEditor_SelectionChangeCommitted
+        End Sub
+
+        ''' <summary>
+        ''' Paints one row of an open QBE list in the page's colours.
+        '''
+        ''' The text comes from GetItemText rather than the item itself: a value list is bound to a
+        ''' table and its items are DataRowViews, so printing the item directly would put the type
+        ''' name in every row. GetItemText honours the DisplayMember the cell was given.
+        '''
+        ''' The selected row keeps the system highlight. It is the one colour in here that has to
+        ''' mean "this is the one", and a page-tinted version of it would say that less clearly on
+        ''' some backgrounds and not at all on others.
+        ''' </summary>
+        Private Sub QbeEditor_DrawItem(sender As Object, e As DrawItemEventArgs)
+            Dim combo = TryCast(sender, ComboBox)
+            If combo Is Nothing OrElse e.Index < 0 OrElse e.Index >= combo.Items.Count Then Return
+
+            Dim selected = (e.State And DrawItemState.Selected) = DrawItemState.Selected
+            Dim back = If(selected, SystemColors.Highlight, Me.BackColor)
+            Dim fore = If(selected, SystemColors.HighlightText, combo.ForeColor)
+
+            Using brush As New SolidBrush(back)
+                e.Graphics.FillRectangle(brush, e.Bounds)
+            End Using
+
+            TextRenderer.DrawText(e.Graphics,
+                                  combo.GetItemText(combo.Items(e.Index)),
+                                  e.Font,
+                                  e.Bounds,
+                                  fore,
+                                  TextFormatFlags.Left Or TextFormatFlags.VerticalCenter Or TextFormatFlags.EndEllipsis)
         End Sub
 
         ''' <summary>

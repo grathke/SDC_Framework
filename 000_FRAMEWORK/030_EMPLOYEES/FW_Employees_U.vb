@@ -74,7 +74,29 @@ Namespace SDC.Framework
         ''' this file would be right until somebody added a field, and being wrong quietly is the
         ''' failure the split was built to avoid.
         ''' </summary>
+        ''' <summary>
+        ''' What ticking Receives Health Alerts actually commits to.
+        '''
+        ''' A hint rather than a confirmation. The tick is reversible, nothing is sent until the
+        ''' record is saved, and the send path requires the role as well - so a prompt here would
+        ''' interrupt a reversible act and spend the attention that belongs to deletes and save
+        ''' conflicts.
+        '''
+        ''' The role is named because the checkbox cannot enforce it: whether this employee is an
+        ''' administrator is decided in the roles list further down the same page, and can change
+        ''' before the record is saved.
+        ''' </summary>
+        Private Const HealthAlertsHint As String =
+            "Sends fault and health mail to this employee's address, if they hold an admin role."
+
+        Private Sub ApplyHealthAlertsHint()
+            Dim field = Controls.Find("CheckBox_ReceivesHealthAlerts", True).FirstOrDefault()
+            If field IsNot Nothing Then ShowFieldHint(field, HealthAlertsHint)
+        End Sub
+
         Private Sub OnFieldsBuilt()
+            ApplyHealthAlertsHint()
+
             ' Nobody edits their own access. In My Profile the role grids are not built at all
             ' and the form shrinks to the fields, rather than being shown and refusing - a panel
             ' that is there and does nothing invites somebody to work out why.

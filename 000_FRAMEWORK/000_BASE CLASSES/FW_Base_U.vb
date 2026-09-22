@@ -1601,14 +1601,33 @@ Namespace SDC.Framework
         ''' whichever the pointer reaches first - the label is the wider target of the two.
         ''' </summary>
         Protected Sub ShowComputedFieldHint(field As Control)
+            ShowFieldHint(field, ComputedFieldHint)
+        End Sub
+
+        ''' <summary>
+        ''' Puts a hint on a field and on the label beside it.
+        '''
+        ''' Both, because the label is the larger target and the one somebody's eye is on when they
+        ''' are wondering what a field means - a hint only on the control itself is found by the
+        ''' people who already knew.
+        '''
+        ''' The label is matched by the framework's own control naming: whatever follows the first
+        ''' underscore is the column, so `CheckBox_ReceivesHealthAlerts` finds
+        ''' `Label_ReceivesHealthAlerts` exactly as `TextBox_Salary` finds `Label_Salary`. It was
+        ''' TextBox-only until 2026-09-22, which quietly meant no other kind of field could carry
+        ''' a hint at all.
+        ''' </summary>
+        Protected Sub ShowFieldHint(field As Control, hint As String)
             If field Is Nothing OrElse String.IsNullOrWhiteSpace(field.Name) Then Return
+            If String.IsNullOrWhiteSpace(hint) Then Return
 
-            fieldHintToolTip.SetToolTip(field, ComputedFieldHint)
+            fieldHintToolTip.SetToolTip(field, hint)
 
-            If Not field.Name.StartsWith("TextBox_", StringComparison.OrdinalIgnoreCase) Then Return
+            Dim underscore = field.Name.IndexOf("_"c)
+            If underscore < 0 OrElse underscore = field.Name.Length - 1 Then Return
 
-            For Each label In Controls.Find("Label_" & field.Name.Substring("TextBox_".Length), True)
-                fieldHintToolTip.SetToolTip(label, ComputedFieldHint)
+            For Each label In Controls.Find("Label_" & field.Name.Substring(underscore + 1), True)
+                fieldHintToolTip.SetToolTip(label, hint)
             Next
         End Sub
 

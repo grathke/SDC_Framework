@@ -88,7 +88,6 @@ Namespace SDC.Framework
             assignedManagerIDComboBox = AddComboField("AssignedManagerID", 398, False, 580, 320)
             timeZoneIDComboBox = AddComboField("TimeZoneID", 440, False, 580, 320)
             SetManualTabOrder(firstNameTextBox, lastNameTextBox, address1TextBox, address2TextBox, cityTextBox, stateTextBox, zipTextBox, userNameTextBox, passwordTextBox, genderIDComboBox, emailTextBox, receivesHealthAlertsCheckBox, isActiveCheckBox, birthDateDateTimePicker, hireDateDateTimePicker, terminationDateDateTimePicker, homePhoneTextBox, cellPhoneTextBox, workPhoneTextBox, extensionTextBox, assignedManagerIDComboBox, timeZoneIDComboBox, okButton, cancelActionButton)
-            BindToForm()
             ApplyMode()
             smartyAddressLookupController = New SmartyAddressLookupController(
                 Me,
