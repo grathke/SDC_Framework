@@ -327,14 +327,27 @@ Namespace SDC.Framework
                 form.MaximumSize = state.DesignMaximum
                 form.MinimumSize = state.DesignMinimum
             Else
-                ' The maximum moves out of the way so zooming in has somewhere to go. The minimum
-                ' stays: the window is deliberately never smaller than it opened.
+                ' Both limits move out of the way, so each direction has somewhere to go.
                 If Not state.DesignMaximum.IsEmpty Then
                     form.MaximumSize = New Size(Math.Max(state.DesignMaximum.Width, wanted.Width + 40),
                                                 Math.Max(state.DesignMaximum.Height, wanted.Height + 40))
                 End If
 
-                form.MinimumSize = state.DesignMinimum
+                ' The minimum used to stay put, and that quietly cancelled zooming out on the two
+                ' kinds of page that declare one. A browse page is 980x680 against a floor of
+                ' 920x620, so it stopped around 91 per cent; the main menu's floor is taller than
+                ' its own design height, so it could not move at all. In both the contents shrank
+                ' inside a window that would not follow - which is the fault this was meant to fix,
+                ' wearing a different hat.
+                '
+                ' The floor is a guard against somebody dragging a window too small to use, and a
+                ' zoom is not that. It comes back at 1.0, above.
+                If Not state.DesignMinimum.IsEmpty Then
+                    form.MinimumSize = New Size(Math.Min(state.DesignMinimum.Width, wanted.Width),
+                                                Math.Min(state.DesignMinimum.Height, wanted.Height))
+                Else
+                    form.MinimumSize = state.DesignMinimum
+                End If
             End If
 
             ' Never larger than the screen it is on. A page zoomed past the monitor would put its
