@@ -180,7 +180,34 @@ Namespace SDC.Framework
         ''' </summary>
         Private Shared ReadOnly columnRelationshipsCache As New Dictionary(Of String, Dictionary(Of String, ColumnRelationship))(StringComparer.OrdinalIgnoreCase)
         Private Shared ReadOnly rowVersionCache As New Dictionary(Of String, Boolean)(StringComparer.OrdinalIgnoreCase)
+
+        ''' <summary>
+        ''' The one place the framework asks what a table's primary key is.
+        '''
+        ''' There were two until 2026-09-23. GetPrimaryKeyFieldName read sys.indexes and cached
+        ''' here; GetPrimaryKeyColumn read INFORMATION_SCHEMA and cached nothing, and it was the one
+        ''' the save path called - so every save asked the server a question already sitting in this
+        ''' dictionary. Checked against all 40 tables before the duplicate was removed: the two
+        ''' queries returned the same answer everywhere, with no disagreement.
+        ''' </summary>
         Private Shared ReadOnly primaryKeyCache As New Dictionary(Of String, String)(StringComparer.OrdinalIgnoreCase)
+
+        ''' <summary>
+        ''' The columns SQL Server computes for itself, which no INSERT or UPDATE may name.
+        '''
+        ''' A save asked for these every time. They cannot change while the application runs except
+        ''' through a schema change, which InvalidateSchemaCache already covers.
+        ''' </summary>
+        Private Shared ReadOnly computedColumnsCache As New Dictionary(Of String, HashSet(Of String))(StringComparer.OrdinalIgnoreCase)
+
+        ''' <summary>
+        ''' A generated page's column list and its columns' database defaults, from one round trip.
+        '''
+        ''' Cached as a DataTable, so every reader is handed a copy. The caller binds it and may
+        ''' well alter it, and a cache that hands out the original stops being a cache of what the
+        ''' database said.
+        ''' </summary>
+        Private Shared ReadOnly generatedPageSchemaCache As New Dictionary(Of String, DataTable)(StringComparer.OrdinalIgnoreCase)
 
         ''' <summary>
         ''' Drops the cached FW_Pages rows, so the next read reloads them.
@@ -237,6 +264,8 @@ Namespace SDC.Framework
                 columnRelationshipsCache.Clear()
                 rowVersionCache.Clear()
                 primaryKeyCache.Clear()
+                computedColumnsCache.Clear()
+                generatedPageSchemaCache.Clear()
             End SyncLock
         End Sub
 
@@ -2933,6 +2962,15 @@ Namespace SDC.Framework
             Dim computed As New HashSet(Of String)(StringComparer.OrdinalIgnoreCase)
             If String.IsNullOrWhiteSpace(tableName) Then Return computed
 
+            Dim cacheKey = tableName.Trim()
+            Dim cached As HashSet(Of String) = Nothing
+            SyncLock metadataCacheLock
+                If computedColumnsCache.TryGetValue(cacheKey, cached) Then
+                    ' A copy. The caller owns what it is given and several add to it.
+                    Return New HashSet(Of String)(cached, StringComparer.OrdinalIgnoreCase)
+                End If
+            End SyncLock
+
             Using conn As New SqlConnection(ConnectionString)
                 conn.Open()
                 Using cmd As New SqlCommand(
@@ -2949,6 +2987,10 @@ Namespace SDC.Framework
                     End Using
                 End Using
             End Using
+
+            SyncLock metadataCacheLock
+                computedColumnsCache(cacheKey) = New HashSet(Of String)(computed, StringComparer.OrdinalIgnoreCase)
+            End SyncLock
 
             Return computed
         End Function
@@ -3883,6 +3925,16 @@ Namespace SDC.Framework
         ''' One round trip still: the columns and their defaults come back as two result sets.
         ''' </summary>
         Public Shared Function GetGeneratedPageSchema(tableName As String) As DataTable
+            Dim cacheKey = If(tableName, String.Empty).Trim()
+            If cacheKey <> String.Empty Then
+                Dim cached As DataTable = Nothing
+                SyncLock metadataCacheLock
+                    If generatedPageSchemaCache.TryGetValue(cacheKey, cached) Then
+                        Return cached.Clone()
+                    End If
+                End SyncLock
+            End If
+
             Using conn As New SqlConnection(ConnectionString)
                 conn.Open()
                 Using cmd As New SqlCommand(
@@ -3911,6 +3963,16 @@ Namespace SDC.Framework
                     ' caller might try to add it to another of.
                     results.Tables.Remove(table)
                     table.TableName = tableName
+
+                    ' Clone, not the table itself. Clone copies the columns and their defaults and
+                    ' no rows, which is exactly what this returns - and it means the copy kept here
+                    ' cannot be reached by whatever the caller does to the one it was handed.
+                    If cacheKey <> String.Empty Then
+                        SyncLock metadataCacheLock
+                            generatedPageSchemaCache(cacheKey) = table.Clone()
+                        End SyncLock
+                    End If
+
                     Return table
                 End Using
             End Using
@@ -10069,7 +10131,7 @@ Namespace SDC.Framework
                 Dim updates = GetControlUpdates(form, pageName, normalizedTable)
                 If updates.Rows.Count = 0 Then Return True
 
-                Dim keyColumn = GetPrimaryKeyColumn(normalizedTable)
+                Dim keyColumn = GetPrimaryKeyFieldName(normalizedTable)
                 Dim registrationId = If(SessionState.IsActive, SessionState.Current.Value.RegistrationID, 0)
 
                 For Each row As DataRow In updates.Rows
@@ -10162,7 +10224,7 @@ Namespace SDC.Framework
             Dim normalizedTable = NormalizeTableName(tableName)
             If String.IsNullOrWhiteSpace(normalizedTable) OrElse recordId <= 0 Then Return Nothing
 
-            Dim keyColumn = GetPrimaryKeyColumn(normalizedTable)
+            Dim keyColumn = GetPrimaryKeyFieldName(normalizedTable)
             If String.IsNullOrWhiteSpace(keyColumn) Then Return Nothing
 
             Try
@@ -10220,27 +10282,6 @@ Namespace SDC.Framework
             Catch
                 Return Nothing
             End Try
-        End Function
-
-        Public Shared Function GetPrimaryKeyColumn(tableName As String) As String
-            Dim normalizedTable = NormalizeTableName(tableName)
-            If String.IsNullOrWhiteSpace(normalizedTable) Then Return String.Empty
-
-            Using conn As New SqlConnection(ConnectionString)
-                conn.Open()
-                Using cmd As New SqlCommand(
-                    "SELECT TOP 1 kcu.COLUMN_NAME " &
-                    "FROM INFORMATION_SCHEMA.TABLE_CONSTRAINTS tc " &
-                    "INNER JOIN INFORMATION_SCHEMA.KEY_COLUMN_USAGE kcu " &
-                    "  ON tc.CONSTRAINT_NAME = kcu.CONSTRAINT_NAME " &
-                    "WHERE tc.CONSTRAINT_TYPE = 'PRIMARY KEY' " &
-                    "  AND tc.TABLE_SCHEMA = 'dbo' AND tc.TABLE_NAME = @TableName " &
-                    "ORDER BY kcu.ORDINAL_POSITION", conn)
-                    cmd.Parameters.AddWithValue("@TableName", normalizedTable)
-                    Dim result = cmd.ExecuteScalar()
-                    Return If(result Is Nothing OrElse IsDBNull(result), String.Empty, result.ToString())
-                End Using
-            End Using
         End Function
 
         Private Shared Function InferColumnNameFromControl(controlName As String) As String
