@@ -1780,6 +1780,8 @@ Namespace SDC.Framework
 
         Private Sub BrowsePage_Shown(sender As Object, e As EventArgs)
             ReportPageOpen()
+
+            LayoutTrace.ReportWhenSettled(Me)
             BeginInvoke(New MethodInvoker(AddressOf ShowInitialMissingPkWarningAndFocus))
         End Sub
 
@@ -2112,6 +2114,8 @@ Namespace SDC.Framework
             qbeSplitContainer.Top = BrowseGridTop
             qbeSplitContainer.Width = contentWidth
             qbeSplitContainer.Height = Math.Max(180, Me.ClientSize.Height - qbeSplitContainer.Top - margin)
+
+            FillGridToPanel()
 
             ' Beside the grid and level with it, taking the width the content area just gave up.
             ' Measured from the split container rather than from the window, so it lines up with
@@ -5127,6 +5131,48 @@ Namespace SDC.Framework
             Return Convert.ToString(row.Cells(columnName).Value)
         End Function
 
+
+        ''' <summary>
+        ''' Gives the grid the whole of its panel below the layout toolbar.
+        '''
+        ''' Dock.Fill was not doing it, and this is not a guess: measured on 2026-09-23 the grid was
+        ''' 232 tall inside a panel whose display rectangle is 358, with one 38-pixel Dock.Top
+        ''' sibling and nothing else in it. Eighty-eight pixels went somewhere no property could
+        ''' account for - not padding, not a maximum size, not auto-scaling, not another control.
+        ''' A whole screenshot of empty form below the grid, and seven rows visible where fourteen
+        ''' fit.
+        '''
+        ''' **Deliberately not a diagnosis.** Four explanations were tried and each was disproved by
+        ''' the next reading. What follows is arithmetic on numbers taken from the panel itself, so
+        ''' it is right whatever the cause turns out to be, and it will keep being right if somebody
+        ''' finds the cause later and removes it.
+        '''
+        ''' Dock is cleared first. Leaving it as Fill and setting bounds would last exactly until
+        ''' the next layout pass, which is the arrangement that produced 232 in the first place.
+        ''' </summary>
+        Private Sub FillGridToPanel()
+            Try
+                If browseGrid Is Nothing OrElse qbeSplitContainer Is Nothing Then Return
+
+                Dim panel = qbeSplitContainer.Panel2
+                If panel Is Nothing Then Return
+
+                Dim area = panel.DisplayRectangle
+                Dim top = 0
+                If layoutToolbarPanel IsNot Nothing AndAlso layoutToolbarPanel.Visible Then
+                    top = layoutToolbarPanel.Bottom
+                End If
+
+                Dim available = area.Height - top
+                If available <= 0 OrElse area.Width <= 0 Then Return
+
+                If browseGrid.Dock <> DockStyle.None Then browseGrid.Dock = DockStyle.None
+                browseGrid.SetBounds(area.X, top, area.Width, available)
+            Catch
+                ' A grid of the wrong height is a nuisance; a page that will not lay out is not.
+            End Try
+        End Sub
+
         Protected Sub RefreshGridForCustomAction(Optional selectedRecordId As Integer? = Nothing)
             RefreshGrid(selectedRecordId, True)
         End Sub
@@ -5563,6 +5609,11 @@ Namespace SDC.Framework
                 End If
 
                 Program.Log(line)
+
+                ' The refresh is the most data-bound measurement the framework takes, and it writes
+                ' its own line rather than going through DbCostTrace.Report - so the slow-operation
+                ' threshold has to be asked for here or it would never see a refresh at all.
+                DbCostTrace.RaiseSlowFaultIfNeeded(Me.GetType().Name, "Browse refresh", whole)
             Catch
                 ' As above.
             End Try

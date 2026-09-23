@@ -208,8 +208,78 @@ Namespace SDC.Framework
                         Program.Log("    " & line)
                     Next
                 End If
+
+                RaiseSlowFaultIfNeeded(subject, label, wholeTimer.ElapsedMilliseconds)
             Catch
                 ' A measurement is never worth a failed page open, or a failed save.
+            End Try
+        End Sub
+
+        ''' <summary>
+        ''' Past this, an operation stops being a log line and becomes a fault.
+        '''
+        ''' Everything here was already measured and none of it was surfaced: the figures went to a
+        ''' file nobody reads unless they already suspect something. A threshold turns the
+        ''' measurement into something the health dashboard ranks, without anybody having to go
+        ''' looking.
+        '''
+        ''' 750ms, and the margin is deliberate. Measured on 2026-09-23 the slowest data operation
+        ''' was a 297ms conflict save; refreshes ran 16 to 139 and deletes and restores under 125.
+        ''' 500 would have been silent too, but every one of those figures is a local network with
+        ''' one user on it. On a cloud link each of a save's thirteen round trips carries more
+        ''' latency, and a save that honestly takes 550ms there would raise a fault meaning nothing.
+        '''
+        ''' An alarm that is silent on a healthy system is the only kind worth having. One that
+        ''' fires on normal behaviour teaches people to ignore it, and then it is not there for the
+        ''' one that matters. Too high costs a missed warning; too low costs the instrument.
+        '''
+        ''' The right time to tune this is after the move to a cloud link, against real figures from
+        ''' it. It is one constant.
+        '''
+        ''' It sits after the clock has already stopped for any dialog, so this measures work and
+        ''' not somebody reading. Before PauseSaveClock existed a refused save would have tripped
+        ''' this every time, at 2,441ms of a person looking at a message.
+        ''' </summary>
+        Friend Const SlowThresholdMilliseconds As Long = 750
+
+        ''' <summary>
+        ''' The measurements a page open carries, which this threshold deliberately does not judge.
+        '''
+        ''' A page open is not a data operation. On the employee browse, 300 of its 350 milliseconds
+        ''' are WinForms building and painting a grid-heavy form for the first time in the process -
+        ''' measured on 2026-09-23 as ctor=6 load=35 shown=300. Holding that to a database threshold
+        ''' would be raising a data fault about rendering, and the first thing anybody did about it
+        ''' would be to look in the wrong place.
+        '''
+        ''' A refresh, a save, a delete and a restore are close to pure data, and slow there always
+        ''' means something.
+        '''
+        ''' **A list of the exempt ones, not of the judged ones**, which is the rule
+        ''' HealthDataAccess.UnconfiguredList already follows: a measurement added later is held to
+        ''' the threshold until somebody decides otherwise. The other way round, a new kind of
+        ''' slowness would be free until it was noticed, and noticing is the whole point.
+        ''' </summary>
+        Private Shared ReadOnly ExemptLabels As String() = {"Page open"}
+
+        ''' <summary>
+        ''' Records a slow data operation as a fault, unless its measurement is exempt.
+        '''
+        ''' Shared so the browse refresh can use it too. That one writes its own log line through
+        ''' FW_Base_B.ReportPostQuery rather than through Report, so a threshold living only in
+        ''' Report would have missed the single most data-bound measurement the framework takes.
+        ''' </summary>
+        Friend Shared Sub RaiseSlowFaultIfNeeded(subject As String, label As String, milliseconds As Long)
+            Try
+                If milliseconds < SlowThresholdMilliseconds Then Return
+
+                Dim resolvedLabel = If(label, String.Empty).Trim()
+                For Each exempt In ExemptLabels
+                    If String.Equals(resolvedLabel, exempt, StringComparison.OrdinalIgnoreCase) Then Return
+                Next
+
+                Telemetry.Slow(subject, resolvedLabel, milliseconds)
+            Catch
+                ' Recording that something was slow must never be the reason something else is.
             End Try
         End Sub
 

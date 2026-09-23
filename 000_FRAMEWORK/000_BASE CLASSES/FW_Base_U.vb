@@ -249,6 +249,7 @@ Namespace SDC.Framework
 
         Private Sub FW_Base_U_Shown(sender As Object, e As EventArgs)
             ApplyInheritedPageBackground()
+            LayoutTrace.ReportWhenSettled(Me)
             BeginInvoke(New Action(Sub()
                                        ApplySharedPageCaption()
                                        RemoveReadOnlyControlsFromTabOrder(Me)

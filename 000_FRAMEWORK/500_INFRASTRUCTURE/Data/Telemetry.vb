@@ -355,6 +355,62 @@ Namespace SDC.Framework
                             End Using
                         End Using
         End Function
+        ''' <summary>
+        ''' Records an operation that took too long, as a fault rather than a log line.
+        '''
+        ''' Slowness was measured everywhere and surfaced nowhere. DbCostTrace has written what
+        ''' every page open, refresh, save, delete and restore costs since 2026-09-22, into a file
+        ''' nobody reads unless they already suspect something - which is the same fault the caught
+        ''' GDI+ exception had, and it was invisible for two days for the same reason.
+        '''
+        ''' **Fingerprinted by what was slow, not by when.** One row per operation, with
+        ''' OccurrenceCount rising, so "the employee browse refresh has been slow forty times" is
+        ''' one line rather than forty. The health score's half-life decay then handles the other
+        ''' half by itself: something that stops being slow stops weighing, with nobody clearing it.
+        '''
+        ''' It rides the same queue and the same thirty-second flush as a real fault, so a slow
+        ''' operation never pays for its own recording.
+        ''' </summary>
+        ''' <param name="subject">What was being done - the page or operation name.</param>
+        ''' <param name="label">Which measurement it was: Save, Delete, Page open, Browse refresh.</param>
+        Friend Function Slow(subject As String, label As String, milliseconds As Long) As Boolean
+            If writingTelemetry Then Return False
+
+            Try
+                If pending.Count >= QueueCap Then Return False
+
+                Dim resolvedSubject = If(subject, String.Empty).Trim()
+                Dim resolvedLabel = If(label, String.Empty).Trim()
+                If resolvedSubject = String.Empty AndAlso resolvedLabel = String.Empty Then Return False
+
+                Dim context = (resolvedLabel & " " & resolvedSubject).Trim()
+                Dim session = SessionState.Current
+
+                pending.Enqueue(New Note With {
+                    .OccurredUtc = Date.UtcNow,
+                    .Fingerprint = ComputeFingerprint("SlowOperation", context, String.Empty),
+                    .ExceptionType = "Slow operation",
+                    .PageName = resolvedSubject,
+                    .Context = context,
+                    .Message = context & " took " &
+                               milliseconds.ToString(CultureInfo.InvariantCulture) & "ms.",
+                    .StackTrace = String.Empty,
+                    .Origin = FaultOrigin.Swallowed.ToString(),
+                    .SessionKind = ResolveSessionKind(),
+                    .RegistrationID = If(session.HasValue, CType(session.Value.RegistrationID, Integer?), Nothing),
+                    .UserID = If(session.HasValue, CType(session.Value.UserID, Integer?), Nothing),
+                    .MachineName = SafeMachineName(),
+                    .AppVersion = SafeAppVersion()
+                })
+
+                EnsureFlushTimer()
+                Return True
+            Catch
+                ' Recording that something was slow must never be the reason something else is.
+                Return False
+            End Try
+        End Function
+
         Private Function BuildNote(ex As Exception, context As String, origin As FaultOrigin) As Note
             Dim exceptionType = ex.GetType().FullName
             Dim resolvedContext = If(context, String.Empty).Trim()
