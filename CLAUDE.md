@@ -120,9 +120,15 @@ needs attention, say what it is instead.
 3. **Unverified work** — list anything built but never exercised in the running application, so it
    is not mistaken for tested.
 4. **Off-machine backup** — the remote is `github.com/grathke/SDC_Framework`, private, added
-   2026-09-23. A commit is not a backup until it is pushed, so run `git log origin/master..HEAD`
-   and say how many commits are sitting here unpushed. Say it when there are any; do not repeat it
-   when there are none. `restore-points/`, `project-backup/`, `run-local.ps1` and the database are
+   2026-09-23. A commit is not a backup until it is pushed. Run `git branch -vv` and report every
+   branch marked `ahead`, naming the branch — it answers for all of them at once and needs no
+   argument that can be wrong. Say it when any branch is ahead; do not repeat it when none is.
+
+   Two narrower forms were tried first and both misreported on the day they were written.
+   `git log origin/master..HEAD` counts every commit on a feature branch as unpushed, and all work
+   here happens on one. `git log @{u}..HEAD` is right in principle but fails outright when the
+   branch has no upstream — which is the normal state after `git push origin <branch>` without
+   `-u`, and looks identical to having nothing to report. `restore-points/`, `project-backup/`, `run-local.ps1` and the database are
    excluded from the repository on purpose and remain on this machine only — worth saying once if
    a day's work went into one of them, not every night.
 5. **Restore points** — only mention these if a broad or high-risk change is planned for next time.
