@@ -42,6 +42,13 @@ Namespace SDC.Framework
             Public SelectedRoleId As Integer
             Public SelectedRowOffsetFromTop As Integer
             Public FallbackFirstDisplayedIndex As Integer
+
+            ''' <summary>
+            ''' Whether the restored row should flash, on the same terms as FW_Base_B: set only
+            ''' when a caller named a record, which happens when one has just been saved, and never
+            ''' on an ordinary refresh where the selection is being put back rather than pointed at.
+            ''' </summary>
+            Public FlashSelection As Boolean
         End Structure
 
         Public Sub New(user As UserContext, Optional profile As AccessProfile = Nothing, Optional tableName As String = "ROLES")
@@ -568,6 +575,7 @@ Namespace SDC.Framework
             If selectedRoleId.HasValue Then
                 viewState.HasSelection = True
                 viewState.SelectedRoleId = selectedRoleId.Value
+                viewState.FlashSelection = True
             End If
 
             Try
@@ -685,6 +693,9 @@ Namespace SDC.Framework
                     Catch telemetryEx As Exception
                         Telemetry.Error(telemetryEx, "Roles_B.RestoreGridViewState")
                     End Try
+
+                    ' After the scroll, not before: a row flashing off-screen says nothing.
+                    If state.FlashSelection Then GridRowFlash.Flash(rolesGrid, rolesGrid.Rows(selectedIndex))
                     Return
                 End If
             End If
@@ -900,7 +911,15 @@ Namespace SDC.Framework
             Try
                 Using dlg As New Roles_C(registrationId)
                     If dlg.ShowDialog(Me) = DialogResult.OK Then
-                        RefreshGrid()
+                        ' The role it just created, so the grid points at it. This refreshed with
+                        ' nothing in mind before, and the new role arrived somewhere in the list
+                        ' with nothing selected - the same complaint as a capped browse page,
+                        ' arriving by a different route.
+                        If dlg.SavedRecordId > 0 Then
+                            RefreshGrid(dlg.SavedRecordId)
+                        Else
+                            RefreshGrid()
+                        End If
                     End If
                 End Using
             Catch ex As Exception

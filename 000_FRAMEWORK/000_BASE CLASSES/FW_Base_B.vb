@@ -1636,7 +1636,15 @@ Namespace SDC.Framework
 
             Using maintenancePage
                 If ShouldRefreshAfterMaintenance(maintenancePage.ShowDialog(Me)) Then
-                    RefreshGridForCustomAction(If(recordId > 0, recordId, maintenancePage.SavedRecordId))
+                    ' recordId = 0 is how this method already says "no record was selected", which
+                    ' is what a create is. The distinction was here all along and only the refresh
+                    ' did not receive it: a saved edit is still in the result it came from, while a
+                    ' saved creation may be nowhere near the rows the cap returns.
+                    If recordId > 0 Then
+                        RefreshGridForCustomAction(recordId)
+                    Else
+                        RefreshGridForCreatedRecord(maintenancePage.SavedRecordId)
+                    End If
                 End If
             End Using
 
@@ -2272,7 +2280,8 @@ Namespace SDC.Framework
         Private Sub RefreshGrid(Optional selectedRecordId As Integer? = Nothing,
                      Optional reevaluateQbe As Boolean = False,
                      Optional maxRows As Integer = 0,
-                     Optional registrationIdOverride As Integer? = Nothing)
+                     Optional registrationIdOverride As Integer? = Nothing,
+                     Optional createdRecordId As Integer? = Nothing)
 
             ' An unfiltered grid is capped wherever it is refreshed from, not only from Find.
             '
@@ -2430,6 +2439,29 @@ Namespace SDC.Framework
                     lastQueryMilliseconds = Convert.ToInt32(dt.ExtendedProperties("BrowseQueryMilliseconds"),
                                                             Globalization.CultureInfo.InvariantCulture)
                 End If
+                ' The record somebody just created goes in before anything is stripped, because the
+                ' row it fetches arrives with the page SQL's full column set and could not be copied
+                ' into a table that has already had columns removed.
+                '
+                ' After the cap message on purpose. "Showing the first 12" describes what the query
+                ' returned and stays true; the pinned row is an addition to it, and says so in its
+                ' own sentence rather than making that one wrong.
+                If createdRecordId.HasValue Then
+                    Dim revealOutcome = BrowseRowReveal.Reveal(dt,
+                                                               createdRecordId.Value,
+                                                               activeSql,
+                                                               registrationId,
+                                                               showDeletedRecordsOnly,
+                                                               ResolveCurrentRoleFieldTableName())
+
+                    Dim revealMessage = BrowseRowReveal.DescribeOutcome(revealOutcome)
+                    If revealMessage <> String.Empty Then
+                        SetRetrievalStatus(revealMessage, False, True)
+                    End If
+
+                    refreshTrace.Mark("reveal")
+                End If
+
                 ' Fields this role may not see are removed from the result before anything can bind
                 ' to them, so no later step can put them back on screen.
                 RemoveInvisibleRoleFieldColumns(dt)
@@ -5097,6 +5129,24 @@ Namespace SDC.Framework
 
         Protected Sub RefreshGridForCustomAction(Optional selectedRecordId As Integer? = Nothing)
             RefreshGrid(selectedRecordId, True)
+        End Sub
+
+        ''' <summary>
+        ''' Refreshes after a record was created, and guarantees the new row is on screen.
+        '''
+        ''' Separate from RefreshGridForCustomAction because a created record and an edited one need
+        ''' different things. An edited record came from the result and is still in it. A created
+        ''' one may be past the row cap, on the far side of the sort, or outside the criteria on
+        ''' screen - and the old path selected nothing, scrolled to the top and said nothing, which
+        ''' reads as a save that failed.
+        ''' </summary>
+        Protected Sub RefreshGridForCreatedRecord(createdRecordId As Integer)
+            If createdRecordId <= 0 Then
+                RefreshGridForCustomAction()
+                Return
+            End If
+
+            RefreshGrid(createdRecordId, True, createdRecordId:=createdRecordId)
         End Sub
 
         Private Sub CreateButton_Click(sender As Object, e As EventArgs)

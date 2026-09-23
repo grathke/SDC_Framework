@@ -12,6 +12,26 @@ Namespace SDC.Framework
 
         Private _registrationId As Integer
 
+        ''' <summary>
+        ''' The role this dialog created, for the grid that has to point at it.
+        '''
+        ''' The id was already being read back from the insert and then dropped, so Roles_B
+        ''' refreshed with no record in mind: the new role appeared somewhere in the list and
+        ''' nothing was selected. Named to match FW_Base_U.SavedRecordId, which is what every other
+        ''' browse page reads after a save.
+        '''
+        ''' Roles_B needs no more than this. Its grid is not capped - ExecuteCustomQuery returns
+        ''' every role in the registration - so a new role is always in the result, and finding it
+        ''' is the whole of the problem there.
+        ''' </summary>
+        Public ReadOnly Property SavedRecordId As Integer
+            Get
+                Return _savedRecordId
+            End Get
+        End Property
+
+        Private _savedRecordId As Integer
+
         ' Role settings controls
         Private roleNameLabel As Label
         Private roleNameTextBox As TextBox
@@ -210,6 +230,7 @@ Namespace SDC.Framework
                 )
 
                 If newRoleId > 0 Then
+                    _savedRecordId = newRoleId
                     MessageBox.Show("Role created successfully.", "Success", MessageBoxButtons.OK, MessageBoxIcon.Information)
                 Else
                     MessageBox.Show("Failed to create role.", "Error", MessageBoxButtons.OK, MessageBoxIcon.Error)

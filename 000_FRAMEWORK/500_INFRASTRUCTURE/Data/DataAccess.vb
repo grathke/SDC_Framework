@@ -1396,6 +1396,89 @@ Namespace SDC.Framework
             Return New WrappedBrowseQuery With {.Sql = wrapped.Sql, .Parameters = parameters}
         End Function
 
+        ''' <summary>
+        ''' One browse row, found by its key, in the page's own columns.
+        '''
+        ''' For the record somebody has just created. A browse grid is capped - the top N of a
+        ''' table that may hold ten thousand - so a new row whose key or sort position falls outside
+        ''' that window is absent from the refresh, and the grid points at nothing. The row is
+        ''' fetched on its own and put in front of the user, because "the record you just made is
+        ''' not on screen and nothing says why" is indistinguishable from a save that failed.
+        '''
+        ''' The page's SQL, not the table's. The grid's columns are whatever that SELECT produces -
+        ''' joined text, computed names, aliases - so a row read straight from the table would not
+        ''' fit the DataTable it has to join.
+        '''
+        ''' Returns Nothing when the page's SQL cannot be wrapped, which is the same condition
+        ''' GetBrowseRowsByRegistration already declines on and for the same reasons - see
+        ''' QBE_SQL_PUSHDOWN_SPEC.md section 4. Nothing means "no answer", not "no such row": the
+        ''' caller says so rather than implying the record is missing.
+        ''' </summary>
+        Public Shared Function GetBrowseRowByKey(baseSelectSql As String,
+                                                 recordKey As Integer,
+                                                 registrationId As Integer,
+                                                 Optional showDeletedOnly As Boolean = False,
+                                                 Optional sourceTableName As String = Nothing) As DataTable
+            If recordKey <= 0 Then Return Nothing
+
+            Dim effectiveSql = If(baseSelectSql, String.Empty).Trim()
+            If effectiveSql = String.Empty Then Return Nothing
+
+            Dim outputNames As List(Of String) = Nothing
+            If Not BrowseSqlWrapper.TryReadOutputNames(effectiveSql, outputNames) Then Return Nothing
+
+            ' Without the key alias there is nothing to match on. Every browse SQL the framework
+            ' generates carries it; one written by hand may not, and that page declines rather than
+            ' matching on a column that means something else.
+            If outputNames Is Nothing OrElse
+               Not outputNames.Any(Function(n) String.Equals(n, "PK", StringComparison.OrdinalIgnoreCase)) Then
+                Return Nothing
+            End If
+
+            Dim alias_ = BrowseSqlWrapper.InnerAlias
+            Dim predicates As New List(Of String)() From {alias_ & ".[PK] = @RecordKey"}
+
+            ' The deleted state still applies. A record created in the normal view belongs in the
+            ' normal view, and one restored while the deleted view is open belongs in that one -
+            ' pinning a row the current view excludes would put a row on screen that the next
+            ' refresh silently removes.
+            Dim deletedPredicate = BuildBrowseDeletedPredicate(outputNames, sourceTableName, showDeletedOnly)
+            If deletedPredicate <> String.Empty Then predicates.Add(deletedPredicate)
+
+            Dim wrapped = BrowseSqlWrapper.TryWrap(effectiveSql, 1, predicates, "PK")
+            If Not wrapped.Wrapped Then Return Nothing
+
+            Dim table As New DataTable("BrowseRow")
+            Try
+                Using conn As New SqlConnection(ConnectionString)
+                    conn.Open()
+                    Using cmd As New SqlCommand(wrapped.Sql, conn)
+                        cmd.Parameters.Add("@RecordKey", SqlDbType.Int).Value = recordKey
+
+                        ' A page's SQL is written with @RegistrationID in it - FW_Employees_B's is -
+                        ' and it is the caller's job to supply it, exactly as the browse read does.
+                        ' Leaving it out threw "Must declare the scalar variable", the Catch below
+                        ' turned that into Nothing, and the caller reported the record as missing.
+                        ' A row that was there all along, reported as absent, by a lookup that never
+                        ' ran.
+                        If wrapped.Sql.Contains("@RegistrationID", StringComparison.OrdinalIgnoreCase) Then
+                            cmd.Parameters.AddWithValue("@RegistrationID", registrationId)
+                        End If
+
+                        Using adapter As New SqlDataAdapter(cmd)
+                            adapter.Fill(table)
+                        End Using
+                    End Using
+                End Using
+            Catch
+                ' A failed lookup must not take the save's refresh down with it. The grid then
+                ' behaves as it did before this existed, which is the state the caller reports.
+                Return Nothing
+            End Try
+
+            Return table
+        End Function
+
         Public Shared Function GetBrowseRowsByRegistration(registrationId As Integer,
                                                          Optional filters As Dictionary(Of String, String) = Nothing,
                                                          Optional baseSelectSql As String = Nothing,
