@@ -238,7 +238,10 @@ Key areas:
 - Models: `Models.vb`.
 - Entry point and shell: `Program.vb`, `LoginForm.vb`, `FW_MainMenu.vb`.
 - Naming convention: `*_B` = browse page, `*_U` = maintenance page.
-- SQL migrations: `sql/`. Validation and restore-point scripts: `scripts/`.
+- SQL: `sql/` holds the incremental migrations, which move a database that already exists
+  forward; `sql/schema/` builds one from nothing, and its README says what runs in what order.
+  Nothing records which migrations have been applied here. Validation and restore-point scripts:
+  `scripts/`.
 
 ## Naming Conventions (Required)
 
