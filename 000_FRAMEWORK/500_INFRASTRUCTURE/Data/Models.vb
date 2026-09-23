@@ -421,6 +421,31 @@ Namespace SDC.Framework
         End Sub
 
         ''' <summary>
+        ''' The row caps, after somebody has changed them on the Registration page.
+        '''
+        ''' The session reads them once at sign-in, so without this a saved change does nothing
+        ''' until the next login - which is how it behaved the first time the fields went on the
+        ''' page: the database said 25 and the grid went on showing 11, with nothing to say why.
+        '''
+        ''' Null keeps the framework default rather than becoming zero, which FW_Base_B.RefreshGrid
+        ''' reads as no cap at all. Same rule as the column, and it has to be the same rule here or
+        ''' saving an empty box would remove the limit for the rest of the session.
+        '''
+        ''' Only for the registration the session belongs to. An App Admin editing another
+        ''' registration's caps changes that registration, not their own view.
+        ''' </summary>
+        Public Sub UpdateRowLimits(registrationId As Integer, noQbe As Integer?, withQbe As Integer?)
+            If Not currentSession.HasValue Then Return
+
+            Dim session = currentSession.Value
+            If registrationId <> session.RegistrationID Then Return
+
+            session.MaxRecordsNoQBE = If(noQbe.HasValue AndAlso noQbe.Value > 0, noQbe.Value, 10)
+            session.MaxRecordsWithQBE = If(withQbe.HasValue AndAlso withQbe.Value > 0, withQbe.Value, 200)
+            currentSession = session
+        End Sub
+
+        ''' <summary>
         ''' The registration the user is currently looking at, which is the session's own unless an
         ''' App Admin has chosen another in a browse page's selector.
         '''
@@ -513,6 +538,24 @@ Namespace SDC.Framework
         Public Property MainPhone As String
         Public Property MainEMail As String
         Public Property WebLandingPage As String
+
+        ''' <summary>
+        ''' How many rows a browse page returns without criteria, and with them.
+        '''
+        ''' **Nullable, and that is the contract rather than convenience.** Null means "no answer
+        ''' recorded", and the framework then uses its own default - DataAccess reads them as
+        ''' ISNULL(MaxRecordsNoQBE, 10) and ISNULL(MaxRecordsWithQBE, 200). MaxRecordsWithQBE is
+        ''' null for both registrations today, so a non-nullable property would turn an untouched
+        ''' setting into a stored zero the first time anybody saved the page - and zero is read by
+        ''' FW_Base_B.RefreshGrid as "no cap", which is the condition that made the employee page
+        ''' unopenable on 2026-09-20 with ten thousand rows.
+        '''
+        ''' UserSessionVariables holds the same two as plain Integers on purpose: by the time a
+        ''' session exists the default has been applied and there is nothing left to say.
+        ''' </summary>
+        Public Property MaxRecordsNoQBE As Integer?
+        Public Property MaxRecordsWithQBE As Integer?
+
         Public Property AllowMultipleRoles As Boolean
         Public Property AllowPasswordChangeAtLogin As Boolean
         Public Property AllowUpdateMyProfile As Boolean

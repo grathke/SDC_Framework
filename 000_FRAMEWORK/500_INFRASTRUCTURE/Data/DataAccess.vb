@@ -5590,6 +5590,21 @@ Namespace SDC.Framework
             Return value.Trim()
         End Function
 
+        ''' <summary>
+        ''' A nullable integer on its way to the database, with null written as null.
+        '''
+        ''' The counterpart of NullableInt on the way back. Both exist because a column where null
+        ''' means "not set" cannot round-trip through a plain Integer: the value that would stand in
+        ''' for null is zero, and for a row cap zero is not "unset" but "no limit at all".
+        ''' </summary>
+        Private Shared Function NullableDbValue(value As Integer?) As Object
+            If Not value.HasValue Then
+                Return DBNull.Value
+            End If
+
+            Return value.Value
+        End Function
+
         Private Shared Function DbValueBounded(value As String, maxLength As Integer) As Object
             If value Is Nothing Then
                 Return DBNull.Value
@@ -5613,6 +5628,21 @@ Namespace SDC.Framework
             End If
 
             Return value.ToString()
+        End Function
+
+        ''' <summary>
+        ''' A nullable integer column, with null kept as null.
+        '''
+        ''' SafeString's counterpart, and the distinction matters for a column where null is an
+        ''' answer rather than a gap: a row cap that has never been set is not a cap of zero, and
+        ''' zero is read elsewhere as "no limit at all".
+        ''' </summary>
+        Private Shared Function NullableInt(value As Object) As Integer?
+            If value Is Nothing OrElse IsDBNull(value) Then
+                Return Nothing
+            End If
+
+            Return Convert.ToInt32(value, CultureInfo.InvariantCulture)
         End Function
 
         Private Shared Function IsNumeric(value As Object) As Boolean
@@ -6146,6 +6176,7 @@ Namespace SDC.Framework
                     "ISNULL(HDUserSupport, 0) AS HDUserSupport, " &
                     "ISNULL(HDApplicationSupport, 0) AS HDApplicationSupport, " &
                     "MessageRetrievalFrequency, " &
+                    "MaxRecordsNoQBE, MaxRecordsWithQBE, " &
                     "ISNULL(IsActive, 1) AS IsActive, r.RowVersion, ISNULL(z.TimeZoneName, '') AS TimeZoneName " &
                     "FROM dbo.FW_Registration r LEFT JOIN dbo.FW_TimeZones z ON z.TimeZoneID = r.TimeZoneID WHERE r.RegistrationID = @ID", conn)
 
@@ -6177,6 +6208,8 @@ Namespace SDC.Framework
                             .MainPhone = SafeString(reader("MainPhone")),
                             .MainEMail = SafeString(reader("MainEMail")),
                             .WebLandingPage = SafeString(reader("WebLandingPage")),
+                            .MaxRecordsNoQBE = NullableInt(reader("MaxRecordsNoQBE")),
+                            .MaxRecordsWithQBE = NullableInt(reader("MaxRecordsWithQBE")),
                             .AllowMultipleRoles = Convert.ToBoolean(reader("AllowMultipleRoles"), CultureInfo.InvariantCulture),
                             .AllowPasswordChangeAtLogin = Convert.ToBoolean(reader("AllowPasswordChangeAtLogin"), CultureInfo.InvariantCulture),
                             .AllowUpdateMyProfile = Convert.ToBoolean(reader("AllowUpdateMyProfile"), CultureInfo.InvariantCulture),
@@ -6343,9 +6376,9 @@ Namespace SDC.Framework
                                                       record As RegistrationRecord, currentUserId As Integer) As Integer
             Using cmd As New SqlCommand(
                     "INSERT INTO dbo.FW_Registration " &
-                    "(RegName, RegistrationTypeID, FormatDateID, FormatTimeID, TimeZoneID, Address1, Address2, City, State, Zip, MainFax, MainPhone, MainEMail, WebLandingPage, Smarty_AuthID, Smarty_AuthToken, Smarty_EmbeddedKey, Smarty_UseEmbeddedKey, AllowMultipleRoles, AllowPasswordChangeAtLogin, AllowUpdateMyProfile, AllowUpdateMyProfileEmail, HomeGraphic, LicenseExpiration_Date, LicenseStart_Date, LicenseTermID, TwoFactorAuthentication, MessageRetrievalFrequency, IsActive, CreatedBy, CreatedOn, UpdatedBy, UpdatedOn) " &
+                    "(RegName, RegistrationTypeID, FormatDateID, FormatTimeID, TimeZoneID, Address1, Address2, City, State, Zip, MainFax, MainPhone, MainEMail, WebLandingPage, Smarty_AuthID, Smarty_AuthToken, Smarty_EmbeddedKey, Smarty_UseEmbeddedKey, AllowMultipleRoles, AllowPasswordChangeAtLogin, AllowUpdateMyProfile, AllowUpdateMyProfileEmail, HomeGraphic, LicenseExpiration_Date, LicenseStart_Date, LicenseTermID, TwoFactorAuthentication, MessageRetrievalFrequency, MaxRecordsNoQBE, MaxRecordsWithQBE, IsActive, CreatedBy, CreatedOn, UpdatedBy, UpdatedOn) " &
                     "VALUES " &
-                    "(@RegName, @RegistrationTypeID, @FormatDateID, @FormatTimeID, @TimeZoneID, @Address1, @Address2, @City, @State, @Zip, @MainFax, @MainPhone, @MainEMail, @WebLandingPage, @Smarty_AuthID, @Smarty_AuthToken, @Smarty_EmbeddedKey, @Smarty_UseEmbeddedKey, @AllowMultipleRoles, @AllowPasswordChangeAtLogin, @AllowUpdateMyProfile, @AllowUpdateMyProfileEmail, @HomeGraphic, @LicenseExpiration_Date, @LicenseStart_Date, @LicenseTermID, @TwoFactorAuthentication, @MessageRetrievalFrequency, @IsActive, @CurrentUserId, GETDATE(), @CurrentUserId, GETDATE()); " &
+                    "(@RegName, @RegistrationTypeID, @FormatDateID, @FormatTimeID, @TimeZoneID, @Address1, @Address2, @City, @State, @Zip, @MainFax, @MainPhone, @MainEMail, @WebLandingPage, @Smarty_AuthID, @Smarty_AuthToken, @Smarty_EmbeddedKey, @Smarty_UseEmbeddedKey, @AllowMultipleRoles, @AllowPasswordChangeAtLogin, @AllowUpdateMyProfile, @AllowUpdateMyProfileEmail, @HomeGraphic, @LicenseExpiration_Date, @LicenseStart_Date, @LicenseTermID, @TwoFactorAuthentication, @MessageRetrievalFrequency, @MaxRecordsNoQBE, @MaxRecordsWithQBE, @IsActive, @CurrentUserId, GETDATE(), @CurrentUserId, GETDATE()); " &
                     "SELECT CAST(SCOPE_IDENTITY() AS INT);", conn, tx)
 
                     cmd.Parameters.AddWithValue("@RegName", DbValue(record.RegName))
@@ -6366,6 +6399,12 @@ Namespace SDC.Framework
                     cmd.Parameters.AddWithValue("@MainPhone", DbValue(record.MainPhone))
                     cmd.Parameters.AddWithValue("@MainEMail", DbValue(record.MainEMail))
                     cmd.Parameters.AddWithValue("@WebLandingPage", DbValue(record.WebLandingPage))
+
+                    ' Null when the box is empty, never zero. Zero is read by
+                    ' FW_Base_B.RefreshGrid as "no cap" and would fetch every row in the table.
+                    cmd.Parameters.AddWithValue("@MaxRecordsNoQBE", NullableDbValue(record.MaxRecordsNoQBE))
+                    cmd.Parameters.AddWithValue("@MaxRecordsWithQBE", NullableDbValue(record.MaxRecordsWithQBE))
+
                     cmd.Parameters.AddWithValue("@Smarty_AuthID", DbValue(record.Smarty_AuthID))
                     cmd.Parameters.AddWithValue("@Smarty_AuthToken", DbValue(record.Smarty_AuthToken))
                     cmd.Parameters.AddWithValue("@Smarty_EmbeddedKey", DbValue(record.Smarty_EmbeddedKey))
@@ -6412,6 +6451,8 @@ Namespace SDC.Framework
                     "MainPhone = @MainPhone, " &
                     "MainEMail = @MainEMail, " &
                     "WebLandingPage = @WebLandingPage, " &
+                    "MaxRecordsNoQBE = @MaxRecordsNoQBE, " &
+                    "MaxRecordsWithQBE = @MaxRecordsWithQBE, " &
                     "Smarty_AuthID = @Smarty_AuthID, " &
                     "Smarty_AuthToken = @Smarty_AuthToken, " &
                     "Smarty_EmbeddedKey = @Smarty_EmbeddedKey, " &
@@ -6450,6 +6491,12 @@ Namespace SDC.Framework
                     cmd.Parameters.AddWithValue("@MainPhone", DbValue(record.MainPhone))
                     cmd.Parameters.AddWithValue("@MainEMail", DbValue(record.MainEMail))
                     cmd.Parameters.AddWithValue("@WebLandingPage", DbValue(record.WebLandingPage))
+
+                    ' Null when the box is empty, never zero. Zero is read by
+                    ' FW_Base_B.RefreshGrid as "no cap" and would fetch every row in the table.
+                    cmd.Parameters.AddWithValue("@MaxRecordsNoQBE", NullableDbValue(record.MaxRecordsNoQBE))
+                    cmd.Parameters.AddWithValue("@MaxRecordsWithQBE", NullableDbValue(record.MaxRecordsWithQBE))
+
                     cmd.Parameters.AddWithValue("@Smarty_AuthID", DbValue(record.Smarty_AuthID))
                     cmd.Parameters.AddWithValue("@Smarty_AuthToken", DbValue(record.Smarty_AuthToken))
                     cmd.Parameters.AddWithValue("@Smarty_EmbeddedKey", DbValue(record.Smarty_EmbeddedKey))

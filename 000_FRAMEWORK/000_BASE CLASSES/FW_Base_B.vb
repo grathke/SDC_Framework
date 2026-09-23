@@ -5150,6 +5150,19 @@ Namespace SDC.Framework
         ''' Dock is cleared first. Leaving it as Fill and setting bounds would last exactly until
         ''' the next layout pass, which is the arrangement that produced 232 in the first place.
         ''' </summary>
+        ''' <summary>
+        ''' Deliberate breathing room under the grid, so it does not sit flush against the panel.
+        '''
+        ''' There is already 20 pixels between the bottom of the split container and the form's
+        ''' edge; this is the gap inside the panel, under the grid's own border.
+        '''
+        ''' **Six, and the number is not arbitrary.** The grid's usable height is 320, its header
+        ''' 34 and its rows 28, so ten rows need 314. Six is what is left, and anything larger costs
+        ''' the tenth row - which is the whole of what this change was for. A wider separation is a
+        ''' fair thing to want; it just has to be chosen knowing it trades a row for it.
+        ''' </summary>
+        Private Const GridBottomGutter As Integer = 6
+
         Private Sub FillGridToPanel()
             Try
                 If browseGrid Is Nothing OrElse qbeSplitContainer Is Nothing Then Return
@@ -5163,7 +5176,7 @@ Namespace SDC.Framework
                     top = layoutToolbarPanel.Bottom
                 End If
 
-                Dim available = area.Height - top
+                Dim available = area.Height - top - GridBottomGutter
                 If available <= 0 OrElse area.Width <= 0 Then Return
 
                 If browseGrid.Dock <> DockStyle.None Then browseGrid.Dock = DockStyle.None

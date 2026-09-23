@@ -24,6 +24,17 @@ Namespace SDC.Framework
         Private smartyAuthIdTextBox As TextBox
         Private smartyAuthTokenTextBox As TextBox
         Private smartyEmbeddedKeyTextBox As TextBox
+
+        ''' <summary>
+        ''' How many rows a browse page shows before it tells somebody to search.
+        '''
+        ''' Both existed in FW_Registration and on neither page, so changing them needed a
+        ''' developer and a SQL prompt - for a setting that decides what every user sees on every
+        ''' browse page in the registration.
+        ''' </summary>
+        Private maxRecordsNoQbeTextBox As TextBox
+        Private maxRecordsWithQbeTextBox As TextBox
+
         Private messageFrequencyComboBox As ComboBox
         Private smartyUseEmbeddedKeyCheckBox As CheckBox
         Private smartyAddressLookupController As SmartyAddressLookupController
@@ -173,6 +184,14 @@ Namespace SDC.Framework
                     activeRegistrationId = newId
                 End If
 
+                ' The live session reads the row caps once, at sign-in. Without this a saved change
+                ' does nothing until the next login: the database says 25 and every browse page goes
+                ' on showing 11, with nothing on screen to say why. The same reason
+                ' UpdateCrudCaptions and UpdateHelpDeskRouting exist.
+                SessionState.UpdateRowLimits(currentRecord.ID,
+                                             currentRecord.MaxRecordsNoQBE,
+                                             currentRecord.MaxRecordsWithQBE)
+
                 Return True
             Catch ex As Exception
                 MessageBox.Show("Error saving registration: " & ex.Message, "Save Failed", MessageBoxButtons.OK, MessageBoxIcon.Error)
@@ -303,6 +322,104 @@ Namespace SDC.Framework
                                                              "Use Smarty Embedded Key",
                                                              smartyEmbeddedKeyTextBox.Left,
                                                              smartyEmbeddedKeyTextBox.Bottom + 8)
+
+            ' Below the checkbox rather than in the row sequence above, because the checkbox is
+            ' placed from another control's Bottom and inserting these before it would leave them
+            ' underneath it.
+            Dim capsTop = smartyUseEmbeddedKeyCheckBox.Bottom + 16
+
+            ' Short enough for MaintenanceLayout.LabelWidth, which is 120 pixels for every field on
+            ' every maintenance page. "Rows Without A Search" clipped to "Rows Without A", which is
+            ' worse than terse: a caption that loses its last word can read as a different setting.
+            maxRecordsNoQbeTextBox = AddField("MaxRecordsNoQBE", capsTop, False, False,
+                                              labelText:="Rows No Search")
+            maxRecordsNoQbeTextBox.Width = 80
+            NumericTextBoxHelper.ConfigureWholeNumberOnly(maxRecordsNoQbeTextBox)
+
+            maxRecordsWithQbeTextBox = AddField("MaxRecordsWithQBE", capsTop + rowGap, False, False,
+                                                labelText:="Rows With Search")
+            maxRecordsWithQbeTextBox.Width = 80
+            NumericTextBoxHelper.ConfigureWholeNumberOnly(maxRecordsWithQbeTextBox)
+        End Sub
+
+        ''' <summary>
+        ''' The two row caps, checked before a registration is saved.
+        '''
+        ''' **Zero is the dangerous value, not a large one.** FW_Base_B.RefreshGrid reads
+        ''' maxRows &lt;= 0 as "no cap" and fetches every row, which on 2026-09-20 meant the employee
+        ''' page could not be opened at all: the deleted-flag hydration sent one parameter per row
+        ''' and SQL Server refuses past 2,100. Blank is safe and means the framework default, since
+        ''' the read is ISNULL(MaxRecordsNoQBE, 10) - so this rejects a typed zero and accepts an
+        ''' empty box.
+        '''
+        ''' The ceiling is judgement rather than a limit anything enforces. Past a few screenfuls
+        ''' an unfiltered view stops being a sample of the table and starts reading as a list that
+        ''' happens to end, which is the impression the cap exists to avoid.
+        '''
+        ''' Through the shared hook rather than a page-local check, so the message joins the
+        ''' required-field and unique-field lines in one dialog instead of arriving in its own.
+        ''' </summary>
+        Protected Overrides Function GetAdditionalValidationMessageLines() As IEnumerable(Of String)
+            Dim lines As New List(Of String)()
+
+            AddRowCapProblem(lines, maxRecordsNoQbeTextBox, "ROWS WITHOUT A SEARCH")
+            AddRowCapProblem(lines, maxRecordsWithQbeTextBox, "ROWS WITH A SEARCH")
+
+            Return lines
+        End Function
+
+        Private Const MaximumRowCap As Integer = 1000
+
+        ''' <summary>An empty box for null, so nothing stored reads as nothing entered.</summary>
+        Private Shared Function NullableNumberText(value As Integer?) As String
+            If Not value.HasValue Then Return String.Empty
+            Return value.Value.ToString(CultureInfo.InvariantCulture)
+        End Function
+
+        ''' <summary>
+        ''' What the box holds, as a number or as nothing.
+        '''
+        ''' An empty box is null rather than zero, which is the whole reason these two are nullable.
+        ''' Unparseable text is also null: GetAdditionalValidationMessageLines has already refused
+        ''' the save by then, so this only decides what an unreachable path would have written.
+        ''' </summary>
+        Private Shared Function ParseNullableNumber(field As TextBox) As Integer?
+            If field Is Nothing Then Return Nothing
+
+            Dim text = If(field.Text, String.Empty).Trim()
+            If text = String.Empty Then Return Nothing
+
+            Dim value As Integer
+            If Not Integer.TryParse(text, NumberStyles.Integer, CultureInfo.InvariantCulture, value) Then
+                Return Nothing
+            End If
+
+            Return value
+        End Function
+
+        Private Shared Sub AddRowCapProblem(lines As List(Of String), field As TextBox, caption As String)
+            If field Is Nothing Then Return
+
+            Dim text = If(field.Text, String.Empty).Trim()
+            If text = String.Empty Then Return
+
+            Dim value As Integer
+            If Not Integer.TryParse(text, Globalization.NumberStyles.Integer,
+                                    Globalization.CultureInfo.InvariantCulture, value) Then
+                lines.Add(caption & " MUST BE A WHOLE NUMBER.")
+                Return
+            End If
+
+            If value <= 0 Then
+                lines.Add(caption & " MUST BE AT LEAST 1. ZERO REMOVES THE LIMIT ENTIRELY, AND A PAGE " &
+                          "THAT FETCHES EVERY ROW MAY NOT OPEN AT ALL. LEAVE IT EMPTY FOR THE DEFAULT.")
+                Return
+            End If
+
+            If value > MaximumRowCap Then
+                lines.Add(caption & " CANNOT BE MORE THAN " &
+                          MaximumRowCap.ToString(Globalization.CultureInfo.InvariantCulture) & ".")
+            End If
         End Sub
 
         ''' <summary>
@@ -423,6 +540,12 @@ Namespace SDC.Framework
             mainPhoneTextBox.Text = SafeText(record.MainPhone)
             emailTextBox.Text = SafeText(record.MainEMail)
             webLandingPageTextBox.Text = SafeText(record.WebLandingPage)
+
+            ' Empty for null, not "0". The box shows what is stored, and nothing stored is a real
+            ' answer here - it means the framework default applies.
+            maxRecordsNoQbeTextBox.Text = NullableNumberText(record.MaxRecordsNoQBE)
+            maxRecordsWithQbeTextBox.Text = NullableNumberText(record.MaxRecordsWithQBE)
+
             smartyAuthIdTextBox.Text = SafeText(record.Smarty_AuthID)
             smartyAuthTokenTextBox.Text = SafeText(record.Smarty_AuthToken)
             smartyEmbeddedKeyTextBox.Text = SafeText(record.Smarty_EmbeddedKey)
@@ -532,6 +655,8 @@ Namespace SDC.Framework
                 .MainPhone = mainPhoneTextBox.Text.Trim(),
                 .MainEMail = emailTextBox.Text.Trim(),
                 .WebLandingPage = webLandingPageTextBox.Text.Trim(),
+                .MaxRecordsNoQBE = ParseNullableNumber(maxRecordsNoQbeTextBox),
+                .MaxRecordsWithQBE = ParseNullableNumber(maxRecordsWithQbeTextBox),
                 .Smarty_AuthID = smartyAuthIdTextBox.Text.Trim(),
                 .Smarty_AuthToken = smartyAuthTokenTextBox.Text.Trim(),
                 .Smarty_EmbeddedKey = smartyEmbeddedKeyTextBox.Text.Trim(),
