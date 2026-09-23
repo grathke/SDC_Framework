@@ -21,3 +21,8 @@ previews/
 
 # Personal Claude Code settings - machine-specific permissions, not shared
 .claude/settings.local.json
+
+# Database backups. A .bak of WX_Framework carries everything the seed scripts exclude -
+# password hashes, TOTP keys, the Smarty API credentials, and every client's data - and it
+# is handed over out of band, never through git.
+*.bak
