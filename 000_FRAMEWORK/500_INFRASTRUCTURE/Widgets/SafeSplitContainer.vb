@@ -13,16 +13,33 @@ Namespace SDC.Framework
     '''
     ''' **The failure is inside WinForms, not in this application.** `SplitContainer.OnLayout`
     ''' calls `ResizeSplitContainer`, which calls `RepaintSplitterRect`, which takes a `Graphics`
-    ''' from the control and fills a rectangle with it. When the control has been sized through
-    ''' something degenerate, that `Graphics` is unusable and `FillRectangle` throws
-    ''' `ExternalException` - "a generic error occurred in GDI+". Nothing outside the control can
-    ''' catch it, because nothing outside is on the stack: the resize arrives as a window message
-    ''' and the throw happens in the base class's own layout. It surfaces as an unhandled-exception
-    ''' dialog.
+    ''' from the control and fills a rectangle with it. That `Graphics` is unusable and
+    ''' `FillRectangle` throws `ExternalException` - "a generic error occurred in GDI+". Nothing
+    ''' outside the control can catch it, because nothing outside is on the stack: the resize
+    ''' arrives as a window message and the throw happens in the base class's own layout. It
+    ''' surfaces as an unhandled-exception dialog.
     '''
-    ''' Seen first on 2026-09-21, opening a browse page through a **real Thinfinity session** at
-    ''' 1678x807 - never in `--tf-dev` at 2014x969, and never on the desktop. It is the delivery
-    ''' path, so it is what a user would meet.
+    ''' Seen first on 2026-09-21, opening a browse page through a **real Thinfinity session** -
+    ''' never in `--tf-dev`, and never on the desktop. It is the delivery path, so it is what a
+    ''' user would meet. Worth knowing when it will not reproduce: running the executable directly
+    ''' gives VirtualUI's own dev server and the fault does not occur there.
+    '''
+    ''' **What it is not: a degenerate size.** This said so until 2026-09-23, and the 58 lines this
+    ''' class had logged by then refuted it - every one identical, and every constraint satisfied
+    ''' with room to spare:
+    '''
+    '''     size=940x562  client=940x562  distance=150  width=6
+    '''     min1=120  min2=120  collapsed1=False  visible=True  handle=True
+    '''
+    ''' 562 less the splitter and the distance leaves 406 against a minimum of 120. The control is
+    ''' visible, it has a handle, and its client area matches its size exactly. Nothing about it is
+    ''' degenerate, and a reader sent looking for a bad size will not find one.
+    '''
+    ''' **What the shape points at, without claiming it.** It fires once per session, at the first
+    ''' browse page open, on a control in good order, and only in a real session. That reads as no
+    ''' usable device context at that instant rather than anything about geometry - a timing
+    ''' condition in the delivery path. Not proven, and deliberately left as a description of the
+    ''' evidence rather than a second guess dressed as a cause.
     '''
     ''' **Swallowing an exception is normally the wrong instinct.** It is right here because what
     ''' failed is a repaint of a splitter bar: cosmetic, redone by the next layout pass, and
