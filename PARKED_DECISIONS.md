@@ -377,6 +377,33 @@ only record of hand-edited names from before the promotion above. Left alone on 
 
 Note for whoever greps: `ToFriendlyCaption` is **not** `FriendlyFieldName`. It is the deriver, and
 it is load-bearing.
+### Sharing the framework with the second developer
+
+The repository went to `github.com/grathke/SDC_Framework` on 2026-09-23 — private, personal
+account, both branches, 468 files. That closed the off-machine backup gap for source code, which
+had been open since the project began.
+
+**The venture is 50/50, and the end state is a shared organisation where both partners are
+owners** — not one partner's personal account. Personal was chosen only because the organisation is
+a joint decision and the backup gap was not. Transfer costs the same later as now: one click, in
+Settings → General → Danger Zone, keeping history, issues and pull requests, redirecting the old
+URL. Expected within five days of 2026-09-23.
+
+Four things left, parked on 2026-09-23:
+
+- **Commit `7c7088f` is unpushed**, and `master` is one behind again. Nothing breaks; a clone
+  simply lands one commit short until both are pushed.
+- **The other developer's GitHub username** was never needed. Adding him as a collaborator was
+  dropped deliberately rather than forgotten: once the repository is in an organisation he owns
+  a share of, his access comes from membership, and a per-repo entry would only need tidying away.
+- **His SQL Server version is unchecked.** The database goes to him as a `.bak`, not built from
+  `sql/schema/`, and a backup restores forward only. If his server is older than 2025 the restore
+  fails outright, after several hundred MB have moved.
+- **`FW_Users.Password`**, the legacy `varchar(50)` column, holds a plaintext value for 15 of the
+  10,014 rows — alongside `PasswordHash` for the same 15, and a TOTP key for 3. `WritePasswordHash`
+  writes `#####` into it on every save, so the 15 predate that path and nothing removes them. They
+  are other people's passwords, and a `.bak` carries them. Not looked at; not decided.
+
 ---
 
 ## Rejected, or dropped
