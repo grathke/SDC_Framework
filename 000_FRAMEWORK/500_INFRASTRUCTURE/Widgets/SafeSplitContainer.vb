@@ -66,6 +66,27 @@ Namespace SDC.Framework
             If reported Then Return
             reported = True
 
+            ' To the health dashboard as well as the log file.
+            '
+            ' Catching this on 2026-09-21 stopped the dialog, which was the point, and also stopped
+            ' the telemetry, which was not. The same failure sits in FW_ErrorLog as ErrorLogID 5,
+            ' context Program.OnThreadException, recorded back when it still reached the global
+            ' handler - and nothing has been recorded since, though it has happened in every
+            ' session. A fault that is handled is still a fault, and one nobody can see is one
+            ' nobody can decide about.
+            '
+            ' No flood: FW_ErrorLog is fingerprinted and merged, so repeats raise OccurrenceCount
+            ' rather than adding rows, and the reported flag above already holds this to once per
+            ' control per session.
+            '
+            ' Swallowed is the honest origin. It is caught here and the user is never told, which
+            ' is the right call for a splitter repaint and exactly what that value means.
+            Try
+                Telemetry.Error(ex, "SafeSplitContainer." & where, Telemetry.FaultOrigin.Swallowed)
+            Catch
+                ' Reporting a paint failure must not become a second one.
+            End Try
+
             Try
                 Program.Log("SafeSplitContainer caught " & where & " on " &
                             If(Name, "(unnamed)") & ": " & ex.Message &
