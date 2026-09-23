@@ -1812,9 +1812,21 @@ Namespace SDC.Framework
         ''' write and its audit rows. A save that never began because the session is switched is
         ''' not a save and leaves no line.
         '''
-        ''' It reports on the way out whatever the answer was. A refused save costs round trips
-        ''' too, and a conflict costs the most of all, so reporting only the successes would
-        ''' measure the cheap half.
+        ''' It reports on the way out whatever the answer was, because reporting only the successes
+        ''' would measure the cheap half. Measured on FW_Employees_U, 2026-09-23:
+        '''
+        '''     ordinary update      13 trips   183-200ms
+        '''     conflict, overwritten 18 trips   297ms
+        '''     refused on validation  1 trip     13ms
+        '''
+        ''' A conflict does cost the most, which this claimed before anyone had checked. Five extra
+        ''' round trips: the version re-check, the soft-delete lookup, and the overwrite on top of
+        ''' the ordinary write.
+        '''
+        ''' The figure is only meaningful because the clock stops for the dialogs. Every message
+        ''' this path can raise sits between PauseSaveClock and ResumeSaveClock, and the conflict
+        ''' measurement above was taken with the overwrite question left on screen deliberately
+        ''' long. Before that, a refused save reported 2,441 to 3,468ms of somebody reading.
         ''' </summary>
         Protected Function ExecuteSaveWorkflow() As Boolean
             If Not SwitchedUserGuard.AllowWrite(Me, "SAVE THIS RECORD") Then
