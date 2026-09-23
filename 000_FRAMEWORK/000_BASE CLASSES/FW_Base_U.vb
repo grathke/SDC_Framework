@@ -1634,12 +1634,14 @@ Namespace SDC.Framework
             Dim info = DataAccess.GetSoftDeleteInfo(ResolveTableNameForConcurrency(), recordId)
             If info Is Nothing Then Return False
 
+            PauseSaveClock()
             MessageBox.Show(Me,
                             (info.Describe() & Environment.NewLine & Environment.NewLine &
                              "Your changes have not been saved.").ToUpperInvariant(),
                             "RECORD DELETED",
                             MessageBoxButtons.OK,
                             MessageBoxIcon.Warning)
+            ResumeSaveClock()
 
             ' This explains the failure completely, so the generic save-failed message that would
             ' otherwise follow is suppressed - two dialogs for one cause is just noise.
@@ -1654,20 +1656,46 @@ Namespace SDC.Framework
         End Function
 
         Protected Function ConfirmConcurrencyOverwrite() As Boolean
-            Return MessageBox.Show(Me,
-                                   "This record was changed by another user after you opened it." & Environment.NewLine & Environment.NewLine &
-                                   "Do you want to overwrite that newer version with your current changes?",
-                                   "Record Changed",
-                                   MessageBoxButtons.YesNo,
-                                   MessageBoxIcon.Warning) = DialogResult.Yes
+            ' Paused and resumed rather than stopped, because a Yes here is followed by the
+            ' overwrite itself - real work, and the part worth knowing the cost of. This is the
+            ' dialog that made a conflict look like the most expensive save there is.
+            PauseSaveClock()
+            Try
+                Return MessageBox.Show(Me,
+                                       "This record was changed by another user after you opened it." & Environment.NewLine & Environment.NewLine &
+                                       "Do you want to overwrite that newer version with your current changes?",
+                                       "Record Changed",
+                                       MessageBoxButtons.YesNo,
+                                       MessageBoxIcon.Warning) = DialogResult.Yes
+            Finally
+                ResumeSaveClock()
+            End Try
         End Function
 
+        ''' <summary>
+        ''' Holds the save's clock while a dialog is on screen, and starts it again after.
+        '''
+        ''' Every dialog the save path can raise goes between these two. A measurement that counts
+        ''' the time somebody spent reading is not a measurement of the application, and it is
+        ''' worse than none: it is a plausible number that sends the next person optimising the
+        ''' wrong thing.
+        ''' </summary>
+        Private Sub PauseSaveClock()
+            If activeSaveTrace IsNot Nothing Then activeSaveTrace.PauseClock()
+        End Sub
+
+        Private Sub ResumeSaveClock()
+            If activeSaveTrace IsNot Nothing Then activeSaveTrace.ResumeClock()
+        End Sub
+
         Protected Sub ShowConcurrencyUnavailable()
+            PauseSaveClock()
             MessageBox.Show(Me,
                             "This record cannot be saved safely because its table does not have a RowVersion column.",
                             "Concurrency Protection Unavailable",
                             MessageBoxButtons.OK,
                             MessageBoxIcon.Warning)
+            ResumeSaveClock()
         End Sub
 
         Protected Sub CaptureOriginalRowVersion(rowVersion As Byte())
@@ -1793,7 +1821,12 @@ Namespace SDC.Framework
                 Return False
             End If
 
+            ' Held in a field as well as a local, so the validation step can stop the clock before
+            ' the message it raises. ValidateAndBuildForSave has three callers and only this one
+            ' traces, so the alternative - handing the trace down as a parameter - would put it in
+            ' two signatures that have no use for it.
             Dim saveTrace = DbCostTrace.Start("Save")
+            activeSaveTrace = saveTrace
             Try
                 If Not ValidateAndBuildForSave() Then
                     Return False
@@ -1805,8 +1838,18 @@ Namespace SDC.Framework
                 Return saved
             Finally
                 saveTrace.Report(Me.GetType().Name)
+                activeSaveTrace = Nothing
             End Try
         End Function
+
+        ''' <summary>
+        ''' The save currently being measured, or Nothing.
+        '''
+        ''' Only so the validation step can stop the clock before it shows its message. A refused
+        ''' save was reporting the time somebody spent reading that message as though it were work -
+        ''' 2,441ms on 2026-09-23, of which the application did almost none.
+        ''' </summary>
+        Private activeSaveTrace As DbCostTrace
 
 
         Protected Function ValidateAndBuildForSave() As Boolean
@@ -1863,6 +1906,12 @@ Namespace SDC.Framework
                                         Environment.NewLine & Environment.NewLine &
                                         validationMessage.Substring(sqlMarkerIndex)
                 End If
+                ' Before the dialog, not after. Everything the save was going to do has been done -
+                ' the required-field check and the unique-field check both reached the database -
+                ' and what follows is a person reading. Report still prints the trips and the
+                ' breakdown; only the clock stops.
+                If activeSaveTrace IsNot Nothing Then activeSaveTrace.PauseClock()
+
                 MessageBox.Show(validationMessage, "The Following Occurred", MessageBoxButtons.OK, MessageBoxIcon.Warning)
                 FocusValidationControl(firstMissingControl)
                 Return False
@@ -1934,7 +1983,9 @@ Namespace SDC.Framework
                     Dim message = If(String.IsNullOrWhiteSpace(saveError),
                                      "THE RECORD COULD NOT BE SAVED.",
                                      "SAVE FAILED: " & saveError)
+                    PauseSaveClock()
                     MessageBox.Show(Me, message.ToUpperInvariant(), "SAVE FAILED", MessageBoxButtons.OK, MessageBoxIcon.Error)
+                    ResumeSaveClock()
                 End If
             End If
 

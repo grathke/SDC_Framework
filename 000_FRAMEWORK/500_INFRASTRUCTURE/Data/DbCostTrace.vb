@@ -98,6 +98,42 @@ Namespace SDC.Framework
         End Property
 
         ''' <summary>
+        ''' Holds the clock while a dialog is on screen, for work that raises one mid-measurement.
+        '''
+        ''' The whole point of a measurement is that it measures the work. A refused save showed the
+        ''' user a list of empty required fields and then reported 2,441ms - almost all of it
+        ''' somebody reading a message, and none of it anything the application did. The same fault
+        ''' was found on the delete and the restore on 2026-09-22, where placing the trace around the
+        ''' click handler read 2,174ms and 4,790ms of confirmation dialogs. Those two were solved by
+        ''' starting the trace after the dialog. The save cannot be: its dialogs are raised from
+        ''' inside the steps being measured, and one of them - the concurrency overwrite - is
+        ''' followed by more work that must still be counted.
+        '''
+        ''' Pause immediately before the dialog and resume immediately after. A path that returns
+        ''' straight after its dialog needs no resume; a paused clock reports what it accumulated.
+        ''' Pausing twice, resuming without pausing, or either after Report, all do nothing.
+        ''' </summary>
+        Friend Sub PauseClock()
+            Try
+                If wholeTimer IsNot Nothing AndAlso wholeTimer.IsRunning Then wholeTimer.Stop()
+                If stepTimer IsNot Nothing AndAlso stepTimer.IsRunning Then stepTimer.Stop()
+            Catch
+                ' Measuring must never cost somebody their save.
+            End Try
+        End Sub
+
+        ''' <summary>Starts the clock again after a dialog, for the work that follows it.</summary>
+        Friend Sub ResumeClock()
+            Try
+                If reported Then Return
+                If wholeTimer IsNot Nothing AndAlso Not wholeTimer.IsRunning Then wholeTimer.Start()
+                If stepTimer IsNot Nothing AndAlso Not stepTimer.IsRunning Then stepTimer.Start()
+            Catch
+                ' Measuring must never cost somebody their save.
+            End Try
+        End Sub
+
+        ''' <summary>
         ''' Closes off a step and names it.
         '''
         ''' Steps that cost nothing are left out. A breakdown of fifteen entries, eleven of them
