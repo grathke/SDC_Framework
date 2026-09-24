@@ -23,6 +23,13 @@ Namespace SDC.Framework
         ''' </summary>
         Public Property DefaultValue As String = String.Empty
 
+        ''' <summary>
+        ''' When the pair was made, relative to the others: the middle grid, the Check tab and a
+        ''' Saved Import list pairs in this order, so a new one lands at the end rather than wherever
+        ''' its column sits in the table (Glenn, 2026-09-24). Meaningful only while IsUsed.
+        ''' </summary>
+        Public Property MappedOrder As Integer
+
         Public ReadOnly Property IsUsed As Boolean
             Get
                 Return SourceColumn <> String.Empty OrElse DefaultValue.Trim() <> String.Empty
@@ -60,6 +67,13 @@ Namespace SDC.Framework
 
         ''' <summary>Things done to the row that are not faults - a user name numbered, a PIN made.</summary>
         Public ReadOnly Property Notes As New List(Of String)()
+
+        ''' <summary>
+        ''' Somebody already in the registration who looks like this person - by name, by email or
+        ''' both. Never a problem: two people can share a name, and a department can share an
+        ''' address (Glenn, 2026-09-24). Import asks Yes or No when there are any, and that is all.
+        ''' </summary>
+        Public ReadOnly Property Warnings As New List(Of String)()
 
         Public Property EmployeeId As Integer
 
@@ -122,8 +136,23 @@ Namespace SDC.Framework
         ''' name and password, which are always filled - from the file or generated.
         ''' </summary>
         Public Function ActiveMappings() As List(Of ImportFieldMapping)
-            Return Mappings.Where(Function(m) m.IsUsed OrElse m.Target.GeneratedWhenBlank).ToList()
+            Return Mappings.Where(Function(m) m.IsUsed OrElse m.Target.GeneratedWhenBlank).
+                            OrderBy(Function(m) If(m.IsUsed, m.MappedOrder, Integer.MaxValue)).ToList()
         End Function
+
+        ''' <summary>The pairs made so far, in the order they were made.</summary>
+        Public Function UsedMappings() As List(Of ImportFieldMapping)
+            Return Mappings.Where(Function(m) m.IsUsed).OrderBy(Function(m) m.MappedOrder).ToList()
+        End Function
+
+        ''' <summary>
+        ''' Puts a pair that has just been made after every other one. Call it only for a field that
+        ''' was not mapped before - mapping a field again replaces what it had and keeps its place.
+        ''' </summary>
+        Public Sub PlaceLast(mapping As ImportFieldMapping)
+            Dim others = Mappings.Where(Function(m) m IsNot mapping AndAlso m.IsUsed).ToList()
+            mapping.MappedOrder = If(others.Count = 0, 1, others.Max(Function(m) m.MappedOrder) + 1)
+        End Sub
 
         ''' <summary>
         ''' Unmaps every field whose file column is not in these headings - a different file, or
@@ -290,6 +319,71 @@ Namespace SDC.Framework
             Return target.DisplayName
         End Function
 
+        ''' <summary>
+        ''' Marks each row that looks like somebody already in the registration. Name and email
+        ''' together is "likely already an employee"; either alone is worth a look and no more.
+        ''' Warnings only - nothing here stops an import.
+        ''' </summary>
+        ''' <param name="existing">The registration's people: first name, last name and email.</param>
+        Public Sub FlagLikelyDuplicates(existing As IEnumerable(Of (FirstName As String, LastName As String, Email As String)))
+            Dim byName As New Dictionary(Of String, List(Of (FirstName As String, LastName As String, Email As String)))(StringComparer.OrdinalIgnoreCase)
+            Dim byEmail As New Dictionary(Of String, List(Of (FirstName As String, LastName As String, Email As String)))(StringComparer.OrdinalIgnoreCase)
+            For Each person In existing
+                AddTo(byName, NameKey(person.FirstName, person.LastName), person)
+                AddTo(byEmail, Trimmed(person.Email), person)
+            Next
+
+            For Each row In Rows
+                row.Warnings.Clear()
+
+                Dim name = NameKey(row.ValueOf(FirstNameKey), row.ValueOf(LastNameKey))
+                Dim email = Trimmed(row.ValueOf(EmailKey))
+                If email = String.Empty Then email = Trimmed(row.ValueOf(LoginEmailKey))
+
+                Dim sameName As List(Of (FirstName As String, LastName As String, Email As String)) = Nothing
+                Dim sameEmail As List(Of (FirstName As String, LastName As String, Email As String)) = Nothing
+                Dim hasName = name <> String.Empty AndAlso byName.TryGetValue(name, sameName)
+                Dim hasEmail = email <> String.Empty AndAlso byEmail.TryGetValue(email, sameEmail)
+
+                If hasName AndAlso sameName.Any(Function(p) String.Equals(Trimmed(p.Email), email, StringComparison.OrdinalIgnoreCase) AndAlso email <> String.Empty) Then
+                    row.Warnings.Add("likely already an employee - same name and email")
+                ElseIf hasName Then
+                    row.Warnings.Add("an employee with this name already exists")
+                ElseIf hasEmail Then
+                    Dim other = sameEmail(0)
+                    row.Warnings.Add("email already used by " & (Trimmed(other.FirstName) & " " & Trimmed(other.LastName)).Trim())
+                End If
+            Next
+        End Sub
+
+        Private Shared Sub AddTo(index As Dictionary(Of String, List(Of (FirstName As String, LastName As String, Email As String))),
+                                 key As String,
+                                 person As (FirstName As String, LastName As String, Email As String))
+            If key = String.Empty Then Return
+            Dim list As List(Of (FirstName As String, LastName As String, Email As String)) = Nothing
+            If Not index.TryGetValue(key, list) Then
+                list = New List(Of (FirstName As String, LastName As String, Email As String))()
+                index(key) = list
+            End If
+            list.Add(person)
+        End Sub
+
+        Private Shared Function Trimmed(text As String) As String
+            Return If(text, String.Empty).Trim()
+        End Function
+
+        ''' <summary>First and last together, or nothing when either is missing - a surname alone matches too much.</summary>
+        Private Shared Function NameKey(first As String, last As String) As String
+            If Trimmed(first) = String.Empty OrElse Trimmed(last) = String.Empty Then Return String.Empty
+            Return Trimmed(first) & "|" & Trimmed(last)
+        End Function
+
+        Public ReadOnly Property WarningCount As Integer
+            Get
+                Return Enumerable.Count(Rows, Function(r) r.Warnings.Count > 0)
+            End Get
+        End Property
+
         Public ReadOnly Property ReadyCount As Integer
             Get
                 Return Enumerable.Count(Rows, Function(r) r.IsReady)
@@ -366,7 +460,7 @@ Namespace SDC.Framework
         ''' </param>
         Public Function MappingToJson(hasHeaderRow As Boolean, columns As IEnumerable(Of String),
                                       Optional roleId As Integer = 0) As String
-            Dim fields = Mappings.Where(Function(m) m.IsUsed).
+            Dim fields = UsedMappings().
                                   Select(Function(m) New Dictionary(Of String, String) From {
                                       {"target", m.Target.Key},
                                       {"source", m.SourceColumn},
@@ -403,9 +497,13 @@ Namespace SDC.Framework
                     Return missing
                 End If
 
+                ' The array is saved in the order the pairs were made, and read back the same way.
+                Dim position = 0
                 For Each field In fields.EnumerateArray()
                     Dim mapping = MappingFor(ReadString(field, "target"))
                     If mapping Is Nothing Then Continue For
+                    position += 1
+                    mapping.MappedOrder = position
 
                     Dim sourceHeading = ReadString(field, "source")
                     If sourceHeading <> String.Empty Then

@@ -420,17 +420,38 @@ check before copying this entry for anything else.
 - placement: `Dashboard_Application` grid cell (2, 5), and `Dashboard_Company` grid cell (2, 1)
 - ActionType: Page - opens a dialog rather than a `_B`/`_U` pair
 - target: `FW_EmployeeImport`, in `000_FRAMEWORK\030_EMPLOYEES\`
-- caption source: fixed (`Import Employees`)
+- caption source: fixed (`Import Files`, renamed from Import Employees on 2026-09-24 - the tile is
+  meant to lead to more than one kind of import; today it still opens the employee import directly)
 - icon file: `Color_Open.png`, a stand-in until there is an import icon
 - visibility rule: none of its own - the two dashboards carrying it are reached only by an App
   Admin and a Company Admin. That is not the security: the page refuses anyone else on open, and
   `DataAccess.RequireEmployeeImportAccess` refuses the write, on the same two session roles.
-  `FW_RoleDetails.Can_Import` is deliberately not consulted (decided 2026-09-24). Only somebody
-  with View All Records on FW_Employees may choose a registration; everyone else imports into
-  their own.
+  `FW_RoleDetails.Can_Import` is deliberately not consulted (decided 2026-09-24). Only an
+  Application Admin may choose a registration; a Company Admin imports into the session's own and
+  sees only its Saved Imports and Past Imports (`DataAccess.MayImportIntoAnyRegistration`, by role,
+  not View All Records - changed 2026-09-24).
 - click behavior: opens the page with the dashboard's `currentUser` and `accessProfile`. Three
   tabs - source, field mapping with defaults and saved templates, and a row-by-row check that must
   pass before Import. The write is all-or-nothing, and a results file with every user name and
   password is handed over at the end.
 - note: the same ActionKey on both dashboards, so a saved position on one does not move the other
   - positions are keyed by dashboard as well as ActionKey.
+
+## Button_PastImports (on FW_EmployeeImport)
+
+- placement: the import page's Source tab, beside the Saved Imports combo and next after it in the
+  Tab order. It was a tile on both dashboards for one build and
+  was taken off on 2026-09-24: Glenn - "we are losing space on the app admin dashboard"; Past
+  Imports belongs to the import, not beside it.
+- ActionType: Page
+- target: `FW_ImportBatches_B`, in `000_FRAMEWORK_EMPLOYEES` - browse-only, no `_U`
+- caption source: fixed (`Past Imports...`); the page's title is `FW_Pages.Table_Alias`
+  (`Past Imports`), and its four commands keep the registration's own CRUD captions
+- icon file: none - a text button
+- visibility rule: none of its own - the import page is reached only by an App Admin or a Company
+  Admin. The Past Imports page refuses anyone else on open, and every read and write goes through
+  `DataAccess.RequireEmployeeImportAccess` against the batch's own registration.
+- click behavior: opens the page over the import with the import's `currentUser` and
+  `accessProfile`. Create opens a new import; Read (and double-click) shows the batch's people;
+  Update edits the note; Delete is Undo Import - a physical delete behind a counted Yes/No and a
+  typed UNDO.

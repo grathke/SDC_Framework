@@ -307,7 +307,9 @@ Known exceptions in the current codebase, to be resolved rather than copied:
   argument for it. Renaming one reaches its `FW_Pages` row, its role and layout rows and every
   caller, so it happens when the page is being worked on anyway.
 - Browse-only pages with no `_U` partner: `FW_AuditTrail_B`, `FW_HD_Admin_B`,
-  `FW_HD_AdminDashboard_B`, `FW_UserAccessDiagnostic_B`.
+  `FW_HD_AdminDashboard_B`, `FW_UserAccessDiagnostic_B`,
+  `FW_ImportBatches_B` (Past Imports - its commands open a new import, a people page, a note and
+  Undo Import).
 - `FW_HD_Issues_B` and `FW_HD_Issues_Support_B` share a single `FW_HD_Issues_U`.
 - **`FW_UserAccessDiagnostic_B` is hand-written, not generated.** It was generated once on
   2026-08-19 and has grown to 878 lines since, in the single file a browse page was before the

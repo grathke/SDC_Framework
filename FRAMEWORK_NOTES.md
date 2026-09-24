@@ -410,7 +410,9 @@ So "caption" means two different things, but both default to the session: a **fi
 **The registration selector is the one narrow exception, and it is admin-initiated.** Every `_B`
 page uses it by default - only `FW_Registration_B` opts out - but it is shown *and populated* only
 when the session has `ViewAllRecords` on that table and admin controls are visible, and it is
-**seeded to the session's registration**. Until someone actively changes it,
+**seeded to the session's registration**. The permission half is `MayChooseRegistration()`,
+overridable: `FW_ImportBatches_B` answers it by role (App Admin only, through
+`DataAccess.MayImportIntoAnyRegistration`) because nobody is granted permissions on its table. Until someone actively changes it,
 `TryGetActiveRegistrationId` finds nothing selected and falls through to the session. Changing it
 re-scopes the **data, QBE Find and the CRUD button captions** only.
 

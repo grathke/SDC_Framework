@@ -420,6 +420,14 @@ Namespace SDC.Framework
 
             If menuDialogResult = DialogResult.Cancel Then
                 SessionState.ClearSession()
+
+                ' The menu also returns Cancel when the application is shutting down underneath
+                ' it - a Thinfinity session whose browser went away runs Application.Exit, which
+                ' closes this form while the menu is still open. Showing a closed form throws
+                ' ObjectDisposedException (FW_ErrorLog #8, 2026-09-24). There is nobody left to
+                ' sign in again, so there is nothing to show.
+                If Me.IsDisposed OrElse Me.Disposing Then Return
+
                 Me.Show()
                 Me.Activate()
                 statusLabel.Text = String.Empty

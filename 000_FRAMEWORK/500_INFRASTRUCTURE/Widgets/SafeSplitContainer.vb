@@ -41,6 +41,13 @@ Namespace SDC.Framework
     ''' condition in the delivery path. Not proven, and deliberately left as a description of the
     ''' evidence rather than a second guess dressed as a cause.
     '''
+    ''' **Tried and refuted, 2026-09-24: "the window cannot take paint yet".** Before each first
+    ''' layout the control painted the splitter itself - the same solid-colour FillRectangle the base
+    ''' does, since nothing here sets a BackgroundImage - and deferred the layout if that failed. It
+    ''' never failed: the control's own paint succeeded and the base's, a moment later in the same
+    ''' layout, still threw (FW_ErrorLog #7 went from 26 to 28 on the first run). Whatever it is sits
+    ''' inside the base layout, not in the window's state beforehand. Removed; do not re-add it.
+    '''
     ''' **Swallowing an exception is normally the wrong instinct.** It is right here because what
     ''' failed is a repaint of a splitter bar: cosmetic, redone by the next layout pass, and
     ''' already lost by the time anybody could react. The alternative is a dialog about GDI+ on

@@ -1088,6 +1088,12 @@ Namespace SDC.Framework
                 readButton.Enabled = True
                 updateButton.Enabled = True
                 deleteButton.Enabled = True
+
+                ' Open, as the permission path below opens it for anyone who may use QBE - and on
+                ' this path everybody may. Left at its default of closed, a page gated by role
+                ' opened with its search hidden and its grid empty until Find (FW_ImportBatches_B,
+                ' 2026-09-24).
+                qbeExpanded = True
                 LayoutQbeSection()
                 Return
             End If
@@ -5358,8 +5364,7 @@ Namespace SDC.Framework
         End Sub
 
         Private Sub UpdateRegistrationSelectorVisibility(adminControlsVisible As Boolean)
-            Dim canChooseRegistration = accessProfile IsNot Nothing AndAlso
-                                         accessProfile.Can(accessTableName, AccessCapability.ViewAllRecords)
+            Dim canChooseRegistration = MayChooseRegistration()
             Dim showRegistrationSelector = UsesRegistrationSelector() AndAlso
                                            adminControlsVisible AndAlso
                                            canChooseRegistration
@@ -5375,6 +5380,21 @@ Namespace SDC.Framework
             ' it was placed for a width and a word that no longer applied.
             LayoutQbeSection()
         End Sub
+
+        ''' <summary>
+        ''' Whether this session may choose a registration in the selector: View All Records on the
+        ''' page's table, for every page but one that says otherwise.
+        '''
+        ''' Overridden by a page whose scope is decided by role rather than by a permission row -
+        ''' FW_ImportBatches_B, where an Application Admin chooses and everyone else is held to the
+        ''' session's registration, because nobody is granted permissions on FW_ImportBatches. The
+        ''' selector is still shown only with admin controls visible, and a hidden selector still
+        ''' means the session's registration (TryGetActiveRegistrationId).
+        ''' </summary>
+        Protected Overridable Function MayChooseRegistration() As Boolean
+            Return accessProfile IsNot Nothing AndAlso
+                   accessProfile.Can(accessTableName, AccessCapability.ViewAllRecords)
+        End Function
 
         ''' <summary>
         ''' Whether this page offers "All Registrations" in the selector, meaning every company at

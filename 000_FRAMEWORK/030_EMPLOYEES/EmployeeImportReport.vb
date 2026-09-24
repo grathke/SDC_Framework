@@ -227,7 +227,9 @@ Namespace SDC.Framework
                                            registrationName As String,
                                            roleName As String,
                                            timeZoneName As String,
-                                           savedImportName As String) As String
+                                           savedImportName As String,
+                                           Optional batchId As Integer = 0,
+                                           Optional batchName As String = "") As String
             Dim html As New StringBuilder()
             Dim employees = ImportTargetSchema.EmployeesTable
             Dim imported = plan.Rows.Where(Function(r) r.EmployeeId > 0).ToList()
@@ -240,6 +242,11 @@ Namespace SDC.Framework
             html.Append("<div class=""sub"">").Append(Enc(fileName))
             If Not String.IsNullOrWhiteSpace(savedImportName) Then html.Append(" &middot; Saved Import ").Append(Enc(savedImportName))
             html.Append(" &middot; ").Append(Enc(DateTime.Now.ToString("yyyy-MM-dd HH:mm", CultureInfo.InvariantCulture))).Append("</div>")
+            If batchId > 0 Then
+                html.Append("<div class=""sub"">Import #").Append(batchId.ToString(CultureInfo.InvariantCulture)).
+                     Append(" &middot; ").Append(Enc(batchName)).
+                     Append(" - found under Past Imports, where it can be undone</div>")
+            End If
 
             html.Append("<div class=""ok"">Everyone below has the role <b>").Append(Enc(roleName)).Append("</b>")
             If Not String.IsNullOrWhiteSpace(timeZoneName) Then
@@ -295,6 +302,67 @@ Namespace SDC.Framework
             End If
 
             Return String.Join("; ", parts)
+        End Function
+
+        ''' <summary>
+        ''' Past Imports' People page: one batch, who was in it, and whether each is still here.
+        ''' No passwords - they left with the results page and exist nowhere else.
+        ''' </summary>
+        Friend Shared Function BatchPeopleHtml(batch As DataRow, people As DataTable) As String
+            Dim html As New StringBuilder()
+            Dim batchId = Convert.ToInt32(batch("ImportBatchID"), CultureInfo.InvariantCulture)
+            AppendPageStart(html, "Import #" & batchId.ToString(CultureInfo.InvariantCulture))
+
+            html.Append("<h1>Import #").Append(batchId.ToString(CultureInfo.InvariantCulture)).
+                 Append(" &middot; ").Append(Enc(Text(batch, "BatchName"))).Append("</h1>")
+            html.Append("<div class=""sub"">").Append(Enc(Text(batch, "RegName")))
+            If Text(batch, "FileName") <> String.Empty Then html.Append(" &middot; ").Append(Enc(Text(batch, "FileName")))
+            If Text(batch, "SavedImportName") <> String.Empty Then html.Append(" &middot; Saved Import ").Append(Enc(Text(batch, "SavedImportName")))
+            html.Append(" &middot; imported ").Append(Enc(Stamp(batch("ImportedOn"))))
+            If Text(batch, "ImportedByName") <> String.Empty Then html.Append(" by ").Append(Enc(Text(batch, "ImportedByName")))
+            html.Append("</div>")
+
+            html.Append("<div class=""ok""><b>Note:</b> ").Append(EncMultiline(Text(batch, "Note"))).Append("</div>")
+
+            If Not Convert.IsDBNull(batch("UndoneOn")) Then
+                html.Append("<div class=""box"">Undone ").Append(Enc(Stamp(batch("UndoneOn"))))
+                If Text(batch, "UndoneByName") <> String.Empty Then html.Append(" by ").Append(Enc(Text(batch, "UndoneByName")))
+                html.Append(" - ").Append(Enc(Text(batch, "UndoneCount"))).Append(" removed. The people below no longer exist.</div>")
+            End If
+
+            html.Append("<table><tr><th>Row</th><th>First Name</th><th>Last Name</th><th>User Name</th><th>Employee ID</th><th>Now</th></tr>")
+            For Each person As DataRow In people.Rows
+                Dim state As String
+                If Not Convert.IsDBNull(person("RemovedOn")) Then
+                    state = "removed " & Stamp(person("RemovedOn"))
+                ElseIf Convert.ToBoolean(person("StillPresent"), CultureInfo.InvariantCulture) Then
+                    state = "here"
+                Else
+                    state = "deleted since"
+                End If
+
+                html.Append(If(state = "here", "<tr>", "<tr class=""gone"">"))
+                html.Append("<td>").Append(Enc(Text(person, "SourceRow"))).Append("</td>")
+                html.Append("<td>").Append(Enc(Text(person, "FirstName"))).Append("</td>")
+                html.Append("<td>").Append(Enc(Text(person, "LastName"))).Append("</td>")
+                html.Append("<td>").Append(Enc(Text(person, "UserName"))).Append("</td>")
+                html.Append("<td>").Append(Enc(Text(person, "EmployeeID"))).Append("</td>")
+                html.Append("<td>").Append(Enc(state)).Append("</td>")
+                html.Append("</tr>")
+            Next
+            html.Append("</table><style>tr.gone td{color:#888;}</style></body></html>")
+            Return html.ToString()
+        End Function
+
+        Private Shared Function Text(row As DataRow, column As String) As String
+            If Not row.Table.Columns.Contains(column) OrElse Convert.IsDBNull(row(column)) Then Return String.Empty
+            Return Convert.ToString(row(column), CultureInfo.InvariantCulture)
+        End Function
+
+        ''' <summary>The database keeps UTC, and says so rather than passing it off as local time.</summary>
+        Private Shared Function Stamp(value As Object) As String
+            If value Is Nothing OrElse Convert.IsDBNull(value) Then Return String.Empty
+            Return Convert.ToDateTime(value, CultureInfo.InvariantCulture).ToString("yyyy-MM-dd HH:mm", CultureInfo.InvariantCulture) & " UTC"
         End Function
 
         Private Shared Function Enc(text As String) As String

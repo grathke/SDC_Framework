@@ -4276,19 +4276,31 @@ Namespace SDC.Framework
         ''' employee. Nothing, or an entry of Nothing, when there are none.
         ''' </param>
         ''' <param name="failedIndex">The row that failed, or -1. Set before the exception is rethrown.</param>
+        ''' <param name="batch">
+        ''' The import's name, note and origin. Required: the batch row is the transaction's first
+        ''' write and one row per person follows the last, so an import that commits can always be
+        ''' found and undone from Past Imports, and one that rolls back leaves nothing behind.
+        ''' </param>
+        ''' <param name="batchId">The batch written, once the import has committed.</param>
         ''' <returns>The new EmployeeIDs, in row order.</returns>
-        Public Shared Function ImportEmployees(registrationId As Integer,
+        Friend Shared Function ImportEmployees(registrationId As Integer,
                                                roleId As Integer,
                                                records As IList(Of Dictionary(Of String, Object)),
                                                loginValues As IList(Of Dictionary(Of String, Object)),
                                                profile As AccessProfile,
                                                actingUserId As Integer,
-                                               ByRef failedIndex As Integer) As List(Of Integer)
+                                               batch As ImportBatchRequest,
+                                               ByRef failedIndex As Integer,
+                                               ByRef batchId As Integer) As List(Of Integer)
             failedIndex = -1
+            batchId = 0
             ReadOnlyPreview.Refuse("The import")
             RequireEmployeeImportAccess(profile, registrationId)
 
             If roleId <= 0 Then Throw New InvalidOperationException("Choose the role the imported employees are given.")
+            If batch Is Nothing OrElse String.IsNullOrWhiteSpace(batch.BatchName) OrElse String.IsNullOrWhiteSpace(batch.Note) Then
+                Throw New InvalidOperationException("Give the import a name and a note - they are how it is found, and undone, later.")
+            End If
 
             ' The registration's own zone, read here rather than taken from the caller: it is a
             ' fact about the company the people are joining, and the page only displays it. Decided
@@ -4314,6 +4326,8 @@ Namespace SDC.Framework
                 conn.Open()
                 Using tx = conn.BeginTransaction()
                     Try
+                        Dim newBatchId = ImportBatchDataAccess.Insert(conn, tx, registrationId, batch, records.Count, actingUserId)
+
                         For i = 0 To records.Count - 1
                             failedIndex = i
 
@@ -4337,8 +4351,11 @@ Namespace SDC.Framework
                                                             values, Nothing, actingUserId, login, outcome))
                         Next
 
-                        tx.Commit()
                         failedIndex = -1
+                        ImportBatchDataAccess.AddPeople(conn, tx, newBatchId, ids, batch.SourceRows)
+
+                        tx.Commit()
+                        batchId = newBatchId
                         Return ids
                     Catch
                         Try
@@ -4376,9 +4393,23 @@ Namespace SDC.Framework
         End Function
 
         ''' <summary>
+        ''' Whether this session may work in a registration other than its own - choose one in
+        ''' Import Into, see its Saved Imports and its Past Imports. An Application Admin only: a
+        ''' Company Admin works in the session's registration and nowhere else, and that drives
+        ''' everything on the import (Glenn, 2026-09-24).
+        '''
+        ''' The role, not View All Records on FW_Employees, which this used to be: a Company Admin
+        ''' role carrying that permission saw every company's Saved Imports. The single owner of
+        ''' the rule - the page, the lists and the writes all ask here.
+        ''' </summary>
+        Public Shared Function MayImportIntoAnyRegistration() As Boolean
+            Return SessionState.IsApplicationAdmin
+        End Function
+
+        ''' <summary>
         ''' Refuses an import the caller is not entitled to: not an Application or Company Admin,
-        ''' or a registration other than their own without View All Records on FW_Employees - the
-        ''' rule that decides whether a browse page shows its registration combo.
+        ''' or a registration other than their own when they are not an Application Admin
+        ''' (MayImportIntoAnyRegistration).
         '''
         ''' Shared by the import itself and by its saved mappings, which belong to a registration
         ''' in the same way and would otherwise be a way to read and delete another company's.
@@ -4393,7 +4424,7 @@ Namespace SDC.Framework
             End If
 
             Dim own = If(SessionState.IsActive AndAlso SessionState.Current.HasValue, SessionState.Current.Value.RegistrationID, 0)
-            If registrationId <> own AndAlso (profile Is Nothing OrElse Not profile.Can("FW_Employees", AccessCapability.ViewAllRecords)) Then
+            If registrationId <> own AndAlso Not MayImportIntoAnyRegistration() Then
                 Throw New UnauthorizedAccessException("You may import employees only into your own registration.")
             End If
         End Sub

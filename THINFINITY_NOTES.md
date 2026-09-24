@@ -126,6 +126,11 @@ was seamed: the second implementation may not be needed at all. The seam is not 
 the right shape if a page ever needs the explicit API of section 6 — but the default path should be
 the standard dialog with `StdDialogs` set correctly, not a parallel picker.
 
+**No file filter reaches the browser (Glenn, 2026-09-24).** VirtualUI's upload dialog shows every
+file whatever `OpenFileDialog.Filter` says, and `UploadFileEx` takes no filter at all. A page that
+wants only certain files - the employee import wants CSV or JSON - checks the extension after the
+upload, as `ImportSourceFormat` does, and says so plainly. Do not re-propose the filter as a fix.
+
 Uploads land by default in:
 
 ```

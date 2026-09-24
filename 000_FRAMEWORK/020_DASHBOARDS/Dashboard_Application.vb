@@ -109,7 +109,7 @@ Namespace SDC.Framework
             ' which is where the import starts.
             employeeImportButton = New DashboardIconButton() With {
                 .Name = "ActionKey_EmployeeImport",
-                .Text = "Import Employees",
+                .Text = "Import Files",
                 .Location = DashboardGridLayout.CellLocation(2, 5),
                 .Size = New Size(DashboardGridLayout.IconWidth, DashboardGridLayout.IconHeight),
                 .BackColor = Color.Transparent,

@@ -376,6 +376,10 @@ all-or-nothing write through the same save path as FW_Employees_U. Decided with 
 
 Deliberately left out, each worth doing only when a real file needs it:
 
+- **Other kinds of file.** The dashboard tile says Import Files (Glenn, 2026-09-24) because more
+  than employees is meant to come in through it. Which files, and whether the tile then opens a
+  chooser or the import grows a "what are you importing" step, is still to be worked out. Today
+  it opens the employee import directly.
 - **Updating people who already exist.** New people only. Matching an existing employee needs a
   key the file and the table agree on, and user name is the only one - which the numbering rule
   above would then have to stop applying.

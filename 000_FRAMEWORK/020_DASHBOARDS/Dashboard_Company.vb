@@ -142,7 +142,7 @@ Namespace SDC.Framework
             ' imports into their own registration only; the page decides that, not the tile.
             employeeImportButton = New DashboardIconButton() With {
                 .Name = "ActionKey_EmployeeImport",
-                .Text = "Import Employees",
+                .Text = "Import Files",
                 .Location = DashboardGridLayout.CellLocation(2, 1),
                 .Size = New Size(DashboardGridLayout.IconWidth, DashboardGridLayout.IconHeight),
                 .BackColor = Color.Transparent,

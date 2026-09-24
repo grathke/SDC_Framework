@@ -31,8 +31,8 @@ Namespace SDC.Framework
 
         ''' <summary>
         ''' Every Saved Import the session may use, across the registrations it may import into:
-        ''' all of them for somebody with View All Records on FW_Employees, their own otherwise -
-        ''' the same rule as the Import Into combo. Each row carries its registration and that
+        ''' all of them for an Application Admin, the session's own for a Company Admin -
+        ''' the same rule as the Import Into combo (DataAccess.MayImportIntoAnyRegistration). Each row carries its registration and that
         ''' registration's name, because the list now comes first on the page and choosing from it
         ''' sets Import Into (Glenn, 2026-09-24).
         '''
@@ -44,7 +44,7 @@ Namespace SDC.Framework
             End If
 
             Dim own = If(SessionState.IsActive AndAlso SessionState.Current.HasValue, SessionState.Current.Value.RegistrationID, 0)
-            Dim everyRegistration = profile IsNot Nothing AndAlso profile.Can("FW_Employees", AccessCapability.ViewAllRecords)
+            Dim everyRegistration = DataAccess.MayImportIntoAnyRegistration()
 
             Dim table As New DataTable("FW_SavedImports")
             Using conn = OpenConnection()

@@ -98,6 +98,12 @@ Namespace SDC.Framework
         Private checkGrid As DataGridView
         Private importButton As Button
         Private reportButton As Button
+        Private batchNameTextBox As TextBox
+        Private batchNoteTextBox As TextBox
+
+        ''' <summary>Imports of this same file that have not been undone, read with the duplicate check.</summary>
+        Private earlierImports As New List(Of String)()
+        Private pastImportsButton As Button
 
         Private closeButton As Button
 
@@ -221,7 +227,7 @@ Namespace SDC.Framework
             }
             AddHandler sourceTemplateComboBox.SelectedIndexChanged, AddressOf SourceTemplateComboBox_SelectedIndexChanged
             templateInfoLabel = New Label() With {
-                .Location = New Point(fieldLeft + 350, y + 3),
+                .Location = New Point(fieldLeft + 490, y + 3),
                 .AutoSize = True,
                 .ForeColor = Color.FromArgb(110, 110, 110)
             }
@@ -254,12 +260,6 @@ Namespace SDC.Framework
                 .Name = "Label_TimeZoneValue",
                 .Location = New Point(fieldLeft, y + 3),
                 .AutoSize = True
-            }
-            Dim timeZoneHint As New Label() With {
-                .Text = "the registration's - for everyone the file gives no time zone",
-                .Location = New Point(fieldLeft + 290, y + 3),
-                .AutoSize = True,
-                .ForeColor = Color.FromArgb(110, 110, 110)
             }
 
             y += 40
@@ -338,9 +338,20 @@ Namespace SDC.Framework
             }
             AddHandler toMapButton.Click, Sub(sender, e) tabs.SelectedTab = mapTab
 
-            sourceTab.Controls.AddRange(New Control() {templateLabel, sourceTemplateComboBox, templateInfoLabel,
+            ' Where an import is found again, and undone - the only way in (no dashboard tile, Glenn
+            ' 2026-09-24). Beside Saved Imports, because the moment somebody wonders whether a file
+            ' went in already is the moment they are choosing it.
+            pastImportsButton = New Button() With {
+                .Name = "Button_PastImports",
+                .Text = "Past Imports...",
+                .Size = New Size(130, 28),
+                .Location = New Point(fieldLeft + 350, 16)
+            }
+            AddHandler pastImportsButton.Click, AddressOf PastImportsButton_Click
+
+            sourceTab.Controls.AddRange(New Control() {pastImportsButton, templateLabel, sourceTemplateComboBox, templateInfoLabel,
                                                        registrationLabel, registrationComboBox, roleLabel, roleComboBox,
-                                                       timeZoneLabel, timeZoneValueLabel, timeZoneHint,
+                                                       timeZoneLabel, timeZoneValueLabel,
                                                        fileLabel, fileTextBox, chooseFileButton, formatHint,
                                                        headerCheckBox, delimiterLabel, delimiterComboBox,
                                                        sourceSummaryLabel, sourceGrid, toMapButton})
@@ -349,7 +360,7 @@ Namespace SDC.Framework
             ' left to the order the controls were added: this page is a plain Form, not a generated
             ' maintenance page, so there is no Tab Order manager to set it. Labels and the read-only
             ' file box are not stops.
-            Dim stops As Control() = {sourceTemplateComboBox, registrationComboBox, roleComboBox, chooseFileButton,
+            Dim stops As Control() = {sourceTemplateComboBox, pastImportsButton, registrationComboBox, roleComboBox, chooseFileButton,
                                       headerCheckBox, delimiterComboBox, sourceGrid, toMapButton}
             For i = 0 To stops.Length - 1
                 stops(i).TabIndex = i
@@ -573,10 +584,31 @@ Namespace SDC.Framework
             AddHandler reportButton.Click, AddressOf ReportButton_Click
 
             y += 40
-            checkGrid = NewGrid(New Point(left, y), New Size(tabs.Width - 44, tabs.Height - y - 84))
+            checkGrid = NewGrid(New Point(left, y), New Size(tabs.Width - 44, tabs.Height - y - 124))
             checkGrid.ReadOnly = True
             checkGrid.SelectionMode = DataGridViewSelectionMode.FullRowSelect
             checkGrid.AutoSizeColumnsMode = DataGridViewAutoSizeColumnsMode.None
+
+            ' The import's name and note: required, and asked for here, at the gateway, because an
+            ' import that commits becomes a batch under Past Imports and this is how it is found -
+            ' and undone - later (Glenn, 2026-09-24). Import stays disabled until both are given.
+            Dim batchTop = tabs.Height - 114
+            Dim batchNameLabel = RequiredLabel("Import Name", New Point(left, batchTop + 3))
+            batchNameTextBox = New TextBox() With {
+                .Name = "TextBox_BatchName",
+                .Location = New Point(left + 100, batchTop),
+                .Width = 260,
+                .MaxLength = 100
+            }
+            Dim batchNoteLabel = RequiredLabel("Note", New Point(left + 380, batchTop + 3))
+            batchNoteTextBox = New TextBox() With {
+                .Name = "TextBox_BatchNote",
+                .Location = New Point(left + 430, batchTop),
+                .Width = tabs.Width - 44 - 430,
+                .MaxLength = 1000
+            }
+            AddHandler batchNameTextBox.TextChanged, Sub(sender, e) UpdateImportAvailability()
+            AddHandler batchNoteTextBox.TextChanged, Sub(sender, e) UpdateImportAvailability()
 
             Dim backButton As New Button() With {.Text = "< Back", .Size = New Size(100, 30), .Location = New Point(left, tabs.Height - 76)}
             AddHandler backButton.Click, Sub(sender, e) tabs.SelectedTab = mapTab
@@ -591,7 +623,9 @@ Namespace SDC.Framework
             }
             AddHandler importButton.Click, AddressOf ImportButton_Click
 
-            checkTab.Controls.AddRange(New Control() {checkSummaryLabel, reportButton, checkGrid, backButton, importButton})
+            checkTab.Controls.AddRange(New Control() {checkSummaryLabel, reportButton, checkGrid,
+                                                      batchNameLabel, batchNameTextBox, batchNoteLabel, batchNoteTextBox,
+                                                      backButton, importButton})
         End Sub
 
 #End Region
@@ -654,14 +688,13 @@ Namespace SDC.Framework
         End Sub
 
         ''' <summary>
-        ''' The registration combo, by the rule the browse pages use: shown only to somebody with
-        ''' View All Records on FW_Employees, and filled by the same helper. Anybody else imports
-        ''' into their own registration and is not offered a choice.
+        ''' The registration combo: shown to an Application Admin only, and filled by the helper the
+        ''' browse pages use. A Company Admin imports into the session's registration, sees no
+        ''' combo, and everything on the page follows that registration (Glenn, 2026-09-24).
         ''' </summary>
         Private Sub LoadRegistrations()
             Dim own = OwnRegistrationId()
-            Dim canChoose = accessProfile IsNot Nothing AndAlso
-                            accessProfile.Can(EmployeeImportPlan.TargetTableName, AccessCapability.ViewAllRecords)
+            Dim canChoose = DataAccess.MayImportIntoAnyRegistration()
 
             registrationLabel.Visible = canChoose
             registrationComboBox.Visible = canChoose
@@ -1138,12 +1171,22 @@ Namespace SDC.Framework
             suppressGridEvents = True
             Try
                 mappedGrid.Rows.Clear()
-                For Each mapping In plan.Mappings.Where(Function(m) m.IsUsed)
+                Dim doubtful = DoubtfulPairs()
+                For Each mapping In plan.UsedMappings()
                     Dim from = If(mapping.SourceColumn <> String.Empty, mapping.SourceColumn, "(default)")
                     Dim index = mappedGrid.Rows.Add(EmployeeImportPlan.Caption(mapping.Target), from, mapping.DefaultValue, SampleFor(mapping))
                     Dim row = mappedGrid.Rows(index)
                     row.Tag = mapping
                     If mapping.Target.IsRequired Then row.Cells("Field").Style.Font = New Font(mappedGrid.Font, FontStyle.Bold)
+
+                    ' A column that names another field, kept on purpose: still marked, so the
+                    ' choice stays in sight rather than being made once and forgotten.
+                    Dim current = mapping
+                    Dim doubt = doubtful.FirstOrDefault(Function(p) p.Mapping Is current)
+                    If doubt.Named IsNot Nothing Then
+                        row.Cells("From").Style.BackColor = Color.FromArgb(255, 235, 190)
+                        row.Cells("From").ToolTipText = "'" & mapping.SourceColumn & "' looks like it is for " & EmployeeImportPlan.Caption(doubt.Named)
+                    End If
 
                     Dim sample = Convert.ToString(row.Cells("Sample").Value, CultureInfo.InvariantCulture)
                     If sample.Contains("   (") AndAlso Not mapping.Target.GeneratedWhenBlank Then
@@ -1290,9 +1333,15 @@ Namespace SDC.Framework
         End Sub
 
         ''' <summary>
-        ''' A choice clicked: the box filled, ready to Map. A file column already chosen on the
-        ''' right stays chosen - the choice is then the default for its blanks. With nothing chosen
-        ''' there, the default entry is picked, and the choice is the whole value.
+        ''' A choice clicked is mapped at once, and shows in the middle grid with what the first row
+        ''' becomes. It used to fill the box and wait for Map, and a choice clicked but never mapped
+        ''' was dropped without a word - a User Name pattern then imported as names made from the
+        ''' person's name instead (Glenn, 2026-09-24). A choice is complete as it stands; a value
+        ''' typed, or a pattern built with "more...", still waits for Map or Enter.
+        '''
+        ''' A file column already chosen on the right stays chosen - the choice is then the default
+        ''' for its blanks. With nothing chosen there, the default entry is picked, and the choice is
+        ''' the whole value.
         ''' </summary>
         Private Sub UseDefaultChoice(value As String)
             If sourceList.SelectedItem Is Nothing Then
@@ -1300,8 +1349,7 @@ Namespace SDC.Framework
                 If entry IsNot Nothing Then sourceList.SelectedItem = entry
             End If
             defaultValueTextBox.Text = value
-            defaultValueTextBox.Focus()
-            defaultValueTextBox.SelectionStart = defaultValueTextBox.TextLength
+            MapSelected()
         End Sub
 
         Private Sub ShowUserNameTokens()
@@ -1444,6 +1492,10 @@ Namespace SDC.Framework
                 Return
             End If
 
+            ' Asked before anything changes: a field mapped for the first time goes to the end of
+            ' the middle grid, and one mapped again keeps its place.
+            Dim wasMapped = target.Mapping.IsUsed
+
             If chosen.IsDefaultEntry Then
                 Dim value = defaultValueTextBox.Text.Trim()
                 If value = String.Empty Then
@@ -1475,6 +1527,7 @@ Namespace SDC.Framework
                 target.Mapping.SourceColumn = chosen.Heading
                 target.Mapping.DefaultValue = defaultValueTextBox.Text.Trim()
             End If
+            If Not wasMapped Then plan.PlaceLast(target.Mapping)
             defaultValueTextBox.Clear()
 
             mappingChangedSinceRows = True
@@ -1677,7 +1730,7 @@ Namespace SDC.Framework
         Private Sub UpdateTemplateInfo()
             Dim row = ChosenTemplate()
             If row Is Nothing Then
-                templateInfoLabel.Text = If(sourceTemplateComboBox.Items.Count > 1, "optional - brings back a file and its mapping", "none saved yet")
+                templateInfoLabel.Text = If(sourceTemplateComboBox.Items.Count > 1, String.Empty, "none saved yet")
                 Return
             End If
 
@@ -1807,6 +1860,7 @@ Namespace SDC.Framework
             ' The template's own mapping, over its own columns - ready to change on Map Fields.
             plan.ApplyJson(json, templateHeadings)
             mappingChangedSinceRows = True
+            QuestionDoubtfulPairs()
             RefreshMapping()
             toMapButton.Enabled = True
 
@@ -1815,6 +1869,49 @@ Namespace SDC.Framework
                                       "': " & Plural(templateHeadings.Count, "column") & ", " &
                                       Plural(Enumerable.Count(plan.Mappings, Function(m) m.IsUsed), "field") & " mapped. " &
                                       "Next opens the mapping to change it; choose the file to import."
+        End Sub
+
+        ''' <summary>
+        ''' The pairs whose file column plainly names a different field - Email filled from "User
+        ''' Name". Map asks about exactly this before making such a pair; a Saved Import brings its
+        ''' pairs back without Map, and on 2026-09-24 one saved that way came back every time it
+        ''' was chosen and turned four rows red. The same test as Map, by HeadingNamesOtherField.
+        ''' </summary>
+        Private Function DoubtfulPairs() As List(Of (Mapping As ImportFieldMapping, Named As ImportTargetColumn))
+            Return plan.UsedMappings().
+                        Where(Function(m) m.SourceColumn <> String.Empty).
+                        Select(Function(m) (Mapping:=m, Named:=HeadingNamesOtherField(m.SourceColumn, m.Target))).
+                        Where(Function(p) p.Named IsNot Nothing).ToList()
+        End Function
+
+        ''' <summary>
+        ''' Asked once, when a Saved Import is applied: keep the doubtful pairs, or unmap them to be
+        ''' mapped again. Kept ones stay marked in the middle grid, so the choice is still visible.
+        ''' </summary>
+        Private Sub QuestionDoubtfulPairs()
+            Dim doubtful = DoubtfulPairs()
+            If doubtful.Count = 0 Then Return
+
+            Dim lines = doubtful.Select(Function(p) "   " & EmployeeImportPlan.Caption(p.Mapping.Target) & " is filled from the column '" &
+                                                     p.Mapping.SourceColumn & "', which looks like it is for " &
+                                                     EmployeeImportPlan.Caption(p.Named))
+            If MessageBox.Show(Me,
+                               "This Saved Import pairs:" & Environment.NewLine & Environment.NewLine &
+                               String.Join(Environment.NewLine, lines) & Environment.NewLine & Environment.NewLine &
+                               "Keep " & If(doubtful.Count = 1, "it", "them") & " as saved?" & Environment.NewLine &
+                               "No unmaps " & If(doubtful.Count = 1, "it", "them") & ", to be mapped again on Map Fields.",
+                               "Check The Saved Import", MessageBoxButtons.YesNo, MessageBoxIcon.Question,
+                               MessageBoxDefaultButton.Button2) = DialogResult.Yes Then
+                Return
+            End If
+
+            ' The column goes; a default typed for its blanks goes with it, because it was only
+            ' ever the fallback for that column.
+            For Each pair In doubtful
+                pair.Mapping.SourceColumn = String.Empty
+                pair.Mapping.DefaultValue = String.Empty
+            Next
+            mappingChangedSinceRows = True
         End Sub
 
         ''' <summary>Back to nothing chosen: no columns, no mapping, no Map Fields until something is.</summary>
@@ -1845,6 +1942,7 @@ Namespace SDC.Framework
             Try
                 Dim missing = plan.ApplyJson(Convert.ToString(row("MappingData"), CultureInfo.InvariantCulture), SourceHeadings())
                 mappingChangedSinceRows = True
+                QuestionDoubtfulPairs()
                 RefreshMapping()
 
                 ' Said on the Source tab, where the page stays, so it is plain the file is mapped
@@ -1994,12 +2092,15 @@ Namespace SDC.Framework
         End Sub
 
         ''' <summary>
-        ''' One query for every user name in use, then the check - which needs no database at all.
+        ''' One query for every user name in use, then the check - which needs no database at all -
+        ''' then one more for the duplicate warnings.
         ''' </summary>
         Private Sub RunCheck()
             Try
                 Cursor = Cursors.WaitCursor
                 plan.Check(DataAccess.GetAllUserNamesLower())
+                RefreshDuplicateWarnings()
+                SuggestBatchName()
                 RefreshCheckGrid(rebuildColumns:=True)
             Catch ex As Exception
                 Telemetry.Error(ex, "FW_EmployeeImport.RunCheck")
@@ -2007,6 +2108,45 @@ Namespace SDC.Framework
             Finally
                 Cursor = Cursors.Default
             End Try
+        End Sub
+
+        ''' <summary>
+        ''' Marks the rows that look like somebody already in the registration, and notes any
+        ''' import of this same file that has not been undone. Warnings only: a failure to read
+        ''' them is logged and the check stands without them.
+        ''' </summary>
+        Private Sub RefreshDuplicateWarnings()
+            earlierImports = New List(Of String)()
+            Try
+                Dim evidence = ImportBatchDataAccess.GetDuplicateEvidence(SelectedRegistrationId(),
+                                                                          ImportBatchRequest.HashOf(sourceData), accessProfile)
+                plan.FlagLikelyDuplicates(evidence.People)
+                earlierImports = evidence.EarlierImports
+            Catch ex As Exception
+                Telemetry.Error(ex, "FW_EmployeeImport.RefreshDuplicateWarnings")
+                plan.FlagLikelyDuplicates(Enumerable.Empty(Of (FirstName As String, LastName As String, Email As String))())
+            End Try
+        End Sub
+
+        ''' <summary>
+        ''' A starting name for the import, only while the box is empty: the Saved Import's name or
+        ''' the file's, with today's date. The note is never suggested - saying what the import was
+        ''' for is the point of asking.
+        ''' </summary>
+        Private Sub SuggestBatchName()
+            If batchNameTextBox.Text.Trim() <> String.Empty Then Return
+
+            Dim chosen = ChosenTemplate()
+            Dim stem = If(chosen IsNot Nothing, Convert.ToString(chosen("ImportName"), CultureInfo.InvariantCulture), FileStem())
+            Dim suggestion = stem & " - " & DateTime.Now.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture)
+            batchNameTextBox.Text = If(suggestion.Length > 100, suggestion.Substring(0, 100), suggestion)
+        End Sub
+
+        Private Sub UpdateImportAvailability()
+            If importButton Is Nothing OrElse plan Is Nothing Then Return
+            importButton.Enabled = Not imported AndAlso plan.CanImport AndAlso
+                                   batchNameTextBox.Text.Trim() <> String.Empty AndAlso
+                                   batchNoteTextBox.Text.Trim() <> String.Empty
         End Sub
 
         Private Sub RefreshCheckGrid(rebuildColumns As Boolean)
@@ -2066,7 +2206,8 @@ Namespace SDC.Framework
         Private Shared Function StatusText(importRow As EmployeeImportRow) As String
             If importRow.EmployeeId > 0 Then Return "Imported"
             If importRow.Problems.Count > 0 Then Return String.Join("; ", importRow.Problems)
-            Return "Ready" & If(importRow.Notes.Count > 0, " - " & String.Join("; ", importRow.Notes), String.Empty)
+            Dim remarks = importRow.Warnings.Concat(importRow.Notes).ToList()
+            Return "Ready" & If(remarks.Count > 0, " - " & String.Join("; ", remarks), String.Empty)
         End Function
 
         Private Shared Sub PaintCheckRow(gridRow As DataGridViewRow, importRow As EmployeeImportRow)
@@ -2079,6 +2220,10 @@ Namespace SDC.Framework
             ElseIf importRow.Problems.Count > 0 Then
                 status.Style.BackColor = Color.FromArgb(251, 213, 213)
                 status.Style.ForeColor = Color.FromArgb(160, 0, 0)
+            ElseIf importRow.Warnings.Count > 0 Then
+                ' Amber: worth a look, and no bar to importing.
+                status.Style.BackColor = Color.FromArgb(255, 235, 190)
+                status.Style.ForeColor = Color.FromArgb(120, 70, 0)
             Else
                 status.Style.BackColor = Color.Empty
                 status.Style.ForeColor = Color.Empty
@@ -2107,9 +2252,18 @@ Namespace SDC.Framework
                 checkSummaryLabel.Text = Plural(plan.Rows.Count, "row") & ", all ready."
             End If
 
+            ' Said, never counted against the import.
+            Dim warnings = plan.WarningCount
+            If warnings > 0 Then
+                checkSummaryLabel.Text &= " " & Plural(warnings, "row") & " may already be here (amber)."
+            End If
+            If earlierImports.Count > 0 Then
+                checkSummaryLabel.Text &= " This file was imported before."
+            End If
+
             reportButton.Text = "Show Problems"
             reportButton.Visible = problems > 0
-            importButton.Enabled = plan.CanImport
+            UpdateImportAvailability()
             importButton.Text = "Import " & Plural(plan.Rows.Count, "Employee")
         End Sub
 
@@ -2138,9 +2292,24 @@ Namespace SDC.Framework
                 Return
             End If
 
+            Dim batchName = batchNameTextBox.Text.Trim()
+            Dim batchNote = batchNoteTextBox.Text.Trim()
+            If batchName = String.Empty OrElse batchNote = String.Empty Then
+                MessageBox.Show(Me, "Give the import a name and a note first. They are how it is found under Past Imports - " &
+                                "and undone, if it was a mistake.", "Import Employees", MessageBoxButtons.OK, MessageBoxIcon.Information)
+                If batchName = String.Empty Then batchNameTextBox.Focus() Else batchNoteTextBox.Focus()
+                Return
+            End If
+
             Dim registrationId = SelectedRegistrationId()
             Dim roleId = SelectedRoleId()
             Dim timeZoneId = registrationTimeZone.Id
+
+            ' Read again rather than trusted from the check: somebody may have been added, or this
+            ' file imported, since. Then asked, never enforced (Glenn, 2026-09-24).
+            RefreshDuplicateWarnings()
+            RefreshCheckGrid(rebuildColumns:=False)
+            If Not ConfirmDespiteDuplicates() Then Return
 
             Dim count = plan.Rows.Count
             If MessageBox.Show(Me,
@@ -2166,17 +2335,28 @@ Namespace SDC.Framework
                 {"registrationId", registrationId},
                 {"roleId", roleId},
                 {"timeZoneId", timeZoneId},
-                {"templateId", currentTemplateId}
+                {"templateId", currentTemplateId},
+                {"batchName", batchName}
             })
             DataAccess.LogUpdateAudit(PageName, EmployeeImportPlan.TargetTableName, "Import", "BeforeSave", String.Empty, summary,
                                       registrationId:=registrationId)
 
+            Dim batch As New ImportBatchRequest With {
+                .BatchName = batchName,
+                .Note = batchNote,
+                .SavedImportId = currentTemplateId,
+                .FileName = sourceFileName,
+                .FileHash = ImportBatchRequest.HashOf(sourceData)
+            }
+            batch.SourceRows.AddRange(rowsWritten.Select(Function(r) r.RowNumber))
+
             Dim failedIndex = -1
+            Dim batchId = 0
             Dim ids As List(Of Integer)
             Try
                 Cursor = Cursors.WaitCursor
                 ids = DataAccess.ImportEmployees(registrationId, roleId, employees, logins, accessProfile,
-                                                 SessionState.ActingUserID, failedIndex)
+                                                 SessionState.ActingUserID, batch, failedIndex, batchId)
             Catch ex As Exception
                 Cursor = Cursors.Default
                 Telemetry.Error(ex, "FW_EmployeeImport.ImportButton_Click")
@@ -2203,7 +2383,7 @@ Namespace SDC.Framework
             Next
             imported = True
 
-            AuditImportedRows(rowsWritten, registrationId)
+            AuditImportedRows(rowsWritten, registrationId, batchId)
             SavedImportDataAccess.MarkUsed(currentTemplateId, registrationId, accessProfile)
 
             LockAfterImport()
@@ -2213,7 +2393,8 @@ Namespace SDC.Framework
             Dim chosen = ChosenTemplate()
             resultsHtml = EmployeeImportReport.ResultsHtml(plan, sourceFileName, SelectedRegistrationName(), roleComboBox.Text,
                                                            registrationTimeZone.Name,
-                                                           If(chosen Is Nothing, String.Empty, Convert.ToString(chosen("ImportName"), CultureInfo.InvariantCulture)))
+                                                           If(chosen Is Nothing, String.Empty, Convert.ToString(chosen("ImportName"), CultureInfo.InvariantCulture)),
+                                                           batchId, batchName)
             resultsFileName = FileStem() & "-import-results-" & DateTime.Now.ToString("yyyyMMdd-HHmm", CultureInfo.InvariantCulture) & ".htm"
             ShowResults()
         End Sub
@@ -2276,13 +2457,14 @@ Namespace SDC.Framework
         ''' audit trail is read one record at a time. A failure here is logged and not reported,
         ''' as it is for every other save - the import has already happened.
         ''' </summary>
-        Private Sub AuditImportedRows(rowsWritten As List(Of EmployeeImportRow), registrationId As Integer)
+        Private Sub AuditImportedRows(rowsWritten As List(Of EmployeeImportRow), registrationId As Integer, batchId As Integer)
             For Each importRow In rowsWritten
                 Try
                     Dim snapshot = importRow.Values.Where(Function(pair) Not String.Equals(pair.Key, EmployeeImportPlan.PasswordKey, StringComparison.OrdinalIgnoreCase)).
                                                     ToDictionary(Function(pair) pair.Key, Function(pair) pair.Value)
                     snapshot(EmployeeImportPlan.PasswordKey) = "[REDACTED]"
                     snapshot("SourceRow") = importRow.RowNumber.ToString(CultureInfo.InvariantCulture)
+                    snapshot("ImportBatchID") = batchId.ToString(CultureInfo.InvariantCulture)
 
                     DataAccess.LogUpdateAudit(PageName, EmployeeImportPlan.TargetTableName, "Import", "AfterSave",
                                               importRow.EmployeeId.ToString(CultureInfo.InvariantCulture),
@@ -2301,6 +2483,56 @@ Namespace SDC.Framework
             registrationComboBox.Enabled = False
             roleComboBox.Enabled = False
             importButton.Enabled = False
+            batchNameTextBox.ReadOnly = True
+            batchNoteTextBox.ReadOnly = True
+        End Sub
+
+        ''' <summary>
+        ''' Yes or No when the file looks like people already here, or has been imported before and
+        ''' not undone. No writes nothing. Nothing to ask means True without a word.
+        ''' </summary>
+        Private Function ConfirmDespiteDuplicates() As Boolean
+            Dim flagged = plan.Rows.Where(Function(r) r.Warnings.Count > 0).ToList()
+            If flagged.Count = 0 AndAlso earlierImports.Count = 0 Then Return True
+
+            Dim text As New StringBuilder()
+            If earlierImports.Count > 0 Then
+                text.AppendLine("This same file was imported before, and not undone:")
+                For Each earlier In earlierImports.Take(5)
+                    text.Append("   ").AppendLine(earlier)
+                Next
+                text.AppendLine()
+            End If
+
+            If flagged.Count > 0 Then
+                text.Append(Plural(flagged.Count, "row")).AppendLine(" may already be here:")
+                Dim firstKey = ImportTargetSchema.EmployeesTable & ".FirstName"
+                Dim lastKey = ImportTargetSchema.EmployeesTable & ".LastName"
+                For Each importRow In flagged.Take(15)
+                    text.Append("   Row ").Append(importRow.RowNumber.ToString(CultureInfo.InvariantCulture)).Append(" ").
+                         Append((importRow.ValueOf(firstKey) & " " & importRow.ValueOf(lastKey)).Trim()).
+                         Append(" - ").AppendLine(String.Join("; ", importRow.Warnings))
+                Next
+                If flagged.Count > 15 Then text.Append("   and ").Append((flagged.Count - 15).ToString(CultureInfo.InvariantCulture)).AppendLine(" more, amber in the grid")
+                text.AppendLine()
+            End If
+
+            text.Append("Import anyway?")
+            Return MessageBox.Show(Me, text.ToString(), "Import Employees - Possible Duplicates",
+                                   MessageBoxButtons.YesNo, MessageBoxIcon.Warning, MessageBoxDefaultButton.Button2) = DialogResult.Yes
+        End Function
+
+        ''' <summary>Past Imports, over this page. It lists; this page keeps whatever is on it.</summary>
+        Private Sub PastImportsButton_Click(sender As Object, e As EventArgs)
+            Try
+                Using page As New FW_ImportBatches_B(currentUser, accessProfile)
+                    page.ShowDialog(Me)
+                End Using
+            Catch ex As Exception
+                Telemetry.Error(ex, "FW_EmployeeImport.PastImportsButton_Click")
+                MessageBox.Show(Me, "Past Imports could not be opened: " & ex.Message, "Import Employees",
+                                MessageBoxButtons.OK, MessageBoxIcon.Warning)
+            End Try
         End Sub
 
         ''' <summary>
