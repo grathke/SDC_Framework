@@ -414,3 +414,23 @@ check before copying this entry for anything else.
   on `Roles_U`, and beside Select Table on `PageGeneration_U`. Both are hidden from anyone who is
   not an App Admin, and `DataAccess.SetTableEnablement` refuses the write as well, because three
   hidden buttons are three chances to forget.
+
+## ActionKey_EmployeeImport
+
+- placement: `Dashboard_Application` grid cell (2, 5), and `Dashboard_Company` grid cell (2, 1)
+- ActionType: Page - opens a dialog rather than a `_B`/`_U` pair
+- target: `FW_EmployeeImport`, in `000_FRAMEWORK\030_EMPLOYEES\`
+- caption source: fixed (`Import Employees`)
+- icon file: `Color_Open.png`, a stand-in until there is an import icon
+- visibility rule: none of its own - the two dashboards carrying it are reached only by an App
+  Admin and a Company Admin. That is not the security: the page refuses anyone else on open, and
+  `DataAccess.RequireEmployeeImportAccess` refuses the write, on the same two session roles.
+  `FW_RoleDetails.Can_Import` is deliberately not consulted (decided 2026-09-24). Only somebody
+  with View All Records on FW_Employees may choose a registration; everyone else imports into
+  their own.
+- click behavior: opens the page with the dashboard's `currentUser` and `accessProfile`. Three
+  tabs - source, field mapping with defaults and saved templates, and a row-by-row check that must
+  pass before Import. The write is all-or-nothing, and a results file with every user name and
+  password is handed over at the end.
+- note: the same ActionKey on both dashboards, so a saved position on one does not move the other
+  - positions are keyed by dashboard as well as ActionKey.

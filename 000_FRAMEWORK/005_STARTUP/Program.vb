@@ -290,6 +290,11 @@ Namespace SDC.Framework
             ' nothing; Flush never throws and never blocks on a database that is down. Repeating
             ' them costs a round trip on the way out and buys the row surviving whichever path the
             ' process actually takes.
+            '
+            ' The files staged for the browser go before either: they are local, take no time, and
+            ' include the import's results with every new user's PIN. VirtualUI takes the process
+            ' down within seconds of this, and the database round trip is the slow part.
+            BrowserDocument.ClearThisSession()
             SessionTracking.End(SessionTracking.EndReason.Disconnect)
             Telemetry.Flush()
 
@@ -299,6 +304,7 @@ Namespace SDC.Framework
             ' missing "Main end".
             forcedExitTimer = New System.Threading.Timer(Sub()
                                                              Log("VirtualUI session closed - forcing exit")
+                                                             BrowserDocument.ClearThisSession()
                                                              SessionTracking.End(SessionTracking.EndReason.Disconnect)
                                                              Telemetry.Flush()
                                                              Environment.Exit(0)
@@ -349,6 +355,10 @@ Namespace SDC.Framework
         Public Sub Main()
             Try
                 Log("Main start")
+
+                ' Whatever an earlier session left for a browser to fetch and never cleared - it
+                ' crashed, or was killed. By age only; other people's recent files are theirs.
+                BrowserDocument.SweepAtStartup()
 
                 StartVirtualUI(Environment.GetCommandLineArgs())
 
@@ -472,6 +482,8 @@ Namespace SDC.Framework
                 ' closes is the one worth having, and it is the one a timer would miss.
                 ' Ended before the flush, because closing the session writes a row and the flush is
                 ' the last thing that runs. A session left open reads as somebody still connected.
+                ' The staged files first: they are local and take no time, and they include PINs.
+                BrowserDocument.ClearThisSession()
                 SessionTracking.End(SessionTracking.EndReason.[Exit])
                 Telemetry.Flush()
             End Try

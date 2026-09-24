@@ -1,0 +1,125 @@
+{
+  "exportedBy": "HR system test export",
+  "staff": [
+    {
+      "givenName": "Hannah", "surname": "Whitcombe", "login": "", "emailAddress": "hannah.whitcombe@example.com",
+      "addressLine1": "210 Government Street, Floor 2", "addressLine2": "", "town": "Mobile", "state": "AL", "postalCode": "36602", "country": "USA",
+      "mobile": "251-555-0201", "homePhone": "251-555-0301", "workPhone": "251-555-0401", "ext": "214",
+      "dob": "1988-06-14", "startDate": "2026-04-01", "terminationDate": "", "jobTitle": "Senior Inspector",
+      "genderId": 4, "timeZoneId": 10, "active": "Yes", "inspector": true, "doNotSendEmail": 0, "doNotSendPhone": 0, "receivesHealthAlerts": "Yes",
+      "photoPath": "photos/hwhitcombe.jpg", "password": "", "windowsLogin": "HWHITCOMBE", "typeUser": "Staff", "displayDashboardOnStartup": "Yes",
+      "notes": "Clean - every field filled",
+      "emergencyContact": { "name": "Paul Whitcombe", "phone": "251-555-0901" }
+    },
+    {
+      "givenName": "Diego", "surname": "Paredes", "login": "dparedes", "emailAddress": "diego.paredes@example.com",
+      "addressLine1": "45 Bay Shore Avenue", "addressLine2": "Unit 7", "town": "Daphne", "state": "AL", "postalCode": "36526", "country": "USA",
+      "mobile": "251-555-0202", "homePhone": "", "workPhone": "251-555-0402", "ext": "",
+      "dob": "3/22/1991", "startDate": "4/6/2026", "terminationDate": "", "jobTitle": "Permit Technician",
+      "genderId": 1, "timeZoneId": 10, "active": "Yes", "inspector": false, "doNotSendEmail": 0, "doNotSendPhone": 1, "receivesHealthAlerts": "No",
+      "photoPath": "", "password": "Harbor2026!", "windowsLogin": "DPAREDES", "typeUser": "Staff", "displayDashboardOnStartup": "No",
+      "notes": "Supplies a login and a password; US-style dates",
+      "emergencyContact": { "name": "", "phone": "" }
+    },
+    {
+      "givenName": "Mei", "surname": "Tanaka", "login": "", "emailAddress": "mei.tanaka@example.com",
+      "addressLine1": "12 Magnolia Court", "addressLine2": "", "town": "Fairhope", "state": "AL", "postalCode": "36532", "country": "USA",
+      "mobile": "251-555-0203", "homePhone": "251-555-0303", "workPhone": "", "ext": "",
+      "dob": "July 9, 1985", "startDate": "April 13, 2026", "terminationDate": "", "jobTitle": "Plans Examiner",
+      "genderId": 4, "timeZoneId": 5, "active": "Yes", "inspector": true, "doNotSendEmail": 1, "doNotSendPhone": 0, "receivesHealthAlerts": "Yes",
+      "photoPath": "photos/mtanaka.png", "password": "", "windowsLogin": "", "typeUser": "Contractor", "displayDashboardOnStartup": "Yes",
+      "notes": "Dates written out in words; works from the Pacific time zone",
+      "emergencyContact": { "name": "Ken Tanaka", "phone": "251-555-0903" }
+    },
+    {
+      "givenName": "Kwame", "surname": "Asante-Boateng", "login": "", "emailAddress": "kwame.ab@example.com",
+      "addressLine1": "8 Dauphin Island Parkway", "addressLine2": "", "town": "Mobile", "state": "AL", "postalCode": "36605", "country": "USA",
+      "mobile": "251-555-0204", "homePhone": "", "workPhone": "251-555-0404", "ext": "301",
+      "dob": "1979-11-02", "startDate": "2019-08-19", "terminationDate": "2026-05-30", "jobTitle": "Code Officer",
+      "genderId": 1, "timeZoneId": 10, "active": "No", "inspector": true, "doNotSendEmail": 0, "doNotSendPhone": 0, "receivesHealthAlerts": "No",
+      "photoPath": "", "password": "", "windowsLogin": "KASANTE", "typeUser": "Staff", "displayDashboardOnStartup": "No",
+      "notes": "Former staff - Active is No, so the login must be switched off too",
+      "emergencyContact": { "name": "", "phone": "" }
+    },
+    {
+      "givenName": "Siobhán", "surname": "Ó Briain", "login": "", "emailAddress": "siobhan.obriain@example.com",
+      "addressLine1": "3 Church Street", "addressLine2": "", "town": "Mobile", "state": "AL", "postalCode": "36602", "country": "Ireland",
+      "mobile": "251-555-0205", "homePhone": "", "workPhone": "", "ext": "",
+      "dob": "1993-02-27", "startDate": "2026-05-04", "terminationDate": "", "jobTitle": "Permit Clerk",
+      "genderId": 4, "timeZoneId": 10, "active": "Yes", "inspector": false, "doNotSendEmail": 0, "doNotSendPhone": 0, "receivesHealthAlerts": "No",
+      "photoPath": "", "password": "", "windowsLogin": "", "typeUser": "Staff", "displayDashboardOnStartup": "Yes",
+      "notes": "Accents and a space in the surname - the generated user name is sobriain",
+      "emergencyContact": { "name": "", "phone": "" }
+    },
+    {
+      "givenName": "Luca", "surname": "Ferrari", "login": "lferrari@example.com", "emailAddress": "lferrari@example.com",
+      "addressLine1": "600 Azalea Road", "addressLine2": "Suite 110", "town": "Mobile", "state": "AL", "postalCode": "36609", "country": "USA",
+      "mobile": "", "homePhone": "", "workPhone": "251-555-0406", "ext": "12",
+      "dob": "1990-10-10", "startDate": "2026-05-11", "terminationDate": "", "jobTitle": "Inspector",
+      "genderId": 1, "timeZoneId": 8, "active": "Yes", "inspector": true, "doNotSendEmail": 0, "doNotSendPhone": 0, "receivesHealthAlerts": "Yes",
+      "photoPath": "", "password": "", "windowsLogin": "LFERRARI", "typeUser": "Staff", "displayDashboardOnStartup": "No",
+      "notes": "Signs in with an email address as the login",
+      "emergencyContact": { "name": "Sofia Ferrari", "phone": "251-555-0906" }
+    },
+    {
+      "givenName": "Priscilla", "surname": "Oyelaran", "login": "", "emailAddress": "priscilla.oyelaran@example.com",
+      "addressLine1": "77 Old Shell Road", "addressLine2": "", "town": "Mobile", "state": "AL", "postalCode": "36604", "country": "USA",
+      "mobile": "251-555-0207", "homePhone": "", "workPhone": "", "ext": "",
+      "dob": "1996-04-18", "startDate": "2026-05-18", "terminationDate": "", "jobTitle": "Permit Technician",
+      "genderId": 4, "timeZoneId": 4, "active": "Yes", "inspector": false, "doNotSendEmail": 0, "doNotSendPhone": 0, "receivesHealthAlerts": "No",
+      "photoPath": "", "password": "", "windowsLogin": "", "typeUser": "Staff", "displayDashboardOnStartup": "Yes",
+      "notes": "Goes by \"Cilla\" - quotes inside a quoted field",
+      "emergencyContact": { "name": "", "phone": "" }
+    },
+    {
+      "givenName": "Nathan", "surname": "Greer", "login": "", "emailAddress": "nathan.greer@example.com",
+      "addressLine1": "5 Hillcrest Road", "addressLine2": "", "town": "Mobile", "state": "AL", "postalCode": "36695", "country": "USA",
+      "mobile": "251-555-0208", "homePhone": "", "workPhone": "", "ext": "",
+      "dob": "2031-01-01", "startDate": "2026-05-25", "terminationDate": "", "jobTitle": "Inspector",
+      "genderId": 1, "timeZoneId": 10, "active": "Yes", "inspector": true, "doNotSendEmail": 0, "doNotSendPhone": 0, "receivesHealthAlerts": "No",
+      "photoPath": "", "password": "", "windowsLogin": "", "typeUser": "Staff", "displayDashboardOnStartup": "No",
+      "notes": "RETURNED - date of birth is in the future",
+      "emergencyContact": { "name": "", "phone": "" }
+    },
+    {
+      "givenName": "Olivia", "surname": "Brandt", "login": "", "emailAddress": "olivia.brandt@example.com",
+      "addressLine1": "19 Springhill Avenue", "addressLine2": "", "town": "Mobile", "state": "AL", "postalCode": "36607", "country": "USA",
+      "mobile": "251-555-0209", "homePhone": "", "workPhone": "", "ext": "",
+      "dob": "1987-12-01", "startDate": "2026-06-01", "terminationDate": "", "jobTitle": "Plans Examiner",
+      "genderId": 4, "timeZoneId": 10, "active": "Yes", "inspector": false, "doNotSendEmail": 0, "doNotSendPhone": 0, "receivesHealthAlerts": "maybe",
+      "photoPath": "", "password": "", "windowsLogin": "", "typeUser": "Staff", "displayDashboardOnStartup": "Yes",
+      "notes": "RETURNED - Receives Health Alerts is not yes or no",
+      "emergencyContact": { "name": "", "phone": "" }
+    },
+    {
+      "givenName": "Rafael", "surname": "Mendes", "login": "", "emailAddress": "rafael.mendes@example.com",
+      "addressLine1": "402 Airport Boulevard", "addressLine2": "", "town": "Mobile", "state": "AL", "postalCode": "36608", "country": "USA",
+      "mobile": "251-555-0210", "homePhone": "", "workPhone": "", "ext": "",
+      "dob": "1984-09-30", "startDate": "2026-06-08", "terminationDate": "", "jobTitle": "Code Officer",
+      "genderId": "M", "timeZoneId": 10, "active": "Yes", "inspector": true, "doNotSendEmail": 0, "doNotSendPhone": 0, "receivesHealthAlerts": "No",
+      "photoPath": "", "password": "", "windowsLogin": "", "typeUser": "Staff", "displayDashboardOnStartup": "No",
+      "notes": "RETURNED - Gender ID is a letter; lookups by text are parked",
+      "emergencyContact": { "name": "", "phone": "" }
+    },
+    {
+      "givenName": "Yusuf", "surname": "Kaya", "login": "", "emailAddress": "yusuf.kaya.example.com",
+      "addressLine1": "31 Cottage Hill Road", "addressLine2": "", "town": "Mobile", "state": "AL", "postalCode": "36609", "country": "USA",
+      "mobile": "251-555-0211", "homePhone": "", "workPhone": "", "ext": "",
+      "dob": "1992-01-15", "startDate": "2026-06-15", "terminationDate": "", "jobTitle": "Permit Clerk",
+      "genderId": 1, "timeZoneId": 10, "active": "Yes", "inspector": false, "doNotSendEmail": 0, "doNotSendPhone": 0, "receivesHealthAlerts": "No",
+      "photoPath": "", "password": "", "windowsLogin": "", "typeUser": "Staff", "displayDashboardOnStartup": "Yes",
+      "notes": "RETURNED - email address has no @",
+      "emergencyContact": { "name": "", "phone": "" }
+    },
+    {
+      "givenName": "Ingrid", "surname": "Solberg", "login": "", "emailAddress": "ingrid.solberg@example.com",
+      "addressLine1": "9 Dauphin Street", "addressLine2": "", "town": "Mobile", "state": "Alabama", "postalCode": "36602", "country": "USA",
+      "mobile": "251-555-0212", "homePhone": "", "workPhone": "", "ext": "",
+      "dob": "1989-05-05", "startDate": "2026-06-22", "terminationDate": "", "jobTitle": "Inspector",
+      "genderId": 4, "timeZoneId": 10, "active": "Yes", "inspector": true, "doNotSendEmail": 0, "doNotSendPhone": 0, "receivesHealthAlerts": "Yes",
+      "photoPath": "", "password": "", "windowsLogin": "", "typeUser": "Staff", "displayDashboardOnStartup": "No",
+      "notes": "RETURNED - State spelled out fits the employee (25) but not the login (2)",
+      "emergencyContact": { "name": "", "phone": "" }
+    }
+  ]
+}

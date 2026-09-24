@@ -25,6 +25,7 @@ Namespace SDC.Framework
         Private ReadOnly companyDashboardButton As DashboardIconButton
         Private ReadOnly updateSchemaButton As DashboardIconButton
         Private ReadOnly enabledTablesButton As DashboardIconButton
+        Private ReadOnly employeeImportButton As DashboardIconButton
         Private ReadOnly closeIconButton As Button
         Private ReadOnly generatedFW_Employees_BButton As DashboardIconButton
         Private ReadOnly userAccessDiagnosticButton As DashboardIconButton
@@ -97,6 +98,33 @@ Namespace SDC.Framework
             rolesButton.FlatAppearance.BorderSize = 0
             rolesButton.FlatAppearance.MouseOverBackColor = Color.Transparent
             rolesButton.FlatAppearance.MouseDownBackColor = Color.Transparent
+
+            ' Cell (2,5), which is free in the source *and* in the saved arrangement - and those
+            ' are two different questions. Icons are draggable and their positions persist in
+            ' FW_DashboardLayouts by ActionKey, so a cell nothing occupies here can still be taken
+            ' on screen: (1,2) looked empty in this file and holds Registration in the saved
+            ' arrangement, which put the new tile underneath it where nobody could see it.
+            '
+            ' Color_Open stands in until there is an import icon - it reads as opening a file,
+            ' which is where the import starts.
+            employeeImportButton = New DashboardIconButton() With {
+                .Name = "ActionKey_EmployeeImport",
+                .Text = "Import Employees",
+                .Location = DashboardGridLayout.CellLocation(2, 5),
+                .Size = New Size(DashboardGridLayout.IconWidth, DashboardGridLayout.IconHeight),
+                .BackColor = Color.Transparent,
+                .UseVisualStyleBackColor = False,
+                .FlatStyle = FlatStyle.Flat,
+                .Font = New Font("Segoe UI", 13.0F, FontStyle.Regular),
+                .Image = LoadDashboardIcon("Color_Open.png", SystemIcons.Application.ToBitmap()),
+                .TextImageRelation = TextImageRelation.ImageAboveText,
+                .ImageAlign = ContentAlignment.TopCenter,
+                .TextAlign = ContentAlignment.BottomCenter,
+                .TabStop = False
+            }
+            employeeImportButton.FlatAppearance.BorderSize = 0
+            employeeImportButton.FlatAppearance.MouseOverBackColor = Color.Transparent
+            employeeImportButton.FlatAppearance.MouseDownBackColor = Color.Transparent
 
             registrationButton = New DashboardIconButton() With {
                 .Name = "ActionKey_Registration",
@@ -348,6 +376,9 @@ Namespace SDC.Framework
             AddHandler registrationButton.MouseEnter, AddressOf IconButton_MouseEnter
             AddHandler registrationButton.MouseLeave, AddressOf IconButton_MouseLeave
             AddHandler registrationButton.Click, AddressOf RegistrationButton_Click
+            AddHandler employeeImportButton.MouseEnter, AddressOf IconButton_MouseEnter
+            AddHandler employeeImportButton.MouseLeave, AddressOf IconButton_MouseLeave
+            AddHandler employeeImportButton.Click, AddressOf EmployeeImportButton_Click
             AddHandler auditHistoryButton.MouseEnter, AddressOf IconButton_MouseEnter
             AddHandler auditHistoryButton.MouseLeave, AddressOf IconButton_MouseLeave
             AddHandler auditHistoryButton.Click, AddressOf AuditHistoryButton_Click
@@ -390,6 +421,7 @@ Namespace SDC.Framework
             Me.Controls.Add(newPageRequestsButton)
             Me.Controls.Add(updateSchemaButton)
             Me.Controls.Add(enabledTablesButton)
+            Me.Controls.Add(employeeImportButton)
         End Sub
 
         Private Sub Dashboard_Application_Load(sender As Object, e As EventArgs)
@@ -474,6 +506,21 @@ Namespace SDC.Framework
             If ownerMenu IsNot Nothing Then
                 MenuFormInitializer.Configure(ownerMenu, currentUser, True)
             End If
+        End Sub
+
+        ''' <summary>
+        ''' Opens the employee import, with this session's user and access profile.
+        '''
+        ''' Passed rather than defaulted, as the Action Icon Guardrail requires: the page decides
+        ''' which registrations may be imported into and writes employees and logins, and a page
+        ''' built with a parameterless constructor would be making those decisions with no idea who
+        ''' was asking.
+        ''' </summary>
+        Private Sub EmployeeImportButton_Click(sender As Object, e As EventArgs)
+            ResetIconButtonVisuals()
+            Using importPage As New FW_EmployeeImport(currentUser, accessProfile)
+                importPage.ShowDialog(Me)
+            End Using
         End Sub
 
         Private Sub RegistrationButton_Click(sender As Object, e As EventArgs)

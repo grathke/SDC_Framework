@@ -969,3 +969,50 @@ Four things that apply to both:
 - **Neither prevents a discard under genuine memory pressure**, and neither reaches an unmanaged
   machine or a proxy dropping an idle WebSocket. They remove the common cause; the reconnection
   timeout is what survives the cause being missed.
+
+## 14. DownloadFile returns before the browser fetches — 2026-09-24
+
+The Save button on the employee import's problems page produced the browser's "The resource you are
+looking for might have been removed, had its name changed, or is temporarily unavailable" page in a
+real session. `ThinfinityHelpDeskAttachmentDelivery` writes a staged copy, calls `DownloadFile`,
+and deletes the copy in a `Finally` - on the stated belief that `DownloadFile` is synchronous. The
+SDK's own `OnDownloadEnd` event says otherwise: the call hands the browser a file to fetch *later*,
+and by then it has been deleted.
+
+**Not yet proven by a measurement** - no local Thinfinity log recorded the 404 - but it is the only
+explanation that fits both the message and the SDK surface.
+
+Showing a document now goes through `BrowserDocument.Show` instead: `HTMLDoc.GetSafeUrl` for a
+time-limited address to the file, and `OpenLinkDlg` to offer it as a link, because a browser blocks
+a tab nobody clicked for. The staged copy lives in `ProgramData\SDC_Framework\Documents`, where the
+Thinfinity server can read it whatever account it runs under, and is cleared after two hours.
+
+**The attachment delivery follows, same day.** `ThinfinityHelpDeskAttachmentDelivery` - the
+import's Download Results and every Help Desk attachment download - now stages through
+`BrowserDocument.StageForSession` and no longer deletes its copy after `DownloadFile`. One folder,
+one two-hour clean-up, for everything handed to a browser. `OnDownloadEnd` is still not used: what
+its `Filename` carries has not been checked, and the clean-up does not need it.
+
+**Nothing staged may stay - same day.** A staged file could outlive everything: the next sweep only
+ran when somebody staged another file. Glenn's rule is that these files - the import's results hold
+every new user's PIN - disappear with nobody doing anything. `BrowserDocument` now has five layers:
+a 15-minute address; a five-minute timer while the process runs; `ClearThisSession` beside all three
+`SessionTracking.End` calls in `Program.vb`, before the database round trip; `SweepAtStartup` at
+the top of `Main`; and a hidden detached PowerShell per staged folder that sleeps 20 minutes and
+deletes it, which outlives a killed process unless the whole tree is killed. The PowerShell command
+was run with a 3-second sleep on 2026-09-24 and removed its folder.
+
+**The fifth layer did not survive a real session.** Its first use in a browser session logged
+`An error occurred trying to start process 'powershell.exe' ... Access is denied`
+(`BrowserDocument.StartDetachedCleanup`, 2026-09-24 14:57). **A Thinfinity session cannot start
+another program** - worth knowing well beyond this: anything that shells out, opens a file with its
+default application or launches a helper will fail the same way in a session and work on the
+desktop. The layer was removed; four remain. The case it covered - the process killed and nobody
+signing in to that server again - is closed only by a scheduled task on the server, deleting
+folders under `ProgramData\SDC_Framework\Documents` older than 20 minutes.
+
+**Per-session folders - same day, Glenn's suggestion.** Staging moved to
+`ProgramData\SDC_Framework\<area>\<pid>-<process start ticks>\`, areas `imports` and `attachments`.
+A session's end deletes its folders whole; a start deletes whole every session folder whose process
+is gone (the start ticks guard against a reused process id), and falls back to the 15-minute age
+rule where another account's process cannot be inspected. The old `Documents` folder is swept by age.

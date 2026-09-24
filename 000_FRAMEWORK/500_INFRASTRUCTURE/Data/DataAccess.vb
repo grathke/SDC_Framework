@@ -296,6 +296,40 @@ Namespace SDC.Framework
             Return New Dictionary(Of String, String)(source, StringComparer.OrdinalIgnoreCase)
         End Function
 
+        ''' <summary>
+        ''' A registration's field caption overrides for the tables named, keyed "Table.Field".
+        '''
+        ''' By registration, not role: OverrideCaption is stored per role but a stored procedure
+        ''' carries each one to every role in the registration, so a caption belongs to the
+        ''' registration (Glenn, 2026-09-24). Where stray rows disagree, one is taken consistently
+        ''' (the greatest) rather than depending on which role happened to be asked. One round trip.
+        ''' </summary>
+        Public Shared Function GetRegistrationFieldCaptions(registrationId As Integer, ParamArray tableNames() As String) As Dictionary(Of String, String)
+            Dim captions As New Dictionary(Of String, String)(StringComparer.OrdinalIgnoreCase)
+            If registrationId <= 0 OrElse tableNames Is Nothing OrElse tableNames.Length = 0 Then Return captions
+
+            Using conn As New SqlConnection(ConnectionString)
+                conn.Open()
+                Using cmd As New SqlCommand(
+                    "SELECT TableName, FieldName, Caption = MAX(LTRIM(RTRIM(OverrideCaption))) " &
+                    "FROM dbo.FW_RoleFields " &
+                    "WHERE RegistrationID = @RegistrationID " &
+                    "  AND TableName IN (SELECT value FROM STRING_SPLIT(@Tables, ',')) " &
+                    "  AND LTRIM(RTRIM(ISNULL(OverrideCaption, ''))) <> '' AND ISNULL(DeletedFlag, 0) = 0 " &
+                    "GROUP BY TableName, FieldName", conn)
+                    cmd.Parameters.Add("@RegistrationID", SqlDbType.Int).Value = registrationId
+                    cmd.Parameters.Add("@Tables", SqlDbType.NVarChar, 4000).Value = String.Join(",", tableNames)
+                    Using reader = cmd.ExecuteReader()
+                        While reader.Read()
+                            captions(reader.GetString(0) & "." & reader.GetString(1)) = reader.GetString(2)
+                        End While
+                    End Using
+                End Using
+            End Using
+
+            Return captions
+        End Function
+
         Public Shared Function GetPageInitMetadata(roleId As Integer, registrationId As Integer, tableName As String) As PageInitMetadata
             Dim result As New PageInitMetadata()
             
@@ -3598,6 +3632,29 @@ Namespace SDC.Framework
         ''' drift from the pattern beside it.
         ''' </summary>
         ''' <summary>A registration's time zone, or 0 when it has none.</summary>
+        ''' <summary>
+        ''' A registration's time zone, id and display name, in one query - or (0, "") when it has
+        ''' none. Unlike GetRegistrationTimeZoneId this lets a failure through: the employee import
+        ''' writes this zone onto every person, and a read that failed must not look like "none".
+        ''' </summary>
+        Public Shared Function GetRegistrationTimeZone(registrationId As Integer) As (Id As Integer, Name As String)
+            If registrationId <= 0 Then Return (0, String.Empty)
+
+            Using conn As New SqlConnection(ConnectionString)
+                conn.Open()
+                Using cmd As New SqlCommand(
+                    "SELECT TOP 1 ISNULL(r.TimeZoneID, 0), ISNULL(z.DisplayName, '') " &
+                    "FROM dbo.FW_Registration r LEFT JOIN dbo.FW_TimeZones z ON z.TimeZoneID = r.TimeZoneID " &
+                    "WHERE r.RegistrationID = @ID", conn)
+                    cmd.Parameters.Add("@ID", SqlDbType.Int).Value = registrationId
+                    Using reader = cmd.ExecuteReader()
+                        If Not reader.Read() Then Return (0, String.Empty)
+                        Return (reader.GetInt32(0), reader.GetString(1))
+                    End Using
+                End Using
+            End Using
+        End Function
+
         Public Shared Function GetRegistrationTimeZoneId(registrationId As Integer) As Integer
             If registrationId <= 0 Then Return 0
 
@@ -4163,6 +4220,209 @@ Namespace SDC.Framework
                                                           userId As Integer,
                                                           ByRef outcome As SaveResult) As Integer
             outcome = SaveResult.Succeeded
+
+            Using conn As New SqlConnection(ConnectionString)
+                conn.Open()
+
+                ' One transaction over the whole save, which it did not used to be. The row was
+                ' committed and the password hashed afterwards on a second connection, so a
+                ' failure between them left an account that existed and could not be signed into -
+                ' the code said as much, logging Password_HashFailedAfterSave. An employee makes
+                ' that worse still: it writes two tables, and half of that is a person with no
+                ' login or a login with no person.
+                Using tx = conn.BeginTransaction()
+                    Try
+                        Return SaveGeneratedRecordCore(conn, tx, True, tableName, primaryKey, recordId,
+                                                       values, originalRowVersion, userId, Nothing, outcome)
+                    Catch
+                        ' Nothing half-written reaches the database. The message is left to the
+                        ' caller, which shows it: a user name already taken is the one a person can
+                        ' act on, and swallowing it would report a save that did not happen.
+                        Try
+                            tx.Rollback()
+                        Catch telemetryEx As Exception
+                            Telemetry.Error(telemetryEx, "DataAccess.TrySaveGeneratedPageRecord")
+                        End Try
+                        Throw
+                    End Try
+                End Using
+            End Using
+        End Function
+
+        ''' <summary>
+        ''' Inserts a batch of employees, with their logins, roles and passwords, as one
+        ''' transaction: every row is written or none is.
+        '''
+        ''' Each row goes through SaveGeneratedRecordCore, exactly as a Create on FW_Employees_U
+        ''' does - login first, the hash keyed on the UserId it returns, the employee, then the
+        ''' role - so an imported employee cannot differ from a hand-entered one in any way the
+        ''' save path decides. What this adds is the transaction around all of them: a user name
+        ''' taken by somebody else between the pre-check and the import, on row 40, would
+        ''' otherwise leave 39 people written and the file half-imported.
+        '''
+        ''' **Authorised here, not only on the page.** The caller must hold Import on FW_Employees,
+        ''' and may write to a registration other than the session's only with View All Records -
+        ''' the same rule that decides whether a browse page shows its registration combo. The
+        ''' registration and role are set here from the arguments, overriding anything a row
+        ''' carries, so a row cannot name a different company.
+        '''
+        ''' Round trips: about seven per row, all on one connection - the user-name check, the
+        ''' login, its hash, the employee, the role, and the login's active flag. Batching them
+        ''' further would mean a second implementation of the save path, which is the thing this
+        ''' exists to avoid.
+        ''' </summary>
+        ''' <param name="loginValues">
+        ''' Per row, the FW_Users columns beyond the ones the login already takes from the
+        ''' employee. Nothing, or an entry of Nothing, when there are none.
+        ''' </param>
+        ''' <param name="failedIndex">The row that failed, or -1. Set before the exception is rethrown.</param>
+        ''' <returns>The new EmployeeIDs, in row order.</returns>
+        Public Shared Function ImportEmployees(registrationId As Integer,
+                                               roleId As Integer,
+                                               records As IList(Of Dictionary(Of String, Object)),
+                                               loginValues As IList(Of Dictionary(Of String, Object)),
+                                               profile As AccessProfile,
+                                               actingUserId As Integer,
+                                               ByRef failedIndex As Integer) As List(Of Integer)
+            failedIndex = -1
+            ReadOnlyPreview.Refuse("The import")
+            RequireEmployeeImportAccess(profile, registrationId)
+
+            If roleId <= 0 Then Throw New InvalidOperationException("Choose the role the imported employees are given.")
+
+            ' The registration's own zone, read here rather than taken from the caller: it is a
+            ' fact about the company the people are joining, and the page only displays it. Decided
+            ' 2026-09-24 in place of a picker - a company in several zones says so per person, with a
+            ' Time Zone column in the file, which wins over this.
+            Dim timeZoneId = GetRegistrationTimeZone(registrationId).Id
+            If timeZoneId <= 0 Then
+                Throw New InvalidOperationException("This registration has no time zone. Set one on the Registration page, then import.")
+            End If
+            If records Is Nothing OrElse records.Count = 0 Then Return New List(Of Integer)()
+
+            ' Warmed before the transaction opens. Each is cached after its first read, and a
+            ' first read inside the transaction would open a second connection while this one
+            ' holds locks on the very tables it is describing.
+            GetGeneratedPageSchema("FW_Employees")
+            GetComputedColumnNames("FW_Employees")
+            GetGeneratedPageSchema("FW_Users")
+            GetComputedColumnNames("FW_Users")
+
+            Dim ids As New List(Of Integer)(records.Count)
+
+            Using conn As New SqlConnection(ConnectionString)
+                conn.Open()
+                Using tx = conn.BeginTransaction()
+                    Try
+                        For i = 0 To records.Count - 1
+                            failedIndex = i
+
+                            Dim values As New Dictionary(Of String, Object)(records(i), StringComparer.OrdinalIgnoreCase)
+                            values("RegistrationId") = registrationId
+                            values(AssignRoleValueKey) = roleId.ToString(CultureInfo.InvariantCulture)
+
+                            Dim login = New Dictionary(Of String, Object)(
+                                If(loginValues IsNot Nothing AndAlso i < loginValues.Count AndAlso loginValues(i) IsNot Nothing,
+                                   loginValues(i), New Dictionary(Of String, Object)()),
+                                StringComparer.OrdinalIgnoreCase)
+
+                            ' The chosen zone wherever the file named none - on the person and on
+                            ' their login alike, which the session reads it from. A zone the file
+                            ' does give wins: it is about that one person.
+                            FillWhenMissing(values, "TimeZoneID", timeZoneId)
+                            FillWhenMissing(login, "TimeZoneID", timeZoneId)
+
+                            Dim outcome As SaveResult
+                            ids.Add(SaveGeneratedRecordCore(conn, tx, False, "FW_Employees", "EmployeeID", 0,
+                                                            values, Nothing, actingUserId, login, outcome))
+                        Next
+
+                        tx.Commit()
+                        failedIndex = -1
+                        Return ids
+                    Catch
+                        Try
+                            tx.Rollback()
+                        Catch telemetryEx As Exception
+                            Telemetry.Error(telemetryEx, "DataAccess.ImportEmployees")
+                        End Try
+                        Throw
+                    End Try
+                End Using
+            End Using
+        End Function
+
+        Private Shared Sub FillWhenMissing(values As Dictionary(Of String, Object), key As String, value As Object)
+            Dim existing As Object = Nothing
+            If values.TryGetValue(key, existing) AndAlso existing IsNot Nothing AndAlso Not Convert.IsDBNull(existing) AndAlso
+               Convert.ToString(existing, CultureInfo.InvariantCulture).Trim() <> String.Empty Then
+                Return
+            End If
+            values(key) = value
+        End Sub
+
+        ''' <summary>
+        ''' Whether this session may use the employee import at all: an Application Admin or a
+        ''' Company Admin, the two roles whose dashboards carry the tile.
+        '''
+        ''' The role, not FW_RoleDetails.Can_Import. Glenn decided on 2026-09-24 that the import
+        ''' belongs to those two roles and no other, so a permission any role could be granted
+        ''' would be a second answer to a question already settled - and one that started blank
+        ''' for everybody, which locked out the very people the tile is shown to. Checked here as
+        ''' well as on the page, because a dashboard is not a boundary.
+        ''' </summary>
+        Public Shared Function CanImportEmployees() As Boolean
+            Return SessionState.IsApplicationAdmin OrElse SessionState.IsCompanyAdmin
+        End Function
+
+        ''' <summary>
+        ''' Refuses an import the caller is not entitled to: not an Application or Company Admin,
+        ''' or a registration other than their own without View All Records on FW_Employees - the
+        ''' rule that decides whether a browse page shows its registration combo.
+        '''
+        ''' Shared by the import itself and by its saved mappings, which belong to a registration
+        ''' in the same way and would otherwise be a way to read and delete another company's.
+        ''' </summary>
+        Public Shared Sub RequireEmployeeImportAccess(profile As AccessProfile, registrationId As Integer)
+            If Not CanImportEmployees() Then
+                Throw New UnauthorizedAccessException("Only an Application Admin or a Company Admin may import employees.")
+            End If
+
+            If registrationId <= 0 Then
+                Throw New InvalidOperationException("Choose the registration the employees are imported into.")
+            End If
+
+            Dim own = If(SessionState.IsActive AndAlso SessionState.Current.HasValue, SessionState.Current.Value.RegistrationID, 0)
+            If registrationId <> own AndAlso (profile Is Nothing OrElse Not profile.Can("FW_Employees", AccessCapability.ViewAllRecords)) Then
+                Throw New UnauthorizedAccessException("You may import employees only into your own registration.")
+            End If
+        End Sub
+
+        ''' <summary>
+        ''' The body of a generated page's save, on a connection and transaction the caller owns.
+        '''
+        ''' <paramref name="ownsTransaction"/> True is TrySaveGeneratedPageRecord: this commits,
+        ''' and rolls back on a concurrency conflict, exactly as it always did. False is a batch:
+        ''' nothing is committed or rolled back here, and the caller decides for every row at
+        ''' once. A batch inserts only - a conflict check needs to roll back and then read on the
+        ''' same connection, which a transaction still open for other rows cannot allow.
+        ''' </summary>
+        Private Shared Function SaveGeneratedRecordCore(conn As SqlConnection,
+                                                        tx As SqlTransaction,
+                                                        ownsTransaction As Boolean,
+                                                        tableName As String,
+                                                        primaryKey As String,
+                                                        recordId As Integer,
+                                                        values As Dictionary(Of String, Object),
+                                                        originalRowVersion As Byte(),
+                                                        userId As Integer,
+                                                        loginValues As Dictionary(Of String, Object),
+                                                        ByRef outcome As SaveResult) As Integer
+            outcome = SaveResult.Succeeded
+            If Not ownsTransaction AndAlso recordId > 0 Then
+                Throw New InvalidOperationException("A save joined to a caller's transaction may only insert.")
+            End If
+
             Dim schema = GetGeneratedPageSchema(tableName)
 
             ' A password typed on any page is taken out of the ordinary column write and put
@@ -4211,17 +4471,7 @@ Namespace SDC.Framework
                                                        Not String.Equals(pair.Key, "RowVersion", StringComparison.OrdinalIgnoreCase) AndAlso
                                                        Not computedColumns.Contains(pair.Key) AndAlso
                                                        Not IsProtectedPasswordColumn(tableName, pair.Key)).ToList()
-            Using conn As New SqlConnection(ConnectionString)
-                conn.Open()
 
-                ' One transaction over the whole save, which it did not used to be. The row was
-                ' committed and the password hashed afterwards on a second connection, so a
-                ' failure between them left an account that existed and could not be signed into -
-                ' the code said as much, logging Password_HashFailedAfterSave. An employee makes
-                ' that worse still: it writes two tables, and half of that is a person with no
-                ' login or a login with no person.
-                Using tx = conn.BeginTransaction()
-                  Try
                     If recordId <= 0 Then
                     If schema.Columns.Contains("RegistrationID") AndAlso
                        Not String.Equals(tableName.Trim(), "FW_Registration", StringComparison.OrdinalIgnoreCase) AndAlso
@@ -4256,7 +4506,8 @@ Namespace SDC.Framework
                                                                    GetGeneratedValueText(values, "FirstName"),
                                                                    GetGeneratedValueText(values, "LastName"),
                                                                    employeeRegistration,
-                                                                   userId)
+                                                                   userId,
+                                                                   loginValues)
 
                         ' The hash is keyed on the UserId that has just been issued. It could not
                         ' have been computed any earlier.
@@ -4314,7 +4565,7 @@ Namespace SDC.Framework
                             End If
                         End If
 
-                        tx.Commit()
+                        If ownsTransaction Then tx.Commit()
                         Return insertedId
                     End Using
                 End If
@@ -4359,7 +4610,8 @@ Namespace SDC.Framework
                         ' No row matched: either the RowVersion moved on or the record is gone.
                         ' Distinguishing the two is what lets the page offer an overwrite for one
                         ' and refuse it for the other. Rolled back first, so a login edit made
-                        ' above does not survive a row that was never written.
+                        ' above does not survive a row that was never written. Always owned here:
+                        ' a joined transaction was refused at the top for anything but an insert.
                         tx.Rollback()
                         outcome = If(GeneratedPageRecordExists(conn, tableName, primaryKey, recordId),
                                      SaveResult.RecordChanged,
@@ -4381,22 +4633,9 @@ Namespace SDC.Framework
                         End If
                     End If
 
-                    tx.Commit()
+                    If ownsTransaction Then tx.Commit()
                     Return recordId
                 End Using
-                  Catch
-                    ' Nothing half-written reaches the database. The message is left to the
-                    ' caller, which shows it: a user name already taken is the one a person can
-                    ' act on, and swallowing it would report a save that did not happen.
-                    Try
-                        tx.Rollback()
-                    Catch telemetryEx As Exception
-                        Telemetry.Error(telemetryEx, "DataAccess.TrySaveGeneratedPageRecord")
-                    End Try
-                    Throw
-                  End Try
-                End Using
-            End Using
         End Function
 
         ''' <summary>
@@ -4579,6 +4818,76 @@ Namespace SDC.Framework
         End Function
 
         ''' <summary>
+        ''' FW_Users columns a caller may never set on a new employee's login, whatever it sends.
+        '''
+        ''' The first group the login takes from the employee, or the save path sets itself -
+        ''' written twice they could disagree. The second group is security: SuperAdmin, a TOTP
+        ''' secret and the 2FA switch. The import offers none of them, and the refusal is here as
+        ''' well because the import can be run by a company administrator, and a value set that
+        ''' arrives from anywhere else must not be able to hand out super-administrator rights.
+        ''' </summary>
+        Private Shared ReadOnly ExcludedImportLoginColumns As New HashSet(Of String)(StringComparer.OrdinalIgnoreCase) From {
+            "UserId", "RegistrationID", "UserName", "FirstName", "LastName", "IsActive",
+            "Password", "PasswordHash", "RowVersion",
+            "CreatedBy", "CreatedOn", "UpdatedBy", "UpdatedOn", "DeletedFlag", "DeletedBy", "DeletedOn",
+            "SuperAdmin", "TOTPKey", "Use2FA"
+        }
+
+        ''' <summary>
+        ''' The extra login values worth writing: real FW_Users columns, not computed, not excluded,
+        ''' and not blank. An Email is normalised as it would be on the Users page.
+        ''' </summary>
+        Private Shared Function FilterExtraLoginValues(extraValues As Dictionary(Of String, Object)) As List(Of KeyValuePair(Of String, Object))
+            Dim kept As New List(Of KeyValuePair(Of String, Object))()
+            If extraValues Is Nothing OrElse extraValues.Count = 0 Then Return kept
+
+            Dim usersSchema = GetGeneratedPageSchema("FW_Users")
+            Dim computed = GetComputedColumnNames("FW_Users")
+
+            For Each pair In extraValues
+                If Not usersSchema.Columns.Contains(pair.Key) Then Continue For
+                If computed.Contains(pair.Key) OrElse ExcludedImportLoginColumns.Contains(pair.Key) Then Continue For
+                If pair.Value Is Nothing OrElse Convert.IsDBNull(pair.Value) Then Continue For
+
+                Dim value = pair.Value
+                If String.Equals(pair.Key, "Email", StringComparison.OrdinalIgnoreCase) Then
+                    Dim normalized = NormalizeEmailForStorage(Convert.ToString(value, CultureInfo.InvariantCulture))
+                    If normalized <> String.Empty Then value = normalized
+                End If
+
+                ' The schema's own spelling, so the quoted identifier matches the column exactly.
+                kept.Add(New KeyValuePair(Of String, Object)(usersSchema.Columns(pair.Key).ColumnName, value))
+            Next
+
+            Return kept
+        End Function
+
+        ''' <summary>
+        ''' Every user name in use, lower case and trimmed - deleted accounts included, because
+        ''' they keep their name and a restore must not collide with something created since.
+        '''
+        ''' One round trip for the whole import. Asking per row would be a query per person, and
+        ''' the list is small next to the rows it saves asking about.
+        ''' </summary>
+        Public Shared Function GetAllUserNamesLower() As HashSet(Of String)
+            Dim names As New HashSet(Of String)(StringComparer.Ordinal)
+
+            Using conn As New SqlConnection(ConnectionString)
+                conn.Open()
+                Using cmd As New SqlCommand(
+                    "SELECT LOWER(LTRIM(RTRIM(UserName))) FROM dbo.FW_Users WHERE UserName IS NOT NULL", conn)
+                    Using reader = cmd.ExecuteReader()
+                        While reader.Read()
+                            If Not reader.IsDBNull(0) Then names.Add(reader.GetString(0))
+                        End While
+                    End Using
+                End Using
+            End Using
+
+            Return names
+        End Function
+
+        ''' <summary>
         ''' Creates the login an employee signs in with, and returns its UserId.
         '''
         ''' First, not last. FW_Employees.UserId is NOT NULL, so the employee row cannot exist
@@ -4594,7 +4903,8 @@ Namespace SDC.Framework
                                                        firstName As String,
                                                        lastName As String,
                                                        registrationId As Integer,
-                                                       createdBy As Integer) As Integer
+                                                       createdBy As Integer,
+                                                       Optional extraValues As Dictionary(Of String, Object) = Nothing) As Integer
             Dim name = If(userName, String.Empty).Trim()
             If name = String.Empty Then
                 Throw New InvalidOperationException("A user name is required: it is what the employee signs in with.")
@@ -4611,10 +4921,18 @@ Namespace SDC.Framework
                 End If
             End Using
 
+            ' Anything else the caller wants on the login - an import mapping a file's Windows user
+            ' or start date onto it - rides in the same INSERT, so it costs no extra round trip.
+            Dim extras = FilterExtraLoginValues(extraValues)
+            Dim usersSchema = If(extras.Count > 0, GetGeneratedPageSchema("FW_Users"), Nothing)
+            Dim extraColumns = String.Concat(extras.Select(Function(pair) ", " & QuoteGeneratedIdentifier(pair.Key)))
+            Dim extraParameters = String.Concat(extras.Select(Function(pair, index) ", @Value" & index.ToString(CultureInfo.InvariantCulture)))
+
             Using cmd As New SqlCommand(
-                "INSERT INTO dbo.FW_Users (RegistrationID, UserName, FirstName, LastName, IsActive, CreatedBy, CreatedOn) " &
-                "VALUES (@RegistrationID, @UserName, @FirstName, @LastName, 1, @CreatedBy, GETDATE()); " &
+                "INSERT INTO dbo.FW_Users (RegistrationID, UserName, FirstName, LastName, IsActive, CreatedBy, CreatedOn" & extraColumns & ") " &
+                "VALUES (@RegistrationID, @UserName, @FirstName, @LastName, 1, @CreatedBy, GETDATE()" & extraParameters & "); " &
                 "SELECT CAST(SCOPE_IDENTITY() AS INT);", conn, tx)
+                If extras.Count > 0 Then AddGeneratedParameters(cmd, extras, usersSchema)
                 cmd.Parameters.Add("@RegistrationID", SqlDbType.Int).Value =
                     If(registrationId > 0, CType(registrationId, Object), DBNull.Value)
                 cmd.Parameters.Add("@UserName", SqlDbType.VarChar, 50).Value = name

@@ -25,6 +25,7 @@ Namespace SDC.Framework
         Private Const DashboardIconSize As Integer = 80
         Private ReadOnly closeIconButton As Button
         Private ReadOnly generatedFW_Employees_BButton As DashboardIconButton
+        Private ReadOnly employeeImportButton As DashboardIconButton
 
         Public Sub New(user As UserContext, Optional profile As AccessProfile = Nothing)
             currentUser = user
@@ -132,6 +133,32 @@ Namespace SDC.Framework
             generatedFW_Employees_BButton.FlatAppearance.BorderSize = 0
             generatedFW_Employees_BButton.FlatAppearance.MouseOverBackColor = Color.Transparent
             generatedFW_Employees_BButton.FlatAppearance.MouseDownBackColor = Color.Transparent
+
+            ' Cell (2,1), free here and in the saved arrangement - (1,4) looks free in this file
+            ' but User Access Diagnostic was dragged out of it, and a saved position is keyed by
+            ' ActionKey rather than by cell, so the next person to drag it back would land on top.
+            '
+            ' The same ActionKey and page as on the Application dashboard. A company administrator
+            ' imports into their own registration only; the page decides that, not the tile.
+            employeeImportButton = New DashboardIconButton() With {
+                .Name = "ActionKey_EmployeeImport",
+                .Text = "Import Employees",
+                .Location = DashboardGridLayout.CellLocation(2, 1),
+                .Size = New Size(DashboardGridLayout.IconWidth, DashboardGridLayout.IconHeight),
+                .BackColor = Color.Transparent,
+                .UseVisualStyleBackColor = False,
+                .FlatStyle = FlatStyle.Flat,
+                .Font = New Font("Segoe UI", 13.0F, FontStyle.Regular),
+                .Image = IconScaler.Load("Color_Open.png", DashboardIconSize, SystemIcons.Application.ToBitmap()),
+                .TextImageRelation = TextImageRelation.ImageAboveText,
+                .ImageAlign = ContentAlignment.TopCenter,
+                .TextAlign = ContentAlignment.BottomCenter,
+                .TabStop = False
+            }
+            employeeImportButton.FlatAppearance.BorderSize = 0
+            employeeImportButton.FlatAppearance.MouseOverBackColor = Color.Transparent
+            employeeImportButton.FlatAppearance.MouseDownBackColor = Color.Transparent
+
             AddHandler Me.Load, AddressOf Dashboard_Company_Load
             AddHandler Me.Resize, AddressOf Dashboard_Company_Resize
             AddHandler rolesButton.MouseEnter, AddressOf IconButton_MouseEnter
@@ -143,6 +170,9 @@ Namespace SDC.Framework
             AddHandler generatedFW_Employees_BButton.MouseEnter, AddressOf IconButton_MouseEnter
             AddHandler generatedFW_Employees_BButton.MouseLeave, AddressOf IconButton_MouseLeave
             AddHandler generatedFW_Employees_BButton.Click, AddressOf GeneratedFW_Employees_BButton_Click
+            AddHandler employeeImportButton.MouseEnter, AddressOf IconButton_MouseEnter
+            AddHandler employeeImportButton.MouseLeave, AddressOf IconButton_MouseLeave
+            AddHandler employeeImportButton.Click, AddressOf EmployeeImportButton_Click
             AddHandler closeIconButton.Click, AddressOf CloseButton_Click
 
             Me.Controls.Add(generatedFW_Employees_BButton)
@@ -151,6 +181,7 @@ Namespace SDC.Framework
             Me.Controls.Add(headerLabel)
             Me.Controls.Add(rolesButton)
             Me.Controls.Add(userDiagnosticButton)
+            Me.Controls.Add(employeeImportButton)
         End Sub
 
         Private Sub Dashboard_Company_Load(sender As Object, e As EventArgs)
@@ -196,6 +227,8 @@ Namespace SDC.Framework
             generatedFW_Employees_BButton.Left = DashboardGridLayout.CellLeft(3)
             generatedFW_Employees_BButton.Top = DashboardGridLayout.CellTop(1)
             userDiagnosticButton.Top = rolesButton.Top
+            employeeImportButton.Left = DashboardGridLayout.CellLeft(1)
+            employeeImportButton.Top = DashboardGridLayout.CellTop(2)
 
             ' Last, so a dragged arrangement is laid back over the cells this file pins.
             iconDragController?.ApplySavedPositions()
@@ -227,6 +260,18 @@ Namespace SDC.Framework
                 page.ShowDialog(Me)
             End Using
         End Sub
+        ''' <summary>
+        ''' Opens the employee import with this session's user and access profile, as the Action
+        ''' Icon Guardrail requires - the page decides which registration may be imported into
+        ''' from exactly that profile.
+        ''' </summary>
+        Private Sub EmployeeImportButton_Click(sender As Object, e As EventArgs)
+            ResetIconButtonVisuals()
+            Using importPage As New FW_EmployeeImport(currentUser, accessProfile)
+                importPage.ShowDialog(Me)
+            End Using
+        End Sub
+
         Private Sub IconButton_MouseEnter(sender As Object, e As EventArgs)
             Dim button = TryCast(sender, Button)
             If button Is Nothing Then
@@ -253,6 +298,8 @@ Namespace SDC.Framework
             rolesButton.FlatAppearance.BorderSize = 0
             userDiagnosticButton.BackColor = Color.Transparent
             userDiagnosticButton.FlatAppearance.BorderSize = 0
+            employeeImportButton.BackColor = Color.Transparent
+            employeeImportButton.FlatAppearance.BorderSize = 0
         End Sub
 
         Private Sub CloseButton_Click(sender As Object, e As EventArgs)

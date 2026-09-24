@@ -317,6 +317,78 @@ before connecting — TCP, not ICMP, since a machine can answer a ping with SQL 
 
 ## Settled, with parts still open
 
+### Tab order follows the layout, with fine-tuning on top - when generated pages are next worked on
+
+*Planned and parked 2026-09-24.* Glenn asked why moving, adding or deleting a control on a generated
+page means reordering the tabs by hand. Because a page with a saved order (`FW_UpdateTabOrder`) uses
+that list, keyed by control name, for ever: a control added later is already slotted in by its
+position (`ApplySavedTabOrder`, `ComesAfterOnPage`), but a **moved** one keeps its old place. A page
+with no saved order uses the generator's `SetManualTabOrder` list, right when generated and blind to
+anything moved since. Three pages had a saved order on 2026-09-24: FW_Employees_U (24 controls),
+FW_Registration_U (23), Users_AppAdmin_U (14).
+
+The plan, two layers:
+
+1. **Layout order, worked out on every open** from where the controls sit - down each column in
+   turn, left column first, as the generator orders a two-column page today. Moves, additions and
+   deletions are followed with nothing to redo.
+2. **Fine-tuning saved as exceptions, not a whole list** - "Cell Phone comes straight after Home
+   Phone". A rule survives its field being moved; one whose field is deleted is dropped. The
+   no-tab-stop tick stays per field. The manager gains **Reset to Layout Order**. Glenn: the
+   reorder panel stays, for exactly this fine-tuning.
+
+Touches the tab order code in `FW_Base_U` (restore point and FRAMEWORK_NOTES first), a "comes after"
+column on `FW_UpdateTabOrder`, and the three saved pages, whose lists become rules on first use so
+nobody's order changes the day it ships. Tests: move, add, delete a field a rule points at, Reset,
+and the three pages tabbing exactly as before.
+
+### FW_Roles.ID becomes RoleID - at the next Roles rework
+
+*Parked 2026-09-24.* Glenn asked what it would cost; the answer was "do it when Roles is reworked
+anyway", which is the rule CLAUDE.md sets for existing keys. Measured that day:
+
+- Database: the column (one `sp_rename`; the foreign key from `FW_EmployeeRoles.RoleID` follows),
+  **`vw_FW_EmployeeRoles`** - a view, so a protected area needing Glenn's explicit go-ahead - and
+  `usp_FW_AccessDiagnostic`; the Roles_B row in `FW_Pages` and any saved layouts naming `ID`.
+- Code: about 100 places in six files - up to 72 in `DataAccess.vb`, 18 in `Roles_U`, 5 in
+  `Roles_B`, one each in `FW_MainMenu` and `HealthMail`, two in the employee import's role list.
+- Risk: those queries decide who signs in with which role and what it may see. A missed one fails
+  at sign-in, not at build. Restore point first; test login, role selection, both Roles pages, the
+  access diagnostic, health mail and the import.
+- Order: rename the column, then alter the view and procedure, in one transaction - they cannot be
+  altered to `RoleID` before it exists - shipped with the new build, the app closed. If the view is
+  `WITH SCHEMABINDING`, the rename is refused until it is unbound: check that first.
+
+The gain: `e.RoleID = r.RoleID`, matching `FW_EmployeeRoles`, `FW_RoleDetails`, `FW_RoleFields` and
+`FW_Session`, which already say `RoleID`.
+
+### Employee import
+
+Built 2026-09-24: `FW_EmployeeImport`, CSV or JSON into FW_Employees and their logins, with a
+field mapping, defaults, Saved Imports (`FW_SavedImports`, each keeping a copy of its file), a row-by-row check and an
+all-or-nothing write through the same save path as FW_Employees_U. Decided with Glenn:
+
+- one role for the whole import, not per row
+- a user name already taken is numbered (`gnolan2`, `grathke2@sdcdev.net`), never refused
+- a blank password becomes a six-digit PIN, unique within the import; the results file is the only
+  place it is ever shown. `ChangeMeX` was offered as the alternative and not chosen
+- a default value fills a field whether or not anything is mapped to it
+
+Deliberately left out, each worth doing only when a real file needs it:
+
+- **Updating people who already exist.** New people only. Matching an existing employee needs a
+  key the file and the table agree on, and user name is the only one - which the numbering rule
+  above would then have to stop applying.
+- **Lookup fields by their text.** GenderID, TimeZoneID, AssignedManagerID and the rest take the
+  number, not "Female" or a manager's name. The foreign keys are declared, so the lookup table is
+  known; what is not is which of its columns a file would name.
+- **A role or password rule per row.**
+- **Date-and-time defaults** - parked 2026-09-24 until a date-and-time field is importable (every
+  one today is date-only). Wanted then: `Today 2:00 PM`, `Today 14:00`, `2026-10-01 2:00 PM`
+  besides `Now` and `Today`, all read in the session's time zone and **converted to UTC**, the way
+  moments are stored. Today a typed or file date-and-time is stored as written, unconverted - wrong
+  by the zone offset once displayed - which is the gap to close with it.
+
 ### Switch User
 
 Built, verified and committed 2026-09-16, and extended since: writes are refused while switched

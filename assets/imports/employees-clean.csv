@@ -1,0 +1,16 @@
+First Name,Last Name,User Name,Email,Address 1,City,State,Zip,Work Phone,Title,Hire Date,Notes
+Amelia,Hartley,,amelia.hartley@example.com,"14 Mill Lane, Apt 3",Mobile,AL,36602,251-555-0101,Building Inspector,2026-01-15,Comma inside a quoted address
+Marcus,Obi,,marcus.obi@example.com,88 Dauphin Street,Mobile,AL,36602,251-555-0102,Permit Clerk,2026-02-02,Clean row
+Priya,Raman,praman,priya.raman@example.com,7 Water Street,Saraland,AL,36571,251-555-0103,Plans Examiner,2026-02-11,Supplies its own user name
+Tom,Becker,,tom.becker@example.com,19 Shelton Beach Road,Saraland,AL,36571,251-555-0104,Code Officer,2026-03-01,Clean row
+Wendy,Whitfield,,wendy.whitfield@example.com,4 Celeste Road,Saraland,AL,36571,251-555-0105,Inspector,2026-03-04,First name filled in (missing in employees-test.csv)
+Dana,Moore,dmoore,dana.moore@example.com,6 Industrial Parkway,Satsuma,AL,36572,251-555-0106,Inspector,2026-03-05,Last name filled in (missing in employees-test.csv)
+Owen,Fletcher,grathke@sdcdev.net,owen.fletcher@example.com,22 Norton Avenue,Chickasaw,AL,36611,251-555-0107,Surveyor,2026-03-08,User name already in use - imported as grathke2@sdcdev.net
+Grace,Nolan,gnolan,grace.nolan@example.com,31 Lee Street,Prichard,AL,36610,251-555-0108,Permit Clerk,2026-03-09,First of two rows claiming gnolan
+Gareth,Nolan,gnolan,gareth.nolan@example.com,33 Lee Street,Prichard,AL,36610,251-555-0109,Inspector,2026-03-10,Second gnolan - imported as gnolan2
+Ines,Delacroix-Moreau,,ines.dm@example.com,"9 Rue de l'Église, Suite 2",Mobile,AL,36602,251-555-0110,Plans Examiner,2026-03-12,"Accented characters, an apostrophe, and a hyphenated surname"
+Bob,O'Hare,,bob.ohare@example.com,52 Conception Street,Mobile,AL,36602,251-555-0111,Inspector,2026-03-15,Apostrophe in the surname - user name bohare
+Sam,Nguyen,,sam.nguyen@example.com,"101 Oak Drive
+Building B",Theodore,AL,36582,251-555-0112,Code Officer,2026-03-18,"Line break inside a quoted address"
+Ruth,Alvarez,,ruth.alvarez@example.com,77 Azalea Road,Mobile,AL,36693,251-555-0113,Permit Clerk,2026-03-20,Hire date fixed (was 'not a date' in employees-test.csv)
+Karl,Vance,,,15 Spring Hill Avenue,Mobile,AL,36604,,Inspector,2026-03-22,"No email and no phone - both optional"

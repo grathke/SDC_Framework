@@ -12,6 +12,12 @@ Namespace SDC.Framework
         Public Property ContentType As String
         Public Property FileSize As Long
         Public Property FileData As Byte()
+
+        ''' <summary>
+        ''' Which staging area a browser delivery puts the file in - see BrowserDocument. A Help
+        ''' Desk attachment unless the caller says otherwise; the employee import says imports.
+        ''' </summary>
+        Public Property StagingArea As String = BrowserDocument.AttachmentsArea
     End Class
 
     ''' <summary>
@@ -160,9 +166,12 @@ Namespace SDC.Framework
     ''' Browser: write the bytes somewhere on the server, hand the path to VirtualUI, and let it
     ''' push the file to the browser as a download.
     '''
-    ''' The temp file goes the same way as the picker's: deleted once VirtualUI has been given it.
-    ''' DownloadFile is synchronous as far as the caller is concerned - it hands the file to the
-    ''' session - so deleting afterwards is safe.
+    ''' **The staged copy is kept, not deleted after the call.** This used to delete it in a
+    ''' Finally, on the belief that DownloadFile is synchronous. It is not - it returns before the
+    ''' browser fetches, which is what the SDK's OnDownloadEnd reports - and on 2026-09-24 the
+    ''' browser was handed a "resource might have been removed" page instead of the file. The copy
+    ''' now goes through BrowserDocument.StageForSession, into this session's folder for the
+    ''' attachment's area, which is deleted whole when the session ends.
     ''' </summary>
     Public Class ThinfinityHelpDeskAttachmentDelivery
         Implements IHelpDeskAttachmentDelivery
@@ -177,31 +186,13 @@ Namespace SDC.Framework
         Public Sub Deliver(owner As IWin32Window, attachment As HelpDeskAttachmentUpload) Implements IHelpDeskAttachmentDelivery.Deliver
             If attachment Is Nothing OrElse attachment.FileData Is Nothing Then Return
 
-            ' A folder of our own under the temp path, so a name that collides with something else
-            ' in use cannot overwrite it, and the file keeps its own name for the browser to save.
-            Dim folder = Path.Combine(Path.GetTempPath(), "SDC_Attachments", Guid.NewGuid().ToString("N"))
-            Directory.CreateDirectory(folder)
-            Dim staged = Path.Combine(folder, SafeFileName(attachment.FileName))
-
-            Try
-                File.WriteAllBytes(staged, attachment.FileData)
-                session.DownloadFile(staged, attachment.FileName, attachment.ContentType)
-            Finally
-                Try
-                    Directory.Delete(folder, True)
-                Catch telemetryEx As Exception
-                    Telemetry.Error(telemetryEx, "HelpDeskAttachmentPicker.Deliver")
-                End Try
-            End Try
+            ' A folder of its own, so a name that collides with something else cannot overwrite it,
+            ' and the file keeps its own name for the browser to save.
+            Dim staged = BrowserDocument.StageForSession(attachment.StagingArea,
+                                                         If(String.IsNullOrWhiteSpace(attachment.FileName), "attachment", attachment.FileName),
+                                                         attachment.FileData)
+            session.DownloadFile(staged, attachment.FileName, attachment.ContentType)
         End Sub
-
-        Private Shared Function SafeFileName(name As String) As String
-            Dim candidate = If(name, "attachment")
-            For Each invalid In Path.GetInvalidFileNameChars()
-                candidate = candidate.Replace(invalid, "_"c)
-            Next
-            Return If(candidate.Trim().Length = 0, "attachment", candidate)
-        End Function
     End Class
 
     ''' <summary>
