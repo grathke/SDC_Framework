@@ -53,7 +53,7 @@ GO
 -- FW_Roles  (5 rows)
 SET IDENTITY_INSERT dbo.[FW_Roles] ON;
 GO
-INSERT INTO dbo.[FW_Roles] ([ID], [RegistrationID], [RoleName], [CA_CanChange], [Can_Create], [Can_Read], [Can_Update], [Can_Delete], [Can_Export], [Can_Import], [Can_UseQBE], [Can_ViewAllRecords], [Can_ViewOnlyMyRecords], [DisplayOrder], [IsActive], [CreatedBy], [CreatedOn], [UpdatedBy], [UpdatedOn], [Typ_AppAdmin], [Typ_CompanyAdmin], [Typ_RW], [Typ_RO], [Typ_User], [Typ_OnlyMyRecords], [DeletedFlag], [DeletedBy], [DeletedOn]) VALUES
+INSERT INTO dbo.[FW_Roles] ([RoleID], [RegistrationID], [RoleName], [CA_CanChange], [Can_Create], [Can_Read], [Can_Update], [Can_Delete], [Can_Export], [Can_Import], [Can_UseQBE], [Can_ViewAllRecords], [Can_ViewOnlyMyRecords], [DisplayOrder], [IsActive], [CreatedBy], [CreatedOn], [UpdatedBy], [UpdatedOn], [Typ_AppAdmin], [Typ_CompanyAdmin], [Typ_RW], [Typ_RO], [Typ_User], [Typ_OnlyMyRecords], [DeletedFlag], [DeletedBy], [DeletedOn]) VALUES
     (1, 1, N'Company Admin', NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, 2, 1, NULL, NULL, NULL, NULL, 0, 1, NULL, NULL, NULL, NULL, 0, NULL, NULL),
     (2, 1, N'Role 2', NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, 3, 1, NULL, NULL, NULL, NULL, 0, 0, 1, NULL, NULL, NULL, 0, NULL, NULL),
     (3, 1, N'Role 3', NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, 4, 1, NULL, NULL, NULL, NULL, 0, 0, NULL, NULL, NULL, 1, 0, NULL, NULL),
@@ -659,7 +659,7 @@ GO
 SET IDENTITY_INSERT dbo.[FW_Pages] ON;
 GO
 INSERT INTO dbo.[FW_Pages] ([PageID], [RegistrationID], [DB_Table], [ExposedToUser], [Table_Alias], [WindowOrPage], [Table_SQL], [DisplayOrder], [CreatedBy], [CreatedOn], [ModifiedBy], [ModifiedOn], [DeletedFlag], [DeletedBy], [DeletedOn], [Background], [UseHotFields], [HotFields]) VALUES
-    (14, NULL, N'FW_Roles', NULL, N'Roles', N'Roles_B', N'SELECT dbo.FW_Roles.ID AS PK, dbo.FW_Roles.DisplayOrder, dbo.FW_Roles.RoleName From dbo.FW_Roles WHERE RegistrationID = ? Order By DisplayOrder', NULL, 2, NULL, 2, '2026-09-07T13:37:30.790', 0, NULL, NULL, -1249295, 0, NULL),
+    (14, NULL, N'FW_Roles', NULL, N'Roles', N'Roles_B', N'SELECT dbo.FW_Roles.RoleID AS PK, dbo.FW_Roles.DisplayOrder, dbo.FW_Roles.RoleName From dbo.FW_Roles WHERE RegistrationID = ? Order By DisplayOrder', NULL, 2, NULL, 2, '2026-09-07T13:37:30.790', 0, NULL, NULL, -1249295, 0, NULL),
     (17, NULL, N'FW_Registration', NULL, N'Registration', N'FW_Registration_B', N'SELECT RegistrationID as PK, RegName FROM FW_Registration', NULL, 2, NULL, NULL, NULL, 0, NULL, NULL, NULL, 0, NULL),
     (18, NULL, N'FW_HD_Issues', NULL, N'HD Issues', N'FW_HD_Issues_B', N'SELECT
     i.IssueID AS PK,

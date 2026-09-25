@@ -772,12 +772,12 @@ Namespace SDC.Framework
                 Dim roles = DataAccess.GetSelectableRolesByRegistration(registrationId)
 
                 Dim placeholder = roles.NewRow()
-                placeholder("ID") = 0
+                placeholder("RoleID") = 0
                 placeholder("RoleName") = "Make a Selection"
                 roles.Rows.InsertAt(placeholder, 0)
 
                 roleComboBox.DisplayMember = "RoleName"
-                roleComboBox.ValueMember = "ID"
+                roleComboBox.ValueMember = "RoleID"
                 roleComboBox.DataSource = roles
                 ComboWidth.FitToContent(roleComboBox, roles, "RoleName")
                 roleComboBox.SelectedIndex = 0

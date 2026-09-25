@@ -381,7 +381,13 @@ column on `FW_UpdateTabOrder`, and the three saved pages, whose lists become rul
 nobody's order changes the day it ships. Tests: move, add, delete a field a rule points at, Reset,
 and the three pages tabbing exactly as before.
 
-### FW_Roles.ID becomes RoleID - at the next Roles rework
+### FW_Roles.ID becomes RoleID - BUILT 2026-09-25
+
+**Built 2026-09-25 as migration 166**, when Glenn asked for it directly rather than waiting for a
+Roles rework. About 50 lines changed, not 100: most of the `ID`s counted below belong to other
+tables (`FW_RoleDetails`, `FW_RoleSchema`, the registration combo). The view was not
+schema-bound. `validate-browse-regression.ps1` now fails on a single-line `FW_Roles` query
+written against `ID`. The test list below is what still has to be walked in the running app.
 
 *Parked 2026-09-24.* Glenn asked what it would cost; the answer was "do it when Roles is reworked
 anyway", which is the rule CLAUDE.md sets for existing keys. Measured that day:

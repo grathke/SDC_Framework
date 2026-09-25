@@ -10,7 +10,7 @@ Namespace SDC.Framework
     Public Class Roles_B
         Inherits FW_Base_B
 
-        Private Const DefaultSelectSql As String = "SELECT ID, RegistrationID, RoleName, IsActive, UpdatedOn FROM dbo.FW_Roles WHERE RegistrationID = @RegistrationID"
+        Private Const DefaultSelectSql As String = "SELECT RoleID, RegistrationID, RoleName, IsActive, UpdatedOn FROM dbo.FW_Roles WHERE RegistrationID = @RegistrationID"
 
         Private ReadOnly currentUser As UserContext
         Private ReadOnly accessProfile As AccessProfile
@@ -596,7 +596,7 @@ Namespace SDC.Framework
                                                        registrationId,
                                                        showDeletedRecordsOnly,
                                                        ResolveCurrentRoleFieldTableName(),
-                                                       "ID")
+                                                       "RoleID")
                 RemoveAppAdminRoles(dt, registrationId)
                 rolesGrid.DataSource = dt
                 ApplyFriendlyColumnHeaders(rolesGrid)
@@ -779,8 +779,8 @@ Namespace SDC.Framework
                     Return "PK"
                 End If
 
-                If table.Columns.Contains("ID") Then
-                    Return "ID"
+                If table.Columns.Contains("RoleID") Then
+                    Return "RoleID"
                 End If
             End If
 

@@ -429,6 +429,40 @@ Namespace SDC.Framework
         End Property
 
         ''' <summary>
+        ''' The QBE strip over the grid, for a page that lays out around it.
+        '''
+        ''' Handed out rather than searched for. FW_UserAccessDiagnostic_B and FW_PageGeneration_B
+        ''' each walked the controls for a SplitContainer, and when this became a QbeSplitPanel on
+        ''' 2026-09-25 both found nothing and skipped their whole layout - every control of their
+        ''' own stayed at 0,0. A property changes type with the field, and the compiler says so.
+        ''' </summary>
+        Protected ReadOnly Property BrowseSplitPanel As QbeSplitPanel
+            Get
+                Return qbeSplitContainer
+            End Get
+        End Property
+
+        ''' <summary>
+        ''' The action row's Close and QBE buttons, for a page that lays out around them.
+        '''
+        ''' Handed out for the same reason as BrowseSplitPanel. The two pages above found them by
+        ''' caption, and Hot Fields brought a second button captioned Close - hidden, 64 wide, at
+        ''' 0,0 - which the search found first. The diagnostic hung its Registration combo off it,
+        ''' at x = -89 (2026-09-25). A caption is text for the user, not an identity.
+        ''' </summary>
+        Protected ReadOnly Property CloseCommandButton As Button
+            Get
+                Return closeButton
+            End Get
+        End Property
+
+        Protected ReadOnly Property QbeToggleButton As Button
+            Get
+                Return toggleQbeButton
+            End Get
+        End Property
+
+        ''' <summary>
         ''' The page background before anyone chooses one. Kept here as well because maintenance
         ''' pages reach it as FW_Base_B.DefaultPageBackground - one default, named in two places
         ''' but defined in one.
@@ -5538,7 +5572,19 @@ Namespace SDC.Framework
 
             lastSelectedRegistrationId = registrationId
             ClearBrowseGridForPendingQuery()
+            OnRegistrationSelectionChanged(registrationId)
             PerformFindAfterRegistrationChange()
+        End Sub
+
+        ''' <summary>
+        ''' A page's own reaction to the registration combo, before the page searches again. Called
+        ''' only when the registration actually changed. Default: nothing.
+        '''
+        ''' For a page whose other lists depend on the registration. FW_UserAccessDiagnostic_B kept
+        ''' a second Registration combo of its own to get this, and on 2026-09-25 it sat over the
+        ''' action row beside this one; it now uses this combo and this hook.
+        ''' </summary>
+        Protected Overridable Sub OnRegistrationSelectionChanged(registrationId As Integer)
         End Sub
 
         ''' <summary>

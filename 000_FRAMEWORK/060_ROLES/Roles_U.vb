@@ -1077,12 +1077,12 @@ Namespace SDC.Framework
                 Dim roles = DataAccess.GetRolesByRegistration(_registrationId)
                 roleNameComboBox.DataSource = roles
                 roleNameComboBox.DisplayMember = "RoleName"
-                roleNameComboBox.ValueMember = "ID"
+                roleNameComboBox.ValueMember = "RoleID"
                 ComboWidth.FitToContent(roleNameComboBox)
 
                 If roles.Rows.Count > 0 Then
                     For i = 0 To roles.Rows.Count - 1
-                        If Convert.ToInt32(roles.Rows(i)("ID")) = _roleId Then
+                        If Convert.ToInt32(roles.Rows(i)("RoleID")) = _roleId Then
                             roleNameComboBox.SelectedIndex = i
                             Exit For
                         End If

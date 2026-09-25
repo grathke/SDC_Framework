@@ -166,7 +166,7 @@ Namespace SDC.Framework
             Dim offered = DataAccess.GetSelectableRolesByRegistration(registrationId)
             If offered IsNot Nothing Then
                 For Each row As DataRow In offered.Rows
-                    Dim id = Convert.ToInt32(row("ID"))
+                    Dim id = Convert.ToInt32(row("RoleID"))
                     roleNames(id) = Convert.ToString(row("RoleName"))
                     roleDisplayOrder(id) = Convert.ToInt32(row("DisplayOrder"))
                     available.Add(id)

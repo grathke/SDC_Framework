@@ -14,9 +14,6 @@ Namespace SDC.Framework
         Inherits FW_Base_B
 
         Private ReadOnly currentUser As UserContext
-        Private ReadOnly accessProfile As AccessProfile
-        Private ReadOnly registrationLabel As Label
-        Private ReadOnly registrationComboBox As ComboBox
         Private ReadOnly tableLabel As Label
         Private ReadOnly tableComboBox As ComboBox
         Private ReadOnly roleLabel As Label
@@ -29,29 +26,19 @@ Namespace SDC.Framework
         Private selectedRegistrationId As Integer
         Private selectedUserId As Integer
         Private loadingRoles As Boolean
-        Private loadingRegistrations As Boolean
         Private diagnosticPageReady As Boolean
         Private diagnosticLayoutInProgress As Boolean
 
         Public Sub New(user As UserContext, Optional profile As AccessProfile = Nothing)
             MyBase.New(user, profile, "FW_USERS")
             currentUser = user
-            accessProfile = profile
             selectedRegistrationId = GetSessionRegistrationId()
             ClientSize = New Size(ClientSize.Width, 980)
 
-            registrationLabel = New Label() With {
-                .Text = "Registration:",
-                .AutoSize = True,
-                .Location = New Point(20, 78),
-                .ForeColor = Color.DimGray
-            }
-            registrationComboBox = New ComboBox() With {
-                .DropDownStyle = ComboBoxStyle.DropDownList,
-                .Location = New Point(110, 74),
-                .Size = New Size(275, 26),
-                .DropDownWidth = 280
-            }
+            ' No Registration combo of its own. It kept one until 2026-09-25, beside the one every
+            ' browse page gets from FW_Base_B - two combos saying the same thing, and this one had
+            ' drifted onto the action row. The registration now comes from FW_Base_B's combo, and
+            ' OnRegistrationSelectionChanged reloads what depends on it.
             tableLabel = New Label() With {
                 .Text = "Table / Menu:",
                 .AutoSize = True,
@@ -118,15 +105,12 @@ Namespace SDC.Framework
                 .HeaderText = "Allowed",
                 .Width = 80
             })
-            AddHandler registrationComboBox.SelectedIndexChanged, AddressOf RegistrationComboBox_SelectedIndexChanged
             AddHandler Me.Load, AddressOf DiagnosticPage_Load
             AddHandler Me.Shown, AddressOf DiagnosticPage_Shown
             AddHandler checkAccessButton.Click, AddressOf CheckAccessButton_Click
             AddHandler applyChangesButton.Click, AddressOf ApplyChangesButton_Click
             AddHandler permissionsGrid.CurrentCellDirtyStateChanged, AddressOf PermissionsGrid_CurrentCellDirtyStateChanged
 
-            Controls.Add(registrationLabel)
-            Controls.Add(registrationComboBox)
             Controls.Add(tableLabel)
             Controls.Add(tableComboBox)
             Controls.Add(roleLabel)
@@ -136,8 +120,6 @@ Namespace SDC.Framework
             Controls.Add(analysisResultLabel)
             Controls.Add(diagnosticResultTextBox)
             Controls.Add(permissionsGrid)
-            registrationLabel.BringToFront()
-            registrationComboBox.BringToFront()
             tableLabel.BringToFront()
             tableComboBox.BringToFront()
         End Sub
@@ -200,10 +182,7 @@ Namespace SDC.Framework
                 Return activeSql
             End If
 
-            Dim registrationId As Integer = 0
-            If Not RegistrationComboHelper.TryGetSelectedId(registrationComboBox, registrationId) Then
-                registrationId = selectedRegistrationId
-            End If
+            Dim registrationId = GetSelectedRegistrationId()
             If registrationId <= 0 Then
                 Return activeSql
             End If
@@ -229,50 +208,28 @@ Namespace SDC.Framework
             Return activeSql & separator & predicate
         End Function
 
-        Protected Overrides Function TryGetActiveRegistrationId(ByRef registrationId As Integer) As Boolean
-            If RegistrationComboHelper.TryGetSelectedId(registrationComboBox, registrationId) Then
-                selectedRegistrationId = registrationId
-                Return True
-            End If
-
-            registrationId = selectedRegistrationId
-            Return registrationId > 0
-        End Function
-
         Private Sub DiagnosticPage_Load(sender As Object, e As EventArgs)
-            Dim canChooseRegistration = accessProfile IsNot Nothing AndAlso
-                                         accessProfile.Can("FW_USERS", AccessCapability.ViewAllRecords)
-            loadingRegistrations = True
             Try
-                RegistrationComboHelper.Populate(registrationComboBox, selectedRegistrationId, True)
-                RegistrationComboHelper.UpdateLabelForSelection(registrationLabel, registrationComboBox)
                 LoadExposedTableChoices()
             Finally
-                loadingRegistrations = False
                 diagnosticPageReady = True
             End Try
 
-            registrationLabel.Visible = canChooseRegistration
-            registrationComboBox.Visible = canChooseRegistration
             tableLabel.Visible = True
             tableComboBox.Visible = True
         End Sub
 
-        Private Sub RegistrationComboBox_SelectedIndexChanged(sender As Object, e As EventArgs)
-            If loadingRegistrations Then
-                Return
-            End If
+        ''' <summary>
+        ''' FW_Base_B's Registration combo changed. It has already cleared the grid; the table list
+        ''' and the selected user's roles belong to the registration, so they follow it.
+        ''' </summary>
+        Protected Overrides Sub OnRegistrationSelectionChanged(registrationId As Integer)
+            If Not diagnosticPageReady Then Return
 
-            ClearBrowseGridForPendingQuery()
-            RegistrationComboHelper.UpdateLabelForSelection(registrationLabel, registrationComboBox)
-
-            Dim registrationId As Integer
-            If RegistrationComboHelper.TryGetSelectedId(registrationComboBox, registrationId) Then
-                selectedRegistrationId = registrationId
+            selectedRegistrationId = registrationId
+            If registrationId > 0 Then
                 LoadExposedTableChoices()
                 LoadSelectedUserRoles()
-            Else
-                selectedRegistrationId = 0
             End If
         End Sub
 
@@ -356,38 +313,22 @@ Namespace SDC.Framework
 
             diagnosticLayoutInProgress = True
             Try
-            If registrationComboBox Is Nothing OrElse
-               registrationLabel Is Nothing OrElse
-                    tableComboBox Is Nothing Then
+            If tableComboBox Is Nothing Then
                 Return
             End If
 
-            Dim qbeButton = FindButtonStartingWithText(Me, "QBE")
-            Dim closeButton = FindButtonByText(Me, "Close")
+            Dim qbeButton = QbeToggleButton
+            Dim closeButton = CloseCommandButton
 
-            ' Anchored to whichever action button is actually present. This used to hang off the Enum
-            ' button and did nothing at all when that button was absent - a lookup by caption fails
-            ' silently, so the combo would simply have stayed where it was built with nothing to say
-            ' why. The Enum button has since been removed entirely.
-            Dim rightAnchor As Control = If(closeButton, qbeButton)
-            If rightAnchor IsNot Nothing Then
-                registrationComboBox.Left = rightAnchor.Left + rightAnchor.Width - registrationComboBox.Width
-                registrationComboBox.Top = 42
-                registrationLabel.Left = Math.Max(8, registrationComboBox.Left - registrationLabel.PreferredWidth - 8)
-                registrationLabel.Top = registrationComboBox.Top + 5
-            End If
-
-            Dim browseSplit = FindBrowseSplitContainer(Me)
+            Dim browseSplit = BrowseSplitPanel
             If browseSplit Is Nothing Then
                 Return
             End If
 
-            Dim compactTop = Not registrationComboBox.Visible
-            If compactTop AndAlso browseSplit.Tag Is Nothing Then
-                MoveDiagnosticActionRow(-70)
-                browseSplit.Top = Math.Max(92, browseSplit.Top - 70)
-                browseSplit.Tag = "DiagnosticBrowseCompacted"
-            End If
+            ' There was a compact mode here that moved the action row up 70 when the page's own
+            ' Registration combo was hidden, to close the gap it left. The combo is gone (it is
+            ' FW_Base_B's now, on the top row), and with that row already at y=48 the shift would
+            ' have put QBE and Close above the window.
 
             ' The action row belongs to FW_Base_B, which lays out Close, the colour picker and QBE
             ' on one line, each placed off its neighbour. This page used to move two of those three
@@ -468,8 +409,6 @@ Namespace SDC.Framework
             diagnosticResultTextBox.Anchor = AnchorStyles.Top Or AnchorStyles.Left Or AnchorStyles.Right
             checkAccessButton.BringToFront()
             applyChangesButton.BringToFront()
-            registrationComboBox.BringToFront()
-            registrationLabel.BringToFront()
             tableComboBox.BringToFront()
             tableLabel.BringToFront()
             tableComboBox.BringToFront()
@@ -679,9 +618,10 @@ Namespace SDC.Framework
             Next
         End Sub
 
+        ''' <summary>The registration FW_Base_B's combo has chosen, or the session's where it is hidden.</summary>
         Private Function GetSelectedRegistrationId() As Integer
             Dim registrationId As Integer = 0
-            If RegistrationComboHelper.TryGetSelectedId(registrationComboBox, registrationId) Then
+            If TryGetActiveRegistrationId(registrationId) AndAlso registrationId > 0 Then
                 selectedRegistrationId = registrationId
             End If
             Return selectedRegistrationId
@@ -701,7 +641,7 @@ Namespace SDC.Framework
         ''' SplitterDistance is not, because this method derives it from browseSplit.Height, so
         ''' setting the height back from the splitter feeds each layout pass its own output.
         ''' </summary>
-        Private Function ApplyDiagnosticQbeLayout(browseSplit As SplitContainer) As Integer
+        Private Function ApplyDiagnosticQbeLayout(browseSplit As QbeSplitPanel) As Integer
             If browseSplit Is Nothing OrElse browseSplit.Panel1Collapsed Then
                 Return 0
             End If
@@ -731,9 +671,9 @@ Namespace SDC.Framework
             End If
 
             browseSplit.Panel1MinSize = panelHeight
-            ' Same arithmetic, same fix: see SplitterLayout for what the missing SplitterWidth
-            ' cost on 2026-09-21.
-            SplitterLayout.TrySetDistance(browseSplit, panelHeight)
+            ' The panel clamps its own distance, with SplitterLayout's arithmetic - see there for
+            ' what the missing SplitterWidth cost on 2026-09-21.
+            browseSplit.TrySetDistance(panelHeight)
             Return panelHeight
         End Function
 
@@ -811,23 +751,6 @@ Namespace SDC.Framework
             Return Nothing
         End Function
 
-        Private Sub MoveDiagnosticActionRow(offset As Integer)
-            Dim qbeButton = FindButtonStartingWithText(Me, "QBE")
-            If qbeButton Is Nothing OrElse qbeButton.Tag IsNot Nothing Then
-                Return
-            End If
-
-            qbeButton.Top += offset
-            qbeButton.Tag = "DiagnosticActionRowMoved"
-
-            For Each actionCaption In New String() {"Close", "Enum", "Show Deleted", "Find"}
-                Dim button = FindButtonByText(Me, actionCaption)
-                If button IsNot Nothing Then
-                    button.Top += offset
-                End If
-            Next
-        End Sub
-
         Private Shared Function FindButtonByText(parent As Control, text As String) As Button
             For Each child As Control In parent.Controls
                 Dim button = TryCast(child, Button)
@@ -836,38 +759,6 @@ Namespace SDC.Framework
                 End If
 
                 Dim nested = FindButtonByText(child, text)
-                If nested IsNot Nothing Then
-                    Return nested
-                End If
-            Next
-
-            Return Nothing
-        End Function
-
-        Private Shared Function FindButtonStartingWithText(parent As Control, text As String) As Button
-            For Each child As Control In parent.Controls
-                Dim button = TryCast(child, Button)
-                If button IsNot Nothing AndAlso button.Text.StartsWith(text, StringComparison.OrdinalIgnoreCase) Then
-                    Return button
-                End If
-
-                Dim nested = FindButtonStartingWithText(child, text)
-                If nested IsNot Nothing Then
-                    Return nested
-                End If
-            Next
-
-            Return Nothing
-        End Function
-
-        Private Shared Function FindBrowseSplitContainer(parent As Control) As SplitContainer
-            For Each child As Control In parent.Controls
-                Dim split = TryCast(child, SplitContainer)
-                If split IsNot Nothing Then
-                    Return split
-                End If
-
-                Dim nested = FindBrowseSplitContainer(child)
                 If nested IsNot Nothing Then
                     Return nested
                 End If

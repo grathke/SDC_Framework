@@ -428,6 +428,37 @@ Assert-SingleOwner -Pattern 'Environment\.MachineName|GetExecutingAssembly\(\)\.
 Assert-SingleOwner -Pattern 'GetEnvironmentVariable\("SDC_DB_' -Owners @("DataAccess.vb") -Description "The database connection settings are read in one place (DataAccess)"
 Assert-SingleOwner -Pattern '-\s*[\w.()]*[Pp]anel2MinSize\b' -Owners @("SplitterLayout.vb") -Description "The largest splitter distance, SplitterWidth included (SplitterLayout.MaxDistance)"
 
+# Base_B's QBE strip is a QbeSplitPanel since 2026-09-25, and a page reaches it through
+# BrowseSplitPanel. Two pages searched the controls for a SplitContainer instead; after the change
+# they found nothing, skipped their layout, and left every control of their own at 0,0 - which
+# compiled, and was found by eye. A browse page naming SplitContainer at all is that mistake again.
+Assert-SingleOwner -Pattern 'FindBrowseSplitContainer' -Owners @() -Description "No page searches for the browse split panel (FW_Base_B.BrowseSplitPanel)"
+$browsePagesNamingSplitContainer = @(Get-ChildItem -Path ".\000_FRAMEWORK", ".\1*_*", ".\2*_*" -Filter "*.vb" -File -Recurse -ErrorAction SilentlyContinue |
+    Where-Object { $_.Name -ne "FW_Base_B.vb" } |
+    Where-Object { (Select-String -LiteralPath $_.FullName -Pattern "Inherits FW_Base_B" -SimpleMatch -Quiet) -and
+                   (Select-String -LiteralPath $_.FullName -Pattern "SplitContainer" -SimpleMatch -Quiet) } |
+    ForEach-Object { $_.Name })
+if ($browsePagesNamingSplitContainer.Count -gt 0) {
+    throw "A browse page names SplitContainer - use BrowseSplitPanel: $($browsePagesNamingSplitContainer -join ', ')"
+}
+Write-Host "PASS: No browse page names SplitContainer" -ForegroundColor Green
+
+# The same pages found Base_B's Close and QBE buttons by caption, and Hot Fields' hidden Close
+# answered first. CloseCommandButton and QbeToggleButton hand them out by reference.
+Assert-SingleOwner -Pattern 'FindButton\w*\(Me,\s*"(Close|QBE)"|\{\s*"Close"\s*,' -Owners @() -Description "No page finds Base_B's Close or QBE button by caption (CloseCommandButton, QbeToggleButton)"
+
+# The access diagnostic had a Registration combo of its own beside FW_Base_B's; on 2026-09-25 it
+# sat over the action row. It uses FW_Base_B's now and follows it through the hook.
+Assert-NotPattern -Path ".\000_FRAMEWORK\090_DIAGNOSTICS\FW_UserAccessDiagnostic_B.vb" -Pattern "registrationComboBox" -Description "The access diagnostic has no Registration combo of its own"
+Assert-Pattern -Path ".\000_FRAMEWORK\090_DIAGNOSTICS\FW_UserAccessDiagnostic_B.vb" -Pattern "Protected Overrides Sub OnRegistrationSelectionChanged" -Description "The access diagnostic follows FW_Base_B's Registration combo"
+Assert-Pattern -Path ".\000_FRAMEWORK\000_BASE CLASSES\FW_Base_B.vb" -Pattern "OnRegistrationSelectionChanged(registrationId)" -Description "FW_Base_B tells a page its registration changed"
+
+# FW_Roles' key is RoleID since migration 166 (2026-09-25). Its SQL lives in strings no compiler
+# reads, so a query still written against ID fails only when that screen runs. This catches the
+# single-line forms: r.ID, FW_Roles.ID, and a bare ID selected or filtered on the same line as
+# FROM dbo.FW_Roles. A statement split over lines is not seen here - those were swept by hand.
+Assert-SingleOwner -Pattern '\br\.ID\b|FW_Roles\.ID\b|FW_Roles\]?\s+WHERE\s+ID\b|(?<![@\w])ID\b[^"\n]*FROM dbo\.\[?FW_Roles\b' -Owners @() -Description "FW_Roles is keyed by RoleID in every query"
+
 Write-Step "Manual verification checklist"
 Write-Host "Run these UI checks in Registration_B, Roles_B:" -ForegroundColor Yellow
 Write-Host "  1) Custom SQL without DeletedFlag: Show Deleted should be disabled when grid lacks DeletedFlag." -ForegroundColor Yellow

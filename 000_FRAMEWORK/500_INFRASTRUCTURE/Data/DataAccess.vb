@@ -2941,7 +2941,7 @@ Namespace SDC.Framework
 
                 ' DEFAULT SQL PATH: Standard query with parameter
                 Dim sql As New StringBuilder()
-                sql.Append("SELECT ID, RegistrationID, RoleName ")
+                sql.Append("SELECT RoleID, RegistrationID, RoleName ")
                 sql.Append("FROM dbo.FW_Roles ")
                 sql.Append("WHERE RegistrationID = @RegistrationID ")
                 sql.Append("ORDER BY RoleName")
@@ -5154,9 +5154,9 @@ Namespace SDC.Framework
                     "WHERE EmployeeID = @EmployeeID AND RoleID = @RoleID; " &
                     "IF @@ROWCOUNT = 0 " &
                     "INSERT INTO dbo.FW_EmployeeRoles (RegistrationID, EmployeeID, RoleID, DisplayOrder, IsActive, DeletedFlag, CreatedBy, CreatedOn) " &
-                    "SELECT e.RegistrationId, e.EmployeeID, r.ID, ISNULL(r.DisplayOrder, 1), 1, 0, @ActingUserID, SYSUTCDATETIME() " &
+                    "SELECT e.RegistrationId, e.EmployeeID, r.RoleID, ISNULL(r.DisplayOrder, 1), 1, 0, @ActingUserID, SYSUTCDATETIME() " &
                     "FROM dbo.FW_Employees e " &
-                    "INNER JOIN dbo.FW_Roles r ON r.ID = @RoleID " &
+                    "INNER JOIN dbo.FW_Roles r ON r.RoleID = @RoleID " &
                     "                         AND r.RegistrationID = e.RegistrationId " &
                     "                         AND ISNULL(r.IsActive, 1) = 1 " &
                     "                         AND ISNULL(r.DeletedFlag, 0) = 0 " &
@@ -5189,7 +5189,7 @@ Namespace SDC.Framework
                     Using cmd As New SqlCommand(
                         "SELECT er.RoleID, ISNULL(r.RoleName, '') AS RoleName, ISNULL(r.DisplayOrder, 0) AS DisplayOrder " &
                         "FROM dbo.FW_EmployeeRoles er " &
-                        "INNER JOIN dbo.FW_Roles r ON r.ID = er.RoleID " &
+                        "INNER JOIN dbo.FW_Roles r ON r.RoleID = er.RoleID " &
                         "WHERE er.EmployeeID = @ID AND ISNULL(er.IsActive, 1) = 1 AND ISNULL(er.DeletedFlag, 0) = 0 " &
                         "ORDER BY CASE WHEN ISNULL(r.DisplayOrder, 0) = 0 THEN 1 ELSE 0 END, ISNULL(r.DisplayOrder, 255), r.RoleName", conn)
                         cmd.Parameters.Add("@ID", SqlDbType.Int).Value = employeeId
@@ -5225,7 +5225,7 @@ Namespace SDC.Framework
                     conn.Open()
                     Using cmd As New SqlCommand(
                         "SELECT TOP 1 er.RoleID FROM dbo.FW_EmployeeRoles er " &
-                        "INNER JOIN dbo.FW_Roles r ON r.ID = er.RoleID " &
+                        "INNER JOIN dbo.FW_Roles r ON r.RoleID = er.RoleID " &
                         "WHERE er.EmployeeID = @ID AND ISNULL(er.IsActive, 1) = 1 AND ISNULL(er.DeletedFlag, 0) = 0 " &
                         "ORDER BY CASE WHEN ISNULL(r.DisplayOrder, 0) = 0 THEN 1 ELSE 0 END, ISNULL(r.DisplayOrder, 255)", conn)
                         cmd.Parameters.Add("@ID", SqlDbType.Int).Value = employeeId
@@ -5567,7 +5567,7 @@ Namespace SDC.Framework
                     End If
 
                     Using roleCmd As New SqlCommand(
-                        "SELECT DISTINCT r.ID AS RoleID, r.RoleName, ISNULL(r.DisplayOrder, 0) AS DisplayOrder, " &
+                        "SELECT DISTINCT r.RoleID, r.RoleName, ISNULL(r.DisplayOrder, 0) AS DisplayOrder, " &
                         "       ISNULL(r.Typ_AppAdmin, 0) AS Typ_AppAdmin, " &
                         "       ISNULL(r.Typ_CompanyAdmin, 0) AS Typ_CompanyAdmin, " &
                         "       ISNULL(r.Typ_RW, 0) AS Typ_RW, " &
@@ -5582,7 +5582,7 @@ Namespace SDC.Framework
                         "       ISNULL(r.Can_ViewOnlyMyRecords, 0) AS Can_ViewOnlyMyRecords " &
                         "FROM dbo.FW_EmployeeRoles ur " &
                         "INNER JOIN dbo.FW_Employees emp ON emp.EmployeeID = ur.EmployeeID " &
-                        "INNER JOIN dbo.FW_Roles r ON r.ID = ur.RoleID " &
+                        "INNER JOIN dbo.FW_Roles r ON r.RoleID = ur.RoleID " &
                         "WHERE emp.UserId = @UserID " &
                         "  AND ur.RegistrationID = @RegistrationID " &
                         "  AND ISNULL(ur.IsActive, 1) = 1 " &
@@ -6289,10 +6289,10 @@ Namespace SDC.Framework
             Using conn As New SqlConnection(ConnectionString)
                 conn.Open()
                 Using cmd As New SqlCommand(
-                    "SELECT DISTINCT r.ID AS RoleID, r.RoleName, ISNULL(r.IsActive, 1) AS IsActive " &
+                    "SELECT DISTINCT r.RoleID, r.RoleName, ISNULL(r.IsActive, 1) AS IsActive " &
                     "FROM dbo.FW_EmployeeRoles ur " &
                     "INNER JOIN dbo.FW_Employees emp ON emp.EmployeeID = ur.EmployeeID " &
-                    "INNER JOIN dbo.FW_Roles r ON r.ID = ur.RoleID " &
+                    "INNER JOIN dbo.FW_Roles r ON r.RoleID = ur.RoleID " &
                     "WHERE emp.UserId = @UserID AND ur.RegistrationID = @RegistrationID " &
                     "AND ISNULL(ur.IsActive, 1) = 1 ORDER BY r.RoleName", conn)
                     cmd.Parameters.AddWithValue("@UserID", userId)
@@ -6311,10 +6311,10 @@ Namespace SDC.Framework
             Using conn As New SqlConnection(ConnectionString)
                 conn.Open()
                 Using cmd As New SqlCommand(
-                    "SELECT r.ID AS RoleID, r.RoleName, ISNULL(r.DisplayOrder, 0) AS DisplayOrder, " &
+                    "SELECT r.RoleID, r.RoleName, ISNULL(r.DisplayOrder, 0) AS DisplayOrder, " &
                     "CASE WHEN EXISTS (SELECT 1 FROM dbo.FW_EmployeeRoles ur " &
                     "INNER JOIN dbo.FW_Employees emp ON emp.EmployeeID = ur.EmployeeID " &
-                    "WHERE emp.UserId = @UserID AND ur.RoleID = r.ID " &
+                    "WHERE emp.UserId = @UserID AND ur.RoleID = r.RoleID " &
                     "AND ur.RegistrationID = @RegistrationID AND ISNULL(ur.IsActive, 1) = 1) THEN 1 ELSE 0 END AS IsAssigned " &
                     "FROM dbo.FW_Roles r " &
                     "WHERE r.RegistrationID = @RegistrationID AND ISNULL(r.IsActive, 1) = 1 " &
@@ -6709,9 +6709,9 @@ Namespace SDC.Framework
             Using cmd As New SqlCommand(
                 "INSERT INTO dbo.FW_EmployeeRoles (RegistrationID, EmployeeID, RoleID, DisplayOrder, " &
                 "IsActive, DeletedFlag, CreatedBy, CreatedOn, UpdatedBy, UpdatedOn) " &
-                "SELECT TOP 1 @Reg, @Emp, r.ID, r.DisplayOrder, 1, 0, @By, GETUTCDATE(), @By, GETUTCDATE() " &
+                "SELECT TOP 1 @Reg, @Emp, r.RoleID, r.DisplayOrder, 1, 0, @By, GETUTCDATE(), @By, GETUTCDATE() " &
                 "FROM dbo.FW_Roles r WHERE r.RegistrationID = @Reg AND ISNULL(r.Typ_CompanyAdmin, 0) = 1 " &
-                "ORDER BY r.DisplayOrder, r.ID", conn, tx)
+                "ORDER BY r.DisplayOrder, r.RoleID", conn, tx)
                 cmd.Parameters.Add("@Reg", SqlDbType.Int).Value = registrationId
                 cmd.Parameters.Add("@Emp", SqlDbType.Int).Value = employeeId
                 cmd.Parameters.Add("@By", SqlDbType.Int).Value = currentUserId
@@ -8033,7 +8033,7 @@ Namespace SDC.Framework
             Using conn As New SqlConnection(ConnectionString)
                 conn.Open()
                 Dim sql As String =
-                    "SELECT r.ID, r.RoleName, r.DisplayOrder " &
+                    "SELECT r.RoleID, r.RoleName, r.DisplayOrder " &
                     "FROM dbo.FW_Roles r " &
                     "WHERE r.RegistrationID = @RegistrationID AND r.IsActive = 1 " &
                     "  AND ISNULL(r.DeletedFlag, 0) = 0 "
@@ -8043,7 +8043,7 @@ Namespace SDC.Framework
                     ' the user no longer holds it, so it is available again.
                     sql &= "AND NOT EXISTS (SELECT 1 FROM dbo.FW_EmployeeRoles ur " &
                            "INNER JOIN dbo.FW_Employees emp ON emp.EmployeeID = ur.EmployeeID " &
-                           "WHERE emp.UserId = @UserID AND ur.RoleID = r.ID " &
+                           "WHERE emp.UserId = @UserID AND ur.RoleID = r.RoleID " &
                            "AND ISNULL(ur.DeletedFlag, 0) = 0) "
                 End If
 
@@ -8072,7 +8072,7 @@ Namespace SDC.Framework
             Using conn As New SqlConnection(ConnectionString)
                 conn.Open()
                 Using cmd As New SqlCommand(
-                    "SELECT DISTINCT r.ID AS RoleID, r.RoleName, ISNULL(r.DisplayOrder, 0) AS DisplayOrder, " &
+                    "SELECT DISTINCT r.RoleID, r.RoleName, ISNULL(r.DisplayOrder, 0) AS DisplayOrder, " &
                     "       ISNULL(r.Typ_AppAdmin, 0) AS Typ_AppAdmin, " &
                     "       ISNULL(r.Typ_CompanyAdmin, 0) AS Typ_CompanyAdmin, " &
                     "       ISNULL(r.Typ_RW, 0) AS Typ_RW, " &
@@ -8087,7 +8087,7 @@ Namespace SDC.Framework
                     "       ISNULL(r.Can_ViewOnlyMyRecords, 0) AS Can_ViewOnlyMyRecords " &
                     "FROM dbo.FW_EmployeeRoles ur " &
                     "INNER JOIN dbo.FW_Employees emp ON emp.EmployeeID = ur.EmployeeID " &
-                    "INNER JOIN dbo.FW_Roles r ON r.ID = ur.RoleID " &
+                    "INNER JOIN dbo.FW_Roles r ON r.RoleID = ur.RoleID " &
                     "WHERE emp.UserId = @UserID " &
                     "  AND ur.RegistrationID = @RegistrationID " &
                     "  AND ISNULL(ur.IsActive, 1) = 1 " &
@@ -8158,7 +8158,7 @@ Namespace SDC.Framework
                 Using cmd As New SqlCommand(
                     "SELECT UserRoleID, RegistrationID, EmployeeID, UserId, RoleID, RoleName, DisplayOrder, IsActive, CreatedBy, CreatedOn, UpdatedBy, UpdatedOn " &
                     "FROM dbo.vw_FW_EmployeeRoles WHERE UserId = @UserID " &
-                    "ORDER BY (SELECT ISNULL(r.DisplayOrder, 255) FROM dbo.FW_Roles r WHERE r.ID = vw_FW_EmployeeRoles.RoleID), RoleName", conn)
+                    "ORDER BY (SELECT ISNULL(r.DisplayOrder, 255) FROM dbo.FW_Roles r WHERE r.RoleID = vw_FW_EmployeeRoles.RoleID), RoleName", conn)
                     cmd.Parameters.AddWithValue("@UserID", userId)
                     Using da As New SqlDataAdapter(cmd)
                         da.Fill(table)
@@ -8534,7 +8534,7 @@ Namespace SDC.Framework
                     "SELECT ISNULL(r.RoleName, '') AS RoleName, " &
                     "(SELECT COUNT(*) FROM dbo.FW_EmployeeRoles ur WHERE ur.RoleID = @RoleID AND ISNULL(ur.IsActive, 1) = 1 AND ISNULL(ur.DeletedFlag, 0) = 0) AS UserCount, " &
                     "(SELECT COUNT(*) FROM dbo.FW_Registration g WHERE g.CompanyAdminRoleID = @RoleID) AS RegistrationCount " &
-                    "FROM dbo.FW_Roles r WHERE r.ID = @RoleID", conn)
+                    "FROM dbo.FW_Roles r WHERE r.RoleID = @RoleID", conn)
                     cmd.Parameters.AddWithValue("@RoleID", roleId)
                     Using reader = cmd.ExecuteReader()
                         If reader.Read() Then
@@ -8566,7 +8566,7 @@ Namespace SDC.Framework
                             Using cmd As New SqlCommand(
                                 "UPDATE dbo.FW_Roles " &
                                 "SET IsActive = 0, DeletedFlag = 1, DeletedBy = @UpdatedBy, DeletedOn = SYSUTCDATETIME(), UpdatedBy = @UpdatedBy, UpdatedOn = SYSUTCDATETIME() " &
-                                "WHERE ID = @ID", conn, trans)
+                                "WHERE RoleID = @ID", conn, trans)
                                 cmd.Parameters.AddWithValue("@ID", roleId)
                                 cmd.Parameters.AddWithValue("@UpdatedBy", If(updatedBy > 0, CType(updatedBy, Object), DBNull.Value))
                                 cmd.ExecuteNonQuery()
@@ -8638,7 +8638,7 @@ Namespace SDC.Framework
                         End Using
                         
                         ' Delete the FW_Roles record
-                        Using cmd As New SqlCommand("DELETE FROM dbo.FW_Roles WHERE ID = @ID", conn, trans)
+                        Using cmd As New SqlCommand("DELETE FROM dbo.FW_Roles WHERE RoleID = @ID", conn, trans)
                             cmd.Parameters.AddWithValue("@ID", roleId)
                             cmd.ExecuteNonQuery()
                         End Using
@@ -8686,7 +8686,7 @@ Namespace SDC.Framework
                     ' Read before the parent is cleared, because clearing it sets DeletedOn to NULL
                     ' and the children could then match nothing.
                     Dim deletedOn As Object = Nothing
-                    Using cmd As New SqlCommand("SELECT DeletedOn FROM dbo.FW_Roles WHERE ID = @ID", conn)
+                    Using cmd As New SqlCommand("SELECT DeletedOn FROM dbo.FW_Roles WHERE RoleID = @ID", conn)
                         cmd.Parameters.AddWithValue("@ID", roleId)
                         deletedOn = cmd.ExecuteScalar()
                     End Using
@@ -8696,7 +8696,7 @@ Namespace SDC.Framework
                             Using cmd As New SqlCommand(
                                 "UPDATE dbo.FW_Roles " &
                                 "SET IsActive = 1, DeletedFlag = 0, DeletedBy = NULL, DeletedOn = NULL, UpdatedBy = @UpdatedBy, UpdatedOn = SYSUTCDATETIME() " &
-                                "WHERE ID = @ID", conn, trans)
+                                "WHERE RoleID = @ID", conn, trans)
                                 cmd.Parameters.AddWithValue("@ID", roleId)
                                 cmd.Parameters.AddWithValue("@UpdatedBy", If(updatedBy > 0, CType(updatedBy, Object), DBNull.Value))
                                 cmd.ExecuteNonQuery()
@@ -8743,7 +8743,7 @@ Namespace SDC.Framework
                 End If
 
                 Using cmd As New SqlCommand(
-                    "UPDATE dbo.FW_Roles SET IsActive = 1, UpdatedBy = @UpdatedBy, UpdatedOn = SYSUTCDATETIME() WHERE ID = @ID", conn)
+                    "UPDATE dbo.FW_Roles SET IsActive = 1, UpdatedBy = @UpdatedBy, UpdatedOn = SYSUTCDATETIME() WHERE RoleID = @ID", conn)
                     cmd.Parameters.AddWithValue("@ID", roleId)
                     cmd.Parameters.AddWithValue("@UpdatedBy", If(updatedBy > 0, CType(updatedBy, Object), DBNull.Value))
                     cmd.ExecuteNonQuery()
@@ -8765,7 +8765,7 @@ Namespace SDC.Framework
             Using conn As New SqlConnection(ConnectionString)
                 conn.Open()
                 Using cmd As New SqlCommand(
-                    "SELECT COUNT(1) FROM dbo.FW_Roles WHERE RegistrationID = @RegistrationID AND RoleName = @RoleName AND ID <> @ExcludeRoleId", conn)
+                    "SELECT COUNT(1) FROM dbo.FW_Roles WHERE RegistrationID = @RegistrationID AND RoleName = @RoleName AND RoleID <> @ExcludeRoleId", conn)
                     cmd.Parameters.AddWithValue("@RegistrationID", registrationId)
                     cmd.Parameters.AddWithValue("@RoleName", roleName.Trim())
                     cmd.Parameters.AddWithValue("@ExcludeRoleId", excludeRoleId)
@@ -8811,7 +8811,7 @@ Namespace SDC.Framework
             Using conn As New SqlConnection(ConnectionString)
                 conn.Open()
                 Using cmd As New SqlCommand(
-                    "SELECT ID, RegistrationID, RoleName FROM dbo.FW_Roles WHERE RegistrationID = @RegistrationID ORDER BY RoleName", conn)
+                    "SELECT RoleID, RegistrationID, RoleName FROM dbo.FW_Roles WHERE RegistrationID = @RegistrationID ORDER BY RoleName", conn)
 
                     cmd.Parameters.AddWithValue("@RegistrationID", registrationId)
 
@@ -8847,7 +8847,7 @@ Namespace SDC.Framework
             Using conn As New SqlConnection(ConnectionString)
                 conn.Open()
                 Using cmd As New SqlCommand(
-                    "SELECT ID, RegistrationID, RoleName, ISNULL(DisplayOrder, 0) AS DisplayOrder " &
+                    "SELECT RoleID, RegistrationID, RoleName, ISNULL(DisplayOrder, 0) AS DisplayOrder " &
                     "FROM dbo.FW_Roles " &
                     "WHERE RegistrationID = @RegistrationID " &
                     "  AND ISNULL(IsActive, 1) = 1 AND ISNULL(DeletedFlag, 0) = 0 " &
@@ -11094,7 +11094,7 @@ Namespace SDC.Framework
             Using conn As New SqlConnection(ConnectionString)
                 conn.Open()
                 Using cmd As New SqlCommand(
-                    "SELECT ISNULL(DisplayOrder, 0) FROM dbo.FW_Roles WHERE ID = @RoleID", conn)
+                    "SELECT ISNULL(DisplayOrder, 0) FROM dbo.FW_Roles WHERE RoleID = @RoleID", conn)
                     
                     cmd.Parameters.AddWithValue("@RoleID", roleId)
                     
@@ -11111,7 +11111,7 @@ Namespace SDC.Framework
             Using conn As New SqlConnection(ConnectionString)
                 conn.Open()
                 Using cmd As New SqlCommand(
-                    "SELECT ISNULL(IsActive, 0) FROM dbo.FW_Roles WHERE ID = @RoleID", conn)
+                    "SELECT ISNULL(IsActive, 0) FROM dbo.FW_Roles WHERE RoleID = @RoleID", conn)
                     cmd.Parameters.AddWithValue("@RoleID", roleId)
                     Dim result = cmd.ExecuteScalar()
                     If result IsNot Nothing AndAlso Not IsDBNull(result) Then
@@ -11140,7 +11140,7 @@ Namespace SDC.Framework
             Using conn As New SqlConnection(ConnectionString)
                 conn.Open()
                 Using cmd As New SqlCommand(
-                    "SELECT ID FROM dbo.FW_Roles " &
+                    "SELECT RoleID FROM dbo.FW_Roles " &
                     "WHERE RegistrationID = @RegistrationID AND ISNULL(Typ_AppAdmin, 0) = 1", conn)
 
                     cmd.Parameters.AddWithValue("@RegistrationID", registrationId)
@@ -11161,7 +11161,7 @@ Namespace SDC.Framework
             Using conn As New SqlConnection(ConnectionString)
                 conn.Open()
                 Using cmd As New SqlCommand(
-                    "SELECT ISNULL(Typ_AppAdmin, 0) FROM dbo.FW_Roles WHERE ID = @RoleID", conn)
+                    "SELECT ISNULL(Typ_AppAdmin, 0) FROM dbo.FW_Roles WHERE RoleID = @RoleID", conn)
                     cmd.Parameters.AddWithValue("@RoleID", roleId)
                     Dim result = cmd.ExecuteScalar()
                     If result IsNot Nothing AndAlso Not IsDBNull(result) Then
@@ -11181,7 +11181,7 @@ Namespace SDC.Framework
             Using conn As New SqlConnection(ConnectionString)
                 conn.Open()
                 Using cmd As New SqlCommand(
-                    "SELECT ISNULL(Typ_CompanyAdmin, 0) FROM dbo.FW_Roles WHERE ID = @RoleID", conn)
+                    "SELECT ISNULL(Typ_CompanyAdmin, 0) FROM dbo.FW_Roles WHERE RoleID = @RoleID", conn)
                     cmd.Parameters.AddWithValue("@RoleID", roleId)
                     Dim result = cmd.ExecuteScalar()
                     If result IsNot Nothing AndAlso Not IsDBNull(result) Then
@@ -11197,7 +11197,7 @@ Namespace SDC.Framework
             Using conn As New SqlConnection(ConnectionString)
                 conn.Open()
                 Using cmd As New SqlCommand(
-                    "SELECT TOP 1 ID FROM dbo.FW_Roles WHERE RegistrationID = @RegistrationID AND Typ_AppAdmin = 1 AND IsActive = 1", conn)
+                    "SELECT TOP 1 RoleID FROM dbo.FW_Roles WHERE RegistrationID = @RegistrationID AND Typ_AppAdmin = 1 AND IsActive = 1", conn)
                     cmd.Parameters.AddWithValue("@RegistrationID", registrationId)
                     Dim result = cmd.ExecuteScalar()
                     Return If(result IsNot Nothing AndAlso Not IsDBNull(result), CInt(result), 0)
@@ -11215,7 +11215,7 @@ Namespace SDC.Framework
             Using conn As New SqlConnection(ConnectionString)
                 conn.Open()
                 Using cmd As New SqlCommand(
-                    "SELECT TOP 1 ID FROM dbo.FW_Roles WHERE RegistrationID = @RegistrationID AND Typ_CompanyAdmin = 1 AND IsActive = 1", conn)
+                    "SELECT TOP 1 RoleID FROM dbo.FW_Roles WHERE RegistrationID = @RegistrationID AND Typ_CompanyAdmin = 1 AND IsActive = 1", conn)
                     cmd.Parameters.AddWithValue("@RegistrationID", registrationId)
                     Dim result = cmd.ExecuteScalar()
                     Return If(result IsNot Nothing AndAlso Not IsDBNull(result), CInt(result), 0)
@@ -11235,7 +11235,7 @@ Namespace SDC.Framework
                     "SELECT TOP 1 emp.UserId " &
                     "FROM dbo.FW_EmployeeRoles ur " &
                     "INNER JOIN dbo.FW_Employees emp ON emp.EmployeeID = ur.EmployeeID " &
-                    "INNER JOIN dbo.FW_Roles r ON r.ID = ur.RoleID " &
+                    "INNER JOIN dbo.FW_Roles r ON r.RoleID = ur.RoleID " &
                     "INNER JOIN dbo.FW_Users u ON u.UserID = emp.UserId " &
                     "WHERE ur.RegistrationID = @RegistrationID " &
                     "  AND r.RegistrationID = @RegistrationID " &
@@ -11255,7 +11255,7 @@ Namespace SDC.Framework
             Using conn As New SqlConnection(ConnectionString)
                 conn.Open()
                 Using cmd As New SqlCommand(
-                    "UPDATE dbo.FW_Roles SET IsActive = @IsActive WHERE ID = @ID", conn)
+                    "UPDATE dbo.FW_Roles SET IsActive = @IsActive WHERE RoleID = @ID", conn)
                     cmd.Parameters.AddWithValue("@ID", roleId)
                     cmd.Parameters.AddWithValue("@IsActive", isActive)
                     cmd.ExecuteNonQuery()
@@ -11269,7 +11269,7 @@ Namespace SDC.Framework
                 conn.Open()
                 Using cmd As New SqlCommand(
                     "UPDATE dbo.FW_Roles SET RoleName = @RoleName, DisplayOrder = @DisplayOrder, IsActive = @IsActive, " &
-                    "Typ_AppAdmin = @Typ_AppAdmin, Typ_CompanyAdmin = @Typ_CompanyAdmin WHERE ID = @RoleID", conn)
+                    "Typ_AppAdmin = @Typ_AppAdmin, Typ_CompanyAdmin = @Typ_CompanyAdmin WHERE RoleID = @RoleID", conn)
                     
                     cmd.Parameters.AddWithValue("@RoleID", roleId)
                     Dim nameValue As Object = If(String.IsNullOrWhiteSpace(roleName), CType(DBNull.Value, Object), CType(roleName.Trim(), Object))
@@ -11512,7 +11512,7 @@ Namespace SDC.Framework
                 "SELECT rd.RoleID, rd.SchemaID, r.RegistrationID, rd.ID AS RoleDetailID, s.DB_Table, c.name AS ColumnName " &
                 "FROM dbo.FW_RoleDetails rd " &
                 "JOIN dbo.FW_RoleSchema s ON s.ID = rd.SchemaID " &
-                "JOIN dbo.FW_Roles r ON r.ID = rd.RoleID " &
+                "JOIN dbo.FW_Roles r ON r.RoleID = rd.RoleID " &
                 "CROSS APPLY (SELECT c2.name FROM sys.columns c2 " &
                 "              WHERE c2.object_id = OBJECT_ID('dbo.' + s.DB_Table)) c " &
                 "WHERE ISNULL(rd.DeletedFlag, 0) = 0 AND ISNULL(r.DeletedFlag, 0) = 0 " &
@@ -11693,7 +11693,7 @@ Namespace SDC.Framework
                 "         OR ISNULL(rf.FileLink, '') <> s.DB_Table + '.' + rf.FieldName)) " &
                 "+ (SELECT COUNT(*) FROM dbo.FW_RoleDetails rd " &
                 "   JOIN dbo.FW_RoleSchema s ON s.ID = rd.SchemaID " &
-                "   JOIN dbo.FW_Roles r ON r.ID = rd.RoleID " &
+                "   JOIN dbo.FW_Roles r ON r.RoleID = rd.RoleID " &
                 "   CROSS APPLY (SELECT c.name FROM sys.columns c " &
                 "                 WHERE c.object_id = OBJECT_ID('dbo.' + s.DB_Table)) c " &
                 "  WHERE ISNULL(rd.DeletedFlag, 0) = 0 AND ISNULL(r.DeletedFlag, 0) = 0 " &
@@ -11838,7 +11838,7 @@ Namespace SDC.Framework
             Using cmd As New SqlCommand(
                 "SELECT COUNT(*) FROM dbo.FW_RoleDetails rd " &
                 "JOIN dbo.FW_RoleSchema s ON s.ID = rd.SchemaID " &
-                "JOIN dbo.FW_Roles r ON r.ID = rd.RoleID " &
+                "JOIN dbo.FW_Roles r ON r.RoleID = rd.RoleID " &
                 "WHERE ISNULL(rd.DeletedFlag, 0) = 0 AND ISNULL(r.DeletedFlag, 0) = 0 " &
                 "  AND OBJECT_ID('dbo.' + s.DB_Table) IS NOT NULL", conn)
                 Return Convert.ToInt32(cmd.ExecuteScalar(), CultureInfo.InvariantCulture)

@@ -647,7 +647,7 @@ GO
 
 IF OBJECT_ID('dbo.[FW_Roles]', 'U') IS NULL
 CREATE TABLE dbo.[FW_Roles] (
-    [ID] int IDENTITY(1,1) NOT NULL,
+    [RoleID] int IDENTITY(1,1) NOT NULL,
     [RegistrationID] int NOT NULL,
     [RoleName] varchar(20) NULL,
     [CA_CanChange] bit NULL,
@@ -676,7 +676,7 @@ CREATE TABLE dbo.[FW_Roles] (
     [DeletedBy] int NULL,
     [DeletedOn] datetime2(0) NULL,
     [RowVersion] rowversion,
-    CONSTRAINT [PK_FW_Roles] PRIMARY KEY CLUSTERED ([ID])
+    CONSTRAINT [PK_FW_Roles] PRIMARY KEY CLUSTERED ([RoleID])
 );
 GO
 

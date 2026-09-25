@@ -110,7 +110,7 @@ Namespace SDC.Framework
                 "SELECT DISTINCT LTRIM(RTRIM(e.Email)) AS Email " &
                 "FROM dbo.FW_Employees e " &
                 "JOIN dbo.FW_EmployeeRoles er ON er.EmployeeID = e.EmployeeID AND ISNULL(er.DeletedFlag, 0) = 0 " &
-                "JOIN dbo.FW_Roles r ON r.ID = er.RoleID " &
+                "JOIN dbo.FW_Roles r ON r.RoleID = er.RoleID " &
                 "WHERE ISNULL(e.ReceivesHealthAlerts, 0) = 1 " &
                 "  AND ISNULL(e.DeletedFlag, 0) = 0 " &
                 "  AND NULLIF(LTRIM(RTRIM(e.Email)), '') IS NOT NULL " &

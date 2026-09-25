@@ -46,13 +46,13 @@ Namespace SDC.Framework
         End Function
 
         Protected Overrides Sub ApplyPageSpecificLayout()
-            Dim browseSplit = FindBrowseSplitContainer(Me)
+            Dim browseSplit = BrowseSplitPanel
             If browseSplit Is Nothing Then
                 Return
             End If
 
-            Dim qbeButton = FindButtonStartingWithText(Me, "QBE")
-            Dim closeButton = FindButtonByText(Me, "Close")
+            Dim qbeButton = QbeToggleButton
+            Dim closeButton = CloseCommandButton
             ' The shell's own geometry, not a copy of it. These were 112 and 162 for an App Admin,
             ' which was right while the SQL path and Apply SQL row sat above the actions; with that
             ' row hidden the shell moved to 48, and this page did not - so QBE and Close hung below
@@ -130,54 +130,6 @@ Namespace SDC.Framework
             End If
 
             Return HandleCustomUpdateAction(recordId.Value)
-        End Function
-
-        Private Shared Function FindBrowseSplitContainer(parent As Control) As SplitContainer
-            For Each child As Control In parent.Controls
-                Dim split = TryCast(child, SplitContainer)
-                If split IsNot Nothing Then
-                    Return split
-                End If
-
-                Dim nested = FindBrowseSplitContainer(child)
-                If nested IsNot Nothing Then
-                    Return nested
-                End If
-            Next
-
-            Return Nothing
-        End Function
-
-        Private Shared Function FindButtonByText(parent As Control, text As String) As Button
-            For Each child As Control In parent.Controls
-                Dim button = TryCast(child, Button)
-                If button IsNot Nothing AndAlso String.Equals(button.Text, text, StringComparison.OrdinalIgnoreCase) Then
-                    Return button
-                End If
-
-                Dim nested = FindButtonByText(child, text)
-                If nested IsNot Nothing Then
-                    Return nested
-                End If
-            Next
-
-            Return Nothing
-        End Function
-
-        Private Shared Function FindButtonStartingWithText(parent As Control, text As String) As Button
-            For Each child As Control In parent.Controls
-                Dim button = TryCast(child, Button)
-                If button IsNot Nothing AndAlso button.Text.StartsWith(text, StringComparison.OrdinalIgnoreCase) Then
-                    Return button
-                End If
-
-                Dim nested = FindButtonStartingWithText(child, text)
-                If nested IsNot Nothing Then
-                    Return nested
-                End If
-            Next
-
-            Return Nothing
         End Function
     End Class
 End Namespace

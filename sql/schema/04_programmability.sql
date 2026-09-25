@@ -115,7 +115,7 @@ BEGIN
         INNER JOIN dbo.FW_Employees AS emp
             ON emp.EmployeeID = ur.EmployeeID
         INNER JOIN dbo.FW_Roles AS r
-            ON r.ID = ur.RoleID
+            ON r.RoleID = ur.RoleID
         WHERE emp.UserId = @UserID
           AND ur.RegistrationID = @RegistrationID
           AND ISNULL(ur.IsActive, 1) = 1
@@ -372,7 +372,7 @@ FROM dbo.FW_EmployeeRoles AS er
 INNER JOIN dbo.FW_Employees AS e
     ON e.EmployeeID = er.EmployeeID
 INNER JOIN dbo.FW_Roles AS r
-    ON r.ID = er.RoleID;
+    ON r.RoleID = er.RoleID;
 GO
 
 -- VIEW: vw_RandomGuid

@@ -3,7 +3,7 @@
 
 ALTER TABLE [dbo].[FW_EmployeeRoles] ADD CONSTRAINT [FK_FW_EmployeeRoles_Employee] FOREIGN KEY ([EmployeeID]) REFERENCES [dbo].[FW_Employees] ([EmployeeID]);
 ALTER TABLE [dbo].[FW_EmployeeRoles] ADD CONSTRAINT [FK_FW_EmployeeRoles_Registration] FOREIGN KEY ([RegistrationID]) REFERENCES [dbo].[FW_Registration] ([RegistrationID]);
-ALTER TABLE [dbo].[FW_EmployeeRoles] ADD CONSTRAINT [FK_FW_EmployeeRoles_Role] FOREIGN KEY ([RoleID]) REFERENCES [dbo].[FW_Roles] ([ID]);
+ALTER TABLE [dbo].[FW_EmployeeRoles] ADD CONSTRAINT [FK_FW_EmployeeRoles_Role] FOREIGN KEY ([RoleID]) REFERENCES [dbo].[FW_Roles] ([RoleID]);
 ALTER TABLE [dbo].[FW_Employees] ADD CONSTRAINT [FK_FW_Employees_AssignedManager] FOREIGN KEY ([AssignedManagerID]) REFERENCES [dbo].[FW_Employees] ([EmployeeID]);
 ALTER TABLE [dbo].[FW_Employees] ADD CONSTRAINT [FK_FW_Employees_FW_Registration] FOREIGN KEY ([RegistrationId]) REFERENCES [dbo].[FW_Registration] ([RegistrationID]);
 ALTER TABLE [dbo].[FW_Employees] ADD CONSTRAINT [FK_FW_Employees_FW_TimeZones] FOREIGN KEY ([TimeZoneID]) REFERENCES [dbo].[FW_TimeZones] ([TimeZoneID]);

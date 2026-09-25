@@ -122,7 +122,7 @@ Namespace SDC.Framework.Tests
 
         ''' <summary>Three-part column names, which is what makes this one decline.</summary>
         Private Const RolesSql As String =
-            "SELECT dbo.FW_Roles.ID AS PK, dbo.FW_Roles.DisplayOrder, dbo.FW_Roles.RoleName " &
+            "SELECT dbo.FW_Roles.RoleID AS PK, dbo.FW_Roles.DisplayOrder, dbo.FW_Roles.RoleName " &
             "From dbo.FW_Roles WHERE RegistrationID = ? Order By DisplayOrder"
 
         <TestMethod>
@@ -344,7 +344,7 @@ Namespace SDC.Framework.Tests
         Public Sub ADefaultOrderColumnThatIsNotSelected_Declines()
             ' Roles_B's code-level DefaultSelectSql aliases nothing AS PK. Ordering by a column that
             ' is not in the derived table is a page that will not open, so it declines instead.
-            Dim sql = "SELECT ID, RegistrationID, RoleName, IsActive, UpdatedOn " &
+            Dim sql = "SELECT RoleID, RegistrationID, RoleName, IsActive, UpdatedOn " &
                       "FROM dbo.FW_Roles WHERE RegistrationID = @RegistrationID"
             Dim result = BrowseSqlWrapper.TryWrap(sql, 12, Nothing, "PK")
 
