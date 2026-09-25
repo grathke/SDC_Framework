@@ -51,9 +51,27 @@ Namespace SDC.Framework
         Private grownBy As Integer
 
         ''' <summary>
-        ''' Whether the form was moved left to make room, so closing can move it back.
+        ''' How far the form was moved to make room, left negative and right positive, so closing
+        ''' can move it back by the same amount.
         ''' </summary>
-        Private shiftedLeftBy As Integer
+        Private movedBy As Integer
+
+        ''' <summary>
+        ''' The page's zoom factor. The strip's width, margins and header scale with it; its font,
+        ''' buttons and grid rows are already scaled by PageZoom, which snapshotted them with the
+        ''' rest of the page. Set by the host before the strip opens.
+        ''' </summary>
+        Public Property Scale As Single = 1.0F
+
+        Private ReadOnly Property ScaledStripWidth As Integer
+            Get
+                Return CInt(StripWidth * Scale)
+            End Get
+        End Property
+
+        Private Function Scaled(value As Integer) As Integer
+            Return CInt(value * Scale)
+        End Function
 
         ''' <summary>
         ''' What the host last offered, so the strip can re-measure itself when its rows change.
@@ -217,7 +235,21 @@ Namespace SDC.Framework
                 If Not IsOpen Then
                     Return 0
                 End If
-                Return StripWidth
+                Return ScaledStripWidth
+            End Get
+        End Property
+
+        ''' <summary>How much wider the form actually became when the strip opened.</summary>
+        Public ReadOnly Property GrownWidth As Integer
+            Get
+                Return If(IsOpen, grownBy, 0)
+            End Get
+        End Property
+
+        ''' <summary>The strip itself, so a host moving its own controls can leave it alone.</summary>
+        Public ReadOnly Property Strip As Control
+            Get
+                Return stripPanel
             End Get
         End Property
 
@@ -316,34 +348,60 @@ Namespace SDC.Framework
         ''' </remarks>
         Private Sub GrowForStrip()
             grownBy = 0
-            shiftedLeftBy = 0
+            movedBy = 0
 
             If owner.WindowState = FormWindowState.Maximized Then
                 Return
             End If
 
             Dim working = Screen.FromControl(owner).WorkingArea
+            Dim wanted = ScaledStripWidth
             Dim room As Integer
 
+            ' Where the side the strip grows towards is short of room, the window slides the other
+            ' way first. A window centred on the screen has half the free width on each side, and
+            ' a zoomed page that is 1,470 wide in a 2,273 view has 393 on its right - short of a
+            ' 495 strip although the view has room for both (2026-09-25).
             If DockedLeft Then
-                room = Math.Max(0, owner.Left - working.Left)
+                Dim shortBy = wanted - (owner.Left - working.Left)
+                If shortBy > 0 Then
+                    movedBy = Math.Max(0, Math.Min(shortBy, working.Right - owner.Right))
+                End If
             Else
-                room = Math.Max(0, working.Right - (owner.Left + owner.Width))
+                Dim shortBy = wanted - (working.Right - owner.Right)
+                If shortBy > 0 Then
+                    movedBy = -Math.Max(0, Math.Min(shortBy, owner.Left - working.Left))
+                End If
             End If
 
-            grownBy = Math.Max(0, Math.Min(StripWidth, room))
-            If grownBy = 0 Then
-                Return
+            If DockedLeft Then
+                room = Math.Max(0, owner.Left + movedBy - working.Left)
+            Else
+                room = Math.Max(0, working.Right - (owner.Right + movedBy))
+            End If
+
+            grownBy = Math.Max(0, Math.Min(wanted, room))
+
+            ' A zoomed page lifts its MaximumSize only as far as the zoom needs, which would clamp
+            ' the growth to a few pixels. Raised, never lowered: the zoom puts its own back.
+            If grownBy > 0 AndAlso Not owner.MaximumSize.IsEmpty AndAlso
+               owner.MaximumSize.Width < owner.Width + grownBy Then
+                owner.MaximumSize = New Size(owner.Width + grownBy, owner.MaximumSize.Height)
             End If
 
             If DockedLeft Then
                 ' Grow leftwards, so the grid stays exactly where it was on screen and the new
                 ' space appears on its left.
-                owner.Left -= grownBy
-                shiftedLeftBy = grownBy
+                movedBy -= grownBy
             End If
 
-            owner.Width += grownBy
+            If movedBy <> 0 Then
+                owner.Left += movedBy
+            End If
+
+            If grownBy > 0 Then
+                owner.Width += grownBy
+            End If
         End Sub
 
         ''' <summary>
@@ -359,12 +417,12 @@ Namespace SDC.Framework
                 owner.Width = Math.Max(owner.MinimumSize.Width, owner.Width - grownBy)
             End If
 
-            If shiftedLeftBy > 0 Then
-                owner.Left += shiftedLeftBy
+            If movedBy <> 0 Then
+                owner.Left -= movedBy
             End If
 
             grownBy = 0
-            shiftedLeftBy = 0
+            movedBy = 0
         End Sub
 
         ''' <summary>
@@ -386,28 +444,30 @@ Namespace SDC.Framework
 
             ' The same margin the page leaves at its own edges, so the strip sits on the page
             ' rather than being cropped against the window frame.
-            Const EdgeMargin As Integer = 14
+            Dim edgeMargin = Scaled(14)
 
-            Dim width = Math.Min(StripWidth - EdgeMargin, Math.Max(120, owner.ClientSize.Width - 40))
-            Dim left = If(DockedLeft, EdgeMargin, Math.Max(0, owner.ClientSize.Width - width - EdgeMargin))
+            Dim width = Math.Min(ScaledStripWidth - edgeMargin, Math.Max(Scaled(120), owner.ClientSize.Width - 40))
+            Dim left = If(DockedLeft, edgeMargin, Math.Max(0, owner.ClientSize.Width - width - edgeMargin))
 
             ' Kept so the strip can re-measure itself when its rows change. The host positions it
             ' when the page lays out, which is before there are any rows to measure.
             lastContentTop = contentTop
             lastContentHeight = contentHeight
 
-            Dim available = Math.Max(120, contentHeight)
+            Dim available = Math.Max(Scaled(120), contentHeight)
             stripPanel.SetBounds(left, contentTop, width, Math.Min(available, MeasureWantedHeight()))
 
             ' Close sits in the middle of the panel's width, with an arrow at each end.
-            dockLeftButton.SetBounds(4, 3, dockLeftButton.Width, dockLeftButton.Height)
-            closeButton.SetBounds(Math.Max(0, (stripPanel.ClientSize.Width - closeButton.Width) \ 2), 3,
+            Dim buttonTop = Scaled(3)
+            dockLeftButton.SetBounds(Scaled(4), buttonTop, dockLeftButton.Width, dockLeftButton.Height)
+            closeButton.SetBounds(Math.Max(0, (stripPanel.ClientSize.Width - closeButton.Width) \ 2), buttonTop,
                                   closeButton.Width, closeButton.Height)
-            dockRightButton.SetBounds(Math.Max(0, stripPanel.ClientSize.Width - dockRightButton.Width - 4), 3,
+            dockRightButton.SetBounds(Math.Max(0, stripPanel.ClientSize.Width - dockRightButton.Width - Scaled(4)), buttonTop,
                                       dockRightButton.Width, dockRightButton.Height)
 
-            fieldsGrid.SetBounds(0, HeaderHeight, stripPanel.ClientSize.Width,
-                                 Math.Max(0, stripPanel.ClientSize.Height - HeaderHeight))
+            Dim gridTop = Scaled(HeaderHeight)
+            fieldsGrid.SetBounds(0, gridTop, stripPanel.ClientSize.Width,
+                                 Math.Max(0, stripPanel.ClientSize.Height - gridTop))
         End Sub
 
         ''' <summary>
@@ -426,7 +486,7 @@ Namespace SDC.Framework
             Next
 
             Dim columnHeader = If(fieldsGrid.ColumnHeadersVisible, fieldsGrid.ColumnHeadersHeight, 0)
-            Return Math.Max(120, HeaderHeight + columnHeader + rowsHeight + Breathing)
+            Return Math.Max(Scaled(120), Scaled(HeaderHeight) + columnHeader + rowsHeight + Scaled(Breathing))
         End Function
 
         ''' <summary>

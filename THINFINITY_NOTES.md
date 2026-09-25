@@ -721,6 +721,10 @@ A browse page zooms by pausing `LayoutQbeSection` while the factor is not 1.0 an
 of its settled layout instead - the two cannot run together, or the right-anchored buttons walk off
 to the right on every press. The desktop keeps a minimise box, which is harmless there.
 
+Hot Fields survives a zoom since 2026-09-25: `PageZoom` calls `BeforeZoom` and `AfterZoom` on the
+page, and the strip is closed around the snapshot and reopened at the new scale.
+`PlaceHotFieldsWhileZoomed` stands in for `LayoutQbeSection` while zoomed.
+
 ## 11.6 The console account — **planned, not applied** — 2026-09-12
 
 `TF_Console` exists as a local account. **Nothing uses it, and nothing should be changed to use it

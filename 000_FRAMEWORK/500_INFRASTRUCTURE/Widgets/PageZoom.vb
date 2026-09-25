@@ -55,12 +55,15 @@ Namespace SDC.Framework
         ''' <summary>
         ''' A page that has something to settle before its zoom changes.
         '''
-        ''' Called before anything is scaled, every time the factor actually changes. A browse page
-        ''' closes Hot Fields here: the strip widens the window by a fixed amount the snapshot knows
-        ''' nothing about, and the two cannot both decide how wide the page is.
+        ''' BeforeZoom is called before anything is scaled, every time the factor actually changes;
+        ''' AfterZoom once the page is scaled, sized and centred. A browse page closes Hot Fields in
+        ''' the first and reopens it at the new scale in the second: the strip widens the window by
+        ''' an amount the snapshot knows nothing about, so it has to be out of the way while the
+        ''' snapshot is applied and put back against the result.
         ''' </summary>
         Public Interface IZoomAware
             Sub BeforeZoom(newFactor As Single)
+            Sub AfterZoom(newFactor As Single)
         End Interface
 
         ''' <summary>
@@ -299,6 +302,8 @@ Namespace SDC.Framework
 
             ' After the centring, which moves every top-level control - this one included.
             PlaceIndicator(form, state)
+
+            If aware IsNot Nothing Then aware.AfterZoom(factor)
         End Sub
 
 

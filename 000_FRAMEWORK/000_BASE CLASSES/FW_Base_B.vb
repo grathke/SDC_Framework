@@ -334,6 +334,15 @@ Namespace SDC.Framework
         ''' </remarks>
         Private hotFieldsWantedOnNextSelection As Boolean
 
+        ''' <summary>Hot Fields was open when a zoom began, and reopens when it ends.</summary>
+        Private hotFieldsReopenAfterZoom As Boolean
+
+        ''' <summary>
+        ''' How far the page's own controls have been moved right to clear a left-docked Hot Fields
+        ''' strip while zoomed. At 100% the layout makes that room itself; zoomed, it does not run.
+        ''' </summary>
+        Private zoomedContentShift As Integer
+
         ''' <summary>
         ''' The page colour picker, for a derived page that lays out its own action row.
         ''' </summary>
@@ -359,16 +368,25 @@ Namespace SDC.Framework
         End Sub
 
         ''' <summary>
-        ''' Hot Fields closes before the zoom changes.
+        ''' Hot Fields steps aside while the zoom changes, and comes back afterwards.
         '''
-        ''' The strip widens the window by a fixed 330px that the zoom's snapshot knows nothing
-        ''' about, and closing it takes the same amount back. With both deciding how wide the page
-        ''' is, a zoomed page with the strip open ends up neither size.
+        ''' The strip widens the window by an amount the zoom's snapshot knows nothing about, so it
+        ''' is closed - giving that width back - before the snapshot is applied, and reopened at the
+        ''' new scale once the page has its new size. Until 2026-09-25 it closed and stayed closed,
+        ''' and opening it put the page back to 100%: the two could not be used together.
         ''' </summary>
         Private Sub BeforeZoom(newFactor As Single) Implements PageZoom.IZoomAware.BeforeZoom
             If hotFieldsPanel IsNot Nothing AndAlso hotFieldsPanel.IsOpen Then
+                hotFieldsReopenAfterZoom = True
                 hotFieldsPanel.ClosePanel()
             End If
+        End Sub
+
+        Private Sub AfterZoom(newFactor As Single) Implements PageZoom.IZoomAware.AfterZoom
+            If hotFieldsPanel Is Nothing OrElse Not hotFieldsReopenAfterZoom Then Return
+
+            hotFieldsReopenAfterZoom = False
+            hotFieldsPanel.OpenPanel()
         End Sub
 
         ''' <summary>
@@ -1481,11 +1499,9 @@ Namespace SDC.Framework
         ''' Saying so is shorter than showing nothing.
         ''' </remarks>
         Private Sub HotFields_Opening(sender As Object, e As System.ComponentModel.CancelEventArgs)
-            ' Back to normal size first. The strip widens the window by a fixed amount the zoom knows
-            ' nothing about; opened on a zoomed page, neither would be the right width.
-            If Math.Abs(PageZoom.CurrentFactor(Me) - 1.0F) > 0.001F Then
-                PageZoom.Apply(Me, 1.0F)
-            End If
+            ' At the page's zoom. The strip used to put the page back to 100% before opening; it
+            ' now scales with it, and PlaceHotFieldsWhileZoomed places it against the zoomed page.
+            hotFieldsPanel.Scale = PageZoom.CurrentFactor(Me)
 
             If browseGrid IsNot Nothing AndAlso browseGrid.SelectedRows.Count > 0 Then
                 Return
@@ -1959,6 +1975,33 @@ Namespace SDC.Framework
         End Sub
 
         ''' <summary>
+        ''' Places Hot Fields against a zoomed page, which LayoutQbeSection does not lay out.
+        ''' </summary>
+        ''' <remarks>
+        ''' The zoom fixes the size of everything on the page, so the strip cannot be made room for
+        ''' by narrowing the content as it is at 100%. Docked right it sits in the width the window
+        ''' grew by. Docked left the page's own controls move right by that width - the growth, not
+        ''' the strip's full width, so a window that could not grow enough keeps its content on
+        ''' screen and the strip overlaps its edge instead (accepted 2026-09-25).
+        ''' </remarks>
+        Private Sub PlaceHotFieldsWhileZoomed()
+            If hotFieldsPanel Is Nothing OrElse qbeSplitContainer Is Nothing Then Return
+
+            Dim wantedShift = If(hotFieldsPanel.IsOpen AndAlso hotFieldsPanel.DockedLeft, hotFieldsPanel.GrownWidth, 0)
+            Dim delta = wantedShift - zoomedContentShift
+
+            If delta <> 0 Then
+                For Each control As Control In Me.Controls
+                    If control Is hotFieldsPanel.Strip Then Continue For
+                    control.Left += delta
+                Next
+                zoomedContentShift = wantedShift
+            End If
+
+            hotFieldsPanel.PositionPanel(qbeSplitContainer.Top, qbeSplitContainer.Height)
+        End Sub
+
+        ''' <summary>
         ''' Lays out the default browse shell.
         ''' </summary>
         ''' <remarks>
@@ -1991,6 +2034,7 @@ Namespace SDC.Framework
             ' Here rather than only in the Resize handler, because it is called directly as well -
             ' registration visibility, toggling QBE, applying a saved layout.
             If Math.Abs(PageZoom.CurrentFactor(Me) - 1.0F) > 0.001F Then
+                PlaceHotFieldsWhileZoomed()
                 Return
             End If
 
