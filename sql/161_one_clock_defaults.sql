@@ -3,14 +3,14 @@
 -- ONE_CLOCK_SPEC.md phase A, the SQL half: every column default and the one procedure that
 -- stamped the server's local clock now stamp UTC.
 --
--- DO NOT APPLY ON ITS OWN. Phases A, B and C are released together (spec section 9): applied
--- alone, new rows in these columns are UTC beside old rows that are local, and every screen
--- showing them is four hours out for the new ones. It is applied in the same sitting as the
--- phase B data conversion, after the backup that precedes it.
+-- Written to be applied only with the phase B data conversion. Applied on its own on 2026-09-25,
+-- because there is no conversion to do: BEELINK's SQL Server runs on UTC (no DST), so GETDATE()
+-- already equalled SYSUTCDATETIME() and every stored row was UTC. On BEELINK this changes nothing
+-- anybody can see. It matters on the first server whose clock is not UTC - which is why it goes
+-- in before the framework is published anywhere else.
 --
--- FW_Employees.HireDate keeps GETDATE(): a date column, a calendar day, and while BEELINK is on
--- Eastern its date is the East Coast's. CK_Birthdate's BirthDate < GETDATE() is a date
--- comparison and stays too.
+-- FW_Employees.HireDate keeps GETDATE(): a date column, a calendar day. CK_Birthdate's
+-- BirthDate < GETDATE() is a date comparison and stays too.
 
 SET XACT_ABORT ON;
 BEGIN TRANSACTION;
