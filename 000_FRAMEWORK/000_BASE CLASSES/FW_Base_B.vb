@@ -47,7 +47,7 @@ Namespace SDC.Framework
         Private ReadOnly showDeletedButton As Button
         Private ReadOnly showNormalButton As Button
         Private ReadOnly closeButton As Button
-        Private ReadOnly qbeSplitContainer As SplitContainer
+        Private ReadOnly qbeSplitContainer As QbeSplitPanel
         Private ReadOnly qbePanel As Panel
         Private ReadOnly layoutToolbarPanel As Panel
         Private ReadOnly columnsManagerPanel As Panel
@@ -605,17 +605,14 @@ Namespace SDC.Framework
             closeButton = New Button() With {.Text = "Close", .Size = New Size(90, 36), .Location = New Point(520, 112)}
             toggleQbeButton = New Button() With {.Text = QbeCollapsedText, .Size = New Size(110, 36), .Location = New Point(620, 112)}
 
-            ' SafeSplitContainer, because WinForms throws a GDI+ error out of the splitter's own
-            ' repaint when the control is resized through something degenerate - inside its
-            ' OnLayout, where nothing outside can catch it. It reached the user as an
-            ' unhandled-exception dialog on every browse page opened in a real Thinfinity session.
-            ' The subclass swallows that one repaint and logs the control's size, so why it went
-            ' degenerate can be answered from evidence.
-            qbeSplitContainer = New SafeSplitContainer() With {
+            ' QbeSplitPanel, not SplitContainer. WinForms' SplitContainer paints its splitter from
+            ' inside its own layout, and in a real Thinfinity session that paint threw a GDI+ error
+            ' on every browse page open (FW_ErrorLog #7) - from private framework code nothing
+            ' outside could stop. QbeSplitPanel paints nothing itself; its class comment has why.
+            qbeSplitContainer = New QbeSplitPanel() With {
                 .Location = New Point(20, 162),
                 .Size = New Size(940, 428),
                 .Anchor = AnchorStyles.Top Or AnchorStyles.Left Or AnchorStyles.Right Or AnchorStyles.Bottom,
-                .Orientation = Orientation.Horizontal,
                 .BorderStyle = BorderStyle.FixedSingle,
                 .SplitterWidth = 6,
                 .Panel1MinSize = 120,
@@ -1948,13 +1945,13 @@ Namespace SDC.Framework
             qbeSplitContainer.Panel1Collapsed = Not qbeExpanded
 
             If qbeExpanded Then
-                SplitterLayout.TrySetDistance(qbeSplitContainer, qbeSplitterDistance)
+                qbeSplitContainer.TrySetDistance(qbeSplitterDistance)
             End If
 
             LayoutQbeSection()
         End Sub
 
-        Private Sub QbeSplitContainer_SplitterMoved(sender As Object, e As SplitterEventArgs)
+        Private Sub QbeSplitContainer_SplitterMoved(sender As Object, e As EventArgs)
             If Not qbeSplitContainer.Panel1Collapsed Then
                 qbeSplitterDistance = qbeSplitContainer.SplitterDistance
                 LayoutQbeSection()
@@ -2192,12 +2189,10 @@ Namespace SDC.Framework
             qbePanel.Width = qbePanelWidth
             qbePanel.Height = qbeSplitContainer.Panel1.ClientSize.Height
 
-            ' SplitterLayout, because the maximum has to allow for the splitter's own width.
-            ' Computed here as Height - Panel2MinSize, it put the splitter six pixels past where
-            ' it could legally sit, and WinForms then filled a rectangle running off the bottom -
-            ' surfacing as a GDI+ error from inside the layout, where nothing can catch it.
+            ' Clamped by the control, which allows for the splitter's own width. Computed here as
+            ' Height - Panel2MinSize, it once put the splitter six pixels past where it could sit.
             If Not qbeSplitContainer.Panel1Collapsed Then
-                SplitterLayout.TrySetDistance(qbeSplitContainer, qbeSplitterDistance)
+                qbeSplitContainer.TrySetDistance(qbeSplitterDistance)
             End If
 
             Dim qbeContentHeight As Integer = Math.Max(116, qbePanel.ClientSize.Height - qbeContentTop - 8)

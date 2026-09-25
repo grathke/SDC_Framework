@@ -285,6 +285,7 @@ Namespace SDC.Framework
 
                     ScaleGridInterior(TryCast(control, DataGridView), was, factor)
                     ScaleSplitter(TryCast(control, SplitContainer), was, factor)
+                    ScaleSplitter(TryCast(control, QbeSplitPanel), was, factor)
                 Next
 
             Finally
@@ -460,6 +461,12 @@ Namespace SDC.Framework
             ' pressing on anyway is what produces a splitter rectangle off the bottom of the
             ' control and a GDI+ error from inside the layout.
             SplitterLayout.TrySetDistance(split, CInt(was.SplitterDistance * factor))
+        End Sub
+
+        ''' <summary>The same for the browse page's own split panel, which clamps itself.</summary>
+        Private Shared Sub ScaleSplitter(split As QbeSplitPanel, was As Original, factor As Single)
+            If split Is Nothing OrElse was.SplitterDistance <= 0 OrElse split.Panel1Collapsed Then Return
+            split.TrySetDistance(CInt(was.SplitterDistance * factor))
         End Sub
 
         ''' <summary>
@@ -638,6 +645,11 @@ Namespace SDC.Framework
                 Dim split = TryCast(control, SplitContainer)
                 If split IsNot Nothing AndAlso Not split.Panel1Collapsed Then
                     entry.SplitterDistance = split.SplitterDistance
+                End If
+
+                Dim qbeSplit = TryCast(control, QbeSplitPanel)
+                If qbeSplit IsNot Nothing AndAlso Not qbeSplit.Panel1Collapsed Then
+                    entry.SplitterDistance = qbeSplit.SplitterDistance
                 End If
 
                 into(control) = entry

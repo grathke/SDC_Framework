@@ -874,18 +874,35 @@ Same day, same cause family. Opening a browse page through a real session threw
 stack, and nothing outside the control can catch it, so it reached the user as an
 unhandled-exception dialog on every browse page.
 
-The obvious explanation is a degenerate rectangle, and it is wrong. `SafeSplitContainer` logs the
-control's state when it catches, and the control is entirely healthy:
+The obvious explanation is a degenerate rectangle, and it is wrong. `SafeSplitContainer` (since removed)
+logged the control's state when it caught, and the control was entirely healthy:
 
 ```
 size=940x562  client=940x562  distance=150  width=6  min1=120  min2=120
 collapsed1=False  visible=True  handle=True
 ```
 
-It needs 246 pixels and has 562. So `CreateGraphics()` is failing on a sound control inside a
-VirtualUI session — a device-context artefact of the session, not an application bug. There is
-nothing in our geometry to fix, which is why the treatment is to swallow that one repaint and log
-it. The next layout pass redraws it and nobody sees anything missing.
+It needs 246 pixels and has 562. Swallowing that one repaint kept the dialog away, but the throw
+went on at every browse page open (FW_ErrorLog #7), and two causes were tested in a live session
+and refuted:
+
+- **"The window cannot take paint yet"** (2026-09-24). The control painted its own splitter before
+  the first layout; that paint succeeded and the base's still threw.
+- **"The rectangle runs off the control"** (2026-09-25). True as far as it goes: `RepaintSplitterRect`
+  fills the private `_splitterRect`, which `SetSplitterRect` builds from `Location`, so a control
+  at (20,98) filled `{X=20,Y=248,Width=940,Height=6}` where the splitter was at `{X=0,Y=150}`.
+  But with the control moved to (0,0) inside a host panel, the rectangle was correct and the fill
+  still threw.
+
+**Resolved 2026-09-25 by not using `SplitContainer`.** The throw is inside private framework
+code, where nothing of ours can stop it. The browse page now uses `QbeSplitPanel`, two panels and
+a draggable bar that paints nothing itself — the bar is the control's own background, drawn by
+the ordinary paint message. The one remaining clue, not pursued: the base paints straight after
+resizing both child panels, where the pre-paint that succeeded ran before them.
+
+`FW_UserAccessDiagnostic_B` and `FW_PageGeneration_B` still use a plain `SplitContainer`. Page
+generation never runs in a session; the diagnostic has never logged this fault. If it does, the
+same replacement applies.
 
 ## 11.7 "Application ended, user still connected" is the reconnection timeout — 2026-09-22
 

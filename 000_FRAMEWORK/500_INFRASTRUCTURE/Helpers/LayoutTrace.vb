@@ -24,7 +24,7 @@ Namespace SDC.Framework
     ''' ever see. Called through BeginInvoke it reports the arrangement the user is looking at.
     '''
     ''' **Once per form per session**, because a resize storm would otherwise fill the log with the
-    ''' same line - the rule SafeSplitContainer already follows for the same reason.
+    ''' same line.
     '''
     ''' **Containers only.** A form has hundreds of controls and three or four that decide where
     ''' everything else goes. Logging the labels would bury the splitter.
@@ -163,6 +163,14 @@ Namespace SDC.Framework
                          Append(If(split.Panel2Collapsed, " p2Collapsed", String.Empty))
                 End If
 
+                Dim qbeSplit = TryCast(child, QbeSplitPanel)
+                If qbeSplit IsNot Nothing Then
+                    line.Append(" distance=").Append(qbeSplit.SplitterDistance).
+                         Append(" p1=").Append(qbeSplit.Panel1.Height).
+                         Append(" p2=").Append(qbeSplit.Panel2.Height).
+                         Append(If(qbeSplit.Panel1Collapsed, " p1Collapsed", String.Empty))
+                End If
+
                 Dim grid = TryCast(child, DataGridView)
                 If grid IsNot Nothing Then
                     line.Append(" rows=").Append(grid.Rows.Count).
@@ -203,6 +211,7 @@ Namespace SDC.Framework
             If depth <= 2 Then Return True
             If child.Dock <> DockStyle.None Then Return True
             If TypeOf child Is SplitContainer OrElse TypeOf child Is SplitterPanel Then Return True
+            If TypeOf child Is QbeSplitPanel OrElse TypeOf child.Parent Is QbeSplitPanel Then Return True
             If TypeOf child Is DataGridView Then Return True
             If TypeOf child Is TableLayoutPanel OrElse TypeOf child Is FlowLayoutPanel Then Return True
             Return False
