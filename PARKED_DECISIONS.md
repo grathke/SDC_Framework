@@ -313,6 +313,30 @@ through Claude.
 Login waits around ten seconds when the database server is down. The fix is to probe the SQL port
 before connecting — TCP, not ICMP, since a machine can answer a ping with SQL Server stopped.
 
+### Permits: searching a range of permit numbers
+
+Raised 2026-09-25, for when a permits table exists. Glenn expects a permit number to be **free
+text** - people "can enter what they like" - and asked whether QBE can find permits between a
+starting and ending number.
+
+**Not by the text.** A range over free text compares letter by letter: `P-9` sorts after `P-10`,
+case and punctuation vary, and a permit typed as `2026/452` falls in nobody's range. Results would
+look right and silently miss permits.
+
+What serves the question instead:
+
+- **Starts With** on the permit number - `P-2026-` finds every 2026 permit. Text fields have it.
+- **A date range** - issued, opened or closed between two dates. Built and tested (B-44); usually the
+  real question.
+- **If a numeric range is genuinely wanted:** the permits table carries a plain number the system
+  assigns, beside the free-text number people type, and Between runs on that.
+
+**Numbers have no Between yet** - `FW_Base_B.GetAllowedOperators` explains why: a range is two
+filters on one field, and a search path that names its SQL parameter after the field would declare
+it twice. Give each filter its own numbered parameter first, then turn Between on for numbers, with
+the same two-box dialog dates use. Build it with the permits table, only if the sequence number is
+wanted.
+
 ### The database keeps two clocks
 
 Found 2026-09-25, when Past Imports showed a 19:04 import as 11:04 PM. Of the date column
