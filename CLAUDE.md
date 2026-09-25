@@ -291,6 +291,11 @@ Key areas:
 - **Two references to the same target take a role prefix**, `<Role><TargetPK>`:
   `AssignedManagerUserID`, `OwnerUserID`, `ReporterUserID`. Strip the role and the target is still
   derivable, so the rule survives the case that usually breaks these schemes.
+- **A wall-clock time ends in `Local`**: `IncidentAtLocal`, `ShiftStartLocal`. It is what a clock
+  said where something happened, stored and shown as typed and never converted. Every other
+  date-time column is a UTC instant shown in the viewer's zone, and a `date` column is a calendar
+  date. A `datetime2` cannot say which kind it is, which is why the name has to. See
+  `ONE_CLOCK_SPEC.md` section 4.
 - These apply to **new** tables. Existing tables keep the names they have; they work because their
   relationships are declared in the database rather than inferred from a name. Rename one only when
   it is being reworked anyway — a primary key name reaches every SQL statement, model property,
@@ -471,6 +476,12 @@ Restore points are written to `restore-points/`.
   and the one idea worth taking from each, section 6 is the layout document and why a row is an
   object in it, and section 7 records that `AppAdminRequiredBackColor` is a load-bearing exact ARGB
   that no other colour may borrow.
+- `ONE_CLOCK_SPEC.md` — **proposed, not built.** Every stored time becomes UTC, written by the
+  code rather than by a server's time-zone setting, and every date-time is shown, typed and
+  searched in the viewer's zone; date-only columns are never converted. Read it before writing a
+  time with `GETDATE()` or `DateTime.Now`, or showing one — section 1 records that the database
+  keeps two clocks today, which is why no display rule can convert every column yet, and section
+  5 that phase B cannot come before phase A.
 - `THINFINITY_NOTES.md` — **reference, nothing built.** The VirtualUI SDK surface behind the
   delivery rules below: session detection, `StdDialogs` and the file dialogs, upload and download,
   printing, the `Options` flags, `BrowserInfo`. Read it before adding the SDK to the project or

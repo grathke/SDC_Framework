@@ -313,6 +313,21 @@ through Claude.
 Login waits around ten seconds when the database server is down. The fix is to probe the SQL port
 before connecting — TCP, not ICMP, since a machine can answer a ping with SQL Server stopped.
 
+### The database keeps two clocks
+
+Found 2026-09-25, when Past Imports showed a 19:04 import as 11:04 PM. Of the date column
+defaults in the schema, **18 are `SYSUTCDATETIME()` and 13 are `GETDATE()`** - server local time -
+and one table, `FW_ImportBatches`, has one of each. Code writes both kinds as well. A browse grid
+shows whatever is stored, so every page with a UTC column is four hours ahead for somebody on the
+East Coast: the audit trail and the Help Desk issue list among them.
+
+What was built: `FW_Base_B.UtcColumns`, where a page names the columns its SQL returns in UTC and
+the grid shows them through `SessionTime`. Past Imports is the only page that uses it. It is
+display-only - a QBE criterion on one of those columns still compares against the stored UTC.
+
+Decided 2026-09-25: one clock, UTC, written by the code rather than by setting the server's time
+zone. The plan is `ONE_CLOCK_SPEC.md`, in five phases; nothing past the stopgap is built.
+
 ---
 
 ## Settled, with parts still open
