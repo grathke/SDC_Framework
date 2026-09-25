@@ -650,7 +650,20 @@ runs, so `FW_Pages` is not what executes.
 - a criterion matching nothing: an empty grid, no error
 - `Roles_B` unaffected, as it must be
 
-### Still unproven, and this is the gap
+### Still unproven, and this is the gap - PROVEN 2026-09-25
+
+**Proven 2026-09-25, without touching FW_Pages.** A throwaway console program called
+`GetBrowseRowsByRegistration` directly with two versions of FW_Employees_B's SQL: the page's own,
+which wraps, and the same with one unnamed column (`ISNULL(E.[City], '')`), which declines with
+"the select list could not be read". On registration 1 (10,028 rows) the two returned identical key
+sets for: no criteria; Show Deleted; `LastFirst` starts with AAA in both views - the criterion that
+matches only the deleted fixture, `EmployeeID` 13, so the declined path returned nothing in the
+normal view and exactly 13 under Show Deleted; `LastFirst` starts with Adams; a City equality; and
+the row cap at 11 and at 200, where both set `BrowseRowsLimited`. The decline wrote one
+`FW_FallbackUsageLog` row (38). So a declining page does run its in-memory deleted and QBE filters,
+as it must. What remains untried is only a declining page in the UI, which reads the same table.
+
+The original note follows.
 
 **No page has ever declined.** All seven pages that use the method wrap, `Roles_B` does not use it,
 the SQL box is invisible so nobody can type an unwrappable query, and the QBE date cell is a
