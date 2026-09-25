@@ -2193,14 +2193,17 @@ Namespace SDC.Framework
                 Using settings As New Dashboard_Company(currentUser, activeAccessProfile)
                     settings.ShowDialog(Me)
                 End Using
-                MenuFormInitializer.Configure(Me, currentUser, True)
+                MenuFormInitializer.Configure(Me, currentUser)
                 Return
             End If
 
+            ' Not forced. A save made inside the dashboard moves DataAccess.RoleMetadataVersion and
+            ' the menu rebuilds its profile from that; a dashboard opened and closed with nothing
+            ' saved costs nothing to rebuild (2026-09-25).
             Using settings As New Dashboard_Application(currentUser, activeAccessProfile)
                 settings.ShowDialog(Me)
             End Using
-            MenuFormInitializer.Configure(Me, currentUser, True)
+            MenuFormInitializer.Configure(Me, currentUser)
         End Sub
 
         ''' <summary>

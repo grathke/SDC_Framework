@@ -242,7 +242,7 @@ Namespace SDC.Framework
 
             Dim ownerMenu = TryCast(Me.Owner, FW_MainMenu)
             If ownerMenu IsNot Nothing Then
-                MenuFormInitializer.Configure(ownerMenu, currentUser, True)
+                MenuFormInitializer.Configure(ownerMenu, currentUser)
             End If
         End Sub
 

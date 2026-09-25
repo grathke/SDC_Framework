@@ -232,7 +232,27 @@ Namespace SDC.Framework
             End SyncLock
         End Sub
 
+        ''' <summary>
+        ''' Goes up by one each time the role and page metadata is invalidated - that is, each time
+        ''' something that feeds an access profile or a caption has been saved. A holder of a
+        ''' derived answer (the main menu's access profile) keeps the number it was built at and
+        ''' rebuilds only when this has moved.
+        '''
+        ''' It is only as good as the rule that every write to FW_Roles, FW_RoleDetails,
+        ''' FW_RoleFields and FW_Registration ends here once it has committed. Until 2026-09-25 about
+        ''' half did not, and closing a settings dashboard threw everything away to cover for them;
+        ''' validate-browse-regression.ps1 now fails on a writer that does not.
+        ''' </summary>
+        Public Shared ReadOnly Property RoleMetadataVersion As Integer
+            Get
+                Return Threading.Volatile.Read(roleMetadataVersionValue)
+            End Get
+        End Property
+
+        Private Shared roleMetadataVersionValue As Integer
+
         Public Shared Sub InvalidateRoleMetadataCache()
+            Threading.Interlocked.Increment(roleMetadataVersionValue)
             SyncLock metadataCacheLock
                 crudCaptionCache.Clear()
                 roleOverrideCaptionCache.Clear()
@@ -6621,6 +6641,9 @@ Namespace SDC.Framework
                         End If
 
                         tx.Commit()
+                        ' After the commit, never inside it: a cache reloaded mid-transaction would
+                        ' hold the rows as they were. See InvalidateRoleMetadataCache.
+                        InvalidateRoleMetadataCache()
                         Return newId
                     Catch
                         tx.Rollback()
@@ -6871,6 +6894,9 @@ Namespace SDC.Framework
                     End If
                 End Using
             End Using
+
+            ' The registration carries the CRUD button captions, which are cached.
+            InvalidateRoleMetadataCache()
             Return SaveResult.Succeeded
         End Function
 
@@ -8352,6 +8378,11 @@ Namespace SDC.Framework
                         cmd.ExecuteNonQuery()
                     End Using
                 Next
+
+                ' Only when a table's permission rows came or went. This runs on every Roles open,
+                ' and most of the time it changes nothing; clearing then would make every open
+                ' reload what nobody touched.
+                If added > 0 OrElse removed > 0 Then InvalidateRoleMetadataCache()
             End Using
         End Sub
 
@@ -8800,6 +8831,7 @@ Namespace SDC.Framework
                     cmd.Parameters.AddWithValue("@CreatedBy", SessionState.ActingUserID)
 
                     Dim result = cmd.ExecuteScalar()
+                    InvalidateRoleMetadataCache()
                     Return If(result IsNot Nothing AndAlso Not IsDBNull(result), CInt(result), 0)
                 End Using
             End Using
@@ -9051,6 +9083,7 @@ Namespace SDC.Framework
                     cmd.Parameters.AddWithValue("@CreatedBy", SessionState.ActingUserID)
                     
                     Dim result = cmd.ExecuteScalar()
+                    InvalidateRoleMetadataCache()
                     Return If(result IsNot Nothing AndAlso Not IsDBNull(result), CInt(result), 0)
                 End Using
             End Using
@@ -9281,6 +9314,7 @@ Namespace SDC.Framework
                     End Using
                 Next
             End Using
+            InvalidateRoleMetadataCache()
         End Sub
 
         Public Shared Sub InsertRoleFieldsWithTransaction(registrationId As Integer, roleId As Integer, roleSchemaId As Integer, tableName As String, createdBy As Integer, conn As SqlConnection, trans As SqlTransaction)
@@ -11261,6 +11295,7 @@ Namespace SDC.Framework
                     cmd.ExecuteNonQuery()
                 End Using
             End Using
+            InvalidateRoleMetadataCache()
         End Sub
 
         Public Shared Sub UpdateRoleNameAndDisplayOrder(roleId As Integer, roleName As String, displayOrder As Integer, isActive As Boolean,
@@ -11278,10 +11313,13 @@ Namespace SDC.Framework
                     cmd.Parameters.AddWithValue("@IsActive", isActive)
                     cmd.Parameters.AddWithValue("@Typ_AppAdmin", typAppAdmin)
                     cmd.Parameters.AddWithValue("@Typ_CompanyAdmin", typCompanyAdmin)
-                    
+
                     cmd.ExecuteNonQuery()
                 End Using
             End Using
+
+            ' The display order is the role level the access profile is built with.
+            InvalidateRoleMetadataCache()
         End Sub
 
         Public Shared Function InsertRoleFieldsForTable(
@@ -11372,6 +11410,7 @@ Namespace SDC.Framework
                     
                 End Using
                 
+                If insertedCount > 0 Then InvalidateRoleMetadataCache()
                 Return insertedCount
             Catch ex As Exception
                 Return 0
@@ -11406,6 +11445,9 @@ Namespace SDC.Framework
                                        insertedCount, deletedCount, repairedCount)
                 End Using
 
+                ' Only when something changed - this runs as Roles pages open, usually to find
+                ' nothing to do.
+                If insertedCount > 0 OrElse deletedCount > 0 OrElse repairedCount > 0 Then InvalidateRoleMetadataCache()
                 Return True
             Catch ex As Exception
                 If writeDebugLog Then
@@ -11826,6 +11868,11 @@ Namespace SDC.Framework
                     result.Repaired = repaired
                     result.RolesVisited = CountRoleTablePairs(conn)
                 End Using
+
+                If result.TablesAdded > 0 OrElse result.TablesRemoved > 0 OrElse
+                   result.Inserted > 0 OrElse result.Deleted > 0 OrElse result.Repaired > 0 Then
+                    InvalidateRoleMetadataCache()
+                End If
             Catch ex As Exception
                 result.Failures.Add(ex.Message)
             End Try

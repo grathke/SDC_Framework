@@ -453,6 +453,50 @@ Assert-NotPattern -Path ".\000_FRAMEWORK\090_DIAGNOSTICS\FW_UserAccessDiagnostic
 Assert-Pattern -Path ".\000_FRAMEWORK\090_DIAGNOSTICS\FW_UserAccessDiagnostic_B.vb" -Pattern "Protected Overrides Sub OnRegistrationSelectionChanged" -Description "The access diagnostic follows FW_Base_B's Registration combo"
 Assert-Pattern -Path ".\000_FRAMEWORK\000_BASE CLASSES\FW_Base_B.vb" -Pattern "OnRegistrationSelectionChanged(registrationId)" -Description "FW_Base_B tells a page its registration changed"
 
+# Closing a settings dashboard no longer throws the role and page caches away (2026-09-25). That is
+# safe only while every write that feeds them clears them itself, which moves
+# DataAccess.RoleMetadataVersion and makes the menu rebuild its access profile. About half did not,
+# and nothing said so. A method that writes FW_Roles, FW_RoleDetails, FW_RoleFields or
+# FW_Registration must call InvalidateRoleMetadataCache - or be a helper inside a caller's
+# transaction, whose owner does, after its commit.
+#
+# FW_EmployeeRoles is not in the list on purpose: an assignment says who holds a role, not what the
+# role allows, and nothing cached depends on it.
+$metadataHelpers = @{
+    "InsertRegistrationRow"           = @("CreateRegistration")
+    "SeedRolesFromTemplate"           = @("CreateRegistration")
+    "CreateRegistrationAdministrator" = @("CreateRegistration")
+    "InsertRoleFieldsWithTransaction" = @("AddRoleTableWithFields")
+    "SyncRoleSchemaTables"            = @("SyncRoleSchemaWithDatabase", "SyncAllRoleFieldsWithSchema")
+    "SyncRoleFieldsCore"              = @("SyncRoleFieldsWithSchema", "SyncAllRoleFieldsWithSchema")
+    "InsertMissingRoleFields"         = @("SyncRoleFieldsWithSchema", "SyncAllRoleFieldsWithSchema")
+}
+$dataAccessSource = Get-Content -LiteralPath ".\000_FRAMEWORK\500_INFRASTRUCTURE\Data\DataAccess.vb" -Raw
+$methodBodies = @{}
+foreach ($m in [regex]::Matches($dataAccessSource, '(?ms)^[ \t]*(?:Public|Private|Friend|Protected)[\w ]*?(Function|Sub) (\w+)\((.*?)^[ \t]*End \1')) {
+    $methodBodies[$m.Groups[2].Value] = $m.Groups[3].Value
+}
+$metadataWriteFailures = @()
+foreach ($name in $methodBodies.Keys) {
+    $body = $methodBodies[$name]
+    if ($body -notmatch '(?i)(UPDATE|INSERT INTO|DELETE FROM)\s+(dbo\.)?\[?(FW_Roles|FW_RoleDetails|FW_RoleFields|FW_Registration)\b') { continue }
+    if ($body -match 'InvalidateRoleMetadataCache\(\)') { continue }
+    if ($metadataHelpers.ContainsKey($name)) {
+        foreach ($owner in $metadataHelpers[$name]) {
+            if (-not $methodBodies.ContainsKey($owner) -or $methodBodies[$owner] -notmatch 'InvalidateRoleMetadataCache\(\)') {
+                $metadataWriteFailures += "$name (its owner $owner does not clear)"
+            }
+        }
+        continue
+    }
+    $metadataWriteFailures += $name
+}
+if ($metadataWriteFailures.Count -gt 0) {
+    throw "These write role or registration data without calling InvalidateRoleMetadataCache: $($metadataWriteFailures -join ', ')"
+}
+Write-Host "PASS: Every write to role and registration data clears the metadata caches ($($methodBodies.Count) methods read)" -ForegroundColor Green
+Assert-Pattern -Path ".\100_CTY\MenuFormInitializer.vb" -Pattern "cachedAccessVersion = metadataVersion Then" -Description "The menu reuses its access profile only while the metadata version is unchanged"
+
 # FW_Roles' key is RoleID since migration 166 (2026-09-25). Its SQL lives in strings no compiler
 # reads, so a query still written against ID fails only when that screen runs. This catches the
 # single-line forms: r.ID, FW_Roles.ID, and a bare ID selected or filtered on the same line as
