@@ -155,6 +155,27 @@ foreach ($page in $maintenancePages) {
 }
 Write-Host "PASS: Every saving page carries a concurrency token" -ForegroundColor Green
 
+# A form a page opens while saving is time somebody spends choosing, and the save clock must be
+# held for it or the choosing is reported as a slow save. FW_HD_Issues_U's status chooser was
+# fault #11 on 2026-09-25: 6.6 of a 7.3 second "save" was a person picking a status. Pages go
+# through ShowDialogDuringSave, which holds the clock; a bare ShowDialog in these three methods
+# fails here. Failure messages (MessageBox) are not asked about - they end a save already failed.
+$saveMethodPattern = '(?s)Overrides Function (TryBuildRecord|SaveRecord|GetAdditionalValidationMessageLines)\(.*?End Function'
+$saveDialogHits = @()
+foreach ($page in $maintenancePages) {
+    $code = Get-Content -LiteralPath $page -Raw
+    foreach ($method in [regex]::Matches($code, $saveMethodPattern)) {
+        if ($method.Value -match '\.ShowDialog\(') {
+            $saveDialogHits += "$(Split-Path $page -Leaf) ($($method.Groups[1].Value))"
+        }
+    }
+}
+if ($saveDialogHits.Count -gt 0) {
+    throw "A dialog is opened during a save without holding the clock - use ShowDialogDuringSave: $($saveDialogHits -join '; ')"
+}
+Assert-Pattern -Path ".\000_FRAMEWORK\080_HELP DESK\FW_HD_Issues_U.vb" -Pattern "ShowDialogDuringSave(statusChooser)" -Description "The Help Desk status chooser holds the save clock"
+Write-Host "PASS: No page opens a dialog during a save with the clock running ($($maintenancePages.Count) pages)" -ForegroundColor Green
+
 Write-Step "Page conventions"
 
 # Documented exception: Roles_U is a permission administration console over three grids with

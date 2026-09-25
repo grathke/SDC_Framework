@@ -261,6 +261,43 @@ Namespace SDC.Framework
             End Get
         End Property
 
+        ''' <summary>
+        ''' Whose row this is: the signed-in user, or the user being viewed while an administrator
+        ''' is switched. The key for a layout, a saved search, a mailbox or a Help Desk reporter.
+        ''' Never a CreatedBy, UpdatedBy or DeletedBy - those take ActingUserID. Zero with no
+        ''' session.
+        '''
+        ''' One owner, because three Help Desk pages each wrote this as a private CurrentUserId,
+        ''' under the same name two other files used for ActingUserID, and the two meanings were
+        ''' mixed at DeleteIssue: a ticket deleted while switched was stamped as the viewed user's.
+        '''
+        ''' Not called UserID: a module's members are visible unqualified, and an inferred
+        ''' `For Each userId In ...` then binds to the property instead of declaring a variable.
+        ''' </summary>
+        Public ReadOnly Property SessionUserID As Integer
+            Get
+                Return If(currentSession.HasValue, currentSession.Value.UserID, 0)
+            End Get
+        End Property
+
+        ''' <summary>
+        ''' The session's user as a UserContext, for a page opened without one. An empty
+        ''' UserContext with no session. Seven copies of this lived on pages until 2026-09-25.
+        ''' </summary>
+        Public Function CurrentUser() As UserContext
+            If Not currentSession.HasValue Then
+                Return New UserContext With {.UserId = 0, .Email = String.Empty, .FirstName = String.Empty, .LastName = String.Empty}
+            End If
+
+            Dim session = currentSession.Value
+            Return New UserContext With {
+                .UserId = session.UserID,
+                .Email = String.Empty,
+                .FirstName = session.FirstName,
+                .LastName = session.LastName
+            }
+        End Function
+
         ''' <summary>The same, for the Company Admin role.</summary>
         Public ReadOnly Property IsCompanyAdmin As Boolean
             Get

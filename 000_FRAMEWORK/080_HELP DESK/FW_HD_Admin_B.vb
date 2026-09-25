@@ -20,7 +20,7 @@ Namespace SDC.Framework
         Private closingAdminPage As Boolean
 
         Public Sub New(user As UserContext, Optional profile As AccessProfile = Nothing)
-            currentUser = If(user, BuildCurrentUserFromSession())
+            currentUser = If(user, SessionState.CurrentUser())
             accessProfile = If(profile, MenuFormInitializer.BuildAccessProfileForCurrentSession(currentUser, NameOf(FW_HD_Admin_B)))
 
             Text = "Admin Help Desk"
@@ -115,13 +115,5 @@ Namespace SDC.Framework
             End If
             MyBase.Dispose(disposing)
         End Sub
-
-        Private Shared Function BuildCurrentUserFromSession() As UserContext
-            If SessionState.IsActive AndAlso SessionState.Current.HasValue Then
-                Dim session = SessionState.Current.Value
-                Return New UserContext With {.UserId = session.UserID, .FirstName = session.FirstName, .LastName = session.LastName}
-            End If
-            Return New UserContext()
-        End Function
     End Class
 End Namespace

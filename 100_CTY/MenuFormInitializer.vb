@@ -224,11 +224,11 @@ Namespace SDC.Framework
             ' workflow is written, the check that matters goes at its action boundary; a hidden tile
             ' is not authorization.
             '
-            ' The button itself is gone as of 2026-09-04: the action moved into the Application
-            ' Settings drop-down, so the ribbon no longer spends a tile on it. Hidden rather than
-            ' unregistered, because the menu item invokes this tile's own handler - see
-            ' FW_MainMenu.OpenSubstituteUser. The pinned row closes up on its own, since
-            ' LayoutPinnedActions skips what is not there and SizePinnedPanelToVisibleTiles resizes.
+            ' The button itself is gone as of 2026-09-04. The action is the role tile's Switch User
+            ' item since 2026-09-25 (the Application Settings drop-down before that). Hidden rather
+            ' than unregistered, because that item invokes this tile's own handler. The pinned row
+            ' closes up on its own, since LayoutPinnedActions skips what is not there and
+            ' SizePinnedPanelToVisibleTiles resizes.
             menu.ConfigureActionVisibility("login-as-substitute", False, False)
 
             menu.ConfigureActionVisibility("select-role", True, True)
@@ -320,26 +320,12 @@ Namespace SDC.Framework
 
             items.Add(BuildActionItem("Admin Dashboard", Sub() menu.OpenApplicationSettings()))
 
-            ' Absent rather than disabled, the way a ribbon tile a role may not use is absent: a
-            ' greyed item invites the question of how to enable it, where a missing one reads as an
-            ' action this administrator does not have. The page enforces the permission again when
-            ' it opens - a hidden menu item is not authorization.
-            If CanSwitchUser() Then
-                items.Add(New ToolStripSeparator())
-                items.Add(BuildActionItem("Switch User", Sub() menu.OpenSubstituteUser()))
-            End If
+            ' Switch User was the second item until 2026-09-25, when it moved to the role tile's
+            ' menu beside the Return it is the other half of. With one item left the tile opens
+            ' the dashboard on one click - an administrator reaches it far more often than they
+            ' switch.
 
             Return items
-        End Function
-
-        ''' <summary>
-        ''' Whether this session may look for somebody to switch to. Read on FW_SwitchUser, the
-        ''' table the Switch User page browses, so the permission is granted in Roles_U beside
-        ''' every other table rather than being a rule written into the menu.
-        ''' </summary>
-        Private Function CanSwitchUser() As Boolean
-            Return cachedAccessProfile IsNot Nothing AndAlso
-                   cachedAccessProfile.Can("FW_SwitchUser", AccessCapability.Read)
         End Function
 
         ''' <summary>

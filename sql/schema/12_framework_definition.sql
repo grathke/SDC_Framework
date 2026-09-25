@@ -724,37 +724,18 @@ LEFT JOIN dbo.[FW_Employees] E2 ON E.[AssignedManagerID] = E2.[EmployeeID]
 WHERE E.[RegistrationID] = @RegistrationID
 ORDER BY E.[LastFirst] ASC, E.[EmployeeID] ASC', NULL, 2, NULL, 2, '2026-09-22T19:54:38.597', 0, NULL, NULL, -1905962, 0, NULL),
     (55, NULL, N'FW_SwitchUser', NULL, N'Switch User', N'FW_SwitchUser_B', N'SELECT
-    E.[EmployeeID] AS PK,
-    E.[LastFirst],
-    E.[Address1],
-    E.[City],
-    E.[State],
-    E.[Zip],
-    G.[GenderDescription] AS [GenderID],
-    E2.[FirstLast] AS [AssignedManagerID],
-    E.[UserName],
-    E.[HireDate],
-    E.[CreatedOn]
-FROM dbo.[FW_Employees] E
-LEFT JOIN dbo.[FW_Gender] G ON E.[GenderID] = G.[GenderID]
-LEFT JOIN dbo.[FW_Employees] E2 ON E.[AssignedManagerID] = E2.[EmployeeID]
-WHERE E.[RegistrationID] = SELECT
-    E.[EmployeeID] AS PK,
-    E.[LastFirst],
-    E.[Address1],
-    E.[City],
-    E.[State],
-    E.[Zip],
-    G.[GenderDescription] AS [GenderID],
-    E2.[FirstLast] AS [AssignedManagerID],
-    E.[UserName],
-    E.[HireDate],
-    E.[CreatedOn]
-FROM dbo.[FW_Employees] E
-LEFT JOIN dbo.[FW_Gender] G ON E.[GenderID] = G.[GenderID]
-LEFT JOIN dbo.[FW_Employees] E2 ON E.[AssignedManagerID] = E2.[EmployeeID]
-WHERE E.[RegistrationID] = @RegistrationID
-ORDER BY E.[LastFirst] ASC', NULL, 2, '2026-09-17T19:31:11.653', 2, '2026-09-17T20:24:41.707', 0, NULL, NULL, NULL, 0, NULL);
+    s.[SwitchUserID] AS PK,
+    s.[LastName],
+    s.[FirstName],
+    s.[UserName],
+    s.[Email],
+    s.[PersonType],
+    s.[CompanyName],
+    s.[IsActive],
+    s.[UserId]
+FROM dbo.[FW_SwitchUser] s
+WHERE s.[RegistrationID] = @RegistrationID
+ORDER BY s.[LastName] ASC, s.[FirstName] ASC', NULL, 2, '2026-09-17T19:31:11.653', 2, '2026-09-17T20:24:41.707', 0, NULL, NULL, NULL, 0, NULL);
 GO
 SET IDENTITY_INSERT dbo.[FW_Pages] OFF;
 GO

@@ -16,8 +16,8 @@ Namespace SDC.Framework
         Private _loadingRegistrations As Boolean
 
         Public Sub New(user As UserContext, Optional profile As AccessProfile = Nothing)
-            MyBase.New(If(user, BuildCurrentUserFromSession()),
-                       If(profile, MenuFormInitializer.BuildAccessProfileForCurrentSession(If(user, BuildCurrentUserFromSession()), "FW_HD_Issues_Support_B")),
+            MyBase.New(If(user, SessionState.CurrentUser()),
+                       If(profile, MenuFormInitializer.BuildAccessProfileForCurrentSession(If(user, SessionState.CurrentUser()), "FW_HD_Issues_Support_B")),
                        "FW_HD_Issues")
 
             Me.Text = "Help Desk Issues Listing - SUPPORT"
@@ -59,7 +59,7 @@ Namespace SDC.Framework
 
         Protected Overrides Function GetBrowseUserId() As Integer
             If SeesAllRegistrationIssues() Then Return 0
-            Return CurrentUserId()
+            Return SessionState.SessionUserID
         End Function
 
         Private Function SeesAllRegistrationIssues() As Boolean
@@ -88,6 +88,8 @@ Namespace SDC.Framework
         End Function
 
         Protected Overrides Function HandleCustomDeleteAction() As Boolean
+            If Not SwitchedUserGuard.AllowWrite(Me, "DELETE AN ISSUE") Then Return True
+
             Dim issueId = GetSelectedRecordIdForCustomAction()
             If Not issueId.HasValue Then
                 MessageBox.Show(Me, "Select an issue first.", "Delete", MessageBoxButtons.OK, MessageBoxIcon.Information)
@@ -95,7 +97,7 @@ Namespace SDC.Framework
             End If
 
             If MessageBox.Show(Me, "Delete the selected Help Desk issue?", "Confirm Delete", MessageBoxButtons.YesNo, MessageBoxIcon.Warning) = DialogResult.Yes Then
-                HelpDeskDataAccess.DeleteIssue(issueId.Value, _selectedRegistrationId, CurrentUserId())
+                HelpDeskDataAccess.DeleteIssue(issueId.Value, _selectedRegistrationId, SessionState.ActingUserID)
                 RefreshGridForCustomAction()
             End If
             Return True
@@ -192,19 +194,6 @@ Namespace SDC.Framework
                 Return id
             End If
             Return 0
-        End Function
-
-        Private Function CurrentUserId() As Integer
-            If SessionState.IsActive AndAlso SessionState.Current.HasValue Then Return SessionState.Current.Value.UserID
-            Return 0
-        End Function
-
-        Private Shared Function BuildCurrentUserFromSession() As UserContext
-            If SessionState.IsActive AndAlso SessionState.Current.HasValue Then
-                Dim session = SessionState.Current.Value
-                Return New UserContext With {.UserId = session.UserID, .FirstName = session.FirstName, .LastName = session.LastName}
-            End If
-            Return New UserContext()
         End Function
     End Class
 End Namespace

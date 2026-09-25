@@ -3568,7 +3568,7 @@ Namespace SDC.Framework
             Dim aliasValue = tableAliasTextBox.Text.Trim()
             Dim sqlValue = browseSqlTextBox.Text.Trim()
             If sqlValue <> String.Empty Then
-                If DataAccess.UpsertPageRecord(0, pageName, tableName, aliasValue, sqlValue, CurrentUserId()) Then
+                If DataAccess.UpsertPageRecord(0, pageName, tableName, aliasValue, sqlValue, SessionState.ActingUserID) Then
                     applied.Add("grid columns and their order")
                     If aliasValue <> String.Empty Then
                         applied.Add("the page caption")
@@ -3599,12 +3599,6 @@ Namespace SDC.Framework
                             MessageBoxButtons.OK,
                             MessageBoxIcon.Information)
         End Sub
-
-        ''' <summary>Whose name goes on a generation request: the acting user, so an administrator
-        ''' viewing as somebody else is recorded as having generated the page.</summary>
-        Private Shared Function CurrentUserId() As Integer
-            Return SessionState.ActingUserID
-        End Function
 
         Private Shared Function DbSaveValue(value As String) As Object
             Return If(String.IsNullOrWhiteSpace(value), CType(Nothing, Object), value.Trim())

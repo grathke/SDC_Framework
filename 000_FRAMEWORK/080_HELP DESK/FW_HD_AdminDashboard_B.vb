@@ -32,7 +32,7 @@ Namespace SDC.Framework
         Private awaitingTile As Panel
 
         Public Sub New(user As UserContext, Optional profile As AccessProfile = Nothing)
-            currentUser = If(user, BuildCurrentUserFromSession())
+            currentUser = If(user, SessionState.CurrentUser())
             accessProfile = If(profile, MenuFormInitializer.BuildAccessProfileForCurrentSession(currentUser, NameOf(FW_HD_AdminDashboard_B)))
 
             Text = "Admin Help Desk Dashboard"
@@ -329,14 +329,6 @@ Namespace SDC.Framework
         Private Shared Function HoursText(value As Object) As String
             If value Is Nothing OrElse Convert.IsDBNull(value) Then Return "NA"
             Return Convert.ToDecimal(value, CultureInfo.InvariantCulture).ToString("0.0", CultureInfo.InvariantCulture) & " h"
-        End Function
-
-        Private Shared Function BuildCurrentUserFromSession() As UserContext
-            If SessionState.IsActive AndAlso SessionState.Current.HasValue Then
-                Dim session = SessionState.Current.Value
-                Return New UserContext With {.UserId = session.UserID, .FirstName = session.FirstName, .LastName = session.LastName}
-            End If
-            Return New UserContext()
         End Function
 
         Private Shared Function GetSessionRegistrationId() As Integer

@@ -97,6 +97,42 @@ function Assert-Block {
     Write-Host "PASS: $Description" -ForegroundColor Green
 }
 
+# A helper with one owner stays one only if a second copy fails the build's checks. This reads every
+# .vb under the framework and each application - recursively, and says how many, because a scan that
+# silently found nothing passed while checking nothing after the 2026-09 folder move - with comment
+# lines removed, and fails on a match anywhere but the owner. The owner must match too, or a renamed
+# owner would leave the check passing against an empty set.
+function Assert-SingleOwner {
+    param(
+        [string]$Pattern,
+        [string[]]$Owners,
+        [string]$Description
+    )
+
+    $files = @(Get-ChildItem -Path ".\000_FRAMEWORK", ".\1*_*", ".\2*_*" -Filter "*.vb" -File -Recurse -ErrorAction SilentlyContinue)
+    if ($files.Count -eq 0) {
+        throw "Found no .vb files to scan for $Description"
+    }
+
+    $ownerHit = $false
+    $strays = @()
+    foreach ($file in $files) {
+        $code = ((Get-Content -LiteralPath $file.FullName) | Where-Object { $_.TrimStart() -notmatch "^'" }) -join "`n"
+        if ($code -match $Pattern) {
+            if ($Owners -contains $file.Name) { $ownerHit = $true } else { $strays += $file.FullName.Substring($repoRoot.Length + 1) }
+        }
+    }
+
+    if ($Owners.Count -gt 0 -and -not $ownerHit) {
+        throw "The owner ($($Owners -join ', ')) no longer matches for ${Description}: $Pattern"
+    }
+    if ($strays.Count -gt 0) {
+        throw "A second copy of ${Description}: $($strays -join '; ')"
+    }
+
+    Write-Host "PASS: $Description ($($files.Count) files)" -ForegroundColor Green
+}
+
 Write-Step "Browse framework static validation"
 
 if (-not $SkipBuild) {
@@ -369,8 +405,28 @@ Assert-Pattern -Path ".\000_FRAMEWORK\500_INFRASTRUCTURE\Data\DataAccess.vb" -Pa
 Assert-Pattern -Path ".\000_FRAMEWORK\500_INFRASTRUCTURE\Data\DataAccess.vb" -Pattern "SwitchedUserAuditNote" -Description "An audit row written while switched says so"
 Assert-Pattern -Path ".\000_FRAMEWORK\000_BASE CLASSES\FW_Base_U.vb" -Pattern "SwitchedUserGuard.AllowWrite" -Description "Saving while switched is refused"
 Assert-Pattern -Path ".\000_FRAMEWORK\000_BASE CLASSES\FW_Base_B.vb" -Pattern "SwitchedUserGuard.AllowWrite" -Description "Delete and restore while switched are refused"
-Assert-Pattern -Path ".\000_FRAMEWORK\500_INFRASTRUCTURE\Security\SwitchedUserGuard.vb" -Pattern "RETURN TO YOURSELF FROM THE ROLE BUTTON FIRST." -Description "One wording for the refusal"
+# A page that replaces Base_B's delete replaces its refusal too, so each one carries its own. The
+# two Help Desk browse pages did not until 2026-09-25, and a switched administrator could delete.
+Assert-Pattern -Path ".\000_FRAMEWORK\080_HELP DESK\FW_HD_Issues_B.vb" -Pattern 'SwitchedUserGuard.AllowWrite(Me, "DELETE AN ISSUE")' -Description "My Issues refuses a delete while switched"
+Assert-Pattern -Path ".\000_FRAMEWORK\080_HELP DESK\FW_HD_Issues_Support_B.vb" -Pattern 'SwitchedUserGuard.AllowWrite(Me, "DELETE AN ISSUE")' -Description "Support Issues refuses a delete while switched"
+Assert-Pattern -Path ".\000_FRAMEWORK\500_INFRASTRUCTURE\Security\SwitchedUserGuard.vb" -Pattern "RETURN AS YOURSELF FROM THE ROLE BUTTON FIRST." -Description "One wording for the refusal"
+Assert-SingleOwner -Pattern 'RETURN (AS|TO) YOURSELF' -Owners @("SwitchedUserGuard.vb") -Description "The way back is worded once (SwitchedUserGuard.ReturnInstruction)"
 
+# Switch User sits on the role tile beside Return, its other half, since 2026-09-25. It left the
+# Application Settings menu so that tile opens the dashboard on one click.
+Assert-Pattern -Path ".\000_FRAMEWORK\010_MAIN MENU\FW_MainMenu.vb" -Pattern 'Dim switchItem As New ToolStripMenuItem("Switch User")' -Description "Switch User is on the role tile's menu"
+Assert-Pattern -Path ".\000_FRAMEWORK\010_MAIN MENU\FW_MainMenu.vb" -Pattern 'If SwitchedUser.IsActive OrElse CanSwitchUser() Then' -Description "The role tile drops its menu for an administrator who may switch"
+Assert-NotPattern -Path ".\100_CTY\MenuFormInitializer.vb" -Pattern 'BuildActionItem("Switch User"' -Description "Application Settings no longer carries Switch User"
+
+Write-Step "Shared helpers have one owner"
+
+# Consolidated 2026-09-25 from copies a name scan found. Each check fails when a copy comes back.
+Assert-SingleOwner -Pattern 'New UserContext With \{[^}]*[Ss]ession' -Owners @("Models.vb") -Description "A UserContext built from the session (SessionState.CurrentUser)"
+Assert-SingleOwner -Pattern 'Function CurrentUserId\(' -Owners @() -Description "No private CurrentUserId: SessionState.SessionUserID for whose row, ActingUserID for who changed it"
+Assert-SingleOwner -Pattern 'DeleteIssue\([^\n]*(SessionUserID|Current\.Value\.UserID)' -Owners @() -Description "A deleted Help Desk issue is stamped with the acting user"
+Assert-SingleOwner -Pattern 'Environment\.MachineName|GetExecutingAssembly\(\)\.GetName\(\)\.Version|GetCurrentProcess\(\)\.Id' -Owners @("ProcessIdentity.vb") -Description "Machine name, build version and process id (ProcessIdentity)"
+Assert-SingleOwner -Pattern 'GetEnvironmentVariable\("SDC_DB_' -Owners @("DataAccess.vb") -Description "The database connection settings are read in one place (DataAccess)"
+Assert-SingleOwner -Pattern '-\s*[\w.()]*[Pp]anel2MinSize\b' -Owners @("SplitterLayout.vb") -Description "The largest splitter distance, SplitterWidth included (SplitterLayout.MaxDistance)"
 
 Write-Step "Manual verification checklist"
 Write-Host "Run these UI checks in Registration_B, Roles_B:" -ForegroundColor Yellow

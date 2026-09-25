@@ -2315,7 +2315,7 @@ Namespace SDC.Framework
             If SwitchedUser.IsActive Then
                 MessageBox.Show(Me,
                                 ("YOU ARE ALREADY VIEWING AS " & currentUser.DisplayName & "." & vbCrLf & vbCrLf &
-                                 "RETURN TO YOURSELF FROM THE ROLE BUTTON FIRST.").ToUpperInvariant(),
+                                 SwitchedUserGuard.ReturnInstruction).ToUpperInvariant(),
                                 "Switch User", MessageBoxButtons.OK, MessageBoxIcon.Information)
                 Return
             End If
@@ -2536,9 +2536,10 @@ Namespace SDC.Framework
         End Sub
 
         ''' <summary>
-        ''' The two actions above, reachable from a tile's drop-down menu as well as from its button.
+        ''' Application Settings, reachable from a tile's drop-down menu as well as from its button.
         '''
-        ''' They exist so a menu item can invoke the action rather than repeat it. Application
+        ''' It exists so a menu item can invoke the action rather than repeat it. OpenSubstituteUser
+        ''' sat beside it until Switch User moved to the role tile's own menu on 2026-09-25. Application
         ''' Settings in particular decides between the Application and Company dashboards by role,
         ''' and a menu item that opened Dashboard_Application directly would be a second copy of
         ''' that decision - correct on the day it was written and wrong the first time the rule
@@ -2549,10 +2550,6 @@ Namespace SDC.Framework
         ''' </summary>
         Public Sub OpenApplicationSettings()
             ApplicationSettings_Click(Me, EventArgs.Empty)
-        End Sub
-
-        Public Sub OpenSubstituteUser()
-            LoginAsSubstitute_Click(Me, EventArgs.Empty)
         End Sub
 
         ''' From the menu an administrator is handling the queue, not reporting against a page, so
@@ -2575,8 +2572,12 @@ Namespace SDC.Framework
             ' While viewing as somebody, the tile offers their roles and the way back, from one menu.
             ' It is the one tile every account has, so it is always there to return from - the Admin
             ' tile is not, since most of the accounts worth viewing as never see it.
-            If SwitchedUser.IsActive Then
-                roleDropDowns.Open(TryCast(sender, Control), AddressOf BuildSwitchedRoleItems, rebuildItems:=True)
+            '
+            ' An administrator who may switch gets the same menu before switching, with Switch User
+            ' where Return will be. It moved here from the Application Settings menu on 2026-09-25,
+            ' which left that tile one item and therefore one click to the dashboard.
+            If SwitchedUser.IsActive OrElse CanSwitchUser() Then
+                roleDropDowns.Open(TryCast(sender, Control), AddressOf BuildRoleTileItems, rebuildItems:=True)
                 Return
             End If
 
@@ -2659,13 +2660,26 @@ Namespace SDC.Framework
         End Sub
 
         ''' <summary>
-        ''' The role tile's menu while viewing as somebody: their roles, then the way back.
-        '''
-        ''' Every role is listed, the current one ticked, even when there is only one - the list is
-        ''' the reminder of whose roles these are. Return names the administrator, so there is no
-        ''' doubt which of the two people it returns to.
+        ''' Whether this session may look for somebody to switch to: an App Admin with Read on
+        ''' FW_SwitchUser, the table the Switch User page browses, so the permission is granted in
+        ''' Roles_U beside every other table. Offering the item is convenience - LoginAsSubstitute_Click
+        ''' checks again, and the page enforces its own permission when it opens.
         ''' </summary>
-        Private Function BuildSwitchedRoleItems() As IEnumerable(Of ToolStripItem)
+        Private Function CanSwitchUser() As Boolean
+            Return SessionState.IsApplicationAdmin AndAlso
+                   activeAccessProfile IsNot Nothing AndAlso
+                   activeAccessProfile.Can("FW_SwitchUser", AccessCapability.Read)
+        End Function
+
+        ''' <summary>
+        ''' The role tile's menu: the session's roles, then Switch User - or, while viewing as
+        ''' somebody, their roles and then the way back.
+        '''
+        ''' Every role is listed, the current one ticked, even when there is only one - while
+        ''' switched the list is the reminder of whose roles these are. Return names the
+        ''' administrator, so there is no doubt which of the two people it returns to.
+        ''' </summary>
+        Private Function BuildRoleTileItems() As IEnumerable(Of ToolStripItem)
             Dim items As New List(Of ToolStripItem)()
             Dim session = SessionState.Current
             Dim currentRoleId = If(session.HasValue, session.Value.RoleID, 0)
@@ -2683,6 +2697,13 @@ Namespace SDC.Framework
             Next
 
             items.Add(New ToolStripSeparator())
+
+            If Not SwitchedUser.IsActive Then
+                Dim switchItem As New ToolStripMenuItem("Switch User")
+                AddHandler switchItem.Click, Sub(sender, e) LoginAsSubstitute_Click(Me, EventArgs.Empty)
+                items.Add(switchItem)
+                Return items
+            End If
 
             Dim returnName = If(SwitchedUser.Original Is Nothing, "me", SwitchedUser.Original.DisplayName)
             Dim returnItem As New ToolStripMenuItem("Return to " & returnName)

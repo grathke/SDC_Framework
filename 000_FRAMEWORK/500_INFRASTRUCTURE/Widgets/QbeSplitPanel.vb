@@ -105,9 +105,7 @@ Namespace SDC.Framework
 
         ''' <summary>The largest legal distance, or -1 when the control is too short for any.</summary>
         Private Function MaxDistance() As Integer
-            Dim height = ClientSize.Height
-            If height < Panel1MinSize + Panel2MinSize + SplitterWidth Then Return -1
-            Return height - Panel2MinSize - SplitterWidth
+            Return SplitterLayout.MaxDistance(ClientSize.Height, Panel1MinSize, Panel2MinSize, SplitterWidth)
         End Function
 
         Private ReadOnly Property SplitterBar As Rectangle

@@ -29,6 +29,13 @@ Namespace SDC.Framework
         End Sub
 
         ''' <summary>
+        ''' How to get back, in every message that refuses something while switched. One copy, so
+        ''' a rewording reaches all of them - it was written out twice until 2026-09-25, and the
+        ''' first rewording found the second only by searching.
+        ''' </summary>
+        Public Const ReturnInstruction As String = "RETURN AS YOURSELF FROM THE ROLE BUTTON FIRST."
+
+        ''' <summary>
         ''' True when the caller may write. False, having said why, while viewing as another user.
         '''
         ''' <paramref name="action"/> completes the sentence "you cannot ... while viewing as
@@ -45,7 +52,7 @@ Namespace SDC.Framework
             Dim message = "YOU CANNOT " & If(String.IsNullOrWhiteSpace(action), "CHANGE ANYTHING", action.Trim().ToUpperInvariant()) &
                           " WHILE VIEWING AS " & If(String.IsNullOrWhiteSpace(viewedName), "ANOTHER USER", viewedName.ToUpperInvariant()) & "." &
                           Environment.NewLine & Environment.NewLine &
-                          "RETURN TO YOURSELF FROM THE ROLE BUTTON FIRST."
+                          ReturnInstruction
 
             MessageBox.Show(owner, message, "Viewing As Another User", MessageBoxButtons.OK, MessageBoxIcon.Information)
             Return False

@@ -137,14 +137,8 @@ Namespace SDC.Framework
         ''' path too many for "the panel learns who it is for".
         ''' </summary>
         Public Sub ApplyAccess(profile As AccessProfile, tableName As String) Implements IAccessControlledControl.ApplyAccess
-            Dim session = SessionState.Current
-            If session.HasValue Then
-                currentUser = New UserContext With {
-                    .UserId = session.Value.UserID,
-                    .FirstName = session.Value.FirstName,
-                    .LastName = session.Value.LastName,
-                    .Email = String.Empty
-                }
+            If SessionState.IsActive Then
+                currentUser = SessionState.CurrentUser()
                 RefreshMessages()
             End If
         End Sub

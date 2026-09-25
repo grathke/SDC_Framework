@@ -45,7 +45,7 @@ Namespace SDC.Framework
 
         Public Shared Function GetRecipients(registrationId As Integer, currentUserId As Integer) As List(Of MessageRecipientOption)
             Dim result As New List(Of MessageRecipientOption)()
-            Using conn As New SqlConnection(ConnectionString())
+            Using conn As New SqlConnection(DataAccess.BuildConnectionStringForDatabase(String.Empty))
                 conn.Open()
                 Using cmd As New SqlCommand("SELECT UserID, LTRIM(RTRIM(ISNULL(FirstLast, ISNULL(FirstName, '') + ' ' + ISNULL(LastName, '')))) AS DisplayName FROM dbo.FW_Users WHERE RegistrationID = @RegistrationID AND ISNULL(IsActive, 1) = 1 AND ISNULL(DeletedFlag, 0) = 0 ORDER BY DisplayName", conn)
                     cmd.Parameters.AddWithValue("@RegistrationID", registrationId)
@@ -75,7 +75,7 @@ Namespace SDC.Framework
         Public Shared Function GetFolderSnapshot(registrationId As Integer, userId As Integer, folderName As String) As MessageFolderSnapshot
             Dim snapshot As New MessageFolderSnapshot With {.Rows = New List(Of MessageListRow)(), .UnreadCount = 0}
 
-            Using conn As New SqlConnection(ConnectionString())
+            Using conn As New SqlConnection(DataAccess.BuildConnectionStringForDatabase(String.Empty))
                 conn.Open()
                 Using cmd As New SqlCommand(FolderRowsSql & "; " & UnreadCountSql, conn)
                     cmd.Parameters.AddWithValue("@RegistrationID", registrationId)
@@ -121,7 +121,7 @@ Namespace SDC.Framework
 
         Public Shared Function GetFolderRows(registrationId As Integer, userId As Integer, folderName As String) As List(Of MessageListRow)
             Dim result As New List(Of MessageListRow)()
-            Using conn As New SqlConnection(ConnectionString())
+            Using conn As New SqlConnection(DataAccess.BuildConnectionStringForDatabase(String.Empty))
                 conn.Open()
                 Using cmd As New SqlCommand(FolderRowsSql, conn)
                     cmd.Parameters.AddWithValue("@RegistrationID", registrationId)
@@ -146,7 +146,7 @@ Namespace SDC.Framework
         End Function
 
         Public Shared Function CountUnread(registrationId As Integer, userId As Integer) As Integer
-            Using conn As New SqlConnection(ConnectionString())
+            Using conn As New SqlConnection(DataAccess.BuildConnectionStringForDatabase(String.Empty))
                 conn.Open()
                 Using cmd As New SqlCommand(UnreadCountSql, conn)
                     cmd.Parameters.AddWithValue("@RegistrationID", registrationId)
@@ -157,7 +157,7 @@ Namespace SDC.Framework
         End Function
 
         Public Shared Sub MarkRecipientRead(recipientId As Integer, registrationId As Integer, userId As Integer)
-            Using conn As New SqlConnection(ConnectionString())
+            Using conn As New SqlConnection(DataAccess.BuildConnectionStringForDatabase(String.Empty))
                 conn.Open()
                 Using cmd As New SqlCommand("UPDATE dbo.FW_MessageRecipients SET IsRead = 1, ReadOn = SYSUTCDATETIME(), UpdatedOn = SYSUTCDATETIME() WHERE MessageRecipientID = @RecipientID AND RegistrationID = @RegistrationID AND UserID = @UserID AND RecipientType = 'To' AND FolderName = 'Inbox' AND IsRead = 0", conn)
                     cmd.Parameters.AddWithValue("@RecipientID", recipientId)
@@ -169,7 +169,7 @@ Namespace SDC.Framework
         End Sub
 
         Public Shared Function GetMessageBody(messageId As Integer, registrationId As Integer, userId As Integer) As String
-            Using conn As New SqlConnection(ConnectionString())
+            Using conn As New SqlConnection(DataAccess.BuildConnectionStringForDatabase(String.Empty))
                 conn.Open()
                 Using cmd As New SqlCommand("SELECT TOP 1 m.Body FROM dbo.FW_Messages m INNER JOIN dbo.FW_MessageRecipients r ON r.MessageID = m.MessageID WHERE m.MessageID = @MessageID AND m.RegistrationID = @RegistrationID AND r.RegistrationID = @RegistrationID AND r.UserID = @UserID", conn)
                     cmd.Parameters.AddWithValue("@MessageID", messageId)
@@ -189,7 +189,7 @@ Namespace SDC.Framework
             If String.IsNullOrWhiteSpace(subject) Then Throw New InvalidOperationException("Subject is required.")
             If String.IsNullOrWhiteSpace(body) Then Throw New InvalidOperationException("Message body is required.")
 
-            Using conn As New SqlConnection(ConnectionString())
+            Using conn As New SqlConnection(DataAccess.BuildConnectionStringForDatabase(String.Empty))
                 conn.Open()
                 Using trans = conn.BeginTransaction()
                     Try
@@ -241,7 +241,7 @@ Namespace SDC.Framework
         End Sub
 
         Public Shared Sub MoveRecipient(recipientId As Integer, userId As Integer, fromFolder As String, toFolder As String)
-            Using conn As New SqlConnection(ConnectionString())
+            Using conn As New SqlConnection(DataAccess.BuildConnectionStringForDatabase(String.Empty))
                 conn.Open()
                 Using cmd As New SqlCommand("UPDATE dbo.FW_MessageRecipients SET PreviousFolderName = CASE WHEN @ToFolder IN ('Trash', 'Archive') THEN @FromFolder ELSE NULL END, FolderName = @ToFolder, UpdatedOn = SYSUTCDATETIME() WHERE MessageRecipientID = @RecipientID AND UserID = @UserID AND FolderName = @FromFolder", conn)
                     cmd.Parameters.AddWithValue("@RecipientID", recipientId)
@@ -254,7 +254,7 @@ Namespace SDC.Framework
         End Sub
 
         Public Shared Sub RestoreRecipient(recipientId As Integer, userId As Integer, fromFolder As String)
-            Using conn As New SqlConnection(ConnectionString())
+            Using conn As New SqlConnection(DataAccess.BuildConnectionStringForDatabase(String.Empty))
                 conn.Open()
                 Using cmd As New SqlCommand("UPDATE dbo.FW_MessageRecipients SET FolderName = ISNULL(NULLIF(PreviousFolderName, ''), 'Inbox'), PreviousFolderName = NULL, UpdatedOn = SYSUTCDATETIME() WHERE MessageRecipientID = @RecipientID AND UserID = @UserID AND FolderName = @FromFolder", conn)
                     cmd.Parameters.AddWithValue("@RecipientID", recipientId)
@@ -266,7 +266,7 @@ Namespace SDC.Framework
         End Sub
 
         Public Shared Sub DeleteRecipientPermanently(recipientId As Integer, userId As Integer, registrationId As Integer)
-            Using conn As New SqlConnection(ConnectionString())
+            Using conn As New SqlConnection(DataAccess.BuildConnectionStringForDatabase(String.Empty))
                 conn.Open()
                 Using trans = conn.BeginTransaction()
                     Try
@@ -313,15 +313,5 @@ Namespace SDC.Framework
                 End Using
             End Using
         End Sub
-
-        Private Shared Function ConnectionString() As String
-            Dim server = Environment.GetEnvironmentVariable("SDC_DB_SERVER")
-            Dim user = Environment.GetEnvironmentVariable("SDC_DB_USER")
-            Dim password = Environment.GetEnvironmentVariable("SDC_DB_PASSWORD")
-            Dim database = Environment.GetEnvironmentVariable("SDC_DB_NAME")
-            Dim encrypt = Environment.GetEnvironmentVariable("SDC_DB_ENCRYPT")
-            Dim trust = Environment.GetEnvironmentVariable("SDC_DB_TRUST_SERVER_CERT")
-            Return $"Server={server};Database={database};User ID={user};Password={password};Encrypt={If(String.IsNullOrWhiteSpace(encrypt), "True", encrypt)};TrustServerCertificate={If(String.IsNullOrWhiteSpace(trust), "True", trust)}"
-        End Function
     End Class
 End Namespace

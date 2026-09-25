@@ -117,9 +117,9 @@ Namespace SDC.Framework
                     If record Is Nothing Then
                         record = New OutageRecord With {
                             .FirstSeenUtc = Date.UtcNow,
-                            .MachineName = SafeMachineName(),
-                            .AppVersion = SafeAppVersion(),
-                            .ProcessID = SafeProcessId()
+                            .MachineName = ProcessIdentity.MachineName(),
+                            .AppVersion = ProcessIdentity.AppVersion(),
+                            .ProcessID = ProcessIdentity.ProcessId()
                         }
                     End If
 
@@ -271,7 +271,7 @@ Namespace SDC.Framework
         End Function
 
         Private Function PathForThisProcess() As String
-            Return Path.Combine(Folder(), FilePrefix & SafeProcessId().ToString(CultureInfo.InvariantCulture) & FileSuffix)
+            Return Path.Combine(Folder(), FilePrefix & ProcessIdentity.ProcessId().ToString(CultureInfo.InvariantCulture) & FileSuffix)
         End Function
 
         Private Function ReadRecord(path As String) As OutageRecord
@@ -285,30 +285,6 @@ Namespace SDC.Framework
 
             Catch
                 Return Nothing
-            End Try
-        End Function
-
-        Private Function SafeMachineName() As String
-            Try
-                Return Environment.MachineName
-            Catch
-                Return String.Empty
-            End Try
-        End Function
-
-        Private Function SafeAppVersion() As String
-            Try
-                Return Reflection.Assembly.GetExecutingAssembly().GetName().Version?.ToString()
-            Catch
-                Return String.Empty
-            End Try
-        End Function
-
-        Private Function SafeProcessId() As Integer
-            Try
-                Return Diagnostics.Process.GetCurrentProcess().Id
-            Catch
-                Return 0
             End Try
         End Function
 

@@ -524,6 +524,13 @@ Namespace SDC.Framework
             Return builder.InitialCatalog
         End Function
 
+        ''' <summary>
+        ''' The one connection string for every data-access class outside this one; String.Empty
+        ''' keeps the configured database. HelpDeskDataAccess and MessagingDataAccess each built
+        ''' their own until 2026-09-25, from the environment alone - so neither saw credentials
+        ''' saved through the configuration dialog, and Messaging also ignored SDC_DB_CONNECTION
+        ''' and defaulted Encrypt to True where this class defaults it to False.
+        ''' </summary>
         Public Shared Function BuildConnectionStringForDatabase(databaseName As String) As String
             Dim builder As New SqlConnectionStringBuilder(ConnectionString)
 
@@ -1002,13 +1009,13 @@ Namespace SDC.Framework
                             If(userId > 0, CType(userId, Object), DBNull.Value)
 
                         cmd.Parameters.Add("@MachineName", SqlDbType.VarChar, 100).Value =
-                            DbValueBounded(SafeMachineNameForAudit(), 100)
+                            DbValueBounded(ProcessIdentity.MachineName(), 100)
 
                         cmd.Parameters.Add("@SessionKind", SqlDbType.VarChar, 20).Value =
                             If(Program.InBrowserSession, "Thinfinity", "Desktop")
 
                         cmd.Parameters.Add("@AppVersion", SqlDbType.VarChar, 40).Value =
-                            DbValueBounded(SafeAppVersionForAudit(), 40)
+                            DbValueBounded(ProcessIdentity.AppVersion(), 40)
 
                         cmd.ExecuteNonQuery()
                     End Using
@@ -1019,22 +1026,6 @@ Namespace SDC.Framework
                 ' second failure, and least of all in front of somebody who cannot sign in.
             End Try
         End Sub
-
-        Private Shared Function SafeMachineNameForAudit() As String
-            Try
-                Return Environment.MachineName
-            Catch
-                Return String.Empty
-            End Try
-        End Function
-
-        Private Shared Function SafeAppVersionForAudit() As String
-            Try
-                Return Reflection.Assembly.GetExecutingAssembly().GetName().Version?.ToString()
-            Catch
-                Return String.Empty
-            End Try
-        End Function
 
         Private Shared Function TryGetCurrentUserRecord(conn As SqlConnection, userNameLookup As String, ByRef userId As Integer, ByRef dbEmail As String, ByRef firstName As String, ByRef lastName As String, ByRef storedPasswordHash As String, ByRef isActive As Boolean, ByRef registrationId As Integer) As Boolean
             ' Every column is null-guarded, Email included. It was the one that was not, from when

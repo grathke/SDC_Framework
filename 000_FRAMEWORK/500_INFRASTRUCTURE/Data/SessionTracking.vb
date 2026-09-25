@@ -90,9 +90,9 @@ Namespace SDC.Framework
                             cmd.Parameters.Add("@SessionKind", SqlDbType.VarChar, 20).Value =
                                 If(Program.InBrowserSession, "Thinfinity", "Desktop")
 
-                            cmd.Parameters.Add("@MachineName", SqlDbType.VarChar, 100).Value = SafeMachineName()
-                            cmd.Parameters.Add("@AppVersion", SqlDbType.VarChar, 40).Value = SafeAppVersion()
-                            cmd.Parameters.Add("@ProcessID", SqlDbType.Int).Value = SafeProcessId()
+                            cmd.Parameters.Add("@MachineName", SqlDbType.VarChar, 100).Value = ProcessIdentity.MachineName()
+                            cmd.Parameters.Add("@AppVersion", SqlDbType.VarChar, 40).Value = ProcessIdentity.AppVersion()
+                            cmd.Parameters.Add("@ProcessID", SqlDbType.Int).Value = ProcessIdentity.ProcessId()
 
                             Dim inserted = cmd.ExecuteScalar()
                             If inserted IsNot Nothing AndAlso Not Convert.IsDBNull(inserted) Then
@@ -265,7 +265,7 @@ Namespace SDC.Framework
                         "  AND (ProcessID IS NULL OR ProcessID NOT IN (" &
                         String.Join(", ", placeholders) & "))", conn)
 
-                        cmd.Parameters.Add("@MachineName", SqlDbType.VarChar, 100).Value = SafeMachineName()
+                        cmd.Parameters.Add("@MachineName", SqlDbType.VarChar, 100).Value = ProcessIdentity.MachineName()
 
                         For index = 0 To alive.Count - 1
                             cmd.Parameters.Add(placeholders(index), SqlDbType.Int).Value = alive(index)
@@ -314,30 +314,6 @@ Namespace SDC.Framework
             Catch ex As Exception
                 Telemetry.Error(ex, "SessionTracking.LiveProcessIds", Telemetry.FaultOrigin.Swallowed)
                 Return New List(Of Integer)()
-            End Try
-        End Function
-
-        Private Function SafeMachineName() As String
-            Try
-                Return Environment.MachineName
-            Catch
-                Return String.Empty
-            End Try
-        End Function
-
-        Private Function SafeAppVersion() As String
-            Try
-                Return Reflection.Assembly.GetExecutingAssembly().GetName().Version?.ToString()
-            Catch
-                Return String.Empty
-            End Try
-        End Function
-
-        Private Function SafeProcessId() As Integer
-            Try
-                Return Diagnostics.Process.GetCurrentProcess().Id
-            Catch
-                Return 0
             End Try
         End Function
 

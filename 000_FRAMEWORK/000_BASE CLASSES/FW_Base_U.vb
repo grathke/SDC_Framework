@@ -1419,6 +1419,23 @@ Namespace SDC.Framework
             If activeSaveTrace IsNot Nothing Then activeSaveTrace.ResumeClock()
         End Sub
 
+        ''' <summary>
+        ''' Shows a page's own dialog during a save with the clock held, and returns its result.
+        '''
+        ''' For a dialog the page raises from TryBuildRecord or SaveRecord - the two clock helpers
+        ''' above are private, and a page could not reach them. FW_HD_Issues_U's status chooser
+        ''' was the case: it asks a support user for the new status on every save, and the time
+        ''' spent choosing was reported as a 7.3 second save (fault #11, 2026-09-25).
+        ''' </summary>
+        Protected Function ShowDialogDuringSave(dialog As Form) As DialogResult
+            PauseSaveClock()
+            Try
+                Return dialog.ShowDialog(Me)
+            Finally
+                ResumeSaveClock()
+            End Try
+        End Function
+
         Protected Sub ShowConcurrencyUnavailable()
             PauseSaveClock()
             MessageBox.Show(Me,

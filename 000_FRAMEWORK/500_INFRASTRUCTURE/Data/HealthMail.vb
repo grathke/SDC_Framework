@@ -174,7 +174,7 @@ Namespace SDC.Framework
         Private Function BuildBody(items As List(Of Item)) As String
             Dim body As New StringBuilder()
 
-            body.AppendLine("Something new arrived in Needs Attention on " & SafeMachineName() & ".")
+            body.AppendLine("Something new arrived in Needs Attention on " & MachineNameForMail() & ".")
             body.AppendLine()
 
             For Each item In items
@@ -206,7 +206,7 @@ Namespace SDC.Framework
             body.AppendLine("Open System Health from the Application dashboard for the stack trace,")
             body.AppendLine("how often it has happened, and what was done about it last time.")
             body.AppendLine()
-            body.AppendLine("Build " & SafeAppVersion() & ", " & Date.UtcNow.ToString("yyyy-MM-dd HH:mm:ss", CultureInfo.InvariantCulture) & " UTC.")
+            body.AppendLine("Build " & AppVersionForMail() & ", " & Date.UtcNow.ToString("yyyy-MM-dd HH:mm:ss", CultureInfo.InvariantCulture) & " UTC.")
             body.AppendLine("You are receiving this because Receives Health Alerts is ticked on your employee record.")
 
             Return body.ToString()
@@ -309,20 +309,15 @@ Namespace SDC.Framework
             Return If(count = 1, "", "s")
         End Function
 
-        Private Function SafeMachineName() As String
-            Try
-                Return Environment.MachineName
-            Catch
-                Return "this server"
-            End Try
+        ''' <summary>A mail is read by a person, who is better served by words than by a blank.</summary>
+        Private Function MachineNameForMail() As String
+            Dim name = ProcessIdentity.MachineName()
+            Return If(name = String.Empty, "this server", name)
         End Function
 
-        Private Function SafeAppVersion() As String
-            Try
-                Return Reflection.Assembly.GetExecutingAssembly().GetName().Version?.ToString()
-            Catch
-                Return "unknown"
-            End Try
+        Private Function AppVersionForMail() As String
+            Dim version = ProcessIdentity.AppVersion()
+            Return If(version = String.Empty, "unknown", version)
         End Function
 
     End Module

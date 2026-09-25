@@ -399,8 +399,8 @@ Namespace SDC.Framework
                     .SessionKind = ResolveSessionKind(),
                     .RegistrationID = If(session.HasValue, CType(session.Value.RegistrationID, Integer?), Nothing),
                     .UserID = If(session.HasValue, CType(session.Value.UserID, Integer?), Nothing),
-                    .MachineName = SafeMachineName(),
-                    .AppVersion = SafeAppVersion()
+                    .MachineName = ProcessIdentity.MachineName(),
+                    .AppVersion = ProcessIdentity.AppVersion()
                 })
 
                 EnsureFlushTimer()
@@ -430,8 +430,8 @@ Namespace SDC.Framework
                 .SessionKind = ResolveSessionKind(),
                 .RegistrationID = If(session.HasValue, CType(session.Value.RegistrationID, Integer?), Nothing),
                 .UserID = If(session.HasValue, CType(session.Value.UserID, Integer?), Nothing),
-                .MachineName = SafeMachineName(),
-                .AppVersion = SafeAppVersion()
+                .MachineName = ProcessIdentity.MachineName(),
+                .AppVersion = ProcessIdentity.AppVersion()
             }
         End Function
 
@@ -492,22 +492,6 @@ Namespace SDC.Framework
         Private Function ResolveSessionKind() As String
             Try
                 Return If(Program.InBrowserSession, "Thinfinity", "Desktop")
-            Catch
-                Return String.Empty
-            End Try
-        End Function
-
-        Private Function SafeMachineName() As String
-            Try
-                Return Environment.MachineName
-            Catch
-                Return String.Empty
-            End Try
-        End Function
-
-        Private Function SafeAppVersion() As String
-            Try
-                Return Assembly.GetExecutingAssembly().GetName().Version?.ToString()
             Catch
                 Return String.Empty
             End Try

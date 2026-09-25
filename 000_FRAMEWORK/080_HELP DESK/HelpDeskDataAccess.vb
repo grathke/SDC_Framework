@@ -55,23 +55,8 @@ Namespace SDC.Framework
             Public Property RowVersion As Byte()
         End Class
 
-        Private Shared Function ConnectionString() As String
-            Dim configured = Environment.GetEnvironmentVariable("SDC_DB_CONNECTION")
-            If Not String.IsNullOrWhiteSpace(configured) Then Return configured.Trim()
-
-            Dim server = Environment.GetEnvironmentVariable("SDC_DB_SERVER")
-            Dim user = Environment.GetEnvironmentVariable("SDC_DB_USER")
-            Dim password = Environment.GetEnvironmentVariable("SDC_DB_PASSWORD")
-            Dim database = Environment.GetEnvironmentVariable("SDC_DB_NAME")
-            If String.IsNullOrWhiteSpace(server) Then server = "BEELINK"
-            If String.IsNullOrWhiteSpace(user) Then user = "sa"
-            If String.IsNullOrWhiteSpace(password) Then password = String.Empty
-            If String.IsNullOrWhiteSpace(database) Then database = "WX_Framework"
-            Return "Server=" & server & ";User Id=" & user & ";Password=" & password & ";Encrypt=False;TrustServerCertificate=True;Initial Catalog=" & database & ";"
-        End Function
-
         Public Shared Function GetIssueById(issueId As Integer, registrationId As Integer) As IssueRecord
-            Using conn As New SqlConnection(ConnectionString())
+            Using conn As New SqlConnection(DataAccess.BuildConnectionStringForDatabase(String.Empty))
                 conn.Open()
                 Using cmd As New SqlCommand("SELECT TOP 1 IssueID, RegistrationID, ApplicationID, IssueNumber, CategoryID, Subject, Description, ExpectedBehavior, StepsToReproduce, ReportedFromPage, ConversationText, ConversationEntryCount, Status, Priority, ClosedBy, ClosedOn, FirstResponseOn, ReporterUserID, AssignedSupportUserID, CreatedBy, CreatedOn, UpdatedBy, UpdatedOn, RowVersion FROM dbo.FW_HD_Issues WHERE IssueID = @IssueID AND RegistrationID = @RegistrationID AND ISNULL(DeletedFlag, 0) = 0", conn)
                     cmd.Parameters.AddWithValue("@IssueID", issueId)
@@ -85,7 +70,7 @@ Namespace SDC.Framework
         End Function
 
         Public Shared Function GetCategories(registrationId As Integer) As DataTable
-            Using conn As New SqlConnection(ConnectionString())
+            Using conn As New SqlConnection(DataAccess.BuildConnectionStringForDatabase(String.Empty))
                 conn.Open()
                 Using cmd As New SqlCommand("SELECT CategoryID, CategoryName, ISNULL(DescribeThe, '') AS DescribeThe, ISNULL(RequiresExpectedBehavior, 0) AS RequiresExpectedBehavior, ISNULL(RequiresPage, 0) AS RequiresPage FROM dbo.FW_HD_IssueCategories WHERE (RegistrationID = @RegistrationID OR RegistrationID IS NULL) AND ISNULL(IsActive, 1) = 1 AND ISNULL(DeletedFlag, 0) = 0 ORDER BY DisplayOrder, CategoryName", conn)
                     cmd.Parameters.AddWithValue("@RegistrationID", registrationId)
@@ -152,7 +137,7 @@ Namespace SDC.Framework
 
         Public Shared Function GetAdminDashboardSnapshot(Optional filterType As String = Nothing,
                                                           Optional filterValue As String = Nothing) As AdminDashboardSnapshot
-            Using conn As New SqlConnection(ConnectionString())
+            Using conn As New SqlConnection(DataAccess.BuildConnectionStringForDatabase(String.Empty))
                 conn.Open()
                 Using cmd As New SqlCommand("dbo.FW_HD_GetAdminDashboard", conn)
                     cmd.CommandType = CommandType.StoredProcedure
@@ -186,7 +171,7 @@ Namespace SDC.Framework
         End Function
 
         Private Shared Function ExecuteDashboardQuery(sql As String) As DataTable
-            Using conn As New SqlConnection(ConnectionString())
+            Using conn As New SqlConnection(DataAccess.BuildConnectionStringForDatabase(String.Empty))
                 conn.Open()
                 Using cmd As New SqlCommand(sql, conn)
                     Using adapter As New SqlDataAdapter(cmd)
@@ -209,7 +194,7 @@ Namespace SDC.Framework
             Dim result As New List(Of HelpDeskAttachmentSummary)()
             If issueId <= 0 Then Return result
 
-            Using conn As New SqlConnection(ConnectionString())
+            Using conn As New SqlConnection(DataAccess.BuildConnectionStringForDatabase(String.Empty))
                 conn.Open()
                 Using cmd As New SqlCommand("SELECT AttachmentID, FileName, ContentType, FileSize, CreatedOn FROM dbo.FW_HD_IssueAttachments WHERE IssueID = @IssueID AND RegistrationID = @RegistrationID ORDER BY CreatedOn, AttachmentID", conn)
                     cmd.Parameters.AddWithValue("@IssueID", issueId)
@@ -236,7 +221,7 @@ Namespace SDC.Framework
         ''' read another tenant's file.
         ''' </summary>
         Public Shared Function GetAttachmentData(attachmentId As Integer, registrationId As Integer) As HelpDeskAttachmentUpload
-            Using conn As New SqlConnection(ConnectionString())
+            Using conn As New SqlConnection(DataAccess.BuildConnectionStringForDatabase(String.Empty))
                 conn.Open()
                 Using cmd As New SqlCommand("SELECT FileName, ContentType, FileSize, FileData FROM dbo.FW_HD_IssueAttachments WHERE AttachmentID = @AttachmentID AND RegistrationID = @RegistrationID", conn)
                     cmd.Parameters.AddWithValue("@AttachmentID", attachmentId)
@@ -256,7 +241,7 @@ Namespace SDC.Framework
         End Function
 
         Public Shared Sub DeleteIssue(issueId As Integer, registrationId As Integer, deletedBy As Integer)
-            Using conn As New SqlConnection(ConnectionString())
+            Using conn As New SqlConnection(DataAccess.BuildConnectionStringForDatabase(String.Empty))
                 conn.Open()
                 Using cmd As New SqlCommand("UPDATE dbo.FW_HD_Issues SET DeletedFlag = 1, DeletedBy = @DeletedBy, DeletedOn = SYSUTCDATETIME(), UpdatedBy = @DeletedBy, UpdatedOn = SYSUTCDATETIME() WHERE IssueID = @IssueID AND RegistrationID = @RegistrationID AND ISNULL(DeletedFlag, 0) = 0", conn)
                     cmd.Parameters.AddWithValue("@IssueID", issueId)
@@ -286,7 +271,7 @@ Namespace SDC.Framework
         ''' </summary>
         Public Shared Function SaveIssue(record As IssueRecord, responseText As String, attachments As IEnumerable(Of HelpDeskAttachmentUpload)) As Boolean
             If record Is Nothing Then Throw New ArgumentNullException(NameOf(record))
-            Using conn As New SqlConnection(ConnectionString())
+            Using conn As New SqlConnection(DataAccess.BuildConnectionStringForDatabase(String.Empty))
                 conn.Open()
                 Using trans = conn.BeginTransaction()
                     Try
@@ -310,7 +295,7 @@ Namespace SDC.Framework
                                 cmd.Parameters.AddWithValue("@IsSupport", If(isSupport, 1, 0))
                                 cmd.Parameters.AddWithValue("@ResponseText", If(responseText, String.Empty))
                                 cmd.Parameters.AddWithValue("@ConversationText", FormatConversationEntry(record, author, If(responseText, String.Empty)))
-                                cmd.Parameters.AddWithValue("@UserID", CurrentUserId())
+                                cmd.Parameters.AddWithValue("@UserID", SessionState.ActingUserID)
                                 cmd.Parameters.AddWithValue("@IssueID", record.IssueID)
                                 cmd.Parameters.AddWithValue("@RegistrationID", record.RegistrationID)
                                 If cmd.ExecuteNonQuery() = 0 Then Throw New InvalidOperationException("The issue was not found or is no longer active.")
@@ -327,7 +312,7 @@ Namespace SDC.Framework
                                 cmd.Parameters.AddWithValue("@ContentType", attachment.ContentType)
                                 cmd.Parameters.AddWithValue("@FileSize", attachment.FileSize)
                                 cmd.Parameters.Add("@FileData", SqlDbType.VarBinary, -1).Value = attachment.FileData
-                                cmd.Parameters.AddWithValue("@UserID", CurrentUserId())
+                                cmd.Parameters.AddWithValue("@UserID", SessionState.ActingUserID)
                                 cmd.ExecuteNonQuery()
                             End Using
                         Next
@@ -354,7 +339,7 @@ Namespace SDC.Framework
             cmd.Parameters.AddWithValue("@Priority", record.Priority)
             cmd.Parameters.AddWithValue("@ReporterUserID", record.ReporterUserID)
             AddNullable(cmd, "@AssignedSupportUserID", record.AssignedSupportUserID)
-            cmd.Parameters.AddWithValue("@UserID", CurrentUserId())
+            cmd.Parameters.AddWithValue("@UserID", SessionState.ActingUserID)
         End Sub
 
         Private Shared Sub AddNullable(cmd As SqlCommand, name As String, value As Integer?)
@@ -401,13 +386,6 @@ Namespace SDC.Framework
             Return If(value Is Nothing OrElse Convert.IsDBNull(value), String.Empty, value.ToString())
         End Function
 
-        Private Shared Function CurrentUserId() As Integer
-            ' Authorship: CreatedBy, UpdatedBy and ClosedBy on a ticket. While an administrator
-            ' is viewing as somebody else, the change is the administrator's. The reporter of a
-            ' ticket is a different question and is answered on the page, from the session.
-            Return SessionState.ActingUserID
-        End Function
-
         Private Shared Function ResolveSupportUserIdForNewIssue(registrationId As Integer) As Integer
             If Not SessionState.IsActive OrElse Not SessionState.Current.HasValue Then Return 0
 
@@ -428,7 +406,7 @@ Namespace SDC.Framework
                 Dim name = (session.FirstName & " " & session.LastName).Trim()
                 If name <> String.Empty Then Return name
             End If
-            Return "User " & CurrentUserId().ToString(CultureInfo.InvariantCulture)
+            Return "User " & SessionState.ActingUserID.ToString(CultureInfo.InvariantCulture)
         End Function
 
         Private Shared Function FormatConversationEntry(record As IssueRecord, author As String, body As String) As String
@@ -453,7 +431,7 @@ Namespace SDC.Framework
         End Function
 
         Private Shared Function GetUserDisplayName(registrationId As Integer, userId As Integer) As String
-            Using conn As New SqlConnection(ConnectionString())
+            Using conn As New SqlConnection(DataAccess.BuildConnectionStringForDatabase(String.Empty))
                 conn.Open()
                 Using cmd As New SqlCommand("SELECT TOP 1 NULLIF(LTRIM(RTRIM(FirstLast)), '') FROM dbo.FW_Users WHERE RegistrationID = @RegistrationID AND UserID = @UserID", conn)
                     cmd.Parameters.AddWithValue("@RegistrationID", registrationId)

@@ -147,20 +147,19 @@ placeholder, removed 2026-09-15 without ever having been wired up.
 ## application-settings
 
 - placement: main ribbon (left), anchored third
-- ActionType: role-routed drop-down menu (App Admin) / role-routed page (Company Admin)
-- target: AppAdmin -> drop-down over the regions below; CompanyAdmin -> `Dashboard_Company`
+- ActionType: role-routed page (a drop-down only while an App Admin has more than one item)
+- target: AppAdmin -> `Dashboard_Application`; CompanyAdmin -> `Dashboard_Company`
 - caption source: fixed (`Application Settings`, on two lines)
 - icon file: `gear.png`
 - visibility rule: `MenuFormInitializer.ApplyActionAccess`, visible and enabled when
   `SessionState.Current.IsApplicationAdminRole` or `IsCompanyAdminRole`
-- click behavior: an App Admin gets a menu; anyone else gets the old behaviour, which opens the
-  dashboard for their role. The role is read on click, not when the ribbon is configured, so there
+- click behavior: opens the dashboard for the role, on one click. An App Admin gets a menu only
+  when `BuildApplicationSettingsItems` returns more than one item, which since 2026-09-25 it does not. The role is read on click, not when the ribbon is configured, so there
   is no handler to keep in step with a role change.
 - menu items (App Admin only), built by `MenuFormInitializer.BuildApplicationSettingsItems`:
     - `Admin Dashboard` -> `FW_MainMenu.OpenApplicationSettings` — first, because it is what the
       button did before it grew a menu
-    - separator
-    - `Switch User` -> `FW_MainMenu.OpenSubstituteUser` — still a placeholder message
+    - `Switch User` was the second item until 2026-09-25; it moved to the `select-role` menu
 - note: every item invokes the tile handler that owns the action rather than repeating it, so the
   Application-versus-Company dashboard decision stays in one place. Opening and closing the menu
   belongs to `TileDropDownController` and is written nowhere here.
@@ -241,8 +240,8 @@ A tile wanting a menu calls `tileDropDowns.Open(tile, itemFactory)` from its own
 all of it. There is deliberately no way to ask for different behavior.
 
 - placement: main ribbon (right, pinned)
-- ActionType: Command/Page placeholder
-- target: not yet implemented
+- ActionType: Command
+- target: `FW_SwitchUser_B`, then `SessionStarter` for the chosen account
 - caption source: fixed (`My Profile`)
 - icon file: `my-profile.png`
 - visibility rule: always visible (pinned)
@@ -251,15 +250,15 @@ all of it. There is deliberately no way to ask for different behavior.
 ## login-as-substitute
 
 - placement: registered but **not on the ribbon**. It was a pinned tile on the right until
-  2026-09-04, when the action moved into the `application-settings` drop-down.
+  2026-09-04, when the action moved into the `application-settings` drop-down, and it has been
+  the `select-role` menu's Switch User item since 2026-09-25.
 - ActionType: Command/Page placeholder
 - target: not yet implemented
 - caption source: fixed (`Login as Different User`, on two lines) — unused while hidden; the menu
   row that replaced it reads `Switch User`
 - icon file: `substitute-user.png` — unused while hidden
 - visibility rule: `MenuFormInitializer.ApplyActionAccess` hides it unconditionally
-- click behavior: placeholder message, reached through `FW_MainMenu.OpenSubstituteUser` from the
-  Application Settings menu
+- click behavior: `LoginAsSubstitute_Click`, reached from the `select-role` menu's Switch User item
 - note: hidden rather than unregistered, because the menu item invokes this tile's own handler.
   Unregistering it would mean writing the workflow somewhere else and moving it back when the tile
   returns. The pinned row closes up on its own — `LayoutPinnedActions` skips a tile that is not
@@ -267,13 +266,17 @@ all of it. There is deliberately no way to ask for different behavior.
 ## select-role
 
 - placement: main ribbon (right, pinned)
-- ActionType: Command / role switcher
-- target: `FW_RoleSelection` plus a `SessionState` role switch
+- ActionType: Command / role switcher, and the way into and out of Switch User
+- target: a drop-down menu, or `FW_RoleSelection`, plus a `SessionState` role switch
 - caption source: current session role name, formatted
 - icon file: `users.png`
 - visibility rule: `MenuFormInitializer.vb:125`, always visible (pinned); the selector only opens
   when the user has more than one role
 - click behavior: switches session role, reconfigures menu access, updates the caption
+- menu (`FW_MainMenu.BuildRoleTileItems`), shown while switched or when `CanSwitchUser` (App Admin
+  with Read on `FW_SwitchUser`): every role, the current one ticked, a separator, then **Switch
+  User** - or, while switched, **Return to <administrator>**. Anyone else keeps the
+  `FW_RoleSelection` dialog, opened only with more than one role.
 
 ## database-config
 

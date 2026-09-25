@@ -195,7 +195,7 @@ Namespace SDC.Framework
         Private Shared ReadOnly GridHeaderColour As Color = Color.FromArgb(245, 246, 248)
 
         Public Sub New(user As UserContext, Optional profile As AccessProfile = Nothing)
-            currentUser = If(user, BuildCurrentUserFromSession())
+            currentUser = If(user, SessionState.CurrentUser())
             accessProfile = If(profile,
                                MenuFormInitializer.BuildAccessProfileForCurrentSession(currentUser, NameOf(FW_Health_B)))
 
@@ -1796,19 +1796,6 @@ Namespace SDC.Framework
             grid.ClearSelection()
             grid.CurrentCell = Nothing
         End Sub
-
-        Private Shared Function BuildCurrentUserFromSession() As UserContext
-            If SessionState.IsActive Then
-                Dim session = SessionState.Current.Value
-                Return New UserContext With {
-                    .UserId = session.UserID,
-                    .FirstName = session.FirstName,
-                    .LastName = session.LastName
-                }
-            End If
-
-            Return New UserContext()
-        End Function
 
     End Class
 End Namespace

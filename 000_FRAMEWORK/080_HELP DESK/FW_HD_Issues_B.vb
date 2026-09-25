@@ -18,8 +18,8 @@ Namespace SDC.Framework
         Private ReadOnly reportingPageTitle As String = String.Empty
 
         Public Sub New(Optional reportedFromPage As String = "", Optional reportedFromPageTitle As String = "")
-            MyBase.New(BuildCurrentUserFromSession(),
-                       MenuFormInitializer.BuildAccessProfileForCurrentSession(BuildCurrentUserFromSession(), "FW_HD_Issues_B"),
+            MyBase.New(SessionState.CurrentUser(),
+                       MenuFormInitializer.BuildAccessProfileForCurrentSession(SessionState.CurrentUser(), "FW_HD_Issues_B"),
                        "FW_HD_Issues")
             reportingPage = If(reportedFromPage, String.Empty).Trim()
             reportingPageTitle = If(reportedFromPageTitle, String.Empty).Trim()
@@ -52,7 +52,7 @@ Namespace SDC.Framework
         End Function
 
         Protected Overrides Function GetBrowseUserId() As Integer
-            Return CurrentUserId()
+            Return SessionState.SessionUserID
         End Function
 
         Protected Overrides Function HandleCustomCreateAction() As Boolean
@@ -90,6 +90,8 @@ Namespace SDC.Framework
         End Function
 
         Protected Overrides Function HandleCustomDeleteAction() As Boolean
+            If Not SwitchedUserGuard.AllowWrite(Me, "DELETE AN ISSUE") Then Return True
+
             Dim id = SelectedIssueId()
             If Not id.HasValue Then
                 MessageBox.Show(Me, "Select an issue first.", "Delete", MessageBoxButtons.OK, MessageBoxIcon.Information)
@@ -97,7 +99,7 @@ Namespace SDC.Framework
             End If
 
             If MessageBox.Show(Me, "Delete the selected Help Desk issue?", "Confirm Delete", MessageBoxButtons.YesNo, MessageBoxIcon.Warning) = DialogResult.Yes Then
-                HelpDeskDataAccess.DeleteIssue(id.Value, GetSessionRegistrationId(), CurrentUserId())
+                HelpDeskDataAccess.DeleteIssue(id.Value, GetSessionRegistrationId(), SessionState.ActingUserID)
                 RefreshGridForCustomAction()
                 FitUserGridColumns()
             End If
@@ -133,20 +135,6 @@ Namespace SDC.Framework
 
         Private Function SelectedIssueId() As Integer?
             Return GetSelectedRecordIdForCustomAction()
-        End Function
-
-        Private Function CurrentUserId() As Integer
-            Dim session = SessionState.Current
-            If session.HasValue Then Return session.Value.UserID
-            Return 0
-        End Function
-
-        Private Shared Function BuildCurrentUserFromSession() As UserContext
-            Dim session = SessionState.Current
-            If session.HasValue Then
-                Return New UserContext With {.UserId = session.Value.UserID, .FirstName = session.Value.FirstName, .LastName = session.Value.LastName}
-            End If
-            Return New UserContext()
         End Function
     End Class
 End Namespace

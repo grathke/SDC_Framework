@@ -102,7 +102,7 @@ Namespace SDC.Framework
                 .IssueNumber = "HD-" & DateTime.UtcNow.ToString("yyyyMMddHHmmss", Globalization.CultureInfo.InvariantCulture),
                 .Status = "New",
                 .Priority = "Normal",
-                .ReporterUserID = CurrentUserId()
+                .ReporterUserID = SessionState.SessionUserID
             })
             If issue Is Nothing Then Throw New InvalidOperationException("The issue was not found in the current registration.")
             originalStatus = issue.Status
@@ -173,7 +173,7 @@ Namespace SDC.Framework
 
             If IsCurrentUserSupport() Then
                 Using statusChooser As New HelpDeskStatusChoiceForm()
-                    If statusChooser.ShowDialog(Me) <> DialogResult.OK Then Return False
+                    If ShowDialogDuringSave(statusChooser) <> DialogResult.OK Then Return False
                     issue.Status = statusChooser.SelectedStatus
                     statusValueLabel.Text = statusChooser.SelectedStatus
                 End Using
@@ -857,11 +857,6 @@ Namespace SDC.Framework
 
         Private Function ResolveRegistrationId() As Integer
             If SessionState.IsActive AndAlso SessionState.Current.HasValue Then Return SessionState.Current.Value.RegistrationID
-            Return 0
-        End Function
-
-        Private Function CurrentUserId() As Integer
-            If SessionState.IsActive AndAlso SessionState.Current.HasValue Then Return SessionState.Current.Value.UserID
             Return 0
         End Function
 

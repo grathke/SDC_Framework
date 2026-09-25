@@ -42,7 +42,16 @@ Namespace SDC.Framework
         ''' </summary>
         Public Function MaxDistance(split As SplitContainer) As Integer
             If Not CanPositionSplitter(split) Then Return -1
-            Return Extent(split) - split.Panel2MinSize - split.SplitterWidth
+            Return MaxDistance(Extent(split), split.Panel1MinSize, split.Panel2MinSize, split.SplitterWidth)
+        End Function
+
+        ''' <summary>
+        ''' The same arithmetic for a control that is not a SplitContainer - QbeSplitPanel draws its
+        ''' own bar but is bound by the same six pixels. -1 when no distance is legal.
+        ''' </summary>
+        Public Function MaxDistance(extent As Integer, panel1MinSize As Integer, panel2MinSize As Integer, splitterWidth As Integer) As Integer
+            If extent < panel1MinSize + panel2MinSize + splitterWidth Then Return -1
+            Return extent - panel2MinSize - splitterWidth
         End Function
 
         ''' <summary>
