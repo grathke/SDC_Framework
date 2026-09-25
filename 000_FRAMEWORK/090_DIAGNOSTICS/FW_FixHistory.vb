@@ -183,7 +183,7 @@ Namespace SDC.Framework
 
                 For Each line In lines
                     Dim index = grid.Rows.Add(
-                        line.ResolvedOn.ToLocalTime().ToString("d MMM HH:mm", CultureInfo.CurrentCulture),
+                        SessionTime.ToSessionZone(line.ResolvedOn).ToString("d MMM HH:mm", CultureInfo.CurrentCulture),
                         line.ExceptionType,
                         If(line.PageName = String.Empty, "(none)", line.PageName),
                         DecidedBy(line),

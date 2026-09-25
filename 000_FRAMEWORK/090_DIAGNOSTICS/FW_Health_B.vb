@@ -1455,7 +1455,7 @@ Namespace SDC.Framework
 
                 ' "as at", never "now". The figures are as old as the last refresh, and a page that
                 ' implies otherwise is claiming something it cannot know.
-                asAtStamp = "as at " & snapshot.TakenAtUtc.ToLocalTime().ToString("HH:mm", CultureInfo.CurrentCulture)
+                asAtStamp = "as at " & SessionTime.ToSessionZone(snapshot.TakenAtUtc).ToString("HH:mm", CultureInfo.CurrentCulture)
                 ShowStamp()
 
                 ShowConnected()
@@ -1633,10 +1633,10 @@ Namespace SDC.Framework
         Private Sub FillConnected()
             connectedGrid.Rows.Clear()
 
-            Dim today = Date.Now.Date
+            Dim today = SessionTime.Today()
 
             For Each item In snapshot.ConnectedSessions
-                Dim startedLocal = item.StartedOn.ToLocalTime()
+                Dim startedLocal = SessionTime.ToSessionZone(item.StartedOn)
 
                 Dim since = If(startedLocal.Date = today,
                                startedLocal.ToString("HH:mm", CultureInfo.CurrentCulture),

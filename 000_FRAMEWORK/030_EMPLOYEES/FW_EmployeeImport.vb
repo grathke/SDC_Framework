@@ -2138,7 +2138,7 @@ Namespace SDC.Framework
 
             Dim chosen = ChosenTemplate()
             Dim stem = If(chosen IsNot Nothing, Convert.ToString(chosen("ImportName"), CultureInfo.InvariantCulture), FileStem())
-            Dim suggestion = stem & " - " & DateTime.Now.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture)
+            Dim suggestion = stem & " - " & SessionTime.Now().ToString("yyyy-MM-dd", CultureInfo.InvariantCulture)
             batchNameTextBox.Text = If(suggestion.Length > 100, suggestion.Substring(0, 100), suggestion)
         End Sub
 

@@ -10,6 +10,23 @@ date-time field on a `_U` page, or a date criterion in QBE.
 
 ---
 
+> **Correction, 2026-09-25, measured the same day - read this before section 1.** `BEELINK`'s SQL
+> Server runs in `(UTC+00:00) Dublin, Edinburgh, Lisbon, London` with no daylight saving:
+> `GETDATE()` and `SYSUTCDATETIME()` returned the same instant (14:19) at 10:19 Eastern. So every
+> "local" write below **stored UTC too**, and a check against `FW_AuditTrail.LoggedOn` agrees -
+> `FW_Employees.UpdatedOn` 15 of 18 rows, `FW_Registration` 2 of 2, `FW_Roles` 1 of 1. The data
+> has one clock after all; it is correct **because of a server setting**, which is exactly the
+> fragility section 3 describes. Consequences:
+>
+> - **Phase A** still matters - it makes the writes UTC whatever the server is set to - and, since
+>   it changes no stored value on `BEELINK`, **it can ship alone**. Section 9's warning is withdrawn.
+> - **Phase B shrinks** to the outliers: rows written from an application-side `DateTime.Now`
+>   passed as a parameter, which are Eastern (one `FW_Users` row of two in the audit check).
+> - **Phase C is the fix for what anybody sees** - every screen shows UTC today.
+>
+> The rest of this document was written before the measurement and is left as it was; where it
+> says "local", read "the server's clock, which is UTC on `BEELINK`".
+
 ## 1. The problem
 
 Past Imports showed an import made at 19:04 as **11:04 PM**. The column was right; the display was
@@ -99,9 +116,9 @@ the database is wall-clock today (2026-09-25), so the rule costs nothing existin
 
 ## 5. The work, in order
 
-Each phase is shippable alone and leaves the application correct for what it covers. **Phase B
-cannot come before phase A** - migrating data while code is still writing local time just makes
-new mixed rows.
+**Phases A, B and C are built in order and released together** (section 9 records why A cannot
+ship alone); D and E can follow. **Phase B cannot come before phase A** - migrating data while
+code is still writing local time just makes new mixed rows.
 
 ### Phase A - write UTC everywhere
 
@@ -204,3 +221,75 @@ new mixed rows.
 - `datetimeoffset` columns. Storing the offset beside the instant answers "what did the writer's
   clock say", which nothing here asks.
 - Converting date-only columns, ever.
+
+## 9. Phase A site review - 2026-09-25
+
+Every `GETDATE()`, `DateTime.Now`, `Date.Now`, `Date.Today` in the code, read in place - 93 lines.
+Line numbers are as of commit `13d522f`.
+
+### Stored timestamps - become `SYSUTCDATETIME()` - 64 sites
+
+All in the data layer: every `CreatedOn`, `UpdatedOn`, `SeenOn`, `LastUsedOn` and `ModifiedOn`
+write.
+
+- `DataAccess.vb` - 1982, 1987, 2199, 2904, 3010, 3029, 3368, 3372, 3451, 3455, 3722, 3726, 3927,
+  4009, 4571 (the generated-page insert's `CreatedOn`), 4632, 4841, 4964, 5013, 5054, 5081, 5083,
+  5141, 5162, 5166, 5488, 6730, 6821, 8179, 8250, 8291, 8509, 8568, 8577, 8586, 8595, 8698, 8714,
+  8746, 8784, 9042, 9096, 9114, 9270, 9342, 9402, 9472, 9480, 11360, 11471, 11485, 11619, 11763,
+  12078, 12428, 12441, 12480, 12668, 12680
+- `ImportBatchDataAccess.vb` - 88, 283, 423
+- `SavedImportDataAccess.vb` - 128, 136, 180, 209
+
+Several of these share a statement with a `SYSUTCDATETIME()` already - `DeletedOn` UTC beside
+`UpdatedOn` local on one row (8568-8595, 12480, `SavedImportDataAccess` 180). That is the two
+clocks in a single `UPDATE`.
+
+### A read against a UTC column - becomes `SYSUTCDATETIME()` - 3 sites
+
+- `DataAccess.vb` 7115, 7167, 7171 - the audit trail's `ISNULL(a.LoggedOn, GETDATE())`. `LoggedOn`
+  is UTC; the fallback is local. The `@FromDate` / `@ToDateExclusive` bounds beside it are phase D.
+
+### The viewer's today or now - becomes `SessionTime` - 15 sites
+
+A new `SessionTime.Today` and `SessionTime.Now`: the session's zone applied to `UtcNow`.
+
+- Pickers and defaults: `FW_Base_U.vb` 2942, `QbeDateCell.vb` 148, `QbeDateRangeDialog.vb` 63, 73,
+  `FW_Registration_U.vb` 882, 919
+- Rules: `SessionStarter.vb` 93 (the licence expires today), `EmployeeImportPlan.vb` 301 (a birth
+  date cannot be today)
+- Text a person reads: `EmployeeImportReport.vb` 52, 244, `FW_EmployeeImport.vb` 2141 (the
+  suggested import name), `PageGeneration_U.vb` 1459, `FW_HD_Issues_U.vb` 766 (REPORTED: in the
+  issue text), `FW_Health_B.vb` 1636
+- `DataAccess.vb` 5351 - the default for a required date column a generated insert was not given.
+  Becomes `SessionTime.Today` for a `date` column and `UtcNow` for a date-time.
+
+### Local by design - stays - 9 sites
+
+- Logs: `Program.vb` 27 (`startup.log`), `DataAccess.vb` 11416 (`sync_debug.log`)
+- File names and file ages on the machine: `FW_EmployeeImport.vb` 2398, 2432,
+  `BrowserDocument.vb` 231
+- A sample of a date format: `DisplayFormats.vb` 77, 94
+- Comments: `DataAccess.vb` 4061; `ImportRules.vb` 261, which says `GETDATE()` stamps UTC - it does
+  not, and the comment is corrected.
+
+### In SQL, not in the code
+
+- 12 column defaults become `SYSUTCDATETIME()`. **`FW_Employees.HireDate` keeps its default** - a
+  `date` column, and while `BEELINK` is on Eastern its date is the East Coast's.
+- `usp_FW_ApplyAccessDiagnosticChanges` uses `GETDATE()`.
+
+### Found by the review: `ToLocalTime()` is the server's zone
+
+Eight places already convert UTC for display - with `.ToLocalTime()`, which uses the zone of the
+machine running the application. On the desktop that is the viewer's; under Thinfinity it is the
+server's, whoever is looking. `FW_ConnectedUsers.vb` 159, 196, `FW_FaultDetail.vb` 185,
+`DataAccess.vb` 10751, `MessagesWindowControl.vb` 252, `FW_FixHistory.vb` 186, `FW_Health_B.vb`
+1458, 1639. They move to `SessionTime` in phase C.
+
+### Found by the review: phase A cannot ship alone
+
+Section 5 says each phase is shippable alone. **For A it is not true.** The moment A is in, a
+column like `FW_Users.UpdatedOn` holds local times written before and UTC times written after, and
+every screen showing it is right for old rows and four hours out for new ones - worse than today,
+where it is consistently local. **A, B and C are built in that order and released together.**
+D can follow.

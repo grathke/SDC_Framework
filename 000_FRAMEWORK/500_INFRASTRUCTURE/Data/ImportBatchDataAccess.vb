@@ -85,7 +85,7 @@ Namespace SDC.Framework
                                       peopleCount As Integer, actingUserId As Integer) As Integer
             Using cmd As New SqlCommand(
                 "INSERT INTO dbo.FW_ImportBatches (RegistrationID, SavedImportID, BatchName, Note, FileName, FileHash, PeopleCount, ImportedBy, ImportedOn, CreatedBy, CreatedOn) " &
-                "VALUES (@RegistrationID, @SavedImportID, @BatchName, @Note, @FileName, @FileHash, @PeopleCount, @UserID, SYSUTCDATETIME(), @UserID, GETDATE()); " &
+                "VALUES (@RegistrationID, @SavedImportID, @BatchName, @Note, @FileName, @FileHash, @PeopleCount, @UserID, SYSUTCDATETIME(), @UserID, SYSUTCDATETIME()); " &
                 "SELECT CAST(SCOPE_IDENTITY() AS int);", conn, tx)
                 cmd.Parameters.Add("@RegistrationID", SqlDbType.Int).Value = registrationId
                 cmd.Parameters.Add("@SavedImportID", SqlDbType.Int).Value = If(request.SavedImportId > 0, CObj(request.SavedImportId), DBNull.Value)
@@ -280,7 +280,7 @@ Namespace SDC.Framework
             Try
                 Using conn = OpenConnection()
                     Using cmd As New SqlCommand(
-                        "UPDATE dbo.FW_ImportBatches SET Note = @Note, UpdatedBy = @UserID, UpdatedOn = GETDATE() " &
+                        "UPDATE dbo.FW_ImportBatches SET Note = @Note, UpdatedBy = @UserID, UpdatedOn = SYSUTCDATETIME() " &
                         "WHERE ImportBatchID = @ID AND RowVersion = @RowVersion", conn)
                         cmd.Parameters.Add("@Note", SqlDbType.NVarChar, 1000).Value = text
                         cmd.Parameters.Add("@UserID", SqlDbType.Int).Value = actingUserId
@@ -420,7 +420,7 @@ Namespace SDC.Framework
                                 "  AND NOT EXISTS (SELECT 1 FROM dbo.FW_Employees e WHERE e.UserId = dbo.FW_Users.UserId); " &
                                 "UPDATE dbo.FW_ImportBatchPeople SET RemovedOn = SYSUTCDATETIME() WHERE ImportBatchID = @Batch AND RemovedOn IS NULL; " &
                                 "UPDATE dbo.FW_ImportBatches SET UndoneBy = @Acting, UndoneOn = SYSUTCDATETIME(), UndoneCount = @Removed, " &
-                                "  UpdatedBy = @Acting, UpdatedOn = GETDATE() WHERE ImportBatchID = @Batch; " &
+                                "  UpdatedBy = @Acting, UpdatedOn = SYSUTCDATETIME() WHERE ImportBatchID = @Batch; " &
                                 "SELECT @Removed;", conn, tx)
                                 AddUndoParameters(cmd, batchId, actingUserId)
                                 cmd.CommandTimeout = 120

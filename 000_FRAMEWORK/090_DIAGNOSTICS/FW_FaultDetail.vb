@@ -182,8 +182,10 @@ Namespace SDC.Framework
         Private Shared Function Stamp(value As Date) As String
             ' Shown in local time with the zone named. These are stored in UTC, and a time with no
             ' zone on it is the kind of detail that wastes an hour later.
-            Return value.ToLocalTime().ToString("yyyy-MM-dd HH:mm:ss", CultureInfo.InvariantCulture) &
-                   " (" & TimeZoneInfo.Local.StandardName & ")"
+            ' The viewer's zone, named - not the machine's. Under Thinfinity the machine is the server.
+            Dim zone = SessionTime.ZoneAbbreviation()
+            Return SessionTime.ToSessionZone(value).ToString("yyyy-MM-dd HH:mm:ss", CultureInfo.InvariantCulture) &
+                   " (" & If(zone = String.Empty, "UTC", zone) & ")"
         End Function
 
         Private Shared Function Indent(value As String) As String

@@ -1456,7 +1456,7 @@ Namespace SDC.Framework
                 BindFormControls()
                 generatedPageIdTextBox.Text = String.Empty
                 createdByTextBox.Text = currentUser.UserId.ToString()
-                createdOnTextBox.Text = DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss")
+                createdOnTextBox.Text = SessionTime.Now().ToString("yyyy-MM-dd HH:mm:ss")
                 deletedFlagCheckBox.Checked = False
                 Return
             End If

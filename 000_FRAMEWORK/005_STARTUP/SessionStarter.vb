@@ -90,7 +90,7 @@ Namespace SDC.Framework
                 Return False
             End If
 
-            Dim today As Date = Date.Today
+            Dim today As Date = SessionTime.Today()
             Dim endDate As Date = licenseEndDate.Value.Date
 
             If today >= endDate Then

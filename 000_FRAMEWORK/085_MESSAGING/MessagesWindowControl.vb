@@ -249,7 +249,7 @@ Namespace SDC.Framework
                                                         row.FromName,
                                                         row.ToName,
                                                         row.Subject,
-                                                        row.SentOn.ToLocalTime().ToString("g"),
+                                                        SessionTime.ToSessionZone(row.SentOn).ToString("g"),
                                                         row.IsRead)
                     ApplyReadStyle(messageGrid.Rows(rowIndex), row.IsRead)
                 Next

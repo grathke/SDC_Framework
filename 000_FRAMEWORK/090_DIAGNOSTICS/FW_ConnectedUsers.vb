@@ -156,7 +156,7 @@ Namespace SDC.Framework
         End Function
 
         Private Sub Fill()
-            Dim stamp = " as at " & takenAtUtc.ToLocalTime().ToString("HH:mm", CultureInfo.CurrentCulture) & "."
+            Dim stamp = " as at " & SessionTime.ToSessionZone(takenAtUtc).ToString("HH:mm", CultureInfo.CurrentCulture) & "."
 
             If sessions.Count = 0 Then
                 ' This should not be reachable - reading the page makes you one of these rows - so
@@ -193,7 +193,7 @@ Namespace SDC.Framework
                     If(item.RegistrationName = String.Empty, "(none)", item.RegistrationName),
                     If(item.SessionKind = String.Empty, "(unknown)", item.SessionKind),
                     If(item.FromWhere = String.Empty, "(unrecorded)", item.FromWhere),
-                    item.StartedOn.ToLocalTime().ToString("d MMM HH:mm", CultureInfo.CurrentCulture),
+                    SessionTime.ToSessionZone(item.StartedOn).ToString("d MMM HH:mm", CultureInfo.CurrentCulture),
                     Duration(item.ConnectedSeconds),
                     IdleText(item))
 

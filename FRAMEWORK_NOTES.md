@@ -477,12 +477,12 @@ something that is not obvious from reading it in isolation.
 
 4. `ApplySharedPageCaption()`
 5. `RemoveReadOnlyControlsFromTabOrder()`
-6. `WireFocusIndicators()` — reuses a field's existing required border panel as its focus panel,
+6. `indicators.Wire(Me)` (`FieldIndicators`) — reuses a field's existing required border panel as its focus panel,
    so the green ring and the red ring are the same control.
 7. Action buttons get `TabStop = False`.
 8. `CollapseHiddenFieldRows()` — **must** be here. `Control.Visible` returns `False` for every
    child until the form is displayed, so testing visibility any earlier collapses the whole page.
-9. `RefreshLocalRequiredBorders()`
+9. `indicators.Refresh()`
 10. `ApplySavedTabOrder()` — applies saved `TabIndex` values, overriding `SetManualTabOrder`.
 11. `InitializeTabOrderManager()`
 12. Then, on a second `BeginInvoke`: `SetInitialFieldFocus()` followed by
@@ -517,7 +517,7 @@ label unpainted silently gives up its precedence, and the field is restyled by w
 says. `FW_HD_Issues_U` paints these labels by hand as well; that predates `AddField` doing it and
 is now redundant rather than special.
 
-Both paths use the **same** red-border rule, applied by `RefreshLocalRequiredBorders` in Base_U.
+Both paths use the **same** red-border rule, applied by `FieldIndicators.Refresh` - owned by `FieldIndicators` since 2026-09-25, so a window that is not a maintenance page (message Compose) gets the same borders. Base_U keeps one instance and supplies its loading flag.
 Data access creates the metadata panel hidden and does not manage its visibility.
 
 **When a field is red:** it has been *visited* and is empty. Visited means entered, left, or
@@ -525,7 +525,7 @@ edited. The focus the page sets for itself on open does not count, so a blank ne
 red until the user touches something. A failed save marks every required field visited, so the red
 borders match the message. Red clears on the first keystroke or a real selection.
 
-Focus and hover, wired by `WireFocusIndicators` for TextBoxBase, ComboBox, CheckBox,
+Focus and hover, wired by `FieldIndicators.Wire` for TextBoxBase, ComboBox, CheckBox,
 DateTimePicker, NumericUpDown and Button (excluding Save, Cancel and the enum button):
 
 - focus border green `#37B469` (`Color.FromArgb(55, 180, 105)`)
@@ -536,8 +536,8 @@ DateTimePicker, NumericUpDown and Button (excluding Save, Cancel and the enum bu
 control, given its z-order by `SendToBack` / `BringToFront`. A FlowLayoutPanel reads child index as
 *flow position*, so both of those are layout changes there, not z-order changes: the border shows up
 as a green block occupying its own slot in the row, and every wired child is dragged to the front of
-the flow, which renders the row in reverse. `WireFocusIndicators` therefore calls
-`HostFlowChildForFocusBorder` first, which moves the control into a plain auto-sizing `Panel` at the
+the flow, which renders the row in reverse. `FieldIndicators.Wire` therefore calls
+`HostFlowChild` first, which moves the control into a plain auto-sizing `Panel` at the
 same flow index and carries its `Margin` and `TabIndex` across. The border then lives inside that
 host, where z-order means z-order. Pages that wrap their own required fields already do this by
 hand — see `ApplyPageRequiredFieldStyling` in `PageGeneration_U.vb`.

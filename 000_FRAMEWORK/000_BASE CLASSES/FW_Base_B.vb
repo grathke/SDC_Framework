@@ -1400,6 +1400,9 @@ Namespace SDC.Framework
                 Return
             End If
 
+            ' The same conversion as the grid beside it, or a time would read two ways at once.
+            SessionTime.ConvertInstantColumns(record)
+
             ' Which fields this page shows, and whether the person looking may change that. Both come
             ' from the cached FW_Pages row and the session, so neither costs a round trip - the one
             ' query here is still the record itself.
@@ -2515,7 +2518,9 @@ Namespace SDC.Framework
                 ' to them, so no later step can put them back on screen.
                 RemoveInvisibleRoleFieldColumns(dt)
                 RemoveBinaryColumns(dt)
-                ConvertUtcColumnsToSessionZone(dt)
+                ' Every instant in the viewer's zone. Date and ...Local columns are left as stored -
+                ' ONE_CLOCK_SPEC.md section 4.
+                SessionTime.ConvertInstantColumns(dt)
                 refreshTrace.Mark("strip")
 
                 browseGrid.DataSource = dt
@@ -2524,6 +2529,7 @@ Namespace SDC.Framework
                 refreshTrace.Mark("bind")
 
                 ApplyFriendlyColumnHeaders(browseGrid)
+                ApplyDateColumnFormats(browseGrid)
                 refreshTrace.Mark("headers")
 
                 ApplyPkColumnHiding(browseGrid)
@@ -4045,46 +4051,25 @@ Namespace SDC.Framework
         End Function
 
         ''' <summary>
-        ''' The columns this page's SQL returns in UTC, to be shown in the session's time zone.
-        '''
-        ''' Declared by the page, not detected, because the database keeps two clocks: of the date
-        ''' defaults in the schema on 2026-09-25, 18 were SYSUTCDATETIME and 13 GETDATE - one table,
-        ''' FW_ImportBatches, has one of each. Converting every date column would put the other half
-        ''' four hours wrong. A page that names nothing is unchanged.
-        '''
-        ''' Display only. A QBE criterion on one of these columns still compares against the stored
-        ''' UTC value, and Hot Fields reads the record's own values unless the browse row holds them.
+        ''' Date columns in the registration's own format, as a maintenance page's date field
+        ''' already is. Until 2026-09-25 the grid used Windows' default for the machine running
+        ''' the application - under Thinfinity the server's, whoever was looking - so a registration
+        ''' set to 09:46 AM was shown 9:46 AM. A ...Date column gets the date alone; every other
+        ''' date column, instants and ...Local times alike, gets the date and the time.
         ''' </summary>
-        Protected Overridable Function UtcColumns() As IEnumerable(Of String)
-            Return Array.Empty(Of String)()
-        End Function
+        Private Shared Sub ApplyDateColumnFormats(grid As DataGridView)
+            If grid Is Nothing Then Return
 
-        ''' <summary>Converts the page's UTC columns through SessionTime, the zone Help Desk shows.</summary>
-        Private Sub ConvertUtcColumnsToSessionZone(dt As DataTable)
-            If dt Is Nothing OrElse dt.Rows.Count = 0 Then Return
+            Dim datePattern = DisplayFormats.DatePattern()
+            Dim dateTimePattern = DisplayFormats.DateTimePattern()
 
-            Dim converted = False
+            For Each column As DataGridViewColumn In grid.Columns
+                If column.ValueType IsNot GetType(DateTime) Then Continue For
 
-            For Each columnName In UtcColumns()
-                If Not dt.Columns.Contains(columnName) Then Continue For
-
-                Dim column = dt.Columns(columnName)
-                If column.DataType IsNot GetType(DateTime) Then Continue For
-
-                Dim wasReadOnly = column.ReadOnly
-                column.ReadOnly = False
-
-                For Each row As DataRow In dt.Rows
-                    If row.IsNull(column) Then Continue For
-                    row(column) = SessionTime.ToSessionZone(CDate(row(column)))
-                    converted = True
-                Next
-
-                column.ReadOnly = wasReadOnly
+                Dim name = If(String.IsNullOrEmpty(column.DataPropertyName), column.Name, column.DataPropertyName)
+                column.DefaultCellStyle.Format = If(name.EndsWith("Date", StringComparison.OrdinalIgnoreCase), datePattern, dateTimePattern)
+                column.DefaultCellStyle.FormatProvider = Globalization.CultureInfo.InvariantCulture
             Next
-
-            ' A page that names no columns leaves its table exactly as fetched.
-            If converted Then dt.AcceptChanges()
         End Sub
 
         ''' <summary>

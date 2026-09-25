@@ -1979,12 +1979,12 @@ Namespace SDC.Framework
                     "BEGIN " &
                     "  INSERT INTO dbo." & PagesTable & " " &
                     "    (RegistrationID, WindowOrPage, Background, DeletedFlag, UseHotFields, CreatedBy, CreatedOn) " &
-                    "  VALUES (NULL, @WindowOrPage, @Background, 0, 0, @ModifiedBy, GETDATE()); " &
+                    "  VALUES (NULL, @WindowOrPage, @Background, 0, 0, @ModifiedBy, SYSUTCDATETIME()); " &
                     "  SET @Inserted = 1; " &
                     "END " &
                     "ELSE " &
                     "  UPDATE dbo." & PagesTable & " " &
-                    "  SET Background = @Background, ModifiedBy = @ModifiedBy, ModifiedOn = GETDATE() " &
+                    "  SET Background = @Background, ModifiedBy = @ModifiedBy, ModifiedOn = SYSUTCDATETIME() " &
                     "  WHERE WindowOrPage = @WindowOrPage; " &
                     "SELECT @Inserted", conn)
 
@@ -2196,7 +2196,7 @@ Namespace SDC.Framework
                     conn.Open()
                     Using cmd As New SqlCommand(
                         "UPDATE dbo." & PagesTable & " " &
-                        "SET HotFields = @HotFields, ModifiedBy = @ModifiedBy, ModifiedOn = GETDATE() " &
+                        "SET HotFields = @HotFields, ModifiedBy = @ModifiedBy, ModifiedOn = SYSUTCDATETIME() " &
                         "WHERE WindowOrPage = @WindowOrPage", conn)
 
                         cmd.Parameters.Add("@HotFields", SqlDbType.VarChar, -1).Value =
@@ -2901,7 +2901,7 @@ Namespace SDC.Framework
                         End Using
 
                         Dim insertSql = "INSERT INTO dbo.FW_UpdateTabOrder (PageName, ControlName, TabOrder, IsActive, DeletedFlag, CreatedBy, CreatedOn, UpdatedBy, UpdatedOn) " &
-                                        "VALUES (@PageName, @ControlName, @TabOrder, @IsActive, 0, @CreatedBy, GETDATE(), @UpdatedBy, GETDATE())"
+                                        "VALUES (@PageName, @ControlName, @TabOrder, @IsActive, 0, @CreatedBy, SYSUTCDATETIME(), @UpdatedBy, SYSUTCDATETIME())"
 
                         For Each setting In settings
                             If setting Is Nothing Then
@@ -3007,7 +3007,7 @@ Namespace SDC.Framework
             Using conn As New SqlConnection(ConnectionString)
                 conn.Open()
                 Using cmd As New SqlCommand(
-                    "UPDATE dbo." & GeneratedPagesTable & " SET GeneratedMaintenanceSource = @Source, GeneratedMaintenanceHash = @Hash, UpdatedOn = GETDATE() WHERE GeneratedPageID = @GeneratedPageID", conn)
+                    "UPDATE dbo." & GeneratedPagesTable & " SET GeneratedMaintenanceSource = @Source, GeneratedMaintenanceHash = @Hash, UpdatedOn = SYSUTCDATETIME() WHERE GeneratedPageID = @GeneratedPageID", conn)
                     cmd.Parameters.Add("@Source", SqlDbType.VarChar, -1).Value = If(source, String.Empty)
                     cmd.Parameters.Add("@Hash", SqlDbType.VarChar, 64).Value = If(sourceHash, String.Empty)
                     cmd.Parameters.Add("@GeneratedPageID", SqlDbType.Int).Value = generatedPageId
@@ -3026,7 +3026,7 @@ Namespace SDC.Framework
             Using conn As New SqlConnection(ConnectionString)
                 conn.Open()
                 Using cmd As New SqlCommand(
-                    "UPDATE dbo." & GeneratedPagesTable & " SET GeneratedBrowseHash = @Hash, UpdatedOn = GETDATE() WHERE GeneratedPageID = @GeneratedPageID", conn)
+                    "UPDATE dbo." & GeneratedPagesTable & " SET GeneratedBrowseHash = @Hash, UpdatedOn = SYSUTCDATETIME() WHERE GeneratedPageID = @GeneratedPageID", conn)
                     cmd.Parameters.Add("@Hash", SqlDbType.VarChar, 64).Value = If(sourceHash, String.Empty)
                     cmd.Parameters.Add("@GeneratedPageID", SqlDbType.Int).Value = generatedPageId
                     Return cmd.ExecuteNonQuery() = 1
@@ -3365,11 +3365,11 @@ Namespace SDC.Framework
                         For Each pair In moved
                             Using cmd As New SqlCommand(
                                 "UPDATE dbo.FW_DashboardLayouts " &
-                                "SET GridRow = @GridRow, GridColumn = @GridColumn, DeletedFlag = 0, UpdatedBy = @UserID, UpdatedOn = GETDATE() " &
+                                "SET GridRow = @GridRow, GridColumn = @GridColumn, DeletedFlag = 0, UpdatedBy = @UserID, UpdatedOn = SYSUTCDATETIME() " &
                                 "WHERE DashboardName = @DashboardName AND ActionKey = @ActionKey; " &
                                 "IF @@ROWCOUNT = 0 " &
                                 "INSERT INTO dbo.FW_DashboardLayouts (DashboardName, ActionKey, GridRow, GridColumn, CreatedBy, CreatedOn) " &
-                                "VALUES (@DashboardName, @ActionKey, @GridRow, @GridColumn, @UserID, GETDATE());", conn, transaction)
+                                "VALUES (@DashboardName, @ActionKey, @GridRow, @GridColumn, @UserID, SYSUTCDATETIME());", conn, transaction)
                                 cmd.Parameters.AddWithValue("@DashboardName", dashboardName.Trim())
                                 cmd.Parameters.AddWithValue("@ActionKey", pair.Key.Trim())
                                 cmd.Parameters.AddWithValue("@GridRow", pair.Value.Y)
@@ -3448,11 +3448,11 @@ Namespace SDC.Framework
                 conn.Open()
                 Using cmd As New SqlCommand(
                     "UPDATE dbo.FW_DashboardLayouts " &
-                    "SET IconFileName = @IconFileName, DeletedFlag = 0, UpdatedBy = @UserID, UpdatedOn = GETDATE() " &
+                    "SET IconFileName = @IconFileName, DeletedFlag = 0, UpdatedBy = @UserID, UpdatedOn = SYSUTCDATETIME() " &
                     "WHERE DashboardName = @DashboardName AND ActionKey = @ActionKey; " &
                     "IF @@ROWCOUNT = 0 " &
                     "INSERT INTO dbo.FW_DashboardLayouts (DashboardName, ActionKey, GridRow, GridColumn, IconFileName, CreatedBy, CreatedOn) " &
-                    "VALUES (@DashboardName, @ActionKey, NULL, NULL, @IconFileName, @UserID, GETDATE());", conn)
+                    "VALUES (@DashboardName, @ActionKey, NULL, NULL, @IconFileName, @UserID, SYSUTCDATETIME());", conn)
                     cmd.Parameters.AddWithValue("@DashboardName", dashboardName.Trim())
                     cmd.Parameters.AddWithValue("@ActionKey", actionKey.Trim())
                     cmd.Parameters.AddWithValue("@IconFileName", storedValue)
@@ -3719,11 +3719,11 @@ Namespace SDC.Framework
                 Using cmd As New SqlCommand(
                     "UPDATE dbo.FW_PageZooms " &
                     "   SET ZoomFactor = @Factor, DeletedFlag = 0, DeletedBy = NULL, DeletedOn = NULL, " &
-                    "       UpdatedBy = @UpdatedBy, UpdatedOn = GETDATE() " &
+                    "       UpdatedBy = @UpdatedBy, UpdatedOn = SYSUTCDATETIME() " &
                     " WHERE UserID = @UserID AND PageName = @PageName; " &
                     "IF @@ROWCOUNT = 0 " &
                     "  INSERT INTO dbo.FW_PageZooms (RegistrationID, UserID, PageName, ZoomFactor, CreatedBy, CreatedOn) " &
-                    "  VALUES (@RegistrationID, @UserID, @PageName, @Factor, @UpdatedBy, GETDATE());", conn)
+                    "  VALUES (@RegistrationID, @UserID, @PageName, @Factor, @UpdatedBy, SYSUTCDATETIME());", conn)
 
                     cmd.Parameters.AddWithValue("@Factor", CDec(Math.Round(factor, 2)))
                     ' Two different answers from one id. UserID is whose zoom this is and stays
@@ -3924,7 +3924,7 @@ Namespace SDC.Framework
                 If TableHasColumn(normalizedTable, "DeletedOn") Then assignments.Add("[DeletedOn] = SYSUTCDATETIME()")
                 If TableHasColumn(normalizedTable, "IsActive") Then assignments.Add("[IsActive] = 0")
                 If TableHasColumn(normalizedTable, "UpdatedBy") Then assignments.Add("[UpdatedBy] = @UserID")
-                If TableHasColumn(normalizedTable, "UpdatedOn") Then assignments.Add("[UpdatedOn] = GETDATE()")
+                If TableHasColumn(normalizedTable, "UpdatedOn") Then assignments.Add("[UpdatedOn] = SYSUTCDATETIME()")
 
                 Using conn As New SqlConnection(ConnectionString)
                     conn.Open()
@@ -4006,7 +4006,7 @@ Namespace SDC.Framework
                 If TableHasColumn(normalizedTable, "DeletedOn") Then assignments.Add("[DeletedOn] = NULL")
                 If TableHasColumn(normalizedTable, "IsActive") Then assignments.Add("[IsActive] = 1")
                 If TableHasColumn(normalizedTable, "UpdatedBy") Then assignments.Add("[UpdatedBy] = @UserID")
-                If TableHasColumn(normalizedTable, "UpdatedOn") Then assignments.Add("[UpdatedOn] = GETDATE()")
+                If TableHasColumn(normalizedTable, "UpdatedOn") Then assignments.Add("[UpdatedOn] = SYSUTCDATETIME()")
 
                 Using conn As New SqlConnection(ConnectionString)
                     conn.Open()
@@ -4568,7 +4568,7 @@ Namespace SDC.Framework
                     End If
                     If schema.Columns.Contains("CreatedOn") Then
                         columns.Add("[CreatedOn]")
-                        parameters.Add("GETDATE()")
+                        parameters.Add("SYSUTCDATETIME()")
                     End If
                     Using cmd As New SqlCommand("INSERT INTO dbo." & QuoteGeneratedIdentifier(tableName) & " (" & String.Join(", ", columns) & ") VALUES (" & String.Join(", ", parameters) & ")", conn, tx)
                         AddGeneratedParameters(cmd, writableValues, schema)
@@ -4629,7 +4629,7 @@ Namespace SDC.Framework
 
                 Dim assignments = writableValues.Select(Function(pair, index) QuoteGeneratedIdentifier(pair.Key) & " = @Value" & index.ToString(CultureInfo.InvariantCulture)).ToList()
                 If schema.Columns.Contains("UpdatedBy") Then assignments.Add("[UpdatedBy] = @UpdatedBy")
-                If schema.Columns.Contains("UpdatedOn") Then assignments.Add("[UpdatedOn] = GETDATE()")
+                If schema.Columns.Contains("UpdatedOn") Then assignments.Add("[UpdatedOn] = SYSUTCDATETIME()")
                 Dim whereClause = QuoteGeneratedIdentifier(primaryKey) & " = @RecordID"
                 If schema.Columns.Contains("RowVersion") Then whereClause &= " AND [RowVersion] = @RowVersion"
                 Using cmd As New SqlCommand("UPDATE dbo." & QuoteGeneratedIdentifier(tableName) & " SET " & String.Join(", ", assignments) & " WHERE " & whereClause, conn, tx)
@@ -4838,7 +4838,7 @@ Namespace SDC.Framework
             Using cmd As New SqlCommand(
                 "UPDATE dbo.FW_Users " &
                 "SET PasswordHash = @PasswordHash, [Password] = @PasswordMask, " &
-                "    UpdatedBy = @UpdatedBy, UpdatedOn = GETDATE() " &
+                "    UpdatedBy = @UpdatedBy, UpdatedOn = SYSUTCDATETIME() " &
                 "WHERE UserID = @UserID", conn, tx)
                 cmd.Parameters.Add("@PasswordHash", SqlDbType.NVarChar, 255).Value = passwordHash
                 cmd.Parameters.Add("@PasswordMask", SqlDbType.VarChar, 50).Value = StoredPasswordMask
@@ -4961,7 +4961,7 @@ Namespace SDC.Framework
 
             Using cmd As New SqlCommand(
                 "INSERT INTO dbo.FW_Users (RegistrationID, UserName, FirstName, LastName, IsActive, CreatedBy, CreatedOn" & extraColumns & ") " &
-                "VALUES (@RegistrationID, @UserName, @FirstName, @LastName, 1, @CreatedBy, GETDATE()" & extraParameters & "); " &
+                "VALUES (@RegistrationID, @UserName, @FirstName, @LastName, 1, @CreatedBy, SYSUTCDATETIME()" & extraParameters & "); " &
                 "SELECT CAST(SCOPE_IDENTITY() AS INT);", conn, tx)
                 If extras.Count > 0 Then AddGeneratedParameters(cmd, extras, usersSchema)
                 cmd.Parameters.Add("@RegistrationID", SqlDbType.Int).Value =
@@ -5010,7 +5010,7 @@ Namespace SDC.Framework
             End If
 
             Using cmd As New SqlCommand(
-                "UPDATE dbo.FW_Users SET IsActive = @IsActive, UpdatedBy = @UpdatedBy, UpdatedOn = GETDATE() " &
+                "UPDATE dbo.FW_Users SET IsActive = @IsActive, UpdatedBy = @UpdatedBy, UpdatedOn = SYSUTCDATETIME() " &
                 "WHERE UserID = @UserID AND ISNULL(IsActive, 0) <> @IsActive", conn, tx)
                 cmd.Parameters.Add("@IsActive", SqlDbType.Bit).Value = active
                 cmd.Parameters.Add("@UpdatedBy", SqlDbType.Int).Value = updatedBy
@@ -5051,7 +5051,7 @@ Namespace SDC.Framework
             End Using
 
             Using cmd As New SqlCommand(
-                "UPDATE dbo.FW_Users SET UserName = @UserName, UpdatedBy = @UpdatedBy, UpdatedOn = GETDATE() " &
+                "UPDATE dbo.FW_Users SET UserName = @UserName, UpdatedBy = @UpdatedBy, UpdatedOn = SYSUTCDATETIME() " &
                 "WHERE UserID = @UserID AND ISNULL(UserName, '') <> @UserName", conn, tx)
                 cmd.Parameters.Add("@UserName", SqlDbType.VarChar, 50).Value = name
                 cmd.Parameters.Add("@UpdatedBy", SqlDbType.Int).Value = updatedBy
@@ -5078,9 +5078,9 @@ Namespace SDC.Framework
 
             Dim sql = If(deleted,
                          "UPDATE dbo.FW_Users SET DeletedFlag = 1, DeletedBy = @UserID, DeletedOn = SYSUTCDATETIME(), " &
-                         "    IsActive = 0, UpdatedBy = @UserID, UpdatedOn = GETDATE() WHERE UserID = @LoginID",
+                         "    IsActive = 0, UpdatedBy = @UserID, UpdatedOn = SYSUTCDATETIME() WHERE UserID = @LoginID",
                          "UPDATE dbo.FW_Users SET DeletedFlag = 0, DeletedBy = NULL, DeletedOn = NULL, " &
-                         "    IsActive = 1, UpdatedBy = @UserID, UpdatedOn = GETDATE() WHERE UserID = @LoginID")
+                         "    IsActive = 1, UpdatedBy = @UserID, UpdatedOn = SYSUTCDATETIME() WHERE UserID = @LoginID")
 
             Using cmd As New SqlCommand(sql, conn, tx)
                 cmd.Parameters.Add("@LoginID", SqlDbType.Int).Value = loginId
@@ -5138,7 +5138,7 @@ Namespace SDC.Framework
             Using remove As New SqlCommand(
                 "UPDATE dbo.FW_EmployeeRoles " &
                 "SET DeletedFlag = 1, DeletedBy = @ActingUserID, DeletedOn = SYSUTCDATETIME(), " &
-                "    IsActive = 0, UpdatedBy = @ActingUserID, UpdatedOn = GETDATE() " &
+                "    IsActive = 0, UpdatedBy = @ActingUserID, UpdatedOn = SYSUTCDATETIME() " &
                 "WHERE EmployeeID = @EmployeeID AND ISNULL(DeletedFlag, 0) = 0 " &
                 "  AND RoleID NOT IN (SELECT value FROM STRING_SPLIT(@Keep, ','))", conn, tx)
                 remove.Parameters.Add("@EmployeeID", SqlDbType.Int).Value = employeeId
@@ -5159,11 +5159,11 @@ Namespace SDC.Framework
                 Using add As New SqlCommand(
                     "UPDATE dbo.FW_EmployeeRoles " &
                     "SET DeletedFlag = 0, DeletedBy = NULL, DeletedOn = NULL, IsActive = 1, " &
-                    "    UpdatedBy = @ActingUserID, UpdatedOn = GETDATE() " &
+                    "    UpdatedBy = @ActingUserID, UpdatedOn = SYSUTCDATETIME() " &
                     "WHERE EmployeeID = @EmployeeID AND RoleID = @RoleID; " &
                     "IF @@ROWCOUNT = 0 " &
                     "INSERT INTO dbo.FW_EmployeeRoles (RegistrationID, EmployeeID, RoleID, DisplayOrder, IsActive, DeletedFlag, CreatedBy, CreatedOn) " &
-                    "SELECT e.RegistrationId, e.EmployeeID, r.ID, ISNULL(r.DisplayOrder, 1), 1, 0, @ActingUserID, GETDATE() " &
+                    "SELECT e.RegistrationId, e.EmployeeID, r.ID, ISNULL(r.DisplayOrder, 1), 1, 0, @ActingUserID, SYSUTCDATETIME() " &
                     "FROM dbo.FW_Employees e " &
                     "INNER JOIN dbo.FW_Roles r ON r.ID = @RoleID " &
                     "                         AND r.RegistrationID = e.RegistrationId " &
@@ -5333,7 +5333,7 @@ Namespace SDC.Framework
                 ElseIf String.Equals(column.ColumnName, "LastFirst", StringComparison.OrdinalIgnoreCase) Then
                     value = String.Join(" ", {lastName, firstName}.Where(Function(item) item <> String.Empty))
                 Else
-                    value = GeneratedDefaultValue(column.DataType)
+                    value = GeneratedDefaultValue(column.DataType, column.ColumnName)
                 End If
                 values.Add(New KeyValuePair(Of String, Object)(column.ColumnName, value))
                 existing.Add(column.ColumnName)
@@ -5345,10 +5345,19 @@ Namespace SDC.Framework
             Return If(match.Value Is Nothing OrElse Convert.IsDBNull(match.Value), String.Empty, Convert.ToString(match.Value, CultureInfo.InvariantCulture)).Trim()
         End Function
 
-        Private Shared Function GeneratedDefaultValue(dataType As Type) As Object
+        ''' <remarks>
+        ''' A required date-time nobody supplied. The schema here cannot tell a date column from a
+        ''' date-time - both arrive as DateTime - so the name does, as ONE_CLOCK_SPEC.md section 4
+        ''' has it: a column ending in Date is a calendar date and takes the viewer's today; any other
+        ''' is an instant and takes UTC now.
+        ''' </remarks>
+        Private Shared Function GeneratedDefaultValue(dataType As Type, columnName As String) As Object
             If dataType Is GetType(String) OrElse dataType Is GetType(Char) Then Return String.Empty
             If dataType Is GetType(Boolean) Then Return False
-            If dataType Is GetType(DateTime) OrElse dataType Is GetType(DateTimeOffset) Then Return DateTime.Now
+            If dataType Is GetType(DateTime) OrElse dataType Is GetType(DateTimeOffset) Then
+                If If(columnName, String.Empty).EndsWith("Date", StringComparison.OrdinalIgnoreCase) Then Return SessionTime.Today()
+                Return DateTime.UtcNow
+            End If
             If dataType Is GetType(Byte) Then Return CByte(0)
             If dataType Is GetType(Short) Then Return CShort(0)
             If dataType Is GetType(Integer) Then Return 0
@@ -5485,7 +5494,7 @@ Namespace SDC.Framework
                 End If
 
                 Dim assignments = String.Join(", ", writableColumns.Select(Function(column) column & " = @" & column))
-                Using cmd As New SqlCommand("UPDATE dbo." & GeneratedPagesTable & " SET " & assignments & ", UpdatedBy = @UpdatedBy, UpdatedOn = GETDATE() WHERE GeneratedPageID = @GeneratedPageID AND RowVersion = @RowVersion", conn)
+                Using cmd As New SqlCommand("UPDATE dbo." & GeneratedPagesTable & " SET " & assignments & ", UpdatedBy = @UpdatedBy, UpdatedOn = SYSUTCDATETIME() WHERE GeneratedPageID = @GeneratedPageID AND RowVersion = @RowVersion", conn)
                     AddPageGenerationParameters(cmd, values)
                     cmd.Parameters.Add("@UpdatedBy", SqlDbType.Int).Value = SessionState.ActingUserID
                     cmd.Parameters.Add("@GeneratedPageID", SqlDbType.Int).Value = generatedPageId
@@ -6727,7 +6736,7 @@ Namespace SDC.Framework
                     "INSERT INTO dbo.FW_Registration " &
                     "(RegName, RegistrationTypeID, FormatDateID, FormatTimeID, TimeZoneID, Address1, Address2, City, State, Zip, MainFax, MainPhone, MainEMail, WebLandingPage, Smarty_AuthID, Smarty_AuthToken, Smarty_EmbeddedKey, Smarty_UseEmbeddedKey, AllowMultipleRoles, AllowPasswordChangeAtLogin, AllowUpdateMyProfile, AllowUpdateMyProfileEmail, HomeGraphic, LicenseExpiration_Date, LicenseStart_Date, LicenseTermID, TwoFactorAuthentication, MessageRetrievalFrequency, MaxRecordsNoQBE, MaxRecordsWithQBE, IsActive, CreatedBy, CreatedOn, UpdatedBy, UpdatedOn) " &
                     "VALUES " &
-                    "(@RegName, @RegistrationTypeID, @FormatDateID, @FormatTimeID, @TimeZoneID, @Address1, @Address2, @City, @State, @Zip, @MainFax, @MainPhone, @MainEMail, @WebLandingPage, @Smarty_AuthID, @Smarty_AuthToken, @Smarty_EmbeddedKey, @Smarty_UseEmbeddedKey, @AllowMultipleRoles, @AllowPasswordChangeAtLogin, @AllowUpdateMyProfile, @AllowUpdateMyProfileEmail, @HomeGraphic, @LicenseExpiration_Date, @LicenseStart_Date, @LicenseTermID, @TwoFactorAuthentication, @MessageRetrievalFrequency, @MaxRecordsNoQBE, @MaxRecordsWithQBE, @IsActive, @CurrentUserId, GETDATE(), @CurrentUserId, GETDATE()); " &
+                    "(@RegName, @RegistrationTypeID, @FormatDateID, @FormatTimeID, @TimeZoneID, @Address1, @Address2, @City, @State, @Zip, @MainFax, @MainPhone, @MainEMail, @WebLandingPage, @Smarty_AuthID, @Smarty_AuthToken, @Smarty_EmbeddedKey, @Smarty_UseEmbeddedKey, @AllowMultipleRoles, @AllowPasswordChangeAtLogin, @AllowUpdateMyProfile, @AllowUpdateMyProfileEmail, @HomeGraphic, @LicenseExpiration_Date, @LicenseStart_Date, @LicenseTermID, @TwoFactorAuthentication, @MessageRetrievalFrequency, @MaxRecordsNoQBE, @MaxRecordsWithQBE, @IsActive, @CurrentUserId, SYSUTCDATETIME(), @CurrentUserId, SYSUTCDATETIME()); " &
                     "SELECT CAST(SCOPE_IDENTITY() AS INT);", conn, tx)
 
                     cmd.Parameters.AddWithValue("@RegName", DbValue(record.RegName))
@@ -6818,7 +6827,7 @@ Namespace SDC.Framework
                     "MessageRetrievalFrequency = @MessageRetrievalFrequency, " &
                     "IsActive = @IsActive, " &
                     "UpdatedBy = @CurrentUserId, " &
-                    "UpdatedOn = GETDATE() " &
+                    "UpdatedOn = SYSUTCDATETIME() " &
                     "WHERE RegistrationID = @ID AND RowVersion = @OriginalRowVersion", conn)
 
                     cmd.Parameters.AddWithValue("@ID", record.ID)
@@ -7112,7 +7121,7 @@ Namespace SDC.Framework
 
                 Dim sql As New StringBuilder()
                 sql.Append("SELECT a.UpdateAuditLogID AS AuditID, ")
-                sql.Append("ISNULL(a.LoggedOn, GETDATE()) AS CreatedOn, ")
+                sql.Append("ISNULL(a.LoggedOn, SYSUTCDATETIME()) AS CreatedOn, ")
                 sql.Append("a.RegistrationID, a.UserID, ")
                 sql.Append("ISNULL(u.LastFirst, ISNULL(u.FirstName + ' ' + u.LastName, '')) AS UserDisplay, ")
                 sql.Append("ISNULL(a.PageName, '') AS PageName, ")
@@ -7164,11 +7173,11 @@ Namespace SDC.Framework
                 End If
 
                 If fromDate.HasValue Then
-                    sql.Append("AND ISNULL(a.LoggedOn, GETDATE()) >= @FromDate ")
+                    sql.Append("AND ISNULL(a.LoggedOn, SYSUTCDATETIME()) >= @FromDate ")
                 End If
 
                 If toDate.HasValue Then
-                    sql.Append("AND ISNULL(a.LoggedOn, GETDATE()) < @ToDateExclusive ")
+                    sql.Append("AND ISNULL(a.LoggedOn, SYSUTCDATETIME()) < @ToDateExclusive ")
                 End If
 
                 sql.Append("ORDER BY a.UpdateAuditLogID DESC")
@@ -8176,7 +8185,7 @@ Namespace SDC.Framework
                     "  INNER JOIN dbo.FW_Employees emp ON emp.EmployeeID = er.EmployeeID " &
                     "  WHERE emp.UserId = @UserID AND er.RoleID = @RoleID) " &
                     "INSERT INTO dbo.FW_EmployeeRoles (RegistrationID, EmployeeID, RoleID, DisplayOrder, IsActive, CreatedBy, CreatedOn) " &
-                    "SELECT @RegistrationID, emp.EmployeeID, @RoleID, @DisplayOrder, 1, @CreatedBy, GETDATE() " &
+                    "SELECT @RegistrationID, emp.EmployeeID, @RoleID, @DisplayOrder, 1, @CreatedBy, SYSUTCDATETIME() " &
                     "  FROM dbo.FW_Employees emp WHERE emp.UserId = @UserID", conn)
                     cmd.Parameters.AddWithValue("@UserID", userId)
                     cmd.Parameters.AddWithValue("@RegistrationID", registrationId)
@@ -8247,7 +8256,7 @@ Namespace SDC.Framework
 
                         Using cmd As New SqlCommand(
                             "INSERT INTO dbo.FW_Users (RegistrationID, FirstName, LastName, Email, Phone, Address1, Address2, City, State, Zip, IsActive, SuperAdmin, AssignedManagerID, CreatedBy, CreatedOn) " &
-                            "VALUES (@RegistrationID, @FirstName, @LastName, @Email, @Phone, @Address1, @Address2, @City, @State, @Zip, @IsActive, @SuperAdmin, @AssignedManagerID, @CreatedBy, GETDATE()); " &
+                            "VALUES (@RegistrationID, @FirstName, @LastName, @Email, @Phone, @Address1, @Address2, @City, @State, @Zip, @IsActive, @SuperAdmin, @AssignedManagerID, @CreatedBy, SYSUTCDATETIME()); " &
                             "SELECT CAST(SCOPE_IDENTITY() as int)", conn, trans)
                             cmd.Parameters.AddWithValue("@RegistrationID", record.RegistrationID)
                             cmd.Parameters.AddWithValue("@FirstName", CType(If(String.IsNullOrWhiteSpace(record.FirstName), DBNull.Value, CObj(record.FirstName.Trim())), Object))
@@ -8288,7 +8297,7 @@ Namespace SDC.Framework
                 Using cmd As New SqlCommand(
                     "UPDATE dbo.FW_Users SET FirstName = @FirstName, LastName = @LastName, Email = @Email, Phone = @Phone, " &
                     "Address1 = @Address1, Address2 = @Address2, City = @City, State = @State, Zip = @Zip, " &
-                    "IsActive = @IsActive, SuperAdmin = @SuperAdmin, AssignedManagerID = @AssignedManagerID, UpdatedBy = @UpdatedBy, UpdatedOn = GETDATE() " &
+                    "IsActive = @IsActive, SuperAdmin = @SuperAdmin, AssignedManagerID = @AssignedManagerID, UpdatedBy = @UpdatedBy, UpdatedOn = SYSUTCDATETIME() " &
                     "WHERE UserID = @UserID AND RowVersion = @OriginalRowVersion", conn)
                     cmd.Parameters.AddWithValue("@UserID", record.UserID)
                     cmd.Parameters.AddWithValue("@FirstName", CType(If(String.IsNullOrWhiteSpace(record.FirstName), DBNull.Value, CObj(record.FirstName.Trim())), Object))
@@ -8506,7 +8515,7 @@ Namespace SDC.Framework
                 conn.Open()
                 Using cmd As New SqlCommand(
                     "INSERT INTO dbo.FW_Roles (RegistrationID, RoleName, IsActive, DisplayOrder, CreatedBy, CreatedOn) " &
-                    "VALUES (@RegistrationID, @RoleName, 1, @DisplayOrder, @CreatedBy, GETDATE()); " &
+                    "VALUES (@RegistrationID, @RoleName, 1, @DisplayOrder, @CreatedBy, SYSUTCDATETIME()); " &
                     "SELECT CAST(SCOPE_IDENTITY() as int)", conn)
 
                     cmd.Parameters.AddWithValue("@RegistrationID", registrationId)
@@ -8565,7 +8574,7 @@ Namespace SDC.Framework
                         Try
                             Using cmd As New SqlCommand(
                                 "UPDATE dbo.FW_Roles " &
-                                "SET IsActive = 0, DeletedFlag = 1, DeletedBy = @UpdatedBy, DeletedOn = SYSUTCDATETIME(), UpdatedBy = @UpdatedBy, UpdatedOn = GETDATE() " &
+                                "SET IsActive = 0, DeletedFlag = 1, DeletedBy = @UpdatedBy, DeletedOn = SYSUTCDATETIME(), UpdatedBy = @UpdatedBy, UpdatedOn = SYSUTCDATETIME() " &
                                 "WHERE ID = @ID", conn, trans)
                                 cmd.Parameters.AddWithValue("@ID", roleId)
                                 cmd.Parameters.AddWithValue("@UpdatedBy", If(updatedBy > 0, CType(updatedBy, Object), DBNull.Value))
@@ -8574,7 +8583,7 @@ Namespace SDC.Framework
 
                             Using cmd As New SqlCommand(
                                 "UPDATE dbo.FW_RoleDetails " &
-                                "SET IsActive = 0, DeletedFlag = 1, DeletedBy = @UpdatedBy, DeletedOn = SYSUTCDATETIME(), UpdatedBy = @UpdatedBy, UpdatedOn = GETDATE() " &
+                                "SET IsActive = 0, DeletedFlag = 1, DeletedBy = @UpdatedBy, DeletedOn = SYSUTCDATETIME(), UpdatedBy = @UpdatedBy, UpdatedOn = SYSUTCDATETIME() " &
                                 "WHERE RoleID = @RoleID AND ISNULL(DeletedFlag, 0) = 0", conn, trans)
                                 cmd.Parameters.AddWithValue("@RoleID", roleId)
                                 cmd.Parameters.AddWithValue("@UpdatedBy", If(updatedBy > 0, CType(updatedBy, Object), DBNull.Value))
@@ -8583,7 +8592,7 @@ Namespace SDC.Framework
 
                             Using cmd As New SqlCommand(
                                 "UPDATE dbo.FW_RoleFields " &
-                                "SET IsActive = 0, DeletedFlag = 1, DeletedBy = @UpdatedBy, DeletedOn = SYSUTCDATETIME(), UpdatedBy = @UpdatedBy, UpdatedOn = GETDATE() " &
+                                "SET IsActive = 0, DeletedFlag = 1, DeletedBy = @UpdatedBy, DeletedOn = SYSUTCDATETIME(), UpdatedBy = @UpdatedBy, UpdatedOn = SYSUTCDATETIME() " &
                                 "WHERE RoleID = @RoleID AND ISNULL(DeletedFlag, 0) = 0", conn, trans)
                                 cmd.Parameters.AddWithValue("@RoleID", roleId)
                                 cmd.Parameters.AddWithValue("@UpdatedBy", If(updatedBy > 0, CType(updatedBy, Object), DBNull.Value))
@@ -8592,7 +8601,7 @@ Namespace SDC.Framework
 
                             Using cmd As New SqlCommand(
                                 "UPDATE dbo.FW_EmployeeRoles " &
-                                "SET IsActive = 0, DeletedFlag = 1, DeletedBy = @UpdatedBy, DeletedOn = SYSUTCDATETIME(), UpdatedBy = @UpdatedBy, UpdatedOn = GETDATE() " &
+                                "SET IsActive = 0, DeletedFlag = 1, DeletedBy = @UpdatedBy, DeletedOn = SYSUTCDATETIME(), UpdatedBy = @UpdatedBy, UpdatedOn = SYSUTCDATETIME() " &
                                 "WHERE RoleID = @RoleID AND ISNULL(DeletedFlag, 0) = 0", conn, trans)
                                 cmd.Parameters.AddWithValue("@RoleID", roleId)
                                 cmd.Parameters.AddWithValue("@UpdatedBy", If(updatedBy > 0, CType(updatedBy, Object), DBNull.Value))
@@ -8695,7 +8704,7 @@ Namespace SDC.Framework
                         Try
                             Using cmd As New SqlCommand(
                                 "UPDATE dbo.FW_Roles " &
-                                "SET IsActive = 1, DeletedFlag = 0, DeletedBy = NULL, DeletedOn = NULL, UpdatedBy = @UpdatedBy, UpdatedOn = GETDATE() " &
+                                "SET IsActive = 1, DeletedFlag = 0, DeletedBy = NULL, DeletedOn = NULL, UpdatedBy = @UpdatedBy, UpdatedOn = SYSUTCDATETIME() " &
                                 "WHERE ID = @ID", conn, trans)
                                 cmd.Parameters.AddWithValue("@ID", roleId)
                                 cmd.Parameters.AddWithValue("@UpdatedBy", If(updatedBy > 0, CType(updatedBy, Object), DBNull.Value))
@@ -8711,7 +8720,7 @@ Namespace SDC.Framework
 
                                     Using cmd As New SqlCommand(
                                         "UPDATE dbo." & childTable & " " &
-                                        "SET IsActive = 1, DeletedFlag = 0, DeletedBy = NULL, DeletedOn = NULL, UpdatedBy = @UpdatedBy, UpdatedOn = GETDATE() " &
+                                        "SET IsActive = 1, DeletedFlag = 0, DeletedBy = NULL, DeletedOn = NULL, UpdatedBy = @UpdatedBy, UpdatedOn = SYSUTCDATETIME() " &
                                         "WHERE RoleID = @RoleID AND ISNULL(DeletedFlag, 0) = 1 AND DeletedOn = @DeletedOn", conn, trans)
                                         cmd.Parameters.AddWithValue("@RoleID", roleId)
                                         cmd.Parameters.AddWithValue("@DeletedOn", deletedOn)
@@ -8743,7 +8752,7 @@ Namespace SDC.Framework
                 End If
 
                 Using cmd As New SqlCommand(
-                    "UPDATE dbo.FW_Roles SET IsActive = 1, UpdatedBy = @UpdatedBy, UpdatedOn = GETDATE() WHERE ID = @ID", conn)
+                    "UPDATE dbo.FW_Roles SET IsActive = 1, UpdatedBy = @UpdatedBy, UpdatedOn = SYSUTCDATETIME() WHERE ID = @ID", conn)
                     cmd.Parameters.AddWithValue("@ID", roleId)
                     cmd.Parameters.AddWithValue("@UpdatedBy", If(updatedBy > 0, CType(updatedBy, Object), DBNull.Value))
                     cmd.ExecuteNonQuery()
@@ -8781,7 +8790,7 @@ Namespace SDC.Framework
                 conn.Open()
                 Using cmd As New SqlCommand(
                     "INSERT INTO dbo.FW_Roles (RegistrationID, RoleName, IsActive, DisplayOrder, CA_CanChange, Can_Create, Can_Read, Can_Update, Can_Delete, Can_Export, Can_Import, Can_UseQBE, Can_ViewAllRecords, Can_ViewOnlyMyRecords, CreatedBy, CreatedOn) " &
-                    "VALUES (@RegistrationID, @RoleName, 1, @DisplayOrder, @CA_CanChange, @Can_Create, @Can_Read, @Can_Update, @Can_Delete, @Can_Export, @Can_Import, @Can_UseQBE, @Can_ViewAllRecords, @Can_ViewOnlyMyRecords, @CreatedBy, GETDATE()); " &
+                    "VALUES (@RegistrationID, @RoleName, 1, @DisplayOrder, @CA_CanChange, @Can_Create, @Can_Read, @Can_Update, @Can_Delete, @Can_Export, @Can_Import, @Can_UseQBE, @Can_ViewAllRecords, @Can_ViewOnlyMyRecords, @CreatedBy, SYSUTCDATETIME()); " &
                     "SELECT CAST(SCOPE_IDENTITY() as int)", conn)
 
                     cmd.Parameters.AddWithValue("@RegistrationID", registrationId)
@@ -9039,7 +9048,7 @@ Namespace SDC.Framework
                 Using cmd As New SqlCommand(
                     "INSERT INTO dbo.FW_RoleDetails (RoleID, RegistrationID, SchemaID, DB_Table, Table_Alias, OverrideCaption, " &
                     "Can_Create, Can_Read, Can_Update, Can_Delete, Can_UseQBE, IsActive, StartEmpty, CreatedBy, CreatedOn) " &
-                    "VALUES (@RoleID, @RegistrationID, @RoleSchemaID, @DBTable, @TableAlias, @TableCaption, 1, 0, 1, 1, 1, 1, 1, @CreatedBy, GETDATE()); " &
+                    "VALUES (@RoleID, @RegistrationID, @RoleSchemaID, @DBTable, @TableAlias, @TableCaption, 1, 0, 1, 1, 1, 1, 1, @CreatedBy, SYSUTCDATETIME()); " &
                     "SELECT CAST(SCOPE_IDENTITY() as int)", conn)
                     
                     cmd.Parameters.AddWithValue("@RoleID", roleId)
@@ -9093,7 +9102,7 @@ Namespace SDC.Framework
                             "Can_Create = @CanCreate, Can_Read = @CanRead, Can_Update = @CanUpdate, " &
                             "Can_Delete = @CanDelete, Can_ViewAllRecords = @CanViewAllRecords, " &
                             "Can_ViewOnlyMyRecords = @CanViewOnlyMyRecords, Can_UseQBE = @CanUseQBE, " &
-                            "UpdatedBy = @UpdatedBy, UpdatedOn = GETDATE() " &
+                            "UpdatedBy = @UpdatedBy, UpdatedOn = SYSUTCDATETIME() " &
                             "WHERE ID = @ID", conn, trans)
                             cmd.Parameters.AddWithValue("@ID", detailId)
                             cmd.Parameters.AddWithValue("@TableAlias", effectiveTableAlias)
@@ -9111,7 +9120,7 @@ Namespace SDC.Framework
 
                         If propagateCaptionOverride Then
                             Using propagateCommand As New SqlCommand(
-                                "UPDATE dbo.FW_RoleDetails SET OverrideCaption = @TableCaption, UpdatedBy = @UpdatedBy, UpdatedOn = GETDATE() " &
+                                "UPDATE dbo.FW_RoleDetails SET OverrideCaption = @TableCaption, UpdatedBy = @UpdatedBy, UpdatedOn = SYSUTCDATETIME() " &
                                 "WHERE RegistrationID = @RegistrationID AND SchemaID = @SchemaID AND DB_Table = @DBTable", conn, trans)
                                 propagateCommand.Parameters.AddWithValue("@TableCaption", effectiveTableCaption)
                                 propagateCommand.Parameters.AddWithValue("@UpdatedBy", SessionState.ActingUserID)
@@ -9267,7 +9276,7 @@ Namespace SDC.Framework
                         "(RoleDetailID, RegistrationID, RoleID, SchemaID, TableName, FieldName, FileLink, FriendlyFieldName, OverrideCaption, Can_Create, Can_Read, Can_Update, IsActive, CreatedBy, CreatedOn) " &
                         "VALUES (@RoleDetailID, @RegistrationID, @RoleID, @SchemaID, @TableName, @FieldName, @FileLink, @FriendlyFieldName, " &
                         "(SELECT TOP 1 OverrideCaption FROM dbo.FW_RoleFields WHERE RegistrationID = @RegistrationID AND SchemaID = @SchemaID AND TableName = @TableName AND FieldName = @FieldName AND OverrideCaption IS NOT NULL ORDER BY UpdatedOn DESC, ID DESC), " &
-                        "1, 1, 1, 0, @CreatedBy, GETDATE())", conn)
+                        "1, 1, 1, 0, @CreatedBy, SYSUTCDATETIME())", conn)
                         cmd2.Parameters.AddWithValue("@RoleDetailID", roleDetailId)
                         cmd2.Parameters.AddWithValue("@RegistrationID", registrationId)
                         cmd2.Parameters.AddWithValue("@RoleID", roleId)
@@ -9339,7 +9348,7 @@ Namespace SDC.Framework
                         "(RoleDetailID, RegistrationID, RoleID, SchemaID, TableName, FieldName, FileLink, FriendlyFieldName, OverrideCaption, Can_Create, Can_Read, Can_Update, IsActive, CreatedBy, CreatedOn) " &
                         "VALUES (@RoleDetailID, @RegistrationID, @RoleID, @SchemaID, @TableName, @FieldName, @FileLink, @FriendlyFieldName, " &
                         "(SELECT TOP 1 OverrideCaption FROM dbo.FW_RoleFields WHERE RegistrationID = @RegistrationID AND SchemaID = @SchemaID AND TableName = @TableName AND FieldName = @FieldName AND RoleID <> @RoleID ORDER BY RoleID), " &
-                        "1, 1, 1, 0, @CreatedBy, GETDATE())", conn, trans)
+                        "1, 1, 1, 0, @CreatedBy, SYSUTCDATETIME())", conn, trans)
                     cmd2.Parameters.AddWithValue("@RoleDetailID", roleDetailId)
                     cmd2.Parameters.AddWithValue("@RegistrationID", registrationId)
                     cmd2.Parameters.AddWithValue("@RoleID", roleId)
@@ -9399,7 +9408,7 @@ Namespace SDC.Framework
                             "VALUES (@RoleID, @RegistrationID, @RoleSchemaID, @DBTable, @TableAlias, " &
                             "COALESCE((SELECT TOP 1 NULLIF(LTRIM(RTRIM(OverrideCaption)), '') FROM dbo.FW_RoleDetails " &
                             "WHERE RegistrationID = @RegistrationID AND SchemaID = @RoleSchemaID AND DB_Table = @DBTable AND RoleID <> @RoleID " &
-                            "ORDER BY RoleID), @TableCaption), @CanCreate, @CanRead, @CanUpdate, @CanDelete, @CanUseQbe, 1, @CreatedBy, GETDATE()); " &
+                            "ORDER BY RoleID), @TableCaption), @CanCreate, @CanRead, @CanUpdate, @CanDelete, @CanUseQbe, 1, @CreatedBy, SYSUTCDATETIME()); " &
                             "SELECT CAST(SCOPE_IDENTITY() as int)", conn, trans)
 
                             Dim writes = (grant = RoleTableGrant.FullAccess)
@@ -9469,7 +9478,7 @@ Namespace SDC.Framework
                             "CA_CanChange = @CA_CanChange, Can_Create = @Can_Create, Can_Read = @Can_Read, Can_Update = @Can_Update, " &
                             "IsActive = @IsActive, IsRequired = @IsRequired, IsUnique = @IsUnique, Make_Invisible = @Make_Invisible, " &
                             "OrderBy = @OrderBy, OverrideCaption = @OverrideCaption, FriendlyFieldName = @FriendlyFieldName, " &
-                            "UpdatedBy = @UpdatedBy, UpdatedOn = GETDATE() " &
+                            "UpdatedBy = @UpdatedBy, UpdatedOn = SYSUTCDATETIME() " &
                             "WHERE ID = @ID", conn, trans)
                             AddRoleFieldUpdateParameters(cmd, id, caCanChange, canCreate, canRead, canUpdate, isActive, isRequired, isUnique, makeInvisible, orderBy, overrideCaption, friendlyFieldName, updatedBy)
                             cmd.ExecuteNonQuery()
@@ -9477,7 +9486,7 @@ Namespace SDC.Framework
 
                         If propagateCaptionOverride Then
                             Using propagateCommand As New SqlCommand(
-                                "UPDATE dbo.FW_RoleFields SET OverrideCaption = @OverrideCaption, UpdatedBy = @UpdatedBy, UpdatedOn = GETDATE() " &
+                                "UPDATE dbo.FW_RoleFields SET OverrideCaption = @OverrideCaption, UpdatedBy = @UpdatedBy, UpdatedOn = SYSUTCDATETIME() " &
                                 "WHERE RegistrationID = @RegistrationID AND SchemaID = @SchemaID AND TableName = @TableName AND FieldName = @FieldName", conn, trans)
                                 propagateCommand.Parameters.AddWithValue("@OverrideCaption", If(String.IsNullOrWhiteSpace(overrideCaption), CType(DBNull.Value, Object), overrideCaption.Trim()))
                                 propagateCommand.Parameters.AddWithValue("@UpdatedBy", updatedBy)
@@ -10747,8 +10756,7 @@ Namespace SDC.Framework
                             ' the message shows a time hours away from the user's clock.
                             Dim deletedOn As Date? = Nothing
                             If Not reader("DeletedOn") Is DBNull.Value Then
-                                deletedOn = Date.SpecifyKind(Convert.ToDateTime(reader("DeletedOn"), CultureInfo.InvariantCulture),
-                                                             DateTimeKind.Utc).ToLocalTime()
+                                deletedOn = SessionTime.ToSessionZone(Convert.ToDateTime(reader("DeletedOn"), CultureInfo.InvariantCulture))
                             End If
 
                             Return New SoftDeleteInfo With {
@@ -11357,7 +11365,7 @@ Namespace SDC.Framework
                             "Can_Create, Can_Read, Can_Update, IsActive, CreatedBy, CreatedOn) " &
                             "VALUES (@RegistrationID, @RoleID, @RoleDetailID, @SchemaID, @TableName, @FieldName, @FileLink, @FriendlyFieldName, " &
                             "(SELECT TOP 1 OverrideCaption FROM dbo.FW_RoleFields WHERE RegistrationID = @RegistrationID AND SchemaID = @SchemaID AND TableName = @TableName AND FieldName = @FieldName AND OverrideCaption IS NOT NULL ORDER BY UpdatedOn DESC, ID DESC), " &
-                            "1, 1, 1, 0, @UpdatedBy, GETDATE())", conn)
+                            "1, 1, 1, 0, @UpdatedBy, SYSUTCDATETIME())", conn)
                             cmd.Parameters.AddWithValue("@RegistrationID", registrationId)
                             cmd.Parameters.AddWithValue("@RoleID", roleId)
                             cmd.Parameters.AddWithValue("@RoleDetailID", roleDetailId)
@@ -11468,7 +11476,7 @@ Namespace SDC.Framework
             repairedCount = ExecuteScoped(conn,
                 "UPDATE rf SET rf.TableName = s.DB_Table, " &
                 "              rf.FileLink = s.DB_Table + '.' + rf.FieldName, " &
-                "              rf.UpdatedBy = @UpdatedBy, rf.UpdatedOn = GETDATE() " &
+                "              rf.UpdatedBy = @UpdatedBy, rf.UpdatedOn = SYSUTCDATETIME() " &
                 "FROM dbo.FW_RoleFields rf " &
                 "JOIN dbo.FW_RoleSchema s ON s.ID = rf.SchemaID " &
                 "WHERE OBJECT_ID('dbo.' + s.DB_Table) IS NOT NULL " &
@@ -11482,7 +11490,7 @@ Namespace SDC.Framework
                 "UPDATE rf SET rf.DeletedFlag = 0, rf.DeletedBy = NULL, rf.DeletedOn = NULL, " &
                 "              rf.TableName = s.DB_Table, " &
                 "              rf.FileLink = s.DB_Table + '.' + rf.FieldName, " &
-                "              rf.UpdatedBy = @UpdatedBy, rf.UpdatedOn = GETDATE() " &
+                "              rf.UpdatedBy = @UpdatedBy, rf.UpdatedOn = SYSUTCDATETIME() " &
                 "FROM dbo.FW_RoleFields rf " &
                 "JOIN dbo.FW_RoleSchema s ON s.ID = rf.SchemaID " &
                 "WHERE ISNULL(rf.DeletedFlag, 0) = 1 " &
@@ -11616,7 +11624,7 @@ Namespace SDC.Framework
                                    " WHERE RegistrationID = @Reg" & tag & " AND SchemaID = @Schema" & tag &
                                    "   AND TableName = @Table" & tag & " AND FieldName = @Field" & tag &
                                    "   AND OverrideCaption IS NOT NULL ORDER BY UpdatedOn DESC, ID DESC), " &
-                                   "1, 1, 1, 0, @UpdatedBy, GETDATE())")
+                                   "1, 1, 1, 0, @UpdatedBy, SYSUTCDATETIME())")
 
                         cmd.Parameters.AddWithValue("@Reg" & tag, row.RegistrationId)
                         cmd.Parameters.AddWithValue("@Role" & tag, row.RoleId)
@@ -11760,7 +11768,7 @@ Namespace SDC.Framework
             For Each tableName In missing
                 Using cmd As New SqlCommand(
                     "INSERT INTO dbo.FW_RoleSchema (DB_Table, Table_Alias, IsActive, CreatedBy, CreatedOn) " &
-                    "VALUES (@DBTable, @TableAlias, 1, @CreatedBy, GETDATE())", conn)
+                    "VALUES (@DBTable, @TableAlias, 1, @CreatedBy, SYSUTCDATETIME())", conn)
                     cmd.Parameters.AddWithValue("@DBTable", tableName)
                     cmd.Parameters.AddWithValue("@TableAlias", FormatTableNameAsAlias(tableName))
                     cmd.Parameters.AddWithValue("@CreatedBy", updatedBy)
@@ -12075,7 +12083,7 @@ Namespace SDC.Framework
 
                 If existingId > 0 Then
                     Dim updateSql As String =
-                        "UPDATE dbo.FW_SavedQBE SET IsCompanyWide = @IsCompanyWide, QbeData = @QbeData, UpdatedOn = GETDATE() " &
+                        "UPDATE dbo.FW_SavedQBE SET IsCompanyWide = @IsCompanyWide, QbeData = @QbeData, UpdatedOn = SYSUTCDATETIME() " &
                         "WHERE SavedQbeID = @SavedQbeID"
                     Using cmd As New SqlCommand(updateSql, conn)
                         cmd.Parameters.AddWithValue("@IsCompanyWide", If(record.IsCompanyWide, 1, 0))
@@ -12425,7 +12433,7 @@ Namespace SDC.Framework
                 If existingId > 0 Then
                     Dim updateSql =
                         "UPDATE dbo.FW_TableLayouts " &
-                        "SET LayoutName = @LayoutName, JsonState = @JsonState, IsActive = 1, UpdatedBy = @UpdatedBy, UpdatedOn = GETDATE() " &
+                        "SET LayoutName = @LayoutName, JsonState = @JsonState, IsActive = 1, UpdatedBy = @UpdatedBy, UpdatedOn = SYSUTCDATETIME() " &
                         "WHERE ID = @ID"
                     Using cmd As New SqlCommand(updateSql, conn)
                         cmd.Parameters.AddWithValue("@LayoutName", normalizedName)
@@ -12438,7 +12446,7 @@ Namespace SDC.Framework
                     Dim insertSql =
                         "INSERT INTO dbo.FW_TableLayouts " &
                         "(RegistrationID, UserID, PageName, TableName, LayoutType, LayoutName, JsonState, IsActive, CreatedBy, CreatedOn, UpdatedBy, UpdatedOn) " &
-                        "VALUES (@RegistrationID, @UserID, @PageName, @TableName, @LayoutType, @LayoutName, @JsonState, 1, @CreatedBy, GETDATE(), @UpdatedBy, GETDATE())"
+                        "VALUES (@RegistrationID, @UserID, @PageName, @TableName, @LayoutType, @LayoutName, @JsonState, 1, @CreatedBy, SYSUTCDATETIME(), @UpdatedBy, SYSUTCDATETIME())"
                     Using cmd As New SqlCommand(insertSql, conn)
                         Dim userIdParamValue As Object = If(userId > 0 OrElse normalizedType.Equals("UserNamed", StringComparison.OrdinalIgnoreCase), CType(userId, Object), DBNull.Value)
                         cmd.Parameters.AddWithValue("@RegistrationID", registrationId)
@@ -12477,7 +12485,7 @@ Namespace SDC.Framework
 
                 Dim sql As String =
                     "UPDATE dbo.FW_TableLayouts " &
-                        "SET IsActive = 0, DeletedFlag = 1, DeletedBy = @UpdatedBy, DeletedOn = SYSUTCDATETIME(), UpdatedBy = @UpdatedBy, UpdatedOn = GETDATE() " &
+                        "SET IsActive = 0, DeletedFlag = 1, DeletedBy = @UpdatedBy, DeletedOn = SYSUTCDATETIME(), UpdatedBy = @UpdatedBy, UpdatedOn = SYSUTCDATETIME() " &
                     "WHERE RegistrationID = @RegistrationID " &
                     "  AND ISNULL(UserID, 0) = @OwnerUserID " &
                     "  AND PageName = @PageName " &
@@ -12665,7 +12673,7 @@ Namespace SDC.Framework
                 If existingId > 0 Then
                     Dim updateSql =
                         "UPDATE dbo.FW_UserUiHints " &
-                        "SET Seen = 1, SeenOn = GETDATE(), UpdatedOn = GETDATE(), UpdatedBy = @UpdatedBy " &
+                        "SET Seen = 1, SeenOn = SYSUTCDATETIME(), UpdatedOn = SYSUTCDATETIME(), UpdatedBy = @UpdatedBy " &
                         "WHERE ID = @ID"
 
                     Using cmd As New SqlCommand(updateSql, conn)
@@ -12677,7 +12685,7 @@ Namespace SDC.Framework
                     Dim insertSql =
                         "INSERT INTO dbo.FW_UserUiHints " &
                         "(RegistrationID, UserID, HintKey, Seen, SeenOn, CreatedBy, CreatedOn, UpdatedBy, UpdatedOn) " &
-                        "VALUES (@RegistrationID, @UserID, @HintKey, 1, GETDATE(), @CreatedBy, GETDATE(), @UpdatedBy, GETDATE())"
+                        "VALUES (@RegistrationID, @UserID, @HintKey, 1, SYSUTCDATETIME(), @CreatedBy, SYSUTCDATETIME(), @UpdatedBy, SYSUTCDATETIME())"
 
                     Using cmd As New SqlCommand(insertSql, conn)
                         cmd.Parameters.AddWithValue("@RegistrationID", registrationId)

@@ -75,8 +75,8 @@ if (-not $SkipBuild) {
 Write-Step "Field lifecycle order in Base_U"
 Assert-Pattern -Path ".\000_FRAMEWORK\000_BASE CLASSES\FW_Base_U.vb" -Pattern "AdoptRequiredBorderPanels()" -Description "Base_U adopts the metadata required-border panels"
 Assert-Pattern -Path ".\000_FRAMEWORK\000_BASE CLASSES\FW_Base_U.vb" -Pattern "CollapseHiddenFieldRows()" -Description "Hidden-field rows are collapsed"
-Assert-Pattern -Path ".\000_FRAMEWORK\000_BASE CLASSES\FW_Base_U.vb" -Pattern "suppressRequiredTouch = True" -Description "The page's own initial focus does not count as visiting a field"
-Assert-Pattern -Path ".\000_FRAMEWORK\000_BASE CLASSES\FW_Base_U.vb" -Pattern "ShouldShowRequiredWarning" -Description "Red required border uses the shared visited-and-empty rule"
+Assert-Pattern -Path ".\000_FRAMEWORK\000_BASE CLASSES\FW_Base_U.vb" -Pattern "indicators.SuppressTouch = True" -Description "The page's own initial focus does not count as visiting a field"
+Assert-Pattern -Path ".\000_FRAMEWORK\500_INFRASTRUCTURE\Widgets\FieldIndicators.vb" -Pattern "Public Function ShouldShowWarning" -Description "Red required border uses the shared visited-and-empty rule"
 
 # CollapseHiddenFieldRows and the dirty baseline both depend on Control.Visible, which lies until
 # the form is shown. Guard the ordering rather than the mere presence of the calls.
@@ -120,6 +120,20 @@ Assert-Absent -Path $maintenancePages -Pattern "THE FOLLOWING ARE REQUIRED" -Des
 # Pages are expected to construct ZipCoderController; what they must not do is hand-build the
 # button, which would duplicate its caption, placement and Smarty visibility rule.
 Assert-Absent -Path $maintenancePages -Pattern '"Zip Coder"' -Description "No page hard-codes the Zip Coder caption; ZipCoderController owns it"
+
+Write-Step "Focus and required borders have one owner"
+# FieldIndicators owns the green focus ring and the red required ring since 2026-09-25. Until then
+# FW_Base_U held its own copy, private to it, and a window that was not a maintenance page could
+# not have the borders at all. These fail if a second copy is written: the colour anywhere else,
+# or a new WireFocusIndicators. Roles_U keeps an older, different one (a background tint, not a
+# border) until it is next worked on.
+$allSource = @(Get-ChildItem -Path $repoRoot -Filter "*.vb" -File -Recurse |
+    Where-Object { $_.FullName -notmatch '\\(bin|obj|restore-points|project-backup|tests)\\' } |
+    ForEach-Object { $_.FullName })
+Assert-Absent -Path $allSource -Pattern "FromArgb(55, 180, 105)" -Description "The focus colour is written only in FieldIndicators." -Except @("FieldIndicators.vb")
+Assert-Absent -Path $allSource -Pattern "Sub WireFocusIndicators" -Description "No page writes its own WireFocusIndicators; FieldIndicators.Wire is the owner." -Except @("Roles_U.vb")
+Assert-Pattern -Path ".\000_FRAMEWORK\000_BASE CLASSES\FW_Base_U.vb" -Pattern "New FieldIndicators(" -Description "Maintenance pages take their borders from FieldIndicators"
+Assert-Pattern -Path ".\000_FRAMEWORK\085_MESSAGING\MessageComposeForm.vb" -Pattern "New FieldIndicators(" -Description "Compose takes its borders from FieldIndicators"
 
 Write-Step "Save and concurrency contract"
 Assert-Pattern -Path ".\000_FRAMEWORK\000_BASE CLASSES\FW_Base_U.vb" -Pattern "CaptureOriginalRowVersion" -Description "RowVersion is captured for concurrency"

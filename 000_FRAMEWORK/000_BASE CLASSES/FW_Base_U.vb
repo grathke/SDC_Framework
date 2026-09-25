@@ -38,17 +38,15 @@ Namespace SDC.Framework
         Private baselineControlSnapshotJson As String = String.Empty
         Private baselineRecordSnapshotJson As String = String.Empty
         Private bypassCancelCloseCheck As Boolean
-        Private ReadOnly requiredBorderPanels As New Dictionary(Of Control, Panel)()
-
         ''' <summary>
-        ''' Required fields the user has actually been in. A required field only turns red once it
-        ''' has been entered or left while empty - never merely because the page opened on a blank
-        ''' record. The focus the page sets for itself does not count, hence suppressRequiredTouch.
+        ''' The green focus ring and the red required ring, with the visited and hovered state that
+        ''' decides red. FieldIndicators owns the rules since 2026-09-25 so a window that is not a
+        ''' maintenance page can have them too; this page supplies its loading flag and keeps Save and
+        ''' Cancel out of the focus ring.
         ''' </summary>
-        Private ReadOnly touchedRequiredControls As New HashSet(Of Control)()
-        Private suppressRequiredTouch As Boolean
-        Private ReadOnly focusOriginalBackColors As New Dictionary(Of Control, Color)()
-        Private ReadOnly focusBorderPanels As New Dictionary(Of Control, Panel)()
+        Private ReadOnly indicators As New FieldIndicators(AppAdminRequiredBackColor,
+                                                           Function() loading,
+                                                           Function(control) IsBaseActionButton(control))
         Private ReadOnly readOnlyMouseHandled As New HashSet(Of Control)()
         Protected ReadOnly okButton As Button
         Protected ReadOnly cancelActionButton As Button
@@ -253,12 +251,12 @@ Namespace SDC.Framework
             BeginInvoke(New Action(Sub()
                                        ApplySharedPageCaption()
                                        RemoveReadOnlyControlsFromTabOrder(Me)
-                                       WireFocusIndicators(Me)
+                                       indicators.Wire(Me)
                                        okButton.TabStop = False
                                        cancelActionButton.TabStop = False
                                        CollapseHiddenFieldRows()
                                        pageOpenTrace?.Mark("collapse")
-                                       RefreshLocalRequiredBorders()
+                                       indicators.Refresh()
                                        ApplySavedTabOrder()
                                        InitializeTabOrderManager()
                                        AttachZoomAfterLayout()
@@ -1147,7 +1145,7 @@ Namespace SDC.Framework
                 control.Select()
                 control.Focus()
                 ClearTextSelection(control)
-                ApplyFocusIndicator(control)
+                indicators.ApplyFocus(control)
             Catch
                 ' Focus is a convenience; never let it block the validation result.
             End Try
@@ -1159,15 +1157,15 @@ Namespace SDC.Framework
 
             ' The page putting the cursor somewhere is not the user visiting the field, so this
             ' must not turn a blank required field red before they have touched anything.
-            suppressRequiredTouch = True
+            indicators.SuppressTouch = True
             Try
                 Me.ActiveControl = firstField
                 firstField.Select()
                 firstField.Focus()
                 ClearTextSelection(firstField)
-                ApplyFocusIndicator(firstField)
+                indicators.ApplyFocus(firstField)
             Finally
-                suppressRequiredTouch = False
+                indicators.SuppressTouch = False
             End Try
         End Sub
 
@@ -1209,128 +1207,6 @@ Namespace SDC.Framework
             End If
         End Sub
 
-        Private Sub WireFocusIndicators(container As Control)
-            Dim childControls As New List(Of Control)()
-            For Each control As Control In container.Controls
-                childControls.Add(control)
-            Next
-
-            For Each control As Control In childControls
-                If IsFocusIndicatorControl(control) AndAlso Not IsBaseActionButton(control) Then
-                    ' Guarded on the border rather than the remembered colour, because a button now
-                    ' gets a border but no remembered colour - and this block also attaches
-                    ' handlers, which must not happen twice.
-                    If Not focusBorderPanels.ContainsKey(control) Then
-                        ' A button is remembered as Nothing-to-restore. Focus assigns this colour
-                        ' back on the way in, and assigning BackColor to a themed button turns its
-                        ' visual style off - so it would paint as a flat rectangle in whatever
-                        ' colour it had inherited from the page. The green border is enough to say
-                        ' where the focus is; a button does not need its face repainted too.
-                        If Not TypeOf control Is Button Then
-                            focusOriginalBackColors(control) = control.BackColor
-                        End If
-                        HostFlowChildForFocusBorder(control)
-                        Dim borderPanel = FindExistingRequiredBorderPanel(control)
-                        If borderPanel Is Nothing Then
-                            borderPanel = New Panel() With {
-                                .Name = "FocusBorder_" & control.Name,
-                                .BackColor = Color.FromArgb(55, 180, 105),
-                                .Visible = False,
-                                .TabStop = False
-                            }
-                            control.Parent.Controls.Add(borderPanel)
-                        End If
-                        borderPanel.Location = New Point(Math.Max(0, control.Left - 2), Math.Max(0, control.Top - 2))
-                        borderPanel.Size = New Size(control.Width + 4, control.Height + 4)
-                        borderPanel.SendToBack()
-                        control.BringToFront()
-                        focusBorderPanels(control) = borderPanel
-                        AddHandler control.Enter, AddressOf FocusIndicator_Enter
-                        AddHandler control.Leave, AddressOf FocusIndicator_Leave
-                        AddHandler control.MouseEnter, AddressOf EditableControl_MouseEnter
-                        AddHandler control.MouseLeave, AddressOf EditableControl_MouseLeave
-                        If TypeOf control Is TextBoxBase Then
-                            AddHandler control.TextChanged, AddressOf FocusIndicator_ValueChanged
-                        ElseIf TypeOf control Is ComboBox Then
-                            AddHandler control.TextChanged, AddressOf FocusIndicator_ValueChanged
-                            AddHandler DirectCast(control, ComboBox).SelectedIndexChanged, AddressOf FocusIndicator_ValueChanged
-                        End If
-                    End If
-                End If
-
-                If control.HasChildren Then
-                    WireFocusIndicators(control)
-                End If
-            Next
-        End Sub
-
-        ' A FlowLayoutPanel treats child index as flow position, so a focus border added beside a
-        ' flow child becomes a visible gap in the row, and the SendToBack/BringToFront that give the
-        ' border its z-order silently reorder the row instead. Hosting the control in a plain panel
-        ' first gives the border somewhere to sit that is not the flow, and keeps the control where
-        ' the page put it. This mirrors what pages already do by hand for their required borders.
-        Private Shared Sub HostFlowChildForFocusBorder(control As Control)
-            If control Is Nothing Then Return
-            Dim flow = TryCast(control.Parent, FlowLayoutPanel)
-            If flow Is Nothing Then Return
-
-            Dim flowIndex = flow.Controls.GetChildIndex(control)
-            Dim host As New Panel() With {
-                .Name = "FocusHost_" & control.Name,
-                .AutoSize = True,
-                .AutoSizeMode = AutoSizeMode.GrowAndShrink,
-                .Padding = New Padding(2),
-                .Margin = control.Margin,
-                .TabIndex = control.TabIndex,
-                .TabStop = False
-            }
-
-            flow.Controls.Remove(control)
-            control.Margin = New Padding(0)
-            control.Location = New Point(2, 2)
-            host.Controls.Add(control)
-            control.TabIndex = 0
-            flow.Controls.Add(host)
-            flow.Controls.SetChildIndex(host, flowIndex)
-        End Sub
-
-        Private Shared Function FindExistingRequiredBorderPanel(control As Control) As Panel
-            If control Is Nothing OrElse control.Parent Is Nothing Then Return Nothing
-
-            Dim expectedLocalTag = String.Empty
-            If control.Name.StartsWith("TextBox_", StringComparison.OrdinalIgnoreCase) Then
-                expectedLocalTag = "LocalRequiredBorder_" & control.Name.Substring(8)
-            ElseIf control.Name.StartsWith("ComboBox_", StringComparison.OrdinalIgnoreCase) Then
-                expectedLocalTag = "LocalRequiredBorder_" & control.Name.Substring(9)
-            ElseIf control.Name.StartsWith("CheckBox_", StringComparison.OrdinalIgnoreCase) Then
-                expectedLocalTag = "LocalRequiredBorder_" & control.Name.Substring(9)
-            End If
-            Dim expectedPermissionTag = "RequiredBorder_" & control.Name
-
-            For Each sibling As Control In control.Parent.Controls
-                Dim panel = TryCast(sibling, Panel)
-                If panel Is Nothing OrElse panel.Tag Is Nothing Then Continue For
-
-                Dim tagText = panel.Tag.ToString()
-                If String.Equals(tagText, expectedLocalTag, StringComparison.OrdinalIgnoreCase) OrElse
-                   String.Equals(tagText, expectedPermissionTag, StringComparison.OrdinalIgnoreCase) Then
-                    Return panel
-                End If
-            Next
-
-            Return Nothing
-        End Function
-
-        ''' <summary>
-        ''' Buttons are included so a command sitting in the field grid - Zip Coder, for one -
-        ''' shows the same green focus border as the fields around it when tabbed to.
-        ''' </summary>
-        Private Shared Function IsFocusIndicatorControl(control As Control) As Boolean
-            Return TypeOf control Is TextBoxBase OrElse TypeOf control Is ComboBox OrElse
-                   TypeOf control Is CheckBox OrElse TypeOf control Is DateTimePicker OrElse
-                   TypeOf control Is NumericUpDown OrElse TypeOf control Is Button
-        End Function
-
         ''' <summary>
         ''' Save, Cancel and the enum button sit outside the field grid and keep their standard
         ''' appearance, so they are left out of the focus indicator.
@@ -1338,152 +1214,6 @@ Namespace SDC.Framework
         Private Function IsBaseActionButton(control As Control) As Boolean
             Return control Is okButton OrElse control Is cancelActionButton
         End Function
-
-        Private Shared Function IsEmptyRequiredControl(control As Control) As Boolean
-            If control Is Nothing OrElse Not String.Equals(If(control.Tag, String.Empty).ToString(), "Required", StringComparison.OrdinalIgnoreCase) Then
-                Return False
-            End If
-
-            If TypeOf control Is ComboBox Then
-                Return DataAccess.IsEmptyComboSelection(DirectCast(control, ComboBox))
-            End If
-
-            Return String.IsNullOrWhiteSpace(control.Text)
-        End Function
-
-        Private Sub FocusIndicator_Enter(sender As Object, e As EventArgs)
-            Dim control = TryCast(sender, Control)
-            If control Is Nothing Then Return
-            Dim originalColor As Color
-            If focusOriginalBackColors.TryGetValue(control, originalColor) Then control.BackColor = originalColor
-            MarkRequiredTouched(control)
-            ApplyFocusIndicator(control)
-
-            ' Arriving at a field selects its text, so typing replaces rather than appends. Stated
-            ' here rather than left to WinForms, which only does it for some arrivals - the first
-            ' field on the page behaved differently from every other one.
-            '
-            ' A mouse click still places the caret: the click sets its own selection after this
-            ' runs. And the page's own opening focus is excluded, so a page does not open with text
-            ' already highlighted.
-            If suppressRequiredTouch Then Return
-            Dim editable = TryCast(control, TextBoxBase)
-            If editable IsNot Nothing AndAlso Not editable.ReadOnly Then editable.SelectAll()
-        End Sub
-
-        Private Sub ApplyFocusIndicator(control As Control)
-            If control Is Nothing Then Return
-            Dim borderPanel As Panel = Nothing
-            If focusBorderPanels.TryGetValue(control, borderPanel) Then
-                borderPanel.BackColor = If(ShouldShowRequiredWarning(control), Color.Red, Color.FromArgb(55, 180, 105))
-                borderPanel.Visible = True
-                borderPanel.BringToFront()
-                control.BringToFront()
-            End If
-        End Sub
-
-        ''' <summary>
-        ''' Records that the user has been in a required field. Entering and leaving both count,
-        ''' so a field goes red as soon as it is visited empty and stays red until it has data.
-        ''' </summary>
-        Private Sub MarkRequiredTouched(control As Control)
-            If control Is Nothing OrElse suppressRequiredTouch Then Return
-            If Not String.Equals(If(control.Tag, String.Empty).ToString(), "Required", StringComparison.OrdinalIgnoreCase) Then Return
-            touchedRequiredControls.Add(control)
-        End Sub
-
-        ''' <summary>
-        ''' Whether a required field is currently showing its red border.
-        '''
-        ''' Two ways to earn it, and both require the field to be empty - red never appears on a
-        ''' field that has a value, so seeing red always means something needs doing:
-        '''
-        '''   - visited and left empty. Persists until the field is filled; the mouse is irrelevant.
-        '''   - hovered while empty. Withdrawn on mouse-out, but only because it was never earned
-        '''     the first way. Hovering cannot clear a border the visit rule turned on.
-        ''' </summary>
-        Private Function ShouldShowRequiredWarning(control As Control) As Boolean
-            If Not IsEmptyRequiredControl(control) Then Return False
-            Return touchedRequiredControls.Contains(control) OrElse hoveredRequiredControls.Contains(control)
-        End Function
-
-        ''' <summary>
-        ''' Required fields the mouse is currently over. Separate from touchedRequiredControls
-        ''' because the two are withdrawn differently: a hover ends, a visit does not.
-        ''' </summary>
-        Private ReadOnly hoveredRequiredControls As New HashSet(Of Control)()
-
-        Private Sub WatchRequiredHover(field As Control)
-            If field Is Nothing Then Return
-
-            AddHandler field.MouseEnter,
-                Sub()
-                    hoveredRequiredControls.Add(field)
-                    RefreshLocalRequiredBorders()
-                End Sub
-
-            AddHandler field.MouseLeave,
-                Sub()
-                    hoveredRequiredControls.Remove(field)
-                    RefreshLocalRequiredBorders()
-                End Sub
-        End Sub
-
-        Private Sub FocusIndicator_Leave(sender As Object, e As EventArgs)
-            Dim control = TryCast(sender, Control)
-            If control Is Nothing Then Return
-            Dim originalColor As Color
-            If focusOriginalBackColors.TryGetValue(control, originalColor) Then control.BackColor = originalColor
-
-            MarkRequiredTouched(control)
-
-            Dim borderPanel As Panel = Nothing
-            If Not focusBorderPanels.TryGetValue(control, borderPanel) Then Return
-
-            ' The green focus ring and the red required ring are the same panel. Leaving the field
-            ' drops the focus ring, but a required field left empty keeps its red one and holds it
-            ' until the field has data.
-            If ShouldShowRequiredWarning(control) Then
-                borderPanel.BackColor = Color.Red
-                borderPanel.Visible = True
-                borderPanel.BringToFront()
-                control.BringToFront()
-            Else
-                borderPanel.Visible = False
-            End If
-        End Sub
-
-        Private Sub FocusIndicator_ValueChanged(sender As Object, e As EventArgs)
-            Dim control = TryCast(sender, Control)
-            If control Is Nothing OrElse Not control.Focused Then Return
-
-            ' Editing a field counts as visiting it. Without this, a field the page put the cursor
-            ' in at open - which is deliberately not treated as a visit - would not turn red until
-            ' the user tabbed away from it.
-            If Not loading Then MarkRequiredTouched(control)
-            ApplyFocusIndicator(control)
-        End Sub
-
-        ''' <summary>
-        ''' Buttons are left alone by both of these. Windows already paints a button's hover, and
-        ''' repainting its face turns the visual style off - the button then keeps whatever colour
-        ''' was last assigned, because there is nothing to restore it to.
-        ''' </summary>
-        Private Sub EditableControl_MouseEnter(sender As Object, e As EventArgs)
-            Dim control = TryCast(sender, Control)
-            If control Is Nothing OrElse control.Focused OrElse TypeOf control Is Button Then Return
-            control.BackColor = AppAdminRequiredBackColor
-        End Sub
-
-        Private Sub EditableControl_MouseLeave(sender As Object, e As EventArgs)
-            Dim control = TryCast(sender, Control)
-            If control Is Nothing OrElse control.Focused OrElse TypeOf control Is Button Then Return
-
-            Dim originalColor As Color
-            If focusOriginalBackColors.TryGetValue(control, originalColor) Then
-                control.BackColor = originalColor
-            End If
-        End Sub
 
         Private Shared Sub ClearTextSelection(control As Control)
             Dim textControl = TryCast(control, TextBoxBase)
@@ -1870,10 +1600,7 @@ Namespace SDC.Framework
 
             ' A failed save names the empty required fields, so mark them all visited: the red
             ' borders then match the message even for fields the user never went into.
-            For Each requiredControl In requiredBorderPanels.Keys
-                touchedRequiredControls.Add(requiredControl)
-            Next
-            RefreshLocalRequiredBorders()
+            indicators.MarkAllRequiredTouched()
             Dim errorMsg As String = String.Empty
             Dim validationLines As New List(Of String)()
 
@@ -2137,7 +1864,7 @@ Namespace SDC.Framework
             ' The required border sits one pixel outside its field, so it has to follow or it is
             ' left framing empty space to the right of the box it belongs to.
             Dim border As Panel = Nothing
-            If requiredBorderPanels.TryGetValue(ctrl, border) AndAlso border IsNot Nothing Then
+            If indicators.RequiredBorders.TryGetValue(ctrl, border) AndAlso border IsNot Nothing Then
                 border.Size = New Size(ctrl.Width + 2, ctrl.Height + 2)
             End If
         End Sub
@@ -2585,30 +2312,7 @@ Namespace SDC.Framework
 
             Me.Controls.Add(combo)
 
-            If required Then
-                combo.Tag = "Required"
-
-                Dim borderPanel As New Panel() With {
-                    .BackColor = SystemColors.Control,
-                    .Location = New Point(combo.Left - 1, combo.Top - 1),
-                    .Size = New Size(combo.Width + 2, combo.Height + 2),
-                    .Tag = "LocalRequiredBorder_" & caption
-                }
-
-                Me.Controls.Add(borderPanel)
-                borderPanel.Visible = False
-                borderPanel.BringToFront()
-                combo.BringToFront()
-                requiredBorderPanels(combo) = borderPanel
-                WatchRequiredHover(combo)
-
-                Dim refresh = Sub(s As Object, e As EventArgs)
-                                  If Not loading Then MarkRequiredTouched(combo)
-                                  RefreshLocalRequiredBorders()
-                              End Sub
-                AddHandler combo.SelectedIndexChanged, refresh
-                AddHandler combo.TextChanged, refresh
-            End If
+            If required Then indicators.AddRequired(combo, caption, Me)
 
             Return combo
         End Function
@@ -2695,10 +2399,10 @@ Namespace SDC.Framework
         ''' A picker cannot produce that value, or 31 February, or a month spelled out in a
         ''' language the parser does not read.
         '''
-        ''' It still accepts typing. The segments take digits and arrow keys, so somebody entering
-        ''' forty records is not made to click through a calendar - the constraint is on what can
-        ''' be expressed, not on how it is entered. That is the distinction worth keeping: free
-        ''' text is the problem, typing is not.
+        ''' Set from the calendar only, since 2026-09-25 (Glenn's choice) - see
+        ''' DateFieldDisplay.MakeCalendarOnly. The segments used to take digits and arrow keys, on
+        ''' the reasoning that free text was the problem and typing was not; the date is now always
+        ''' picked, and shown in the registration's format.
         '''
         ''' Everything else here mirrors AddField exactly - the asterisk, the App Admin blue, the
         ''' required border, the hover watch - because a required date has to behave like every
@@ -2749,6 +2453,11 @@ Namespace SDC.Framework
             }
             ApplyDateFieldFormat(picker, showTime)
 
+            ' Set from the calendar only (Glenn, 2026-09-25). This used to allow typing into the
+            ' segments, on the reasoning that forty hire dates should not mean forty trips through
+            ' a calendar; the choice was made the other way, and DateFieldDisplay owns the rule.
+            DateFieldDisplay.MakeCalendarOnly(picker)
+
             ' An unticked date shows nothing at all rather than a greyed-out date. A greyed date
             ' still reads as a value - somebody looking at a Termination Date of 09/14/2026 has
             ' to notice a tick to know the person has not left - and the grey is easy to miss
@@ -2759,34 +2468,17 @@ Namespace SDC.Framework
             ' The real format is kept here because ValueChanged has no way to recover it, and
             ' recomputing it would need showTime, which only this method knows.
             dateFieldFormats(picker) = picker.CustomFormat
+
+            ' A picker that shows a time on an instant column holds the viewer's wall clock, and
+            ' the column holds UTC. A date, or a ...Local wall-clock column, is never converted.
+            If showTime AndAlso SessionTime.IsInstantColumn(caption) Then instantDateFields.Add(picker)
+
             AddHandler picker.ValueChanged, Sub(sender As Object, e As EventArgs) RefreshDateFieldDisplay(picker)
             RefreshDateFieldDisplay(picker)
 
             Me.Controls.Add(picker)
 
-            If required Then
-                picker.Tag = "Required"
-
-                Dim borderPanel As New Panel() With {
-                    .BackColor = SystemColors.Control,
-                    .Location = New Point(picker.Left - 1, picker.Top - 1),
-                    .Size = New Size(picker.Width + 2, picker.Height + 2),
-                    .Tag = "LocalRequiredBorder_" & caption
-                }
-
-                Me.Controls.Add(borderPanel)
-                borderPanel.Visible = False
-                borderPanel.BringToFront()
-                picker.BringToFront()
-                requiredBorderPanels(picker) = borderPanel
-                WatchRequiredHover(picker)
-
-                Dim refresh = Sub(s As Object, e As EventArgs)
-                                  If Not loading Then MarkRequiredTouched(picker)
-                                  RefreshLocalRequiredBorders()
-                              End Sub
-                AddHandler picker.ValueChanged, refresh
-            End If
+            If required Then indicators.AddRequired(picker, caption, Me)
 
             Return picker
         End Function
@@ -2805,10 +2497,16 @@ Namespace SDC.Framework
         ''' </summary>
         ''' <summary>
         ''' Each date field's real display format, so it can be put back after the field has been
-        ''' blanked. Keyed by the control, like requiredBorderPanels, and per page - the pages
+        ''' blanked. Keyed by the control, like the required borders, and per page - the pages
         ''' come and go with their controls.
         ''' </summary>
         Private ReadOnly dateFieldFormats As New Dictionary(Of DateTimePicker, String)()
+
+        ''' <summary>
+        ''' Date fields that hold an instant - converted from UTC on load and back to UTC on save.
+        ''' ONE_CLOCK_SPEC.md phase C. Every other date field shows and saves exactly what is stored.
+        ''' </summary>
+        Private ReadOnly instantDateFields As New HashSet(Of DateTimePicker)()
 
         ''' <summary>
         ''' Shows or hides a date field's value according to its check box.
@@ -2918,9 +2616,10 @@ Namespace SDC.Framework
             Return picker.Value.ToString("o", Globalization.CultureInfo.InvariantCulture)
         End Function
 
-        Protected Shared Function DateFieldValue(picker As DateTimePicker) As Object
+        Protected Function DateFieldValue(picker As DateTimePicker) As Object
             If picker Is Nothing Then Return Nothing
             If picker.ShowCheckBox AndAlso Not picker.Checked Then Return Nothing
+            If instantDateFields.Contains(picker) Then Return SessionTime.ToUtc(picker.Value)
             Return picker.Value
         End Function
 
@@ -2939,7 +2638,7 @@ Namespace SDC.Framework
                 If picker.ShowCheckBox Then
                     SetDateFieldChecked(picker, False)
                 Else
-                    picker.Value = Date.Today
+                    picker.Value = SessionTime.Today()
                 End If
                 Return
             End If
@@ -2952,6 +2651,8 @@ Namespace SDC.Framework
                     Return
                 End If
             End If
+
+            If instantDateFields.Contains(picker) Then stored = SessionTime.ToSessionZone(stored)
 
             ' Outside what the control can show is a data problem, not a reason to throw on load.
             If stored < picker.MinDate OrElse stored > picker.MaxDate Then Return
@@ -3022,35 +2723,14 @@ Namespace SDC.Framework
 
             Me.Controls.Add(txt)
 
-            If required Then
-                txt.Tag = "Required"
-
-                Dim borderPanel As New Panel() With {
-                    .BackColor = SystemColors.Control,
-                    .Location = New Point(txt.Left - 1, txt.Top - 1),
-                    .Size = New Size(txt.Width + 2, txt.Height + 2),
-                    .Tag = "LocalRequiredBorder_" & caption
-                }
-
-                Me.Controls.Add(borderPanel)
-                borderPanel.Visible = False
-                borderPanel.BringToFront()
-                txt.BringToFront()
-                requiredBorderPanels(txt) = borderPanel
-                WatchRequiredHover(txt)
-                AddHandler txt.TextChanged,
-                    Sub(borderSender, borderEventArgs)
-                        If Not loading Then MarkRequiredTouched(txt)
-                        RefreshLocalRequiredBorders()
-                    End Sub
-            End If
+            If required Then indicators.AddRequired(txt, caption, Me)
             Return txt
         End Function
 
         ''' <summary>
         ''' Takes ownership of the required-border panels ApplyControlUpdates creates from
         ''' FW_RoleFields, so every required field on the page - combos included - follows the one
-        ''' rule in RefreshLocalRequiredBorders rather than a second copy of it in data access.
+        ''' rule in FieldIndicators rather than a second copy of it in data access.
         ''' </summary>
         Private Sub AdoptRequiredBorderPanels()
             Const tagPrefix As String = "RequiredBorder_"
@@ -3065,45 +2745,13 @@ Namespace SDC.Framework
                 Dim matches = Me.Controls.Find(tagText.Substring(tagPrefix.Length), True)
                 If matches.Length = 0 Then Continue For
 
-                Dim field = matches(0)
-                If requiredBorderPanels.ContainsKey(field) Then Continue For
-
-                requiredBorderPanels(field) = panel
-                WatchRequiredHover(field)
-
-                Dim watched = field
-                Dim refresh = Sub(s As Object, e As EventArgs)
-                                  If Not loading Then MarkRequiredTouched(watched)
-                                  RefreshLocalRequiredBorders()
-                              End Sub
-
-                AddHandler watched.TextChanged, refresh
-                Dim combo = TryCast(watched, ComboBox)
-                If combo IsNot Nothing Then AddHandler combo.SelectedIndexChanged, refresh
-            Next
-        End Sub
-
-        Private Sub RefreshLocalRequiredBorders()
-            For Each pair In requiredBorderPanels
-                Dim field = pair.Key
-                Dim border = pair.Value
-
-                ' Follow the control. A page is free to move and resize its fields, and the border
-                ' is behind whichever one it belongs to.
-                If field.Parent Is border.Parent Then
-                    border.Location = New Point(field.Left - 2, field.Top - 2)
-                    border.Size = New Size(field.Width + 4, field.Height + 4)
-                End If
-
-                Dim showWarning = ShouldShowRequiredWarning(field)
-                border.BackColor = If(showWarning, Color.Red, SystemColors.Control)
-                border.Visible = showWarning
+                indicators.Adopt(matches(0), panel)
             Next
         End Sub
 
         ''' Re-seats the required borders behind their controls. Call after a layout pass.
         Protected Sub RefreshRequiredBorderGeometry()
-            RefreshLocalRequiredBorders()
+            indicators.Refresh()
         End Sub
 
         ''' <summary>
@@ -3116,7 +2764,7 @@ Namespace SDC.Framework
         '''
         ''' The switch is the Tag and nothing else. ValidateRequiredControls selects on
         ''' Tag = "Required", so clearing it takes the field out of the save check, and
-        ''' IsEmptyRequiredControl stops reporting it. The label and the border follow so that what
+        ''' FieldIndicators.IsEmptyRequired stops reporting it. The label and the border follow so that what
         ''' is on screen agrees with what will be enforced.
         '''
         ''' The border panel is created on first use and then kept. Hiding it costs nothing, and
@@ -3146,31 +2794,7 @@ Namespace SDC.Framework
                     lbl.BackColor = AppAdminRequiredBackColor
                 End If
 
-                If Not requiredBorderPanels.ContainsKey(field) AndAlso field.Parent IsNot Nothing Then
-                    Dim borderPanel As New Panel() With {
-                        .BackColor = SystemColors.Control,
-                        .Location = New Point(field.Left - 1, field.Top - 1),
-                        .Size = New Size(field.Width + 2, field.Height + 2),
-                        .Tag = "LocalRequiredBorder_" & caption
-                    }
-
-                    field.Parent.Controls.Add(borderPanel)
-                    borderPanel.Visible = False
-                    borderPanel.BringToFront()
-                    field.BringToFront()
-                    requiredBorderPanels(field) = borderPanel
-                    WatchRequiredHover(field)
-
-                    Dim watched = field
-                    Dim refresh = Sub(s As Object, e As EventArgs)
-                                      If Not loading Then MarkRequiredTouched(watched)
-                                      RefreshLocalRequiredBorders()
-                                  End Sub
-
-                    AddHandler watched.TextChanged, refresh
-                    Dim combo = TryCast(watched, ComboBox)
-                    If combo IsNot Nothing Then AddHandler combo.SelectedIndexChanged, refresh
-                End If
+                If field.Parent IsNot Nothing Then indicators.AddRequired(field, caption, field.Parent)
             Else
                 field.Tag = Nothing
 
@@ -3183,11 +2807,10 @@ Namespace SDC.Framework
 
                 ' The visit is forgotten along with the requirement. Otherwise the field comes back
                 ' red the moment it is required again, without the user having touched it since.
-                touchedRequiredControls.Remove(field)
-                hoveredRequiredControls.Remove(field)
+                indicators.Forget(field)
             End If
 
-            RefreshLocalRequiredBorders()
+            indicators.Refresh()
         End Sub
 
         Protected Sub ConfigureLookupCombo(combo As ComboBox,

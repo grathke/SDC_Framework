@@ -423,7 +423,10 @@ Namespace SDC.Framework
         End Sub
 
         ''' <summary>
-        ''' Fills a format combo, showing each pattern as what it produces.
+        ''' Fills a format combo, showing each pattern in plain letters and as what it produces:
+        ''' "MM/DD/YYYY   09/25/2026", or for a time "hh:mm AM   09:05 AM      02:30 PM" - dates at
+        ''' today, times at two fixed moments that show the leading zero and 12 against 24 hour
+        ''' (Glenn, 2026-09-25, after a product that lists its formats that way).
         '''
         ''' No "make a selection" row: a company always writes dates some way, so there is no such
         ''' thing as not having chosen. Where a registration has never been asked, the framework
@@ -433,13 +436,15 @@ Namespace SDC.Framework
         Private Shared Sub FillFormatCombo(combo As ComboBox,
                                            options As DataTable,
                                            selectedId As Integer,
-                                           defaultPattern As String)
+                                           defaultPattern As String,
+                                           isTime As Boolean)
             If combo Is Nothing OrElse options Is Nothing Then Return
 
             options.Columns.Add("Choice", GetType(String))
             For Each row As DataRow In options.Rows
-                Dim pattern = Convert.ToString(row("FormatPattern"))
-                row("Choice") = DisplayFormats.SampleOf(pattern, defaultPattern) & "   -   " & Convert.ToString(row("Description"))
+                Dim pattern = DisplayFormats.SafePattern(Convert.ToString(row("FormatPattern")), defaultPattern)
+                Dim sample = If(isTime, DisplayFormats.TimeSamplesOf(pattern, defaultPattern), DisplayFormats.SampleOf(pattern, defaultPattern))
+                row("Choice") = DisplayFormats.ReadablePattern(pattern) & "      " & sample
             Next
 
             combo.DataSource = options
@@ -559,11 +564,13 @@ Namespace SDC.Framework
             FillFormatCombo(dateFormatComboBox,
                             DataAccess.GetFormatOptions("FW_Format_Date", "FormatDateID"),
                             record.FormatDateID,
-                            DisplayFormats.DefaultDatePattern)
+                            DisplayFormats.DefaultDatePattern,
+                            isTime:=False)
             FillFormatCombo(timeFormatComboBox,
                             DataAccess.GetFormatOptions("FW_Format_Time", "FormatTimeID"),
                             record.FormatTimeID,
-                            DisplayFormats.DefaultTimePattern)
+                            DisplayFormats.DefaultTimePattern,
+                            isTime:=True)
 
             ConfigureLookupCombo(timeZoneComboBox,
                                  DataAccess.GetLookupTable("FW_TimeZones", "TimeZoneID", "DisplayName", False, record.TimeZoneID),
@@ -879,7 +886,7 @@ Namespace SDC.Framework
 
             suppressLicenseSync = True
             Try
-                licenseExpirationPicker.Value = Date.Today.AddDays(offset.Value)
+                licenseExpirationPicker.Value = SessionTime.Today().AddDays(offset.Value)
                 ShowExpiry(True)
             Finally
                 suppressLicenseSync = False
@@ -916,7 +923,7 @@ Namespace SDC.Framework
 
             Dim storedStart = If(currentRecord Is Nothing, CType(Nothing, Date?), currentRecord.LicenseStart)
 
-            For Each anchorDate In {storedStart, CType(Date.Today, Date?)}
+            For Each anchorDate In {storedStart, CType(SessionTime.Today(), Date?)}
                 If Not anchorDate.HasValue Then Continue For
 
                 For Each row As DataRow In table.Rows

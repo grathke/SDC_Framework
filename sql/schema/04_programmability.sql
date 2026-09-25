@@ -205,7 +205,7 @@ BEGIN
             BEGIN
                 INSERT INTO dbo.FW_EmployeeRoles
                 (RegistrationID, EmployeeID, RoleID, DisplayOrder, IsActive, CreatedBy, CreatedOn)
-                SELECT @RegistrationID, emp.EmployeeID, @RoleID, 0, 1, @ActorUserID, GETDATE()
+                SELECT @RegistrationID, emp.EmployeeID, @RoleID, 0, 1, @ActorUserID, SYSUTCDATETIME()
                   FROM dbo.FW_Employees AS emp
                  WHERE emp.UserId = @UserID;
             END
@@ -241,7 +241,7 @@ BEGIN
                 Can_ViewAllRecords = @Can_ViewAllRecords,
                 Can_ViewOnlyMyRecords = @Can_ViewOnlyMyRecords,
                 UpdatedBy = @ActorUserID,
-                UpdatedOn = GETDATE()
+                UpdatedOn = SYSUTCDATETIME()
             WHERE RoleID = @RoleID
               AND RegistrationID = @RegistrationID
               AND DB_Table = @DB_Table;
@@ -269,7 +269,7 @@ BEGIN
                                                     ORDER BY RoleID), ISNULL(Table_Alias, @DB_Table)),
                 @Can_Create, @Can_Read, @Can_Update, @Can_Delete, @Can_UseQBE,
                 @Can_ViewAllRecords, @Can_ViewOnlyMyRecords, 1,
-                @ActorUserID, GETDATE()
+                @ActorUserID, SYSUTCDATETIME()
             FROM dbo.FW_RoleSchema
             WHERE ID = @SchemaID;
             SET @Operation = N'INSERT';
@@ -299,7 +299,7 @@ BEGIN
                                             AND rf.FieldName = c.COLUMN_NAME
                                             AND rf.RoleID <> @RoleID
                                         ORDER BY rf.RoleID),
-                                     1, 1, 1, 0, @ActorUserID, GETDATE()
+                                     1, 1, 1, 0, @ActorUserID, SYSUTCDATETIME()
                         FROM INFORMATION_SCHEMA.COLUMNS c
                         WHERE c.TABLE_NAME = @DB_Table
                             AND c.COLUMN_NAME NOT IN ('CreatedBy', 'CreatedOn', 'UpdatedBy', 'UpdatedOn')

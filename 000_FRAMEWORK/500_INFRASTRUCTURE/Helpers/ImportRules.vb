@@ -258,7 +258,8 @@ Namespace SDC.Framework
         '''   session's day (the employee's zone, else the registration's). The server's UTC day
         '''   would date an evening import on the East Coast tomorrow, for good.
         ''' - A **date-and-time** or **time** column holds a moment, and moments are stored in
-        '''   server time (UTC, as GETDATE() stamps CreatedOn) and converted by
+        '''   UTC (SYSUTCDATETIME(); GETDATE() was the server's local clock and is gone from the
+        '''   writes - ONE_CLOCK_SPEC.md) and converted by
         '''   SessionTime.ToSessionZone when shown. Now is the UTC moment; Today is the session's
         '''   midnight expressed in UTC; a time column takes Now's UTC time and refuses Today.
         '''

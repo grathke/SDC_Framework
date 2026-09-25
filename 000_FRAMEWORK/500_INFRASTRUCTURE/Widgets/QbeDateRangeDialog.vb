@@ -60,7 +60,7 @@ Namespace SDC.Framework
             fromPicker = New DateTimePicker() With {
                 .Location = New Point(90, 22), .Size = New Size(200, 26),
                 .Format = DateTimePickerFormat.Custom, .CustomFormat = pattern,
-                .Value = If(initialFrom.HasValue, initialFrom.Value, Date.Today)
+                .Value = If(initialFrom.HasValue, initialFrom.Value, SessionTime.Today())
             }
 
             Dim toLabel As New Label() With {
@@ -70,8 +70,12 @@ Namespace SDC.Framework
             toPicker = New DateTimePicker() With {
                 .Location = New Point(90, 59), .Size = New Size(200, 26),
                 .Format = DateTimePickerFormat.Custom, .CustomFormat = pattern,
-                .Value = If(initialTo.HasValue, initialTo.Value, If(initialFrom.HasValue, initialFrom.Value, Date.Today))
+                .Value = If(initialTo.HasValue, initialTo.Value, If(initialFrom.HasValue, initialFrom.Value, SessionTime.Today()))
             }
+
+            ' Calendar only, like every other date in the application (Glenn, 2026-09-25).
+            DateFieldDisplay.MakeCalendarOnly(fromPicker)
+            DateFieldDisplay.MakeCalendarOnly(toPicker)
 
             Dim okButton As New Button() With {
                 .Text = "OK", .Location = New Point(134, 105), .Size = New Size(75, 28)

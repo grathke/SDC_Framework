@@ -763,7 +763,7 @@ Namespace SDC.Framework
             lines.Add("STATUS: " & statusValueLabel.Text)
             If issueId > 0 Then lines.Add("TICKET: " & issueId.ToString(Globalization.CultureInfo.InvariantCulture))
             lines.Add("REGISTRATION: " & registrationId.ToString(Globalization.CultureInfo.InvariantCulture))
-            lines.Add("REPORTED: " & DateTime.Now.ToString("yyyy-MM-dd HH:mm", Globalization.CultureInfo.InvariantCulture))
+            lines.Add("REPORTED: " & SessionTime.Now().ToString("yyyy-MM-dd HH:mm", Globalization.CultureInfo.InvariantCulture))
             lines.Add("")
             lines.Add("SUBJECT")
             lines.Add(If(String.IsNullOrWhiteSpace(subjectTextBox.Text), "(none given)", subjectTextBox.Text.Trim()))

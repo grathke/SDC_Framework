@@ -91,11 +91,6 @@ Namespace SDC.Framework
             Return MyBase.ResolveCrudCaption(action, caption)
         End Function
 
-        ''' <summary>Both stored UTC by default (sql 159); shown in the session's zone.</summary>
-        Protected Overrides Function UtcColumns() As IEnumerable(Of String)
-            Return {"ImportedOn", "UndoneOn"}
-        End Function
-
         ''' <summary>No maintenance page: every command here is the page's own.</summary>
         Protected Overrides Function CreateMaintenancePage(recordId As Integer) As FW_Base_U
             Return Nothing

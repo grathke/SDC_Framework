@@ -291,11 +291,14 @@ Key areas:
 - **Two references to the same target take a role prefix**, `<Role><TargetPK>`:
   `AssignedManagerUserID`, `OwnerUserID`, `ReporterUserID`. Strip the role and the target is still
   derivable, so the rule survives the case that usually breaks these schemes.
-- **A wall-clock time ends in `Local`**: `IncidentAtLocal`, `ShiftStartLocal`. It is what a clock
-  said where something happened, stored and shown as typed and never converted. Every other
-  date-time column is a UTC instant shown in the viewer's zone, and a `date` column is a calendar
-  date. A `datetime2` cannot say which kind it is, which is why the name has to. See
-  `ONE_CLOCK_SPEC.md` section 4.
+- **Time columns say what they are by the end of their name**, because a result set cannot:
+  `date`, `datetime` and `datetime2` all arrive as the same .NET type.
+  - **Ends in `Date`** (`HireDate`, `BirthDate`) - a calendar date, shown exactly as stored.
+  - **Ends in `Local`** (`AccidentLocal`, `Accident_Local`) - a wall-clock time, what a clock said
+    where something happened, stored and shown as typed.
+  - **Anything else** (`CreatedOn`, `UpdatedOn`, `LoggedOn`) - an instant, stored UTC and shown
+    in the viewer's zone. `SessionTime.IsInstantColumn` is the one place the rule is applied.
+  See `ONE_CLOCK_SPEC.md` section 4.
 - These apply to **new** tables. Existing tables keep the names they have; they work because their
   relationships are declared in the database rather than inferred from a name. Rename one only when
   it is being reworked anyway — a primary key name reaches every SQL statement, model property,

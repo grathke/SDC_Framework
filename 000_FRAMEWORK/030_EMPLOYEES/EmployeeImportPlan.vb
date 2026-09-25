@@ -298,7 +298,7 @@ Namespace SDC.Framework
         ''' </summary>
         Private Shared Sub CheckColumnRule(row As EmployeeImportRow, target As ImportTargetColumn, value As Object)
             If String.Equals(target.Name, "BirthDate", StringComparison.OrdinalIgnoreCase) AndAlso
-               TypeOf value Is Date AndAlso CDate(value) >= Date.Today Then
+               TypeOf value Is Date AndAlso CDate(value) >= SessionTime.Today() Then
                 row.AddProblem(target.Key, Caption(target) & " is not in the past")
             End If
 

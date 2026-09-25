@@ -91,7 +91,59 @@ Namespace SDC.Framework
         ''' from the pattern it describes.
         ''' </summary>
         Public Function SampleOf(pattern As String, fallback As String) As String
-            Return Date.Now.ToString(SafePattern(pattern, fallback), CultureInfo.InvariantCulture)
+            Return SessionTime.Now().ToString(SafePattern(pattern, fallback), CultureInfo.InvariantCulture)
+        End Function
+
+        ''' <summary>
+        ''' A time pattern shown at two fixed moments - 9:05:07 in the morning and 2:30:07 in the
+        ''' afternoon. Not the current time: at 10:53 a pattern with the leading zero and one without
+        ''' read the same, so two different choices would look like the same one twice. 9:05 shows
+        ''' the zero and 2:30 PM shows 12-hour against 24-hour (Glenn, 2026-09-25).
+        ''' </summary>
+        Public Function TimeSamplesOf(pattern As String, fallback As String) As String
+            Dim safe = SafePattern(pattern, fallback)
+            Dim morning = New DateTime(2000, 1, 1, 9, 5, 7)
+            Dim afternoon = New DateTime(2000, 1, 1, 14, 30, 7)
+            Return morning.ToString(safe, CultureInfo.InvariantCulture) & "      " &
+                   afternoon.ToString(safe, CultureInfo.InvariantCulture)
+        End Function
+
+        ''' <summary>
+        ''' A pattern in the letters a person reads - MM/DD/YYYY, hh:mm AM - rather than .NET's.
+        '''
+        ''' Days and years in capitals, Mmm and Mmmm for month names, tt as AM. Minutes stay mm
+        ''' and months MM, so the two cannot be confused. Derived from the stored pattern rather
+        ''' than stored beside it, so the two cannot disagree.
+        ''' </summary>
+        Public Function ReadablePattern(pattern As String) As String
+            Dim text = If(pattern, String.Empty).Trim()
+            Dim result As New Text.StringBuilder()
+            Dim index = 0
+
+            While index < text.Length
+                Dim ch = text(index)
+                Dim run = 1
+                While index + run < text.Length AndAlso text(index + run) = ch
+                    run += 1
+                End While
+
+                Select Case ch
+                    Case "y"c
+                        result.Append(New String("Y"c, run))
+                    Case "d"c
+                        result.Append(If(run >= 3, "D" & New String("d"c, run - 1), New String("D"c, run)))
+                    Case "M"c
+                        result.Append(If(run >= 3, "M" & New String("m"c, run - 1), New String("M"c, run)))
+                    Case "t"c
+                        result.Append("AM")
+                    Case Else
+                        result.Append(ch, run)
+                End Select
+
+                index += run
+            End While
+
+            Return result.ToString()
         End Function
 
     End Module

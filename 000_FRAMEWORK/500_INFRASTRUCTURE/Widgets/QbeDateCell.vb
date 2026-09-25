@@ -103,8 +103,8 @@ Namespace SDC.Framework
     ''' The control that appears when a date search cell is edited.
     '''
     ''' A DateTimePicker rather than a text box, which is what removes the format question
-    ''' altogether: a control that only holds a date cannot be given an ambiguous string. The
-    ''' keyboard still works, into the day, month and year sections.
+    ''' altogether: a control that only holds a date cannot be given an ambiguous string. Set
+    ''' from its calendar only, since 2026-09-25, and shown in the registration's date format.
     ''' </summary>
     Public Class QbeDateEditingControl
         Inherits DateTimePicker
@@ -122,6 +122,9 @@ Namespace SDC.Framework
             Me.ShowCheckBox = True
             Me.Checked = False
             DateFieldDisplay.Refresh(Me, realFormat)
+
+            ' Picked from the calendar only, like every maintenance page's date (Glenn, 2026-09-25).
+            DateFieldDisplay.MakeCalendarOnly(Me)
         End Sub
 
         Protected Overrides Sub OnValueChanged(eventargs As EventArgs)
@@ -145,7 +148,7 @@ Namespace SDC.Framework
                     Me.Value = parsed
                     DateFieldDisplay.SetChecked(Me, True, realFormat)
                 Else
-                    Me.Value = Date.Today
+                    Me.Value = SessionTime.Today()
                     DateFieldDisplay.SetChecked(Me, False, realFormat)
                 End If
             End Set
@@ -175,17 +178,19 @@ Namespace SDC.Framework
         End Property
 
         ''' <summary>
-        ''' The arrow keys belong to the picker, not to the grid.
-        '''
-        ''' Left and right move between the day, month and year sections, and up and down change
-        ''' the part under the cursor. Letting the grid have them would move the selection out of a
-        ''' half-entered date.
+        ''' Only the keys the calendar needs belong to the picker: Space for its tick box, and
+        ''' Alt+Down or F4 to open the calendar. Since the date became calendar-only (2026-09-25)
+        ''' the arrow keys step nothing inside it, so they go back to the grid, where they move
+        ''' between search rows. They used to stay here to edit the day, month and year sections.
         ''' </summary>
         Public Function EditingControlWantsInputKey(keyData As Keys, dataGridViewWantsInputKey As Boolean) As Boolean _
             Implements IDataGridViewEditingControl.EditingControlWantsInputKey
             Select Case keyData And Keys.KeyCode
-                Case Keys.Left, Keys.Up, Keys.Down, Keys.Right, Keys.Home, Keys.End, Keys.PageDown, Keys.PageUp, Keys.Space
+                Case Keys.Space, Keys.F4
                     Return True
+                Case Keys.Down
+                    If (keyData And Keys.Alt) = Keys.Alt Then Return True
+                    Return Not dataGridViewWantsInputKey
                 Case Else
                     Return Not dataGridViewWantsInputKey
             End Select

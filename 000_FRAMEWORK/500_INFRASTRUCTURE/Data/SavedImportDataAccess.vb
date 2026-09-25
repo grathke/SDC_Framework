@@ -125,7 +125,7 @@ Namespace SDC.Framework
                     Using cmd As New SqlCommand(
                         "DECLARE @ID int; " &
                         "UPDATE dbo.FW_SavedImports " &
-                        "SET MappingData = @MappingData, UpdatedBy = @UserID, UpdatedOn = GETDATE(), @ID = SavedImportID, " &
+                        "SET MappingData = @MappingData, UpdatedBy = @UserID, UpdatedOn = SYSUTCDATETIME(), @ID = SavedImportID, " &
                         "    SourceFileName = COALESCE(@SourceFileName, SourceFileName), " &
                         "    SourceFileData = COALESCE(@SourceFileData, SourceFileData) " &
                         "WHERE RegistrationID = @RegistrationID AND TargetTable = @TargetTable " &
@@ -133,7 +133,7 @@ Namespace SDC.Framework
                         "IF @@ROWCOUNT = 0 " &
                         "BEGIN " &
                         "  INSERT INTO dbo.FW_SavedImports (RegistrationID, TargetTable, ImportName, MappingData, SourceFileName, SourceFileData, CreatedBy, CreatedOn) " &
-                        "  VALUES (@RegistrationID, @TargetTable, @ImportName, @MappingData, @SourceFileName, @SourceFileData, @UserID, GETDATE()); " &
+                        "  VALUES (@RegistrationID, @TargetTable, @ImportName, @MappingData, @SourceFileName, @SourceFileData, @UserID, SYSUTCDATETIME()); " &
                         "  SET @ID = CAST(SCOPE_IDENTITY() AS int); " &
                         "END; " &
                         "SELECT @ID;", conn)
@@ -177,7 +177,7 @@ Namespace SDC.Framework
                     ' another company matches nothing rather than trusting the caller's pairing.
                     Using cmd As New SqlCommand(
                         "UPDATE dbo.FW_SavedImports " &
-                        "SET DeletedFlag = 1, DeletedBy = @UserID, DeletedOn = SYSUTCDATETIME(), UpdatedBy = @UserID, UpdatedOn = GETDATE(), " &
+                        "SET DeletedFlag = 1, DeletedBy = @UserID, DeletedOn = SYSUTCDATETIME(), UpdatedBy = @UserID, UpdatedOn = SYSUTCDATETIME(), " &
                         "    SourceFileName = NULL, SourceFileData = NULL " &
                         "WHERE SavedImportID = @ID AND RegistrationID = @RegistrationID AND DeletedFlag = 0", conn)
                         cmd.Parameters.Add("@ID", SqlDbType.Int).Value = templateId
@@ -206,7 +206,7 @@ Namespace SDC.Framework
                 DataAccess.RequireEmployeeImportAccess(profile, registrationId)
                 Using conn = OpenConnection()
                     Using cmd As New SqlCommand(
-                        "UPDATE dbo.FW_SavedImports SET LastUsedOn = GETDATE(), UseCount = UseCount + 1 " &
+                        "UPDATE dbo.FW_SavedImports SET LastUsedOn = SYSUTCDATETIME(), UseCount = UseCount + 1 " &
                         "WHERE SavedImportID = @ID AND RegistrationID = @RegistrationID AND DeletedFlag = 0", conn)
                         cmd.Parameters.Add("@ID", SqlDbType.Int).Value = templateId
                         cmd.Parameters.Add("@RegistrationID", SqlDbType.Int).Value = registrationId

@@ -29,14 +29,16 @@ GO
 SET IDENTITY_INSERT dbo.[FW_Format_Date] OFF;
 GO
 
--- FW_Format_Time  (4 rows)
+-- FW_Format_Time  (6 rows)
 SET IDENTITY_INSERT dbo.[FW_Format_Time] ON;
 GO
 INSERT INTO dbo.[FW_Format_Time] ([FormatTimeID], [FormatPattern], [Description], [DisplayOrder], [IsActive]) VALUES
     (1, N'hh:mm tt', N'12 hour', 10, 1),
     (2, N'hh:mm:ss tt', N'12 hour with seconds', 20, 1),
     (3, N'HH:mm', N'24 hour', 30, 1),
-    (4, N'HH:mm:ss', N'24 hour with seconds', 40, 1);
+    (4, N'HH:mm:ss', N'24 hour with seconds', 40, 1),
+    (5, N'h:mm tt', N'12 hour, no leading zero', 15, 1),
+    (6, N'h:mm:ss tt', N'12 hour with seconds, no leading zero', 25, 1);
 GO
 SET IDENTITY_INSERT dbo.[FW_Format_Time] OFF;
 GO

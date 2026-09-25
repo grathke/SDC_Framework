@@ -73,6 +73,37 @@ Namespace SDC.Framework
             AddHandler picker.HandleCreated, reapply
         End Sub
 
+        ''' <summary>
+        ''' A date control that is set from its calendar and nowhere else (Glenn, 2026-09-25).
+        '''
+        ''' Typing into the day, month and year segments, and the arrow keys that step them, are
+        ''' refused. What still works: Tab and Shift+Tab to move on, F4 or Alt+Down to open the
+        ''' calendar from the keyboard, Escape to close it, and Space for a nullable field's check
+        ''' box. The value shows in the registration's format whichever way it arrived - picked, or
+        ''' loaded from the record.
+        '''
+        ''' Handled in KeyDown, which consumes the key before the native control sees it: the arrow
+        ''' keys never reach it as a step, and suppressing the key press stops the digits too.
+        ''' </summary>
+        Public Sub MakeCalendarOnly(picker As DateTimePicker)
+            If picker Is Nothing Then Return
+
+            AddHandler picker.KeyDown,
+                Sub(sender As Object, e As KeyEventArgs)
+                    Select Case e.KeyCode
+                        Case Keys.Tab, Keys.F4, Keys.Escape
+                            Return
+                        Case Keys.Down
+                            If e.Alt Then Return
+                        Case Keys.Space
+                            If picker.ShowCheckBox Then Return
+                    End Select
+
+                    e.Handled = True
+                    e.SuppressKeyPress = True
+                End Sub
+        End Sub
+
     End Module
 
 End Namespace

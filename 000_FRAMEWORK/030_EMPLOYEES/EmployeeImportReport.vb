@@ -49,7 +49,7 @@ Namespace SDC.Framework
 
             html.Append("<h1>Nothing was imported</h1>")
             html.Append("<div class=""sub"">").Append(Enc(fileName)).Append(" &middot; into ").Append(Enc(registrationName)).
-                 Append(" &middot; checked ").Append(Enc(DateTime.Now.ToString("yyyy-MM-dd HH:mm", CultureInfo.InvariantCulture))).Append("</div>")
+                 Append(" &middot; checked ").Append(Enc(SessionTime.Now().ToString("yyyy-MM-dd HH:mm", CultureInfo.InvariantCulture))).Append("</div>")
 
             html.Append("<div>An import writes every row or none. ")
             If problemRows.Count > 0 Then
@@ -241,7 +241,7 @@ Namespace SDC.Framework
                  Append(" imported into ").Append(Enc(registrationName)).Append("</h1>")
             html.Append("<div class=""sub"">").Append(Enc(fileName))
             If Not String.IsNullOrWhiteSpace(savedImportName) Then html.Append(" &middot; Saved Import ").Append(Enc(savedImportName))
-            html.Append(" &middot; ").Append(Enc(DateTime.Now.ToString("yyyy-MM-dd HH:mm", CultureInfo.InvariantCulture))).Append("</div>")
+            html.Append(" &middot; ").Append(Enc(SessionTime.Now().ToString("yyyy-MM-dd HH:mm", CultureInfo.InvariantCulture))).Append("</div>")
             If batchId > 0 Then
                 html.Append("<div class=""sub"">Import #").Append(batchId.ToString(CultureInfo.InvariantCulture)).
                      Append(" &middot; ").Append(Enc(batchName)).
