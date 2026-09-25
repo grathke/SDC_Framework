@@ -279,6 +279,10 @@ The panel shows data, so it is bound by the same rules as the page.
   assumed.
 - Unlike the colour picker, the button is **not** restricted to Application Admins. Seeing a
   record's own fields is not an administrative act.
+- **No per-role switch. Decided 2026-09-25.** A `Can_UseHotFields` column on `FW_RoleDetails`,
+  beside `Can_UseQBE`, and turning the button on for every page by default were both considered.
+  The per-page `UseHotFields` flag stays the only switch: field permissions already decide what
+  the panel shows, so a role switch would guard nothing.
 
 ## 9. What this needs from `Base_B`
 
