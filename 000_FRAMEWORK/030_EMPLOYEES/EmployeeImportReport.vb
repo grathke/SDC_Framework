@@ -362,7 +362,15 @@ Namespace SDC.Framework
         ''' <summary>The database keeps UTC, and says so rather than passing it off as local time.</summary>
         Private Shared Function Stamp(value As Object) As String
             If value Is Nothing OrElse Convert.IsDBNull(value) Then Return String.Empty
-            Return Convert.ToDateTime(value, CultureInfo.InvariantCulture).ToString("yyyy-MM-dd HH:mm", CultureInfo.InvariantCulture) & " UTC"
+
+            ' Stored UTC, shown in the session's zone and labelled with it - as a Help Desk issue
+            ' shows its times. With no zone on the session it stays UTC and says so.
+            Dim utc = Convert.ToDateTime(value, CultureInfo.InvariantCulture)
+            Dim zone = SessionTime.ZoneAbbreviation()
+            If zone = String.Empty Then
+                Return utc.ToString("yyyy-MM-dd HH:mm", CultureInfo.InvariantCulture) & " UTC"
+            End If
+            Return SessionTime.ToSessionZone(utc).ToString("yyyy-MM-dd HH:mm", CultureInfo.InvariantCulture) & " " & zone
         End Function
 
         Private Shared Function Enc(text As String) As String

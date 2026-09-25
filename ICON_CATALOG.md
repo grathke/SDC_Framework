@@ -446,7 +446,8 @@ check before copying this entry for anything else.
 - ActionType: Page
 - target: `FW_ImportBatches_B`, in `000_FRAMEWORK_EMPLOYEES` - browse-only, no `_U`
 - caption source: fixed (`Past Imports...`); the page's title is `FW_Pages.Table_Alias`
-  (`Past Imports`), and its four commands keep the registration's own CRUD captions
+  (`Past Imports`); Create, Read and Update keep the registration's own CRUD captions, and
+  Delete is captioned `Undo Import` (2026-09-25) because it removes every person the import made
 - icon file: none - a text button
 - visibility rule: none of its own - the import page is reached only by an App Admin or a Company
   Admin. The Past Imports page refuses anyone else on open, and every read and write goes through

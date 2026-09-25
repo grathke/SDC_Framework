@@ -17,7 +17,7 @@ Namespace SDC.Framework
     '''   Create   a new import - opens Import Employees.
     '''   Read     the people in the batch, as a page; double-click does the same.
     '''   Update   the batch's note. The name is how it was found at the time and stays.
-    '''   Delete   Undo Import - a physical delete of everybody in it, behind two confirmations:
+    '''   Delete   Undo Import, and captioned so - a physical delete of everybody in it, behind two confirmations:
     '''            the first names what goes, the second asks for UNDO to be typed. See
     '''            ImportBatchDataAccess.Undo for exactly what is removed and what is kept.
     '''
@@ -78,6 +78,22 @@ Namespace SDC.Framework
         Private Function PageRegistrationId() As Integer
             Dim registrationId = 0
             Return If(TryGetActiveRegistrationId(registrationId), registrationId, 0)
+        End Function
+
+        ''' <summary>
+        ''' Delete says Undo Import. Whatever the registration calls Delete describes removing a
+        ''' row, and this removes every employee and login the import created (Glenn, 2026-09-25).
+        ''' The other three keep the registration's words, which already fit what they do here.
+        ''' </summary>
+        Protected Overrides Function ResolveCrudCaption(action As AccessCapability, caption As String) As String
+            If action = AccessCapability.Delete Then Return "Undo Import"
+
+            Return MyBase.ResolveCrudCaption(action, caption)
+        End Function
+
+        ''' <summary>Both stored UTC by default (sql 159); shown in the session's zone.</summary>
+        Protected Overrides Function UtcColumns() As IEnumerable(Of String)
+            Return {"ImportedOn", "UndoneOn"}
         End Function
 
         ''' <summary>No maintenance page: every command here is the page's own.</summary>

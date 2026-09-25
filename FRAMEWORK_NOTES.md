@@ -125,7 +125,9 @@ instead of from a grid that does not exist yet. Everything else calls `RefreshGr
    the result has no `UserID` to scope by.
 4. `DataAccess.GetBrowseRowsByRegistration` runs the SQL with the QBE filters, the deleted-only
    flag, the scope predicate and the row cap.
-5. Bind to the grid and set the record count.
+5. Strip role-invisible and binary columns, convert the columns the page names in `UtcColumns`
+   to the session's time zone, then bind to the grid and set the record count. The database
+   keeps two clocks, so nothing is converted unless the page says so - see PARKED_DECISIONS.
 6. **Headers** — `ApplyFriendlyColumnHeaders`. An `OverrideCaption` on `FW_RoleFields` wins;
    otherwise `ToFriendlyCaption` splits the column name into words. Formatting is owned by
    `DisplayNameFormatter.ToDisplayName`; do not add a second formatter.
