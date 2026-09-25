@@ -597,6 +597,53 @@ user experienced, not the thing itself.
 No `Stopwatch` exists anywhere in the codebase today, so this is a new shared helper rather than an
 extension of one.
 
+### 9.1 A search that has got slower
+
+**Proposed 2026-09-25, not built. The factor is deliberately not chosen yet - revisit on
+2026-10-09.** An absolute "this is slow" threshold was refused twice, because there was no data to
+set it from. This is the relative form, and it is only objective if the factor comes from measured
+normal variation rather than from a round number.
+
+**The rule.**
+
+- Per page, on **database time only**. A day's average (`DbMillisTotal / EventCount` over the day's
+  `Search` buckets) is compared with the **median of that page's previous seven daily averages**.
+- It alerts when the day exceeds the median by the factor **and** by at least **50 ms**. The floor
+  keeps a page going from 17 ms to 35 ms from reading as a regression: twice as slow, and nobody
+  could tell.
+- Both sides need at least **10 searches**. Fewer, and one bad search is the whole average.
+- Averages only, never a single search. One page ranged from 9 to 501 ms on the same day.
+- Perceived time is shown and never alerts. It is too noisy, as below.
+- **Rows are checked before a slowdown is called a regression.** Since sql/167 each bucket carries
+  `RowEventCount`, `RowsTotal` and `RowsMax`, the rows each search's query returned. A day twice as
+  slow that also returned five times the rows is people searching more broadly, not the system
+  getting worse. Rows are recorded beside the time, never divided into it: most of a small search
+  is fixed cost, and a query made slow by a missing index often returns few rows, so milliseconds
+  per row would make exactly the wrong searches look bad. `RowEventCount = 0` means not recorded -
+  every bucket before 2026-09-25 - never "no rows".
+
+**What the data said on 2026-09-25**, `FW_Employees_B`, the only page with enough searches:
+
+| Day | Searches | Database ms | Perceived ms |
+|---|---|---|---|
+| Sep 20 | 17 | 188 | 615 |
+| Sep 21 | 89 | 118 | 394 |
+| Sep 22 | 51 | 28 | 288 |
+| Sep 23 | 20 | 26 | 101 |
+| Sep 25 | 17 | 17 | 115 |
+
+Every change in it is an improvement - the SQL pushdown of 2026-09-21 - so there is no stable
+stretch yet to measure normal spread from. On the one pair of stable days, database time moved
+1.06x while perceived time moved 2.8x with nothing wrong, which is why perceived time does not
+alert: a 2x rule on it would already have fired falsely.
+
+**Setting the factor.** After two stable weeks, take the largest day-to-day ratio of database time
+seen with nothing wrong, per page with enough searches, and set the factor above it. If normal days
+move 1.3x, 1.5x means something; if they move 1.8x, it takes 2x or more. Write the measured spread
+here beside the factor chosen, so the number can be checked rather than trusted.
+
+A fired alert is a fault like any other and goes out through `HealthMail`, section 7.
+
 ## 10. Query Store, and closing a fault
 
 Built 2026-09-20.

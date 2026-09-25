@@ -65,9 +65,20 @@ Namespace SDC.Framework
             Public Property PerceivedTotal As Long
             Public Property PerceivedMin As Integer?
             Public Property PerceivedMax As Integer?
+            Public Property RowEventCount As Integer
+            Public Property RowsTotal As Long
+            Public Property RowsMax As Integer?
 
-            Public Sub Add(dbMillis As Integer?, perceivedMillis As Integer?)
+            Public Sub Add(dbMillis As Integer?, perceivedMillis As Integer?, rowCount As Integer?)
                 EventCount += 1
+
+                ' Counted apart from EventCount, so an event with no row count leaves the average
+                ' alone instead of reading as a search that returned nothing.
+                If rowCount.HasValue Then
+                    RowEventCount += 1
+                    RowsTotal += rowCount.Value
+                    If Not RowsMax.HasValue OrElse rowCount.Value > RowsMax.Value Then RowsMax = rowCount.Value
+                End If
 
                 If dbMillis.HasValue Then
                     DbTotal += dbMillis.Value
@@ -97,12 +108,16 @@ Namespace SDC.Framework
         ''' <summary>
         ''' Records one event. Both timings are optional - a BrowseOpen has no perceived time
         ''' separate from its load, and a RecordOpen has no query of its own to time.
+        '''
+        ''' The row count is what the query returned. It is recorded beside the time, never
+        ''' divided into it - HEALTH_DASHBOARD_SPEC.md section 9.1 says why.
         ''' </summary>
         Public Sub Record(kind As UsageKind,
                           pageName As String,
                           registrationId As Integer,
                           Optional dbMillis As Integer? = Nothing,
-                          Optional perceivedMillis As Integer? = Nothing)
+                          Optional perceivedMillis As Integer? = Nothing,
+                          Optional rowCount As Integer? = Nothing)
             Try
                 If pending.Count >= BucketCap Then Return
 
@@ -118,7 +133,7 @@ Namespace SDC.Framework
                 ' Locked on the bucket rather than globally. Two pages counting at once is the
                 ' normal case and they are almost never the same bucket.
                 SyncLock bucket
-                    bucket.Add(dbMillis, perceivedMillis)
+                    bucket.Add(dbMillis, perceivedMillis, rowCount)
                 End SyncLock
 
                 ' Whoever records first starts the background flush. It used to be keyed to the
@@ -214,13 +229,21 @@ Namespace SDC.Framework
                             "  PerceivedMillisMax = CASE WHEN target.PerceivedMillisMax IS NULL THEN @PerMax " &
                             "                            WHEN @PerMax IS NULL THEN target.PerceivedMillisMax " &
                             "                            WHEN @PerMax > target.PerceivedMillisMax THEN @PerMax " &
-                            "                            ELSE target.PerceivedMillisMax END " &
+                            "                            ELSE target.PerceivedMillisMax END, " &
+                            "  RowEventCount = target.RowEventCount + @RowEvents, " &
+                            "  RowsTotal = target.RowsTotal + @RowsTotal, " &
+                            "  RowsMax = CASE WHEN target.RowsMax IS NULL THEN @RowsMax " &
+                            "                 WHEN @RowsMax IS NULL THEN target.RowsMax " &
+                            "                 WHEN @RowsMax > target.RowsMax THEN @RowsMax " &
+                            "                 ELSE target.RowsMax END " &
                             "WHEN NOT MATCHED THEN INSERT " &
                             "  (HourUtc, Kind, PageName, RegistrationID, EventCount, " &
                             "   DbMillisTotal, DbMillisMin, DbMillisMax, " &
-                            "   PerceivedMillisTotal, PerceivedMillisMin, PerceivedMillisMax) " &
+                            "   PerceivedMillisTotal, PerceivedMillisMin, PerceivedMillisMax, " &
+                            "   RowEventCount, RowsTotal, RowsMax) " &
                             "  VALUES (@HourUtc, @Kind, @PageName, @RegistrationID, @EventCount, " &
-                            "          @DbTotal, @DbMin, @DbMax, @PerTotal, @PerMin, @PerMax);", conn)
+                            "          @DbTotal, @DbMin, @DbMax, @PerTotal, @PerMin, @PerMax, " &
+                            "          @RowEvents, @RowsTotal, @RowsMax);", conn)
 
                             Dim key = entry.Key
                             Dim bucket = entry.Value
@@ -238,6 +261,9 @@ Namespace SDC.Framework
                             cmd.Parameters.Add("@PerTotal", SqlDbType.BigInt).Value = bucket.PerceivedTotal
                             cmd.Parameters.Add("@PerMin", SqlDbType.Int).Value = NullableValue(bucket.PerceivedMin)
                             cmd.Parameters.Add("@PerMax", SqlDbType.Int).Value = NullableValue(bucket.PerceivedMax)
+                            cmd.Parameters.Add("@RowEvents", SqlDbType.Int).Value = bucket.RowEventCount
+                            cmd.Parameters.Add("@RowsTotal", SqlDbType.BigInt).Value = bucket.RowsTotal
+                            cmd.Parameters.Add("@RowsMax", SqlDbType.Int).Value = NullableValue(bucket.RowsMax)
 
                             cmd.ExecuteNonQuery()
                         End Using

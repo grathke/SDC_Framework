@@ -139,6 +139,13 @@ Namespace SDC.Framework
         ''' </summary>
         Private lastQueryMilliseconds As Integer? = Nothing
 
+        ''' <summary>
+        ''' How many rows the last refresh's query returned, recorded beside its time so a slower
+        ''' search can be told from a bigger one. Taken before a just-created record is pinned in,
+        ''' and Nothing whenever lastQueryMilliseconds is - the two describe the same query.
+        ''' </summary>
+        Private lastQueryRowCount As Integer? = Nothing
+
         Private suppressColumnsManagerSync As Boolean = False
         Private allowColumnsManagerCheckToggle As Boolean = False
         Private missingMaintenancePkInResult As Boolean = False
@@ -2521,9 +2528,11 @@ Namespace SDC.Framework
                 ' that started a stopwatch around the whole Find, so the two can be recorded
                 ' together - see UsageCounters and HEALTH_DASHBOARD_SPEC.md section 9.
                 lastQueryMilliseconds = Nothing
+                lastQueryRowCount = Nothing
                 If dt.ExtendedProperties.ContainsKey("BrowseQueryMilliseconds") Then
                     lastQueryMilliseconds = Convert.ToInt32(dt.ExtendedProperties("BrowseQueryMilliseconds"),
                                                             Globalization.CultureInfo.InvariantCulture)
+                    lastQueryRowCount = dt.Rows.Count
                 End If
                 ' The record somebody just created goes in before anything is stripped, because the
                 ' row it fetches arrives with the page SQL's full column set and could not be copied
@@ -5787,7 +5796,8 @@ Namespace SDC.Framework
                                      Me.GetType().Name,
                                      GetRegistrationIdForCaptions(),
                                      lastQueryMilliseconds,
-                                     elapsed)
+                                     elapsed,
+                                     lastQueryRowCount)
             Catch
                 ' Counting must never cost somebody their Find.
             End Try
