@@ -337,20 +337,54 @@ it twice. Give each filter its own numbered parameter first, then turn Between o
 the same two-box dialog dates use. Build it with the permits table, only if the sequence number is
 wanted.
 
-### The database keeps two clocks
+### The database keeps two clocks - BUILT 2026-09-25
 
-Found 2026-09-25, when Past Imports showed a 19:04 import as 11:04 PM. Of the date column
-defaults in the schema, **18 are `SYSUTCDATETIME()` and 13 are `GETDATE()`** - server local time -
-and one table, `FW_ImportBatches`, has one of each. Code writes both kinds as well. A browse grid
-shows whatever is stored, so every page with a UTC column is four hours ahead for somebody on the
-East Coast: the audit trail and the Help Desk issue list among them.
+Found 2026-09-25, when Past Imports showed a 19:04 import as 11:04 PM: 18 date defaults were
+`SYSUTCDATETIME()` and 13 were `GETDATE()`. Resolved the same day as one clock, UTC, written by the
+code (`ONE_CLOCK_SPEC.md`, merged as 9c9071c).
 
-What was built: `FW_Base_B.UtcColumns`, where a page names the columns its SQL returns in UTC and
-the grid shows them through `SessionTime`. Past Imports is the only page that uses it. It is
-display-only - a QBE criterion on one of those columns still compares against the stored UTC.
+- Writes use `SYSUTCDATETIME()`; `sql/161_one_clock_defaults.sql` is applied. Only
+  `FW_Employees.HireDate` keeps `GETDATE()`, on purpose - it is a calendar date.
+- Every screen shows an instant in the viewer's zone through `SessionTime`. The naming rule decides
+  which columns are instants: ends in `Date` is a calendar date, ends in `Local` is wall-clock,
+  anything else is an instant (`CLAUDE.md`, Naming Conventions).
+- No data conversion was needed. BEELINK was already on UTC+0 with daylight saving off, so the
+  `GETDATE()` rows were UTC all along, and it is now set to plain UTC.
 
-Decided 2026-09-25: one clock, UTC, written by the code rather than by setting the server's time
-zone. The plan is `ONE_CLOCK_SPEC.md`, in five phases; nothing past the stopgap is built.
+### The Fixed button cannot say a fault was fixed in code
+
+*Parked 2026-09-25.* `FW_ErrorLog.ResolvedSource` knows two values - `Claude` renders as "Code
+change" and `User` as the person's name - but the health page's Fixed button always writes `User`,
+so a fault closed by a code change reads as if somebody had decided it did not matter. Letting the
+dialog ask which it was was offered and never asked for. **Reopens** when the history is being read
+to learn what was actually fixed, and the answer matters.
+
+### The architecture document: contents and a PDF
+
+*Parked 2026-09-25.* The document has no contents section linking its headings, and no PDF. A PDF
+exports at letter or A4, but a page-numbered index cannot be written into the document, because a
+doc has no pages until it is rendered. **Reopens** when it is about to be sent to somebody who will
+read it on paper or needs to find a section quickly.
+
+---
+
+## Waiting on an event, not a decision
+
+Built, and not yet seen working on the one path that cannot be forced. Nothing to do until the event
+happens; when it does, check it and record the result in `TEST_CASES.md`.
+
+### Fault mail from a Thinfinity session
+
+*Since 2026-09-24.* The `SDC_MAIL_*` settings are in the Windows user environment, so a process the
+VirtualUI server launches should see them - unless the server passes only the environment it
+started with. Proven on the desktop; unproven in a browser session. **Reopens** at the first real
+fault raised in a Thinfinity session: did the mail arrive? Raising a fake one would prove the fake.
+
+### A browse page that declines the SQL wrapper, seen in the application
+
+*Since 2026-09-25.* The decline path is proven by a direct call (`QBE_SQL_PUSHDOWN_SPEC.md` section
+12), but no current page declines, so it has never been seen from the UI. **Reopens** when a page
+writes a `FW_FallbackUsageLog` row: open it, search, and confirm the results match.
 
 ---
 
@@ -448,8 +482,14 @@ The distinction that took the longest and must be preserved: `CreatedBy`, `Updat
 administrator. A `UserID` that is a **row key** stays the viewed user — table layouts, saved QBE,
 page zooms, UI hints, message recipients, `FW_Messages.FromUserID`, `FW_HD_Issues.ReporterUserID`.
 
-Still open: the search does not match first or last names, so "alan" matches every address at one
-domain and nothing else; and what should happen when several accounts match.
+Still open, and parked 2026-09-25 until Switch User is next worked on:
+
+- **A save while switched.** Settled 2026-09-17 but not built: instead of a flat refusal, ask
+  whether to save the record under the administrator's own id. Yes saves it that way; No cancels.
+- **Names in the search.** It does not match first or last names, so "alan" matches every address
+  at one domain and nothing else. `FW_Users` already carries FirstName and LastName (sql/112).
+- **Several matches.** Picking one from a list that works like QBE, reading `dbo.FW_UserPeople`,
+  which already stamps each login's PersonType - settle it with contractors.
 
 ### Query count reduction
 
