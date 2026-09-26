@@ -331,17 +331,41 @@ Namespace SDC.Framework
             ' Short enough for MaintenanceLayout.LabelWidth, which is 120 pixels for every field on
             ' every maintenance page. "Rows Without A Search" clipped to "Rows Without A", which is
             ' worse than terse: a caption that loses its last word can read as a different setting.
-            ' App Admin required since 2026-09-26. An empty box used to mean "the framework
-            ' default", and nothing on screen said what that was - a blank read as no limit.
-            maxRecordsNoQbeTextBox = AddField("MaxRecordsNoQBE", capsTop, False, True,
+            ' Rows No Search is fixed since 2026-09-26: shown read-only, and every save writes
+            ' DataAccess.DefaultRowsNoSearch whatever the column held. Still written rather than
+            ' dropped, so letting it be changed again is making this box editable.
+            maxRecordsNoQbeTextBox = AddField("MaxRecordsNoQBE", capsTop, True, False,
                                               labelText:="Rows No Search")
             maxRecordsNoQbeTextBox.Width = 80
-            NumericTextBoxHelper.ConfigureWholeNumberOnly(maxRecordsNoQbeTextBox)
+
+            ' App Admin required since 2026-09-26. An empty box used to mean "the framework
+            ' default", and nothing on screen said what that was - a blank read as no limit.
 
             maxRecordsWithQbeTextBox = AddField("MaxRecordsWithQBE", capsTop + rowGap, False, True,
                                                 labelText:="Rows With Search")
             maxRecordsWithQbeTextBox.Width = 80
             NumericTextBoxHelper.ConfigureWholeNumberOnly(maxRecordsWithQbeTextBox)
+
+            AddRowCapNote(maxRecordsWithQbeTextBox)
+        End Sub
+
+        ''' <summary>
+        ''' The ceiling, said beside the box rather than only in the refusal after Save.
+        '''
+        ''' Read from MaximumRowCap, the same constant the validation uses, so the note and the
+        ''' refusal cannot disagree. Named Note_ rather than Label_: a Label_ name is read by the
+        ''' framework as a field's caption and would be reported as mapping to no column.
+        ''' </summary>
+        Private Sub AddRowCapNote(field As TextBox)
+            Dim note As New Label With {
+                .Name = "Note_" & field.Name,
+                .AutoSize = True,
+                .ForeColor = SystemColors.GrayText,
+                .Text = "Maximum " & MaximumRowCap.ToString("N0", CultureInfo.InvariantCulture)
+            }
+
+            field.Parent.Controls.Add(note)
+            note.Location = New Point(field.Right + 8, field.Top + (field.Height - note.PreferredHeight) \ 2)
         End Sub
 
         ''' <summary>
@@ -363,7 +387,6 @@ Namespace SDC.Framework
         Protected Overrides Function GetAdditionalValidationMessageLines() As IEnumerable(Of String)
             Dim lines As New List(Of String)()
 
-            AddRowCapProblem(lines, maxRecordsNoQbeTextBox, "ROWS WITHOUT A SEARCH")
             AddRowCapProblem(lines, maxRecordsWithQbeTextBox, "ROWS WITH A SEARCH")
 
             Return lines
@@ -549,7 +572,7 @@ Namespace SDC.Framework
 
             ' Empty for null, not "0". The box shows what is stored, and nothing stored is a real
             ' answer here - it means the framework default applies.
-            maxRecordsNoQbeTextBox.Text = NullableNumberText(record.MaxRecordsNoQBE)
+            maxRecordsNoQbeTextBox.Text = DataAccess.DefaultRowsNoSearch.ToString(CultureInfo.InvariantCulture)
             maxRecordsWithQbeTextBox.Text = NullableNumberText(record.MaxRecordsWithQBE)
 
             smartyAuthIdTextBox.Text = SafeText(record.Smarty_AuthID)
@@ -663,7 +686,7 @@ Namespace SDC.Framework
                 .MainPhone = mainPhoneTextBox.Text.Trim(),
                 .MainEMail = emailTextBox.Text.Trim(),
                 .WebLandingPage = webLandingPageTextBox.Text.Trim(),
-                .MaxRecordsNoQBE = ParseNullableNumber(maxRecordsNoQbeTextBox),
+                .MaxRecordsNoQBE = DataAccess.DefaultRowsNoSearch,
                 .MaxRecordsWithQBE = ParseNullableNumber(maxRecordsWithQbeTextBox),
                 .Smarty_AuthID = smartyAuthIdTextBox.Text.Trim(),
                 .Smarty_AuthToken = smartyAuthTokenTextBox.Text.Trim(),

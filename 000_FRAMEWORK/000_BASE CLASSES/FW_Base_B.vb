@@ -2315,11 +2315,14 @@ Namespace SDC.Framework
             Dim col2X As Integer = col1X + rightButtonWidth + rightButtonGap
             Dim btnH As Integer = 36
             Dim btnGap As Integer = 6
-            findButton.Location = New Point(col1X, qbeContentTop + 4)
-            clearFiltersButton.Location = New Point(col1X, qbeContentTop + 4 + btnH + btnGap)
-            saveQbeButton.Location = New Point(col2X, qbeContentTop + 4)
-            retrieveQbeButton.Location = New Point(col2X, qbeContentTop + 4 + btnH + btnGap)
-            retrievalStatusLabel.Location = New Point(col1X, retrieveQbeButton.Bottom + 4)
+            ' Level with the top of the QBE grid, not 4px below it, and the status label 2px under
+            ' Retrieve. Both went on 2026-09-26 to give the label the height of two lines: it is 40
+            ' tall and centred, and a two-line message ran past the bottom of the QBE panel.
+            findButton.Location = New Point(col1X, qbeContentTop)
+            clearFiltersButton.Location = New Point(col1X, qbeContentTop + btnH + btnGap)
+            saveQbeButton.Location = New Point(col2X, qbeContentTop)
+            retrieveQbeButton.Location = New Point(col2X, qbeContentTop + btnH + btnGap)
+            retrievalStatusLabel.Location = New Point(col1X, retrieveQbeButton.Bottom + 2)
             retrievalStatusLabel.Width = Math.Max(160, qbePanel.ClientSize.Width - retrievalStatusLabel.Left - 10)
 
             ' A third button column, right of Save and Retrieve and on the same row as Find.
@@ -2330,7 +2333,7 @@ Namespace SDC.Framework
             ' at, which is why it no longer measures first.
             Dim qbeFieldsCol3X As Integer = col2X + rightButtonWidth + rightButtonGap
             toggleQbeFieldsButton.Height = btnH
-            toggleQbeFieldsButton.Location = New Point(qbeFieldsCol3X, qbeContentTop + 4)
+            toggleQbeFieldsButton.Location = New Point(qbeFieldsCol3X, qbeContentTop)
 
             If columnsManagerPanel.Visible Then
                 PositionColumnsManagerPanel()
@@ -2514,7 +2517,7 @@ Namespace SDC.Framework
 
                     If hasCriteria Then
                         SetRetrievalStatus("More than " & maxRows & " records match. Showing the first " &
-                                           maxRows & " - narrow the search to see the ones you want.",
+                                           maxRows & " - narrow the search.",
                                            False, True)
                     Else
                         SetRetrievalStatus("Showing the first " & maxRows &
