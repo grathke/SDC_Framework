@@ -198,7 +198,8 @@ Namespace SDC.Framework
 
                 ' Labelled. It was the one unlabelled line, so on a phone the exception's own
                 ' words read as a stray sentence rather than as what the fault actually said.
-                If item.Message <> String.Empty Then body.AppendLine("    Said     " & item.Message)
+                ' "What" rather than "Said" since 2026-09-26, asked for by Glenn.
+                If item.Message <> String.Empty Then body.AppendLine("    What     " & item.Message)
 
                 body.AppendLine()
             Next
