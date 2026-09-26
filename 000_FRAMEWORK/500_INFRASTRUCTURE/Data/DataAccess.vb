@@ -6677,7 +6677,7 @@ Namespace SDC.Framework
                 "t.Can_UseQBE, t.Can_ViewAllRecords, t.Can_ViewOnlyMyRecords, t.DisplayOrder, 1, " &
                 "t.Typ_AppAdmin, t.Typ_CompanyAdmin, t.Typ_RW, t.Typ_RO, t.Typ_User, t.Typ_OnlyMyRecords, " &
                 "@By, GETUTCDATE(), @By, GETUTCDATE() " &
-                "FROM dbo.FW_RoleTemplate t ORDER BY t.ID", conn, tx)
+                "FROM dbo.FW_RoleTemplate t ORDER BY t.RoleTemplateID", conn, tx)
                 cmd.Parameters.Add("@ID", SqlDbType.Int).Value = registrationId
                 cmd.Parameters.Add("@By", SqlDbType.Int).Value = currentUserId
                 cmd.ExecuteNonQuery()
