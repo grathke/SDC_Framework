@@ -373,13 +373,6 @@ read it on paper or needs to find a section quickly.
 Built, and not yet seen working on the one path that cannot be forced. Nothing to do until the event
 happens; when it does, check it and record the result in `TEST_CASES.md`.
 
-### Fault mail from a Thinfinity session
-
-*Since 2026-09-24.* The `SDC_MAIL_*` settings are in the Windows user environment, so a process the
-VirtualUI server launches should see them - unless the server passes only the environment it
-started with. Proven on the desktop; unproven in a browser session. **Reopens** at the first real
-fault raised in a Thinfinity session: did the mail arrive? Raising a fake one would prove the fake.
-
 ### A browse page that declines the SQL wrapper, seen in the application
 
 *Since 2026-09-25.* The decline path is proven by a direct call (`QBE_SQL_PUSHDOWN_SPEC.md` section
