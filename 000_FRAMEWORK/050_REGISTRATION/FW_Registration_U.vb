@@ -176,7 +176,8 @@ Namespace SDC.Framework
                 Else
                     ' Asked before the write, and cancelling cancels the save. A registration with
                     ' no roles and nobody in it cannot be signed into.
-                    Dim administrator = RegistrationAdminPrompt.Ask(Me, currentRecord.RegName)
+                    Dim administrator = RegistrationAdminPrompt.Ask(Me, currentRecord.RegName,
+                                                                   AddressOf ShowDialogDuringSave)
                     If administrator Is Nothing Then Return False
 
                     Dim newId = DataAccess.CreateRegistration(currentRecord, currentUserId, administrator)

@@ -17,7 +17,13 @@ Namespace SDC.Framework
         Private Sub New()
         End Sub
 
-        Public Shared Function Ask(owner As IWin32Window, registrationName As String) As RegistrationAdminRequest
+        ''' <param name="showDialog">
+        ''' How to show the form. The Registration page passes FW_Base_U.ShowDialogDuringSave,
+        ''' because this opens inside the save and the time spent typing was otherwise reported
+        ''' as a 14.4 second save (fault #12, 2026-09-26). Nothing means a plain ShowDialog.
+        ''' </param>
+        Public Shared Function Ask(owner As IWin32Window, registrationName As String,
+                                   Optional showDialog As Func(Of Form, DialogResult) = Nothing) As RegistrationAdminRequest
             Dim result As New RegistrationAdminRequest()
 
             Using dialog As New Form()
@@ -70,7 +76,8 @@ Namespace SDC.Framework
                 dialog.AcceptButton = okButton
                 dialog.CancelButton = cancelButton
 
-                If dialog.ShowDialog(owner) <> DialogResult.OK Then Return Nothing
+                Dim answer = If(showDialog Is Nothing, dialog.ShowDialog(owner), showDialog(dialog))
+                If answer <> DialogResult.OK Then Return Nothing
             End Using
 
             Return result

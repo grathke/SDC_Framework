@@ -85,7 +85,7 @@ IF OBJECT_ID('dbo.[FW_Employees]', 'U') IS NULL
 CREATE TABLE dbo.[FW_Employees] (
     [EmployeeID] int IDENTITY(1,1) NOT NULL,
     [UserId] int NOT NULL,
-    [RegistrationId] int NULL,
+    [RegistrationID] int NULL,
     [RegionID] int NULL,
     [IsActive] bit NULL CONSTRAINT [DF_Employees_ActiveStatus] DEFAULT ((1)),
     [FirstName] varchar(45) NOT NULL,

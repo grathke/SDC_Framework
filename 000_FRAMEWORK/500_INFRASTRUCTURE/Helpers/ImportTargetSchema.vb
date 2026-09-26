@@ -122,12 +122,13 @@ Namespace SDC.Framework
         ''' - UserId and RegistrationId are set by the import itself: the first by the login the
         '''   save path creates, the second from the registration combo.
         '''
-        ''' Matched case-insensitively, and by prefix where the framework uses a family of names -
-        ''' FW_Employees spells its registration column RegistrationId with a lower-case d while
-        ''' everything else spells it RegistrationID, and an exact match would have missed it.
+        ''' Matched case-insensitively, and by prefix where the framework uses a family of names.
+        ''' FW_Employees spelled its registration column RegistrationId until 2026-09-26, when it
+        ''' was renamed RegistrationID to match everything else; the case-insensitive match is
+        ''' what kept the rename from mattering here.
         ''' </summary>
         Private ReadOnly ExcludedExactNames As String() = {
-            "Photo", "PhotoPath", "PasswordHash", "UserId", "RegistrationId", "RowVersion"
+            "Photo", "PhotoPath", "PasswordHash", "UserId", "RegistrationID", "RowVersion"
         }
 
         Private ReadOnly ExcludedPrefixes As String() = {

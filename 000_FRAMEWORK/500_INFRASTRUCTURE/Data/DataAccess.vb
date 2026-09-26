@@ -4343,7 +4343,7 @@ Namespace SDC.Framework
                             failedIndex = i
 
                             Dim values As New Dictionary(Of String, Object)(records(i), StringComparer.OrdinalIgnoreCase)
-                            values("RegistrationId") = registrationId
+                            values("RegistrationID") = registrationId
                             values(AssignRoleValueKey) = roleId.ToString(CultureInfo.InvariantCulture)
 
                             Dim login = New Dictionary(Of String, Object)(
@@ -4535,7 +4535,7 @@ Namespace SDC.Framework
                     If IsEmployeeLoginTable(tableName) Then
                         Dim employeeUserName = GetGeneratedValueText(values, "UserName")
                         Dim employeeRegistration = 0
-                        Dim registrationForLogin = writableValues.FirstOrDefault(Function(pair) String.Equals(pair.Key, "RegistrationId", StringComparison.OrdinalIgnoreCase)).Value
+                        Dim registrationForLogin = writableValues.FirstOrDefault(Function(pair) String.Equals(pair.Key, "RegistrationID", StringComparison.OrdinalIgnoreCase)).Value
                         If registrationForLogin Is Nothing OrElse Not Integer.TryParse(Convert.ToString(registrationForLogin, CultureInfo.InvariantCulture), employeeRegistration) Then
                             employeeRegistration = If(SessionState.IsActive AndAlso SessionState.Current.HasValue, SessionState.Current.Value.RegistrationID, 0)
                         End If
