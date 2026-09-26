@@ -331,12 +331,14 @@ Namespace SDC.Framework
             ' Short enough for MaintenanceLayout.LabelWidth, which is 120 pixels for every field on
             ' every maintenance page. "Rows Without A Search" clipped to "Rows Without A", which is
             ' worse than terse: a caption that loses its last word can read as a different setting.
-            maxRecordsNoQbeTextBox = AddField("MaxRecordsNoQBE", capsTop, False, False,
+            ' App Admin required since 2026-09-26. An empty box used to mean "the framework
+            ' default", and nothing on screen said what that was - a blank read as no limit.
+            maxRecordsNoQbeTextBox = AddField("MaxRecordsNoQBE", capsTop, False, True,
                                               labelText:="Rows No Search")
             maxRecordsNoQbeTextBox.Width = 80
             NumericTextBoxHelper.ConfigureWholeNumberOnly(maxRecordsNoQbeTextBox)
 
-            maxRecordsWithQbeTextBox = AddField("MaxRecordsWithQBE", capsTop + rowGap, False, False,
+            maxRecordsWithQbeTextBox = AddField("MaxRecordsWithQBE", capsTop + rowGap, False, True,
                                                 labelText:="Rows With Search")
             maxRecordsWithQbeTextBox.Width = 80
             NumericTextBoxHelper.ConfigureWholeNumberOnly(maxRecordsWithQbeTextBox)
@@ -348,9 +350,8 @@ Namespace SDC.Framework
         ''' **Zero is the dangerous value, not a large one.** FW_Base_B.RefreshGrid reads
         ''' maxRows &lt;= 0 as "no cap" and fetches every row, which on 2026-09-20 meant the employee
         ''' page could not be opened at all: the deleted-flag hydration sent one parameter per row
-        ''' and SQL Server refuses past 2,100. Blank is safe and means the framework default, since
-        ''' the read is ISNULL(MaxRecordsNoQBE, 10) - so this rejects a typed zero and accepts an
-        ''' empty box.
+        ''' and SQL Server refuses past 2,100. An empty box is refused by the required-field check,
+        ''' which does not catch a typed zero - so this does.
         '''
         ''' The ceiling is judgement rather than a limit anything enforces. Past a few screenfuls
         ''' an unfiltered view stops being a sample of the table and starts reading as a list that
@@ -412,7 +413,7 @@ Namespace SDC.Framework
 
             If value <= 0 Then
                 lines.Add(caption & " MUST BE AT LEAST 1. ZERO REMOVES THE LIMIT ENTIRELY, AND A PAGE " &
-                          "THAT FETCHES EVERY ROW MAY NOT OPEN AT ALL. LEAVE IT EMPTY FOR THE DEFAULT.")
+                          "THAT FETCHES EVERY ROW MAY NOT OPEN AT ALL.")
                 Return
             End If
 
@@ -945,6 +946,9 @@ Namespace SDC.Framework
         '''
         ''' No licence term and no dates: License Term is App Admin required, so the answer is asked
         ''' for rather than filled in. A prefilled year is a decision nobody made.
+        '''
+        ''' The row caps are the exception: they are prefilled, because there is a right answer
+        ''' most registrations never need to think about, and it is on screen to be changed.
         ''' </summary>
         Private Function BuildDefaultRecord() As RegistrationRecord
             Return New RegistrationRecord With {
@@ -973,6 +977,8 @@ Namespace SDC.Framework
                 .AllowUpdateMyProfileEmail = True,
                 .TwoFactorAuthentication = False,
                 .MessageRetrievalFrequency = Nothing,
+                .MaxRecordsNoQBE = DataAccess.DefaultRowsNoSearch,
+                .MaxRecordsWithQBE = DataAccess.DefaultRowsWithSearch,
                 .IsActive = True
             }
         End Function

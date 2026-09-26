@@ -7569,6 +7569,16 @@ Namespace SDC.Framework
         End Sub
 
         ''' <summary>
+        ''' The row caps a new registration starts with, and the fallback when one cannot be read.
+        '''
+        ''' One owner, used by the Registration page's new record, the session and FW_Base_B. 50
+        ''' rather than the 10 it was until 2026-09-26: ten could not fill an Employees grid that
+        ''' shows eleven, and fifty rows bind in about 6ms.
+        ''' </summary>
+        Public Const DefaultRowsNoSearch As Integer = 50
+        Public Const DefaultRowsWithSearch As Integer = 200
+
+        ''' <summary>
         ''' Both row caps in one round trip.
         '''
         ''' Two settings, one query. GetMaxRecordsNoQBE already read this row at sign-in, and
@@ -7576,15 +7586,15 @@ Namespace SDC.Framework
         ''' bought for nothing - a session of logging in and opening a few pages was measured at
         ''' 110 of them, which is how the caches came to exist.
         '''
-        ''' The defaults are the fallbacks, not the values: 10 without criteria and 200 with them,
-        ''' applied when the column is null, zero or unreadable. A registration that has never been
-        ''' asked has not decided anything.
+        ''' The defaults are the fallbacks, not the values: applied when the column is null, zero or
+        ''' unreadable. Since 2026-09-26 the Registration page requires both, so null means a row
+        ''' saved before that.
         ''' </summary>
         Public Shared Sub GetRecordCaps(registrationId As Integer,
                                         ByRef withoutCriteria As Integer,
                                         ByRef withCriteria As Integer)
-            withoutCriteria = 10
-            withCriteria = 200
+            withoutCriteria = DefaultRowsNoSearch
+            withCriteria = DefaultRowsWithSearch
 
             If registrationId <= 0 Then Return
 
@@ -7592,8 +7602,7 @@ Namespace SDC.Framework
                 Using conn As New SqlConnection(ConnectionString)
                     conn.Open()
                     Using cmd As New SqlCommand(
-                        "SELECT TOP 1 ISNULL(MaxRecordsNoQBE, 10) AS NoQbe, " &
-                        "             ISNULL(MaxRecordsWithQBE, 200) AS WithQbe " &
+                        "SELECT TOP 1 MaxRecordsNoQBE AS NoQbe, MaxRecordsWithQBE AS WithQbe " &
                         "FROM dbo.FW_Registration WHERE RegistrationID = @ID", conn)
 
                         cmd.Parameters.AddWithValue("@ID", registrationId)
@@ -7601,8 +7610,8 @@ Namespace SDC.Framework
                         Using reader = cmd.ExecuteReader()
                             If Not reader.Read() Then Return
 
-                            Dim noQbe = Convert.ToInt32(reader("NoQbe"))
-                            Dim withQbe = Convert.ToInt32(reader("WithQbe"))
+                            Dim noQbe = If(IsDBNull(reader("NoQbe")), 0, Convert.ToInt32(reader("NoQbe")))
+                            Dim withQbe = If(IsDBNull(reader("WithQbe")), 0, Convert.ToInt32(reader("WithQbe")))
 
                             If noQbe > 0 Then withoutCriteria = noQbe
                             If withQbe > 0 Then withCriteria = withQbe
@@ -7616,37 +7625,6 @@ Namespace SDC.Framework
                 Telemetry.Error(ex, "DataAccess.GetRecordCaps", Telemetry.FaultOrigin.Swallowed)
             End Try
         End Sub
-        Public Shared Function GetMaxRecordsNoQBE(registrationId As Integer) As Integer
-            If registrationId <= 0 Then
-                Return 10
-            End If
-
-            Try
-                Using conn As New SqlConnection(ConnectionString)
-                    conn.Open()
-                    Using cmd As New SqlCommand(
-                        "SELECT TOP 1 ISNULL(MaxRecordsNoQBE, 10) AS MaxRecords " &
-                        "FROM dbo.FW_Registration r LEFT JOIN dbo.FW_TimeZones z ON z.TimeZoneID = r.TimeZoneID WHERE r.RegistrationID = @ID", conn)
-                        cmd.Parameters.AddWithValue("@ID", registrationId)
-
-                        Dim result = cmd.ExecuteScalar()
-                        If result Is Nothing OrElse IsDBNull(result) Then
-                            Return 10
-                        End If
-
-                        Dim maxRecords = Convert.ToInt32(result)
-                        If maxRecords <= 0 Then
-                            Return 10
-                        End If
-
-                        Return maxRecords
-                    End Using
-                End Using
-            Catch
-                ' Return default when unavailable
-                Return 10
-            End Try
-        End Function
 
         Public Shared Function GetUsersForAdmin(registrationId As Integer,
                                                 Optional filters As Dictionary(Of String, String) = Nothing,

@@ -371,8 +371,8 @@ Namespace SDC.Framework
                 .CrudReadCaption = "Read",
                 .CrudUpdateCaption = "Modify",
                 .CrudDeleteCaption = "Delete",
-                .MaxRecordsNoQBE = If(maxRecordsNoQBE > 0, maxRecordsNoQBE, 10),
-                .MaxRecordsWithQBE = If(maxRecordsWithQBE > 0, maxRecordsWithQBE, 200),
+                .MaxRecordsNoQBE = If(maxRecordsNoQBE > 0, maxRecordsNoQBE, DataAccess.DefaultRowsNoSearch),
+                .MaxRecordsWithQBE = If(maxRecordsWithQBE > 0, maxRecordsWithQBE, DataAccess.DefaultRowsWithSearch),
                 .MessageRetrievalMinutes = If(messageRetrievalMinutes > 0, messageRetrievalMinutes, 0),
                 .DateFormat = If(dateFormat, String.Empty).Trim(),
                 .TimeFormat = If(timeFormat, String.Empty).Trim(),
@@ -477,8 +477,8 @@ Namespace SDC.Framework
             Dim session = currentSession.Value
             If registrationId <> session.RegistrationID Then Return
 
-            session.MaxRecordsNoQBE = If(noQbe.HasValue AndAlso noQbe.Value > 0, noQbe.Value, 10)
-            session.MaxRecordsWithQBE = If(withQbe.HasValue AndAlso withQbe.Value > 0, withQbe.Value, 200)
+            session.MaxRecordsNoQBE = If(noQbe.HasValue AndAlso noQbe.Value > 0, noQbe.Value, DataAccess.DefaultRowsNoSearch)
+            session.MaxRecordsWithQBE = If(withQbe.HasValue AndAlso withQbe.Value > 0, withQbe.Value, DataAccess.DefaultRowsWithSearch)
             currentSession = session
         End Sub
 
@@ -579,13 +579,12 @@ Namespace SDC.Framework
         ''' <summary>
         ''' How many rows a browse page returns without criteria, and with them.
         '''
-        ''' **Nullable, and that is the contract rather than convenience.** Null means "no answer
-        ''' recorded", and the framework then uses its own default - DataAccess reads them as
-        ''' ISNULL(MaxRecordsNoQBE, 10) and ISNULL(MaxRecordsWithQBE, 200). MaxRecordsWithQBE is
-        ''' null for both registrations today, so a non-nullable property would turn an untouched
-        ''' setting into a stored zero the first time anybody saved the page - and zero is read by
-        ''' FW_Base_B.RefreshGrid as "no cap", which is the condition that made the employee page
-        ''' unopenable on 2026-09-20 with ten thousand rows.
+        ''' **Nullable because the columns are.** The Registration page requires both since
+        ''' 2026-09-26 and a new registration starts at DataAccess.DefaultRowsNoSearch and
+        ''' DefaultRowsWithSearch, but a row saved before then can still be null, and the reads fall
+        ''' back to those same two constants. A non-nullable property would turn that null into a
+        ''' stored zero - and zero is read by FW_Base_B.RefreshGrid as "no cap", which is the
+        ''' condition that made the employee page unopenable on 2026-09-20 with ten thousand rows.
         '''
         ''' UserSessionVariables holds the same two as plain Integers on purpose: by the time a
         ''' session exists the default has been applied and there is nothing left to say.

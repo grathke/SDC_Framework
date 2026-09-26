@@ -171,7 +171,6 @@ Namespace SDC.Framework
         ''' </summary>
         Private Shared ReadOnly ListPanelGlyph As String = ChrW(&H25A4)
         Private Shared ReadOnly ColumnsUsageHintKey As String = "FW_Base_B.ColumnsUsage"
-        Private Const EmptyQbeResultLimit As Integer = 10
 
         ''' <summary>
         ''' How hard a QBE status message argues for attention.
@@ -208,7 +207,7 @@ Namespace SDC.Framework
                 Return session.Value.MaxRecordsWithQBE
             End If
 
-            Return 200
+            Return DataAccess.DefaultRowsWithSearch
         End Function
 
         Private Function GetEmptyQbeRowLimit() As Integer
@@ -216,7 +215,7 @@ Namespace SDC.Framework
             If session.HasValue Then
                 Return session.Value.MaxRecordsNoQBE
             End If
-            Return EmptyQbeResultLimit
+            Return DataAccess.DefaultRowsNoSearch
         End Function
 
         Private Class LayoutSelectionItem
