@@ -223,11 +223,12 @@ The start is exact. The end is not always, and the row records which kind it got
 | `Disconnect` | VirtualUI's `OnClose` | late by the disconnect grace |
 | `Crash` | a reconciler, a row whose process is gone | last seen only |
 
-**Do not subtract a constant for `Disconnect`.** The grace was measured at 156 seconds and at about
-210 - it is not a constant, and shaving a fixed figure off would invent a precision the measurement
-does not have. Record the reason, and let the report say the end is approximate. A third
-measurement on 2026-09-20 came in at 197 seconds, which is consistent with both and with neither
-being a figure to rely on.
+**Do not subtract a constant for `Disconnect`.** The grace is the Thinfinity profile's
+Reconnection timeout - 5 seconds, measured at about four and a half on 2026-09-21 - and it lives
+outside the codebase, so it can change without anything here knowing. Record the reason, and let
+the report say the end is approximate. (It was measured at 156, 197 and about 210 seconds on
+2026-09-11 and 09-20, before the setting was found; see `THINFINITY_NOTES.md`, "Closing, and what
+does not detect it". Those figures no longer apply.)
 
 **`VirtualUISessionClosed` writes the end itself, before it tries to shut down tidily.** It used
 to start a forced-exit timer, ask the message loop to unwind, and leave the row to Main's
@@ -250,7 +251,9 @@ real moment at which the end can be written. It is simply a late one.
 
 **There is no heartbeat.** It is the classic round-trip multiplier - every user, every interval, for
 ever, whether or not anything changed - and it would not even work here: the process keeps running
-for those three minutes with no browser attached, so the heartbeat keeps beating.
+through the reconnection grace with no browser attached, so the heartbeat keeps beating. The grace
+is seconds now rather than the minutes it once was, which makes a heartbeat less wrong but no more
+necessary: `OnClose` already reports the end.
 
 `SessionStarter` owns the write. It is already the single place that runs everything a sign-in does
 once the person is known, and Switch User goes through it too.
