@@ -31,7 +31,6 @@ INSERT INTO dbo.[FW_RoleSchema] ([ID], [DB_Table], [Table_Alias], [IsActive], [C
     (33, N'FW_UpdateTabOrder', N'Update Tab Order', 0, 2, '2026-08-29T13:34:49.500', NULL, 0, NULL, NULL),
     (34, N'FW_DashboardLayouts', N'Dashboard Layouts', 1, 2, '2026-09-03T18:53:35.557', NULL, 0, NULL, NULL),
     (35, N'FW_ZipCodes', N'Zip Codes', 0, 2, '2026-09-03T18:53:36.517', NULL, 0, NULL, NULL),
-    (36, N'FW_DashboardLayouts_Backup_20260906', N'Dashboard Layouts Backup 20260906', 0, 2, '2026-09-06T18:52:04.137', NULL, 0, NULL, NULL),
     (37, N'FW_Perm_Dashboard', N'Dashboard', 1, 2, '2026-09-10T20:02:42.737', NULL, 0, NULL, NULL),
     (38, N'FW_Employees', N'Employees', 1, 2, '2026-09-14T13:13:30.363', NULL, 0, NULL, NULL),
     (39, N'FW_Format_Date', N'Format Date', 0, 0, '2026-09-14T15:27:03.533', NULL, 0, NULL, NULL),

@@ -42,25 +42,6 @@ CREATE TABLE dbo.[FW_DashboardLayouts] (
 );
 GO
 
-IF OBJECT_ID('dbo.[FW_DashboardLayouts_Backup_20260906]', 'U') IS NULL
-CREATE TABLE dbo.[FW_DashboardLayouts_Backup_20260906] (
-    [DashboardLayoutID] int IDENTITY(1,1) NOT NULL,
-    [DashboardName] nvarchar(128) NOT NULL,
-    [ActionKey] nvarchar(128) NOT NULL,
-    [GridRow] int NULL,
-    [GridColumn] int NULL,
-    [CreatedBy] int NULL,
-    [CreatedOn] datetime NULL,
-    [UpdatedBy] int NULL,
-    [UpdatedOn] datetime NULL,
-    [DeletedFlag] bit NOT NULL,
-    [DeletedBy] int NULL,
-    [DeletedOn] datetime2 NULL,
-    [RowVersion] rowversion,
-    [IconFileName] nvarchar(260) NULL
-);
-GO
-
 IF OBJECT_ID('dbo.[FW_EmployeeRoles]', 'U') IS NULL
 CREATE TABLE dbo.[FW_EmployeeRoles] (
     [UserRoleID] int IDENTITY(1,1) NOT NULL,
