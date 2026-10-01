@@ -35,13 +35,13 @@ Namespace SDC.Framework
         Public Const GeneratedFolderName As String = "999_GENERATED"
 
         Public NotInheritable Class Owner
-            ''' <summary>The folder, as it is on disk: "000_FRAMEWORK", "100_CTY".</summary>
+            ''' <summary>The folder, as it is on disk: "000_FRAMEWORK", "100_CITY NEXUS".</summary>
             Public Property FolderName As String
 
             ''' <summary>The prefix its tables and pages carry, without the underscore: "FW", "CTY".</summary>
             Public Property Prefix As String
 
-            ''' <summary>What the picker shows: "FRAMEWORK (FW_)", "CTY (CTY_)".</summary>
+            ''' <summary>What the picker shows: "FRAMEWORK (FW_)", "CITY NEXUS (CTY_)".</summary>
             Public Property DisplayName As String
 
             Public Overrides Function ToString() As String
@@ -54,8 +54,9 @@ Namespace SDC.Framework
         '''
         ''' A folder counts when it is named NNN_something. The framework is named rather than
         ''' derived, because "FRAMEWORK" is a word and "FW" is the prefix thirty tables already
-        ''' carry; every other owner takes its prefix from its own name, so 100_CTY is CTY_ and a
-        ''' folder renamed to 200_XXX becomes XXX_ with nothing else to change.
+        ''' carry. Every other owner takes its prefix from a PREFIX file in its folder when it has
+        ''' one - 100_CITY NEXUS holds "CTY" - and otherwise from its own name, so a folder renamed
+        ''' to 200_XXX becomes XXX_ with nothing else to change.
         ''' </summary>
         Public Shared Function All(workspaceRoot As String) As List(Of Owner)
             Dim owners As New List(Of Owner)()
@@ -69,7 +70,7 @@ Namespace SDC.Framework
             For Each folderName In folderNames
                 If Not Regex.IsMatch(folderName, "^\d{3}_.+") Then Continue For
 
-                Dim prefix = PrefixFor(folderName)
+                Dim prefix = PrefixFor(workspaceRoot, folderName)
                 If prefix = String.Empty Then Continue For
 
                 ' Described the same way as the rest. The framework showed "Framework (FW_)" from a
@@ -101,16 +102,49 @@ Namespace SDC.Framework
             Return IO.Path.Combine(owner.FolderName, GeneratedFolderName)
         End Function
 
-        Private Shared Function PrefixFor(folderName As String) As String
+        ''' <summary>
+        ''' The file an application folder can hold to name its prefix, when the folder's name is
+        ''' a word rather than a code. One line, the prefix without its underscore.
+        ''' </summary>
+        Public Const PrefixFileName As String = "PREFIX"
+
+        Private Shared Function PrefixFor(workspaceRoot As String, folderName As String) As String
             If String.Equals(folderName, FrameworkFolder, StringComparison.OrdinalIgnoreCase) Then Return FrameworkPrefix
 
-            ' Everything past the number, with spaces removed and upper-cased: "100_CTY" is CTY,
-            ' and the placeholder "200_NEXT PROJECT" is NEXTPROJECT - which is what a placeholder
-            ' deserves, and stops being odd the moment it is renamed to the application's code.
+            ' A PREFIX file wins. 100_CITY NEXUS keeps the CTY_ its tables, pages and permission
+            ' rows were created with; derived from the name it would have become CITYNEXUS_, and
+            ' every page generated afterwards would have stopped matching the ones before it.
+            Dim declared = ReadPrefixFile(IO.Path.Combine(workspaceRoot, folderName, PrefixFileName))
+            If declared <> String.Empty Then Return declared
+
+            ' Everything past the number, with spaces removed and upper-cased: the placeholder
+            ' "200_NEXT PROJECT" is NEXTPROJECT - which is what a placeholder deserves, and stops
+            ' being odd the moment it is renamed or given a PREFIX file.
             Dim underscore = folderName.IndexOf("_"c)
             If underscore < 0 OrElse underscore = folderName.Length - 1 Then Return String.Empty
 
             Return folderName.Substring(underscore + 1).Replace(" ", String.Empty).ToUpperInvariant()
+        End Function
+
+        ''' <summary>
+        ''' The first non-blank line of a PREFIX file, upper-cased, letters and digits only.
+        ''' Anything else - no file, an empty one, a trailing underscore typed out of habit - falls
+        ''' back to the folder name rather than inventing a prefix nobody meant.
+        ''' </summary>
+        Private Shared Function ReadPrefixFile(path As String) As String
+            Try
+                If Not File.Exists(path) Then Return String.Empty
+
+                Dim line = File.ReadAllLines(path).
+                    Select(Function(candidate) candidate.Trim().TrimEnd("_"c)).
+                    FirstOrDefault(Function(candidate) candidate <> String.Empty)
+                If line Is Nothing Then Return String.Empty
+
+                Dim prefix = line.ToUpperInvariant()
+                Return If(Regex.IsMatch(prefix, "^[A-Z0-9]+$"), prefix, String.Empty)
+            Catch
+                Return String.Empty
+            End Try
         End Function
 
         Private Shared Function DescribeOwner(folderName As String, prefix As String) As String

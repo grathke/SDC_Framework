@@ -337,7 +337,7 @@ Assert-Pattern -Path ".\000_FRAMEWORK\080_HELP DESK\HelpDeskDataAccess.vb" -Patt
 
 Write-Step "Default engineering guardrails"
 Assert-Pattern -Path ".\000_FRAMEWORK\500_INFRASTRUCTURE\Security\AccessSecurity.vb" -Pattern "Public Class AccessProfile" -Description "Access profile enforcement model exists"
-Assert-Pattern -Path ".\100_CTY\MenuFormInitializer.vb" -Pattern "menu.SetAccessProfile(profile)" -Description "Menu receives the active access profile"
+Assert-Pattern -Path ".\100_CITY NEXUS\MenuFormInitializer.vb" -Pattern "menu.SetAccessProfile(profile)" -Description "Menu receives the active access profile"
 Assert-Pattern -Path ".\000_FRAMEWORK\500_INFRASTRUCTURE\Data\DataAccess.vb" -Pattern "BeginTransaction" -Description "Data layer contains explicit transaction boundaries"
 Assert-Pattern -Path ".\000_FRAMEWORK\500_INFRASTRUCTURE\Data\DataAccess.vb" -Pattern "trans.Rollback()" -Description "Data layer rolls back failed transactions"
 Assert-Pattern -Path ".\000_FRAMEWORK\000_BASE CLASSES\FW_Base_U.vb" -Pattern "ConfirmConcurrencyOverwrite" -Description "Base maintenance flow requires explicit conflict choice"
@@ -416,7 +416,7 @@ Assert-SingleOwner -Pattern 'RETURN (AS|TO) YOURSELF' -Owners @("SwitchedUserGua
 # Application Settings menu so that tile opens the dashboard on one click.
 Assert-Pattern -Path ".\000_FRAMEWORK\010_MAIN MENU\FW_MainMenu.vb" -Pattern 'Dim switchItem As New ToolStripMenuItem("Switch User")' -Description "Switch User is on the role tile's menu"
 Assert-Pattern -Path ".\000_FRAMEWORK\010_MAIN MENU\FW_MainMenu.vb" -Pattern 'If SwitchedUser.IsActive OrElse CanSwitchUser() Then' -Description "The role tile drops its menu for an administrator who may switch"
-Assert-NotPattern -Path ".\100_CTY\MenuFormInitializer.vb" -Pattern 'BuildActionItem("Switch User"' -Description "Application Settings no longer carries Switch User"
+Assert-NotPattern -Path ".\100_CITY NEXUS\MenuFormInitializer.vb" -Pattern 'BuildActionItem("Switch User"' -Description "Application Settings no longer carries Switch User"
 
 Write-Step "Shared helpers have one owner"
 
@@ -495,7 +495,7 @@ if ($metadataWriteFailures.Count -gt 0) {
     throw "These write role or registration data without calling InvalidateRoleMetadataCache: $($metadataWriteFailures -join ', ')"
 }
 Write-Host "PASS: Every write to role and registration data clears the metadata caches ($($methodBodies.Count) methods read)" -ForegroundColor Green
-Assert-Pattern -Path ".\100_CTY\MenuFormInitializer.vb" -Pattern "cachedAccessVersion = metadataVersion Then" -Description "The menu reuses its access profile only while the metadata version is unchanged"
+Assert-Pattern -Path ".\100_CITY NEXUS\MenuFormInitializer.vb" -Pattern "cachedAccessVersion = metadataVersion Then" -Description "The menu reuses its access profile only while the metadata version is unchanged"
 
 # FW_Roles' key is RoleID since migration 166 (2026-09-25). Its SQL lives in strings no compiler
 # reads, so a query still written against ID fails only when that screen runs. This catches the

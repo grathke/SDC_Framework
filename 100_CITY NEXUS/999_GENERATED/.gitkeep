@@ -1,6 +1,6 @@
 Generated CTY_ pages land here, and wait here until they are filed.
 
-Filing one means moving it up into 100_CTY, or into a band inside it once this
+Filing one means moving it up into 100_CITY NEXUS, or into a band inside it once this
 application grows enough to have bands. Folders do not affect the build: every
 .vb under the project is compiled, RootNamespace is empty, and each file declares
 its own namespace, so a page compiles wherever it sits.

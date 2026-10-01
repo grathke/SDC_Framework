@@ -161,9 +161,9 @@ And at the root, each application beside the framework:
 
 ```
 000_FRAMEWORK/
-100_CTY/             the first application - its pages are CTY_
+100_CITY NEXUS/      the first application - its pages are CTY_, kept by its PREFIX file
     999_GENERATED    its own waiting room
-200_.../             the next one
+200_NEXT PROJECT/    placeholder for the next one
 ```
 
 **The number carries the meaning, not the name.** Below 500 is worked on. `500_INFRASTRUCTURE` is
@@ -177,11 +177,11 @@ number, because once they are grouped nothing about their order matters. The two
 mean a path tells you its own shape before you have read the words.
 
 **An application built on the framework is a folder of its own at the root, not a child of a
-container.** `100_CTY` is the first; `200_` is the next. `100_PROJECTS` held them until 2026-09-18
+container.** `100_CITY NEXUS` is the first; `200_` is the next. `100_PROJECTS` held them until 2026-09-18
 and earned nothing: an application is a peer of the framework, and the container only said "this is
 not the framework", which the prefix already says.
 
-`100_CTY/MenuFormInitializer.vb` is the boundary made concrete: `FW_MainMenu` in `010_MAIN MENU`
+`100_CITY NEXUS/MenuFormInitializer.vb` is the boundary made concrete: `FW_MainMenu` in `010_MAIN MENU`
 renders a ribbon, and the initializer decides which tiles that ribbon has, under its own
 `MenuSurfaceName` so each application's saved arrangements stay separate. A second application
 writes its own and changes nothing in `000_FRAMEWORK`.
@@ -258,9 +258,13 @@ Key areas:
   `dbo.FW_Users`, `FW_Registration_B`. An application built on it uses its own code: `CTY_` for the
   first one, `XXX_` for the next. The prefix answers "whose is this?" without opening a folder, and
   it is what lets two applications each have a `Customers_B` without colliding.
-- **The folder mirrors the prefix.** `FW_` lives under `000_FRAMEWORK`, `CTY_` under `100_CTY`, and
-  the next application under `200_`. One idea said twice, deliberately: the name travels into SQL,
-  into `FW_Pages` rows and into error messages, where the folder cannot follow it.
+- **The folder names the owner, and the prefix travels.** `FW_` lives under `000_FRAMEWORK`,
+  `CTY_` under `100_CITY NEXUS`, and the next application under `200_`. The page generator takes
+  an owner's prefix from a one-line `PREFIX` file in its folder when there is one, and otherwise
+  from the folder name past the number, spaces removed and upper-cased. City Nexus has the file:
+  without it the folder would have meant `CITYNEXUS_`, and every page generated after the rename on
+  2026-10-01 would have stopped matching its existing `CTY_` tables. The prefix is what travels into
+  SQL, into `FW_Pages` rows and into error messages, where the folder cannot follow it.
 - Everything runs as one application today. Splitting into a solution later is a matter of moving
   folders, which is exactly what the prefixes make safe.
 - **A table that exists only to carry a permission takes `FW_Perm_`**, holds no data and has no

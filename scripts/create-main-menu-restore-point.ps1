@@ -35,7 +35,7 @@ New-Item -ItemType Directory -Path $restorePoint -Force | Out-Null
 # point that loses the rule protecting the file is half a restore point.
 $files = @(
     "000_FRAMEWORK\010_MAIN MENU\FW_MainMenu.vb",
-    "100_CTY\MenuFormInitializer.vb",
+    "100_CITY NEXUS\MenuFormInitializer.vb",
     "CLAUDE.md"
 )
 
@@ -55,7 +55,7 @@ foreach ($relativePath in $files) {
 - Purpose: $Description
 - Files captured:
     - 000_FRAMEWORK\010_MAIN MENU\FW_MainMenu.vb
-    - 100_CTY\MenuFormInitializer.vb
+    - 100_CITY NEXUS\MenuFormInitializer.vb
     - CLAUDE.md
 
 Restoring: copy FW_MainMenu.vb and MenuFormInitializer.vb back to the paths above. They are a pair -

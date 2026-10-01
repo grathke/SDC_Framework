@@ -137,7 +137,7 @@ Namespace SDC.Framework
         Public Property BrowsePageName As String = String.Empty
         Public Property MaintenancePageName As String = String.Empty
         ''' <summary>
-        ''' The folder of the owner these pages belong to - "000_FRAMEWORK", "100_CTY" - which
+        ''' The folder of the owner these pages belong to - "000_FRAMEWORK", "100_CITY NEXUS" - which
         ''' decides both the prefix on their names and the 999_GENERATED they are written to.
         ''' </summary>
         Public Property OwnerFolder As String = String.Empty
@@ -1016,7 +1016,7 @@ Namespace SDC.Framework
         ''' PAGES if it has not.
         '''
         ''' Filing a generated page is the expected next step - it is a draft, and it belongs in a
-        ''' band under 000_FRAMEWORK or in an application folder such as 100_CTY once you know which. Writing
+        ''' band under 000_FRAMEWORK or in an application folder such as 100_CITY NEXUS once you know which. Writing
         ''' by name alone made that a one-way door: regenerating a filed page put a second copy in
         ''' 999_GENERATED, two files declaring the same class in the same namespace, which is a
         ''' hard compile error rather than a duplicate anybody would spot.
@@ -1044,7 +1044,7 @@ Namespace SDC.Framework
         ''' <summary>
         ''' Where a page's file is, or where a new one goes: its owner's 999_GENERATED.
         '''
-        ''' <paramref name="ownerFolder"/> is the owner's root folder - "000_FRAMEWORK", "100_CTY".
+        ''' <paramref name="ownerFolder"/> is the owner's root folder - "000_FRAMEWORK", "100_CITY NEXUS".
         ''' Empty falls back to the framework's, which is what a caller asking only "where is this
         ''' page?" wants: the answer for an existing page comes from the search below, and the
         ''' fallback is only reached for a page that does not exist yet.
